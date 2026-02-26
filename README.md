@@ -20,7 +20,9 @@ Block AI coding tools from reading your secrets:
 npx secretless-ai init
 ```
 
-<!-- TODO: Add terminal GIF of secretless-ai init output here -->
+<p align="center">
+  <img src="secretless-ai-demo.gif" alt="Secretless AI demo" width="700" />
+</p>
 
 Scan your AI agent for vulnerabilities:
 
@@ -28,7 +30,9 @@ Scan your AI agent for vulnerabilities:
 npx hackmyagent secure
 ```
 
-<!-- TODO: Add terminal GIF of hackmyagent finding issues here -->
+<p align="center">
+  <img src="hackmyagent-demo.gif" alt="HackMyAgent demo" width="700" />
+</p>
 
 Add cryptographic identity to your agent:
 
