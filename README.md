@@ -50,6 +50,7 @@ OpenA2A builds open-source tools for securing AI agents in production. AI agents
 |---------|-------------|---------|
 | **[Secretless AI](https://github.com/opena2a-org/secretless-ai)** | Credential management for AI coding tools -- Claude Code, Cursor, Windsurf | `npx secretless-ai init` |
 | **[HackMyAgent](https://github.com/opena2a-org/hackmyagent)** | Security scanner -- 147 checks, attack mode, auto-fix | `npx hackmyagent secure` |
+| **[AI Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard)** | Detect, control, and terminate AI agents in your browser | Chrome Web Store |
 | **[AIM](https://github.com/opena2a-org/agent-identity-management)** | Identity & access management for AI agents | `pip install aim-sdk` |
 | **[ARP](https://github.com/opena2a-org/arp)** | Agent Runtime Protection -- process, network, filesystem monitoring | `npm install @opena2a/arp` |
 | **[OASB](https://github.com/opena2a-org/oasb)** | Open Agent Security Benchmark -- 222 attack scenarios | `npm install @opena2a/oasb` |
@@ -62,9 +63,10 @@ OpenA2A builds open-source tools for securing AI agents in production. AI agents
 |                      Your AI Agent                        |
 |                                                           |
 |  Secretless AI  -> Credential management for dev tools    |
+|  HackMyAgent    -> Scan, harden, attack-test              |
+|  AI Browser Guard -> Detect/control agents in browser     |
 |  AIM            -> Identity, governance, access control   |
 |  ARP            -> Runtime process/network/file monitoring|
-|  HackMyAgent    -> Scan, harden, attack-test              |
 |  OASB           -> Compliance benchmark (46 controls)     |
 |  DVAA           -> Train your team on AI agent security   |
 +----------------------------------------------------------+
