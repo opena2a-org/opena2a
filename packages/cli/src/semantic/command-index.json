@@ -1,0 +1,182 @@
+[
+  {
+    "id": "scan",
+    "path": "opena2a scan",
+    "description": "Scan AI agent for security vulnerabilities using 150+ checks",
+    "tags": ["security", "scan", "vulnerability", "hardening", "audit"],
+    "synonyms": ["check", "test", "analyze", "inspect", "review"],
+    "domains": ["mcp", "agent", "llm", "ai"],
+    "examples": ["scan my MCP server", "find vulnerabilities", "security audit"]
+  },
+  {
+    "id": "scan-secure",
+    "path": "opena2a scan secure",
+    "description": "Run full security scan with auto-fix suggestions",
+    "tags": ["security", "scan", "harden", "fix", "remediate"],
+    "synonyms": ["harden", "secure", "fix"],
+    "domains": ["mcp", "agent"],
+    "examples": ["harden my agent", "secure my MCP server", "fix vulnerabilities"]
+  },
+  {
+    "id": "scan-attack",
+    "path": "opena2a scan attack",
+    "description": "Run attack mode to test agent resilience against adversarial inputs",
+    "tags": ["attack", "pentest", "adversarial", "red-team", "offensive"],
+    "synonyms": ["pentest", "red-team", "exploit", "break"],
+    "domains": ["agent", "mcp", "llm"],
+    "examples": ["attack test my agent", "red team my MCP server", "pentest"]
+  },
+  {
+    "id": "secrets-init",
+    "path": "opena2a secrets init",
+    "description": "Set up credential protection for AI coding tools",
+    "tags": ["secrets", "credentials", "protection", "encrypt", "vault"],
+    "synonyms": ["protect-secrets", "encrypt", "hide-keys"],
+    "domains": ["cursor", "claude-code", "windsurf", "vscode"],
+    "examples": ["protect my API keys", "hide credentials from AI", "encrypt secrets"]
+  },
+  {
+    "id": "secrets-scan",
+    "path": "opena2a secrets scan",
+    "description": "Find hardcoded credentials in project files",
+    "tags": ["secrets", "scan", "credentials", "leak", "exposure"],
+    "synonyms": ["find-secrets", "detect-keys", "credential-scan"],
+    "domains": ["git", "env", "config"],
+    "examples": ["find leaked API keys", "scan for hardcoded secrets", "detect credentials"]
+  },
+  {
+    "id": "protect",
+    "path": "opena2a protect",
+    "description": "Detect credentials and migrate them to encrypted vault",
+    "tags": ["protect", "migrate", "vault", "remediate", "fix"],
+    "synonyms": ["migrate-secrets", "vault", "fix-credentials"],
+    "domains": ["credentials", "security"],
+    "examples": ["move secrets to vault", "fix hardcoded credentials", "migrate API keys"]
+  },
+  {
+    "id": "runtime",
+    "path": "opena2a runtime",
+    "description": "Monitor agent runtime behavior -- process, network, filesystem",
+    "tags": ["runtime", "monitor", "process", "network", "filesystem", "edr"],
+    "synonyms": ["monitor", "watch", "observe", "guard"],
+    "domains": ["agent", "process", "network"],
+    "examples": ["monitor my agent", "watch network calls", "runtime protection"]
+  },
+  {
+    "id": "benchmark",
+    "path": "opena2a benchmark",
+    "description": "Run OASB security benchmark with 222 attack scenarios",
+    "tags": ["benchmark", "oasb", "compliance", "score", "assessment"],
+    "synonyms": ["assess", "grade", "score", "evaluate"],
+    "domains": ["compliance", "owasp", "mitre"],
+    "examples": ["benchmark my agent", "security score", "compliance check"]
+  },
+  {
+    "id": "registry",
+    "path": "opena2a registry",
+    "description": "Query OpenA2A Trust Registry for package security data",
+    "tags": ["registry", "trust", "package", "supply-chain", "verify"],
+    "synonyms": ["trust", "verify", "lookup", "check-package"],
+    "domains": ["npm", "pypi", "supply-chain"],
+    "examples": ["check if package is safe", "trust score lookup", "verify dependency"]
+  },
+  {
+    "id": "research",
+    "path": "opena2a research",
+    "description": "Launch autonomous security research agent",
+    "tags": ["research", "autonomous", "bounty", "discover", "investigate"],
+    "synonyms": ["investigate", "discover", "analyze-deep"],
+    "domains": ["vulnerability", "security-research"],
+    "examples": ["research this target", "find zero-days", "autonomous security scan"]
+  },
+  {
+    "id": "hunt",
+    "path": "opena2a hunt",
+    "description": "Launch autonomous vulnerability hunter with multi-turn attack decomposition",
+    "tags": ["hunt", "attack", "autonomous", "decompose", "exploit"],
+    "synonyms": ["exploit", "break", "multi-turn-attack"],
+    "domains": ["agent", "api", "llm"],
+    "examples": ["hunt for vulnerabilities", "multi-turn attack", "autonomous exploit"]
+  },
+  {
+    "id": "train",
+    "path": "opena2a train",
+    "description": "Launch Damn Vulnerable AI Agent for security training",
+    "tags": ["train", "practice", "dvaa", "vulnerable", "learn"],
+    "synonyms": ["practice", "learn", "ctf", "lab"],
+    "domains": ["training", "education"],
+    "examples": ["start training lab", "practice on vulnerable agent", "CTF environment"]
+  },
+  {
+    "id": "crypto",
+    "path": "opena2a crypto",
+    "description": "Cryptographic inventory scan and post-quantum readiness assessment",
+    "tags": ["crypto", "pqc", "quantum", "tls", "certificate", "encryption"],
+    "synonyms": ["quantum", "post-quantum", "pqc", "tls-scan"],
+    "domains": ["cryptography", "tls", "certificate"],
+    "examples": ["scan for weak crypto", "quantum readiness", "TLS configuration check"]
+  },
+  {
+    "id": "identity",
+    "path": "opena2a identity",
+    "description": "Manage cryptographic agent identities (AIM)",
+    "tags": ["identity", "aim", "agent-id", "certificate", "governance"],
+    "synonyms": ["agent-id", "register-agent", "identity-management"],
+    "domains": ["agent", "governance", "access-control"],
+    "examples": ["create agent identity", "register my agent", "manage agent certificates"]
+  },
+  {
+    "id": "broker",
+    "path": "opena2a broker",
+    "description": "Start identity-aware credential broker daemon",
+    "tags": ["broker", "daemon", "credential-resolution", "policy", "identity-aware"],
+    "synonyms": ["credential-broker", "secret-proxy", "vault-daemon"],
+    "domains": ["credentials", "identity", "policy"],
+    "examples": ["start credential broker", "run secret proxy", "identity-aware secrets"]
+  },
+  {
+    "id": "guard",
+    "path": "opena2a guard",
+    "description": "Browser extension for AI tool security monitoring",
+    "tags": ["browser", "extension", "guard", "monitor", "web"],
+    "synonyms": ["browser-guard", "web-protection", "extension"],
+    "domains": ["browser", "web", "chrome"],
+    "examples": ["install browser guard", "web AI security", "browser extension"]
+  },
+  {
+    "id": "dlp",
+    "path": "opena2a dlp",
+    "description": "Data loss prevention -- scan and clean AI tool transcripts",
+    "tags": ["dlp", "transcript", "clean", "redact", "data-loss"],
+    "synonyms": ["clean-transcripts", "redact", "data-protection"],
+    "domains": ["transcript", "claude", "cursor"],
+    "examples": ["clean AI transcripts", "redact secrets from logs", "data loss prevention"]
+  },
+  {
+    "id": "init",
+    "path": "opena2a init",
+    "description": "Initialize OpenA2A security in a project -- scan, protect, configure",
+    "tags": ["init", "setup", "initialize", "onboard", "start"],
+    "synonyms": ["setup", "start", "onboard", "configure"],
+    "domains": ["project", "config"],
+    "examples": ["set up security", "initialize project", "get started"]
+  },
+  {
+    "id": "status",
+    "path": "opena2a status",
+    "description": "Show security status of current project",
+    "tags": ["status", "dashboard", "overview", "summary", "report"],
+    "synonyms": ["overview", "dashboard", "summary"],
+    "domains": ["project"],
+    "examples": ["show security status", "project overview", "what's the status"]
+  },
+  {
+    "id": "config",
+    "path": "opena2a config",
+    "description": "Manage OpenA2A configuration and preferences",
+    "tags": ["config", "settings", "preferences", "configure"],
+    "synonyms": ["settings", "preferences"],
+    "domains": ["config"],
+    "examples": ["change settings", "configure contribute", "set registry URL"]
+  }
+]

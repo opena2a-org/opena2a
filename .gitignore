@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+.DS_Store
+*.log
+.env
+.env.*
+.pre-push-review-passed
+coverage/
