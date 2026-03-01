@@ -1,0 +1,733 @@
+/**
+ * opena2a protect — Detect credentials and migrate to Secretless vault.
+ *
+ * Flow:
+ * 1. Run HMA CRED + DRIFT checks on the target directory
+ * 2. For each detected credential with a raw value:
+ *    a. Store in Secretless SecretStore
+ *    b. Replace in source file with environment variable reference
+ *    c. Register broker policy (default: deny-all, must be explicitly allowed)
+ *    d. Add to .env.example
+ * 3. Re-run scan to verify clean
+ * 4. Output migration report
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
+import { Spinner } from '../util/spinner.js';
+import { severityLabel, formatDuration, table } from '../util/format.js';
+
+// --- Types ---
+
+interface CredentialMatch {
+  /** Original matched value (e.g., "sk-ant-api03-...") */
+  value: string;
+  /** File where the credential was found */
+  filePath: string;
+  /** Line number in the file */
+  line: number;
+  /** Finding ID (e.g., "CRED-001", "DRIFT-001") */
+  findingId: string;
+  /** Suggested environment variable name */
+  envVar: string;
+  /** Severity from the scanner */
+  severity: string;
+  /** Human-readable title */
+  title: string;
+}
+
+interface MigrationResult {
+  /** Credential that was migrated */
+  credential: CredentialMatch;
+  /** Whether the value was stored in Secretless vault */
+  stored: boolean;
+  /** Whether the source file was updated */
+  replaced: boolean;
+  /** Whether a broker policy was created */
+  policyCreated: boolean;
+  /** Error message if migration failed */
+  error?: string;
+}
+
+interface ProtectReport {
+  /** Target directory */
+  targetDir: string;
+  /** Total credentials found */
+  totalFound: number;
+  /** Successfully migrated */
+  migrated: number;
+  /** Failed migrations */
+  failed: number;
+  /** Skipped (already using env vars, etc.) */
+  skipped: number;
+  /** Individual results */
+  results: MigrationResult[];
+  /** Whether verification scan passed */
+  verificationPassed: boolean;
+  /** Duration in milliseconds */
+  durationMs: number;
+}
+
+export interface ProtectOptions {
+  /** Target directory to scan and protect */
+  targetDir: string;
+  /** Dry run mode (show what would change, don't modify) */
+  dryRun?: boolean;
+  /** Verbose output */
+  verbose?: boolean;
+  /** CI mode (no interactive prompts) */
+  ci?: boolean;
+  /** Output format */
+  format?: 'text' | 'json';
+  /** Skip verification re-scan */
+  skipVerify?: boolean;
+}
+
+// --- Credential patterns ---
+
+interface CredentialPattern {
+  id: string;
+  title: string;
+  pattern: RegExp;
+  envVarPrefix: string;
+  severity: string;
+}
+
+const CREDENTIAL_PATTERNS: CredentialPattern[] = [
+  {
+    id: 'CRED-001',
+    title: 'Anthropic API Key',
+    pattern: /sk-ant-api\d{2}-[A-Za-z0-9_-]{80,}/g,
+    envVarPrefix: 'ANTHROPIC_API_KEY',
+    severity: 'critical',
+  },
+  {
+    id: 'CRED-002',
+    title: 'OpenAI API Key',
+    pattern: /sk-[A-Za-z0-9]{20,}/g,
+    envVarPrefix: 'OPENAI_API_KEY',
+    severity: 'critical',
+  },
+  {
+    id: 'DRIFT-001',
+    title: 'Google API Key (Gemini drift risk)',
+    pattern: /AIza[0-9A-Za-z_-]{35}/g,
+    envVarPrefix: 'GOOGLE_API_KEY',
+    severity: 'high',
+  },
+  {
+    id: 'DRIFT-002',
+    title: 'AWS Access Key (Bedrock drift risk)',
+    pattern: /AKIA[0-9A-Z]{16}/g,
+    envVarPrefix: 'AWS_ACCESS_KEY_ID',
+    severity: 'high',
+  },
+  {
+    id: 'CRED-003',
+    title: 'GitHub Token',
+    pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g,
+    envVarPrefix: 'GITHUB_TOKEN',
+    severity: 'high',
+  },
+  {
+    id: 'CRED-004',
+    title: 'Generic API Key in Assignment',
+    pattern: /(?:api[_-]?key|apikey|secret[_-]?key)\s*[:=]\s*['"]([A-Za-z0-9_\-/.]{20,})['"]/gi,
+    envVarPrefix: 'API_KEY',
+    severity: 'medium',
+  },
+];
+
+// Files/dirs to skip during scanning
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', 'coverage',
+  '.next', '.nuxt', '__pycache__', '.venv', 'venv',
+  '.tox', '.mypy_cache', '.pytest_cache',
+]);
+
+const SKIP_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp',
+  '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  '.zip', '.tar', '.gz', '.bz2', '.7z',
+  '.mp3', '.mp4', '.avi', '.mov', '.wav',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+  '.exe', '.dll', '.so', '.dylib', '.o',
+  '.lock', '.map',
+]);
+
+// --- Core logic ---
+
+/**
+ * Main protect command. Scans for credentials, migrates to vault, verifies clean.
+ */
+export async function protect(options: ProtectOptions): Promise<number> {
+  const startTime = Date.now();
+  const targetDir = path.resolve(options.targetDir);
+
+  if (!fs.existsSync(targetDir)) {
+    process.stderr.write(red(`Target directory not found: ${targetDir}\n`));
+    return 1;
+  }
+
+  if (options.dryRun) {
+    process.stdout.write(yellow('[DRY RUN] No files will be modified.\n\n'));
+  }
+
+  // Phase 1: Scan for credentials
+  const spinner = new Spinner('Scanning for credentials...');
+  spinner.start();
+
+  const matches = scanForCredentials(targetDir);
+  spinner.stop();
+
+  const isJson = options.format === 'json';
+
+  if (matches.length === 0) {
+    if (isJson) {
+      const report: ProtectReport = {
+        targetDir,
+        totalFound: 0,
+        migrated: 0,
+        failed: 0,
+        skipped: 0,
+        results: [],
+        verificationPassed: true,
+        durationMs: Date.now() - startTime,
+      };
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    } else {
+      process.stdout.write(green('No hardcoded credentials detected.\n'));
+    }
+    return 0;
+  }
+
+  if (!isJson) {
+    process.stdout.write(bold(`Found ${matches.length} credential(s) in ${targetDir}\n\n`));
+
+    // Show findings table
+    const findingsRows = matches.map(m => [
+      severityLabel(m.severity),
+      m.findingId,
+      m.title,
+      path.relative(targetDir, m.filePath) + ':' + m.line,
+      m.envVar,
+    ]);
+    process.stdout.write(table(findingsRows, ['Severity', 'ID', 'Type', 'Location', 'Env Var']) + '\n\n');
+  }
+
+  if (options.dryRun) {
+    if (!isJson) {
+      process.stdout.write(yellow('[DRY RUN] Would migrate the above credentials.\n'));
+      process.stdout.write(dim('Run without --dry-run to apply changes.\n'));
+    }
+    return 0;
+  }
+
+  // Phase 2: Migrate credentials
+  if (!isJson) {
+    spinner.update('Migrating credentials to Secretless vault...');
+    spinner.start();
+  }
+
+  const results = await migrateCredentials(matches, targetDir, options);
+  if (!isJson) spinner.stop();
+
+  const migrated = results.filter(r => r.stored && r.replaced).length;
+  const failed = results.filter(r => r.error).length;
+  const skipped = results.filter(r => !r.stored && !r.replaced && !r.error).length;
+
+  // Phase 3: Update .env.example
+  updateEnvExample(targetDir, results.filter(r => r.stored), isJson);
+
+  // Phase 4: Verification re-scan
+  let verificationPassed = true;
+  if (!options.skipVerify && migrated > 0) {
+    if (!isJson) {
+      spinner.update('Verifying migration...');
+      spinner.start();
+    }
+
+    const remainingMatches = scanForCredentials(targetDir);
+    verificationPassed = remainingMatches.length === 0;
+
+    if (!isJson) {
+      spinner.stop();
+      if (verificationPassed) {
+        process.stdout.write(green('Verification passed: no credentials remain in source.\n\n'));
+      } else {
+        process.stdout.write(yellow(
+          `Verification: ${remainingMatches.length} credential(s) still detected.\n` +
+          'Some credentials may require manual migration.\n\n'
+        ));
+      }
+    }
+  }
+
+  // Phase 5: Report
+  const durationMs = Date.now() - startTime;
+  const report: ProtectReport = {
+    targetDir,
+    totalFound: matches.length,
+    migrated,
+    failed,
+    skipped,
+    results,
+    verificationPassed,
+    durationMs,
+  };
+
+  if (options.format === 'json') {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  } else {
+    printReport(report);
+  }
+
+  return failed > 0 ? 1 : 0;
+}
+
+// --- Scanning ---
+
+function scanForCredentials(targetDir: string): CredentialMatch[] {
+  const matches: CredentialMatch[] = [];
+  const seen = new Set<string>(); // dedup by value+file
+
+  walkFiles(targetDir, (filePath) => {
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return; // skip unreadable files
+    }
+
+    const lines = content.split('\n');
+
+    for (const pattern of CREDENTIAL_PATTERNS) {
+      // Reset regex lastIndex for global patterns
+      pattern.pattern.lastIndex = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        let match: RegExpExecArray | null;
+
+        // Clone regex to avoid shared state issues
+        const re = new RegExp(pattern.pattern.source, pattern.pattern.flags);
+        while ((match = re.exec(line)) !== null) {
+          // For capture group patterns, use group 1; otherwise full match
+          const value = match[1] ?? match[0];
+          const dedupKey = `${value}:${filePath}`;
+
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+
+          // Skip if it looks like an env var reference already
+          if (isEnvVarReference(line, match.index)) continue;
+
+          const envVar = deriveEnvVarName(pattern, filePath, matches);
+
+          matches.push({
+            value,
+            filePath,
+            line: i + 1,
+            findingId: pattern.id,
+            envVar,
+            severity: pattern.severity,
+            title: pattern.title,
+          });
+        }
+      }
+    }
+  });
+
+  return matches;
+}
+
+function walkFiles(dir: string, callback: (filePath: string) => void): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
+
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      walkFiles(path.join(dir, entry.name), callback);
+    } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (SKIP_EXTENSIONS.has(ext)) continue;
+      // Skip large files (>1MB)
+      try {
+        const stat = fs.statSync(path.join(dir, entry.name));
+        if (stat.size > 1_048_576) return;
+      } catch {
+        return;
+      }
+      callback(path.join(dir, entry.name));
+    }
+  }
+}
+
+function isEnvVarReference(line: string, matchIndex: number): boolean {
+  // Check if the match is inside process.env.X, ${X}, $X, os.environ, etc.
+  const before = line.slice(0, matchIndex);
+  return /process\.env\.\w*$/.test(before) ||
+    /\$\{?\w*$/.test(before) ||
+    /os\.environ\[['"]?\w*$/.test(before) ||
+    /getenv\(['"]?\w*$/.test(before);
+}
+
+function deriveEnvVarName(
+  pattern: CredentialPattern,
+  _filePath: string,
+  existingMatches: CredentialMatch[]
+): string {
+  const base = pattern.envVarPrefix;
+  const existing = existingMatches.filter(m => m.envVar.startsWith(base));
+
+  if (existing.length === 0) return base;
+  // If the same prefix already exists, append a number
+  return `${base}_${existing.length + 1}`;
+}
+
+// --- Migration ---
+
+async function migrateCredentials(
+  matches: CredentialMatch[],
+  targetDir: string,
+  options: ProtectOptions
+): Promise<MigrationResult[]> {
+  const results: MigrationResult[] = [];
+
+  for (const credential of matches) {
+    try {
+      // Step 1: Store in Secretless vault
+      const stored = await storeInVault(credential);
+
+      // Step 2: Replace in source file
+      const replaced = replaceInSource(credential);
+
+      // Step 3: Create broker policy
+      const policyCreated = createBrokerPolicy(credential, targetDir);
+
+      results.push({
+        credential,
+        stored,
+        replaced,
+        policyCreated,
+      });
+
+      if (options.verbose) {
+        const status = stored && replaced ? green('[OK]') : yellow('[PARTIAL]');
+        process.stdout.write(`${status} ${credential.envVar} <- ${path.relative(targetDir, credential.filePath)}:${credential.line}\n`);
+      }
+    } catch (err) {
+      results.push({
+        credential,
+        stored: false,
+        replaced: false,
+        policyCreated: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+
+      if (options.verbose) {
+        process.stderr.write(red(`[FAIL] ${credential.envVar}: ${err instanceof Error ? err.message : String(err)}\n`));
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Store a credential value in the Secretless SecretStore.
+ * Uses dynamic import to avoid hard dependency on secretless-ai.
+ */
+async function storeInVault(credential: CredentialMatch): Promise<boolean> {
+  try {
+    // Dynamic import -- secretless-ai may not be installed
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+    const mod = 'default' in secretless ? secretless.default : secretless;
+    const { SecretStore } = mod;
+    const store = new SecretStore();
+    await store.setSecret(credential.envVar, credential.value);
+    return true;
+  } catch {
+    // Secretless not available -- write to .env file as fallback
+    return storeInDotEnv(credential);
+  }
+}
+
+/**
+ * Fallback: append credential to .env file in the project root.
+ */
+function storeInDotEnv(credential: CredentialMatch): boolean {
+  const projectRoot = findProjectRoot(credential.filePath);
+  if (!projectRoot) return false;
+
+  const envPath = path.join(projectRoot, '.env');
+  let content = '';
+
+  if (fs.existsSync(envPath)) {
+    content = fs.readFileSync(envPath, 'utf-8');
+    // Don't add if already present
+    if (content.includes(`${credential.envVar}=`)) return true;
+    if (!content.endsWith('\n')) content += '\n';
+  }
+
+  content += `${credential.envVar}=${credential.value}\n`;
+
+  // Write with restricted permissions (0o600)
+  const fd = fs.openSync(envPath, 'w', 0o600);
+  fs.writeSync(fd, content);
+  fs.closeSync(fd);
+
+  return true;
+}
+
+/**
+ * Replace the hardcoded credential in the source file with an environment variable reference.
+ */
+function replaceInSource(credential: CredentialMatch): boolean {
+  const content = fs.readFileSync(credential.filePath, 'utf-8');
+  const ext = path.extname(credential.filePath).toLowerCase();
+
+  // Build the replacement string based on file type
+  const replacement = getEnvVarReplacement(credential.envVar, ext, content, credential.value);
+
+  if (!replacement) return false;
+
+  const newContent = content.replace(credential.value, replacement);
+  if (newContent === content) return false; // nothing changed
+
+  fs.writeFileSync(credential.filePath, newContent, 'utf-8');
+  return true;
+}
+
+/**
+ * Generate the appropriate env var reference for the file type.
+ */
+function getEnvVarReplacement(envVar: string, ext: string, content: string, _original: string): string | null {
+  // Detect language/framework from file extension and content
+  switch (ext) {
+    case '.ts':
+    case '.tsx':
+    case '.js':
+    case '.jsx':
+    case '.mjs':
+    case '.cjs':
+      return `process.env.${envVar}`;
+
+    case '.py':
+      return `os.environ.get('${envVar}')`;
+
+    case '.go':
+      return `os.Getenv("${envVar}")`;
+
+    case '.rb':
+      return `ENV['${envVar}']`;
+
+    case '.java':
+    case '.kt':
+      return `System.getenv("${envVar}")`;
+
+    case '.rs':
+      return `std::env::var("${envVar}").unwrap_or_default()`;
+
+    case '.yaml':
+    case '.yml':
+      return `\${${envVar}}`;
+
+    case '.toml':
+    case '.ini':
+    case '.cfg':
+    case '.conf':
+      return `\${${envVar}}`;
+
+    case '.env':
+    case '.sh':
+    case '.bash':
+    case '.zsh':
+      return `$${envVar}`;
+
+    case '.json':
+      // JSON doesn't support env var references natively.
+      // Replace with a placeholder that frameworks commonly understand.
+      return `\${${envVar}}`;
+
+    case '.dockerfile':
+      return `$${envVar}`;
+
+    default:
+      // For Dockerfiles without extension
+      if (content.includes('FROM ') || content.includes('RUN ')) {
+        return `$${envVar}`;
+      }
+      // Default to shell-style
+      return `\${${envVar}}`;
+  }
+}
+
+/**
+ * Create a deny-all broker policy for this credential.
+ * The user must explicitly add allow rules.
+ */
+function createBrokerPolicy(credential: CredentialMatch, targetDir: string): boolean {
+  const policyDir = path.join(
+    process.env.HOME ?? process.env.USERPROFILE ?? '.',
+    '.secretless-ai'
+  );
+
+  try {
+    if (!fs.existsSync(policyDir)) {
+      fs.mkdirSync(policyDir, { recursive: true, mode: 0o700 });
+    }
+
+    const policyFile = path.join(policyDir, 'broker-policies.json');
+    let policies: any[] = [];
+
+    if (fs.existsSync(policyFile)) {
+      try {
+        const raw = fs.readFileSync(policyFile, 'utf-8');
+        const parsed = JSON.parse(raw);
+        policies = Array.isArray(parsed) ? parsed : parsed.rules ?? [];
+      } catch {
+        // Corrupted file, start fresh
+        policies = [];
+      }
+    }
+
+    // Check if policy for this credential already exists
+    const existingPolicy = policies.find(
+      (p: any) => p.credentialSelector === credential.envVar
+    );
+    if (existingPolicy) return true;
+
+    // Add deny-all policy for this credential
+    const projectName = path.basename(targetDir);
+    policies.push({
+      id: `protect-${credential.envVar.toLowerCase()}-${Date.now()}`,
+      agentSelector: '*',
+      credentialSelector: credential.envVar,
+      constraints: {},
+      effect: 'deny' as const,
+      comment: `Auto-generated by opena2a protect from ${projectName}. Add allow rules for authorized agents.`,
+    });
+
+    fs.writeFileSync(policyFile, JSON.stringify(policies, null, 2) + '\n', 'utf-8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Update .env.example with the migrated variable names.
+ */
+function updateEnvExample(
+  targetDir: string,
+  migratedResults: MigrationResult[],
+  quiet = false
+): void {
+  if (migratedResults.length === 0) return;
+
+  const envExamplePath = path.join(targetDir, '.env.example');
+  let content = '';
+
+  if (fs.existsSync(envExamplePath)) {
+    content = fs.readFileSync(envExamplePath, 'utf-8');
+    if (!content.endsWith('\n')) content += '\n';
+  }
+
+  let added = 0;
+  for (const result of migratedResults) {
+    const envVar = result.credential.envVar;
+    if (!content.includes(`${envVar}=`)) {
+      content += `${envVar}=\n`;
+      added++;
+    }
+  }
+
+  if (added > 0) {
+    fs.writeFileSync(envExamplePath, content, 'utf-8');
+    if (!quiet) {
+      process.stdout.write(dim(`Updated .env.example with ${added} variable(s).\n`));
+    }
+  }
+}
+
+// --- Reporting ---
+
+function printReport(report: ProtectReport): void {
+  process.stdout.write('\n' + bold('Migration Report') + '\n');
+  process.stdout.write(gray('-'.repeat(50)) + '\n');
+
+  const rows: string[][] = [];
+
+  for (const result of report.results) {
+    const status = result.error
+      ? red('FAILED')
+      : result.stored && result.replaced
+        ? green('MIGRATED')
+        : yellow('PARTIAL');
+
+    rows.push([
+      status,
+      result.credential.findingId,
+      result.credential.envVar,
+      path.relative(report.targetDir, result.credential.filePath) + ':' + result.credential.line,
+    ]);
+
+    if (result.error) {
+      process.stdout.write(dim(`  Error: ${result.error}\n`));
+    }
+  }
+
+  process.stdout.write(table(rows, ['Status', 'Finding', 'Env Var', 'Location']) + '\n\n');
+
+  // Summary
+  process.stdout.write(bold('Summary: '));
+  const parts: string[] = [];
+  if (report.migrated > 0) parts.push(green(`${report.migrated} migrated`));
+  if (report.skipped > 0) parts.push(yellow(`${report.skipped} skipped`));
+  if (report.failed > 0) parts.push(red(`${report.failed} failed`));
+  process.stdout.write(parts.join(', ') + '\n');
+
+  process.stdout.write(dim(`Completed in ${formatDuration(report.durationMs)}\n`));
+
+  if (report.migrated > 0) {
+    process.stdout.write('\n' + cyan('Next steps:') + '\n');
+    process.stdout.write('  1. Review changes: ' + dim('git diff') + '\n');
+    process.stdout.write('  2. Add .env to .gitignore if not already present\n');
+    process.stdout.write('  3. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
+    process.stdout.write('  4. Start the broker: ' + dim('opena2a broker start') + '\n');
+    process.stdout.write('  5. Re-scan to confirm: ' + dim('opena2a scan .') + '\n');
+  }
+}
+
+// --- Utilities ---
+
+function findProjectRoot(startPath: string): string | null {
+  let dir = path.dirname(startPath);
+  const root = path.parse(dir).root;
+
+  while (dir !== root) {
+    if (
+      fs.existsSync(path.join(dir, 'package.json')) ||
+      fs.existsSync(path.join(dir, 'go.mod')) ||
+      fs.existsSync(path.join(dir, 'Cargo.toml')) ||
+      fs.existsSync(path.join(dir, 'pyproject.toml')) ||
+      fs.existsSync(path.join(dir, 'setup.py')) ||
+      fs.existsSync(path.join(dir, '.git'))
+    ) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+
+  return null;
+}

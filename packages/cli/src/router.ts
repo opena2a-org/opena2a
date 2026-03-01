@@ -1,5 +1,6 @@
 import { createAdapter } from './adapters/index.js';
 import type { RunOptions } from './adapters/types.js';
+import { protect } from './commands/protect.js';
 
 export type InputType = 'subcommand' | 'search' | 'context' | 'natural' | 'guided';
 
@@ -74,11 +75,23 @@ export async function dispatchCommand(
   args: string[],
   globalOptions: Partial<RunOptions> = {}
 ): Promise<number> {
+  // Handle 'protect' directly (not adapter-based — it orchestrates HMA + Secretless)
+  if (command === 'protect') {
+    const targetDir = args[0] ?? process.cwd();
+    return protect({
+      targetDir,
+      dryRun: args.includes('--dry-run'),
+      verbose: globalOptions.verbose ?? false,
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as 'text' | 'json') ?? 'text',
+      skipVerify: args.includes('--skip-verify'),
+    });
+  }
+
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
     init: { adapter: 'scan', defaultArgs: ['init'] },
     check: { adapter: 'scan', defaultArgs: ['secure'] },
-    protect: { adapter: 'secrets', defaultArgs: ['init'] },
     status: { adapter: 'scan', defaultArgs: ['status'] },
     publish: { adapter: 'registry', defaultArgs: ['check'] },
   };
