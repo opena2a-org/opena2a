@@ -299,7 +299,7 @@ Language-aware replacements:
 
 We contribute security fixes back to the open-source projects we audit.
 
-**[Open WebUI](https://github.com/open-webui/open-webui)** (205K+ stars) -- 8 security PRs (7 merged, 1 open):
+**[OpenClaw](https://github.com/openclaw/openclaw)** (245K+ stars) -- 8 security PRs (7 merged, 1 open):
 
 - Credential redaction in gateway config responses ([#9858](https://github.com/open-webui/open-webui/pull/9858))
 - Skill/plugin code safety scanner ([#9806](https://github.com/open-webui/open-webui/pull/9806))
