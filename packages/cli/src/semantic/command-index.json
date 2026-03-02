@@ -47,11 +47,11 @@
   {
     "id": "protect",
     "path": "opena2a protect",
-    "description": "Detect credentials and migrate them to encrypted vault",
-    "tags": ["protect", "migrate", "vault", "remediate", "fix"],
-    "synonyms": ["migrate-secrets", "vault", "fix-credentials"],
-    "domains": ["credentials", "security"],
-    "examples": ["move secrets to vault", "fix hardcoded credentials", "migrate API keys"]
+    "description": "Detect credentials and migrate them to encrypted vault. Detects Google API key drift to Gemini and AWS key drift to Bedrock.",
+    "tags": ["protect", "migrate", "vault", "remediate", "fix", "drift", "google", "aws", "gemini", "bedrock"],
+    "synonyms": ["migrate-secrets", "vault", "fix-credentials", "scope-drift", "key-detection"],
+    "domains": ["credentials", "security", "google", "aws", "drift"],
+    "examples": ["move secrets to vault", "fix hardcoded credentials", "migrate API keys", "detect google key drift", "find AWS bedrock drift"]
   },
   {
     "id": "runtime",
@@ -137,11 +137,11 @@
   {
     "id": "guard",
     "path": "opena2a guard",
-    "description": "Browser extension for AI tool security monitoring",
-    "tags": ["browser", "extension", "guard", "monitor", "web"],
-    "synonyms": ["browser-guard", "web-protection", "extension"],
-    "domains": ["browser", "web", "chrome"],
-    "examples": ["install browser guard", "web AI security", "browser extension"]
+    "description": "Config file integrity signing and verification (ConfigGuard)",
+    "tags": ["guard", "integrity", "config", "sign", "verify", "tamper", "hash"],
+    "synonyms": ["configguard", "sign-config", "verify-config", "integrity-check"],
+    "domains": ["config", "security", "supply-chain"],
+    "examples": ["sign config files", "verify config integrity", "detect config tampering"]
   },
   {
     "id": "dlp",
@@ -155,11 +155,11 @@
   {
     "id": "init",
     "path": "opena2a init",
-    "description": "Initialize OpenA2A security in a project -- scan, protect, configure",
-    "tags": ["init", "setup", "initialize", "onboard", "start"],
-    "synonyms": ["setup", "start", "onboard", "configure"],
-    "domains": ["project", "config"],
-    "examples": ["set up security", "initialize project", "get started"]
+    "description": "Initialize OpenA2A security in a project -- scan for credentials, detect scope drift, check hygiene, calculate trust score",
+    "tags": ["init", "setup", "initialize", "onboard", "start", "drift", "trust-score"],
+    "synonyms": ["setup", "start", "onboard", "configure", "assess"],
+    "domains": ["project", "config", "credentials"],
+    "examples": ["set up security", "initialize project", "get started", "check my project"]
   },
   {
     "id": "status",

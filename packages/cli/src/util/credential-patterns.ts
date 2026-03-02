@@ -53,7 +53,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-002',
     title: 'OpenAI API Key',
-    pattern: /sk-[A-Za-z0-9]{20,}/g,
+    pattern: /sk-(?:proj-|test-|svcacct-|live-)?[A-Za-z0-9_-]{20,}/g,
     envVarPrefix: 'OPENAI_API_KEY',
     severity: 'critical',
     explanation: 'OpenAI API key hardcoded in source. Grants full API access to anyone with the source code.',
@@ -62,7 +62,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'DRIFT-001',
     title: 'Google API Key (Gemini drift risk)',
-    pattern: /AIza[0-9A-Za-z_-]{35}/g,
+    pattern: /AIza[0-9A-Za-z_-]{35,}/g,
     envVarPrefix: 'GOOGLE_API_KEY',
     severity: 'high',
     explanation: 'Google API key may have been provisioned for Maps but also grants Gemini AI access. Scope drift means the key can do more than intended.',
@@ -124,8 +124,11 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
     return;
   }
 
+  // Dot-files to scan (credential sources)
+  const SCAN_DOTFILES = new Set(['.env', '.env.example', '.env.local', '.env.development', '.env.production', '.env.staging', '.env.test']);
+
   for (const entry of entries) {
-    if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
+    if (entry.name.startsWith('.') && !SCAN_DOTFILES.has(entry.name)) continue;
 
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;

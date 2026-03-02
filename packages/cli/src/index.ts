@@ -44,8 +44,30 @@ async function main(): Promise<void> {
       });
   }
 
-  // Intent commands (init is handled as a direct command below)
-  for (const intent of ['check', 'protect', 'status', 'publish']) {
+  // Protect command (direct, not adapter-based)
+  program
+    .command('protect')
+    .description('Detect and migrate credentials to encrypted vault')
+    .option('--dry-run', 'Show what would change without modifying files')
+    .option('--report <path>', 'Write interactive HTML report')
+    .option('--skip-verify', 'Skip verification re-scan')
+    .option('--dir <path>', 'Target directory')
+    .action(async (opts) => {
+      const { protect: runProtect } = await import('./commands/protect.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runProtect({
+        targetDir: opts.dir ?? process.cwd(),
+        dryRun: opts.dryRun,
+        verbose: globalOpts.verbose,
+        ci: globalOpts.ci,
+        format: globalOpts.format as 'text' | 'json',
+        skipVerify: opts.skipVerify,
+        report: opts.report,
+      });
+    });
+
+  // Intent commands (init and protect are handled as direct commands)
+  for (const intent of ['check', 'status', 'publish']) {
     if (!ADAPTER_REGISTRY[intent]) {
       program
         .command(intent)

@@ -192,7 +192,12 @@ export async function protect(options: ProtectOptions): Promise<number> {
       spinner.start();
     }
 
-    const remainingMatches = scanForCredentials(targetDir);
+    const remainingMatches = scanForCredentials(targetDir)
+      .filter(m => {
+        // Exclude .env files from verification — credentials are supposed to be there
+        const basename = path.basename(m.filePath);
+        return !basename.startsWith('.env');
+      });
     verificationPassed = remainingMatches.length === 0;
 
     if (!isJson) {
