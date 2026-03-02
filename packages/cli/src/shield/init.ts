@@ -1,0 +1,282 @@
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import type {
+  EnvironmentScan,
+  ShieldPolicy,
+  DetectedCli,
+  DetectedAssistant,
+  DetectedMcpServer,
+  DetectedOAuthSession,
+} from './types.js';
+import { SHIELD_DIR, SHIELD_SCAN_FILE, SHIELD_POLICY_FILE } from './types.js';
+import { detectEnvironment } from './detect.js';
+import { generatePolicyFromScan, savePolicy } from './policy.js';
+import { writeEvent, getShieldDir } from './events.js';
+import { recordPolicyHash, getExpectedHookContent } from './integrity.js';
+import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
+import { Spinner } from '../util/spinner.js';
+
+interface InitResult {
+  scan: EnvironmentScan;
+  policy: ShieldPolicy;
+  shellHookInstalled: boolean;
+  policyPath: string;
+  steps: { name: string; status: 'done' | 'skipped' | 'warn' }[];
+}
+
+export async function shieldInit(options: {
+  targetDir?: string;
+  ci?: boolean;
+  format?: string;
+  verbose?: boolean;
+}): Promise<{ exitCode: number; result: InitResult }> {
+  const targetDir = options.targetDir ?? process.cwd();
+  const ci = options.ci ?? false;
+  const format = options.format ?? 'text';
+  const isText = format === 'text' && !ci;
+  const steps: InitResult['steps'] = [];
+
+  // --- Step 1: Environment Detection ---
+  if (isText) process.stdout.write(bold('\nShield Init\n\n'));
+
+  const spinner = isText ? new Spinner('Scanning environment...') : null;
+  spinner?.start();
+
+  const scan = detectEnvironment(targetDir);
+
+  spinner?.stop();
+  steps.push({ name: 'Environment scan', status: 'done' });
+
+  if (isText) {
+    process.stdout.write(bold('Step 1: Environment Detection\n'));
+    // CLIs
+    if (scan.clis.length > 0) {
+      process.stdout.write(`  CLIs found: ${scan.clis.map((c: DetectedCli) => c.name).join(', ')}\n`);
+    } else {
+      process.stdout.write(`  No cloud CLIs detected\n`);
+    }
+    // Assistants
+    const activeAssistants = scan.assistants.filter((a: DetectedAssistant) => a.detected);
+    if (activeAssistants.length > 0) {
+      process.stdout.write(`  AI assistants: ${activeAssistants.map((a: DetectedAssistant) => a.name).join(', ')}\n`);
+    }
+    // MCP servers
+    if (scan.mcpServers.length > 0) {
+      process.stdout.write(`  MCP servers: ${scan.mcpServers.map((s: DetectedMcpServer) => s.name).join(', ')}\n`);
+    }
+    // OAuth sessions
+    const activeSessions = scan.oauthSessions.filter((s: DetectedOAuthSession) => s.hasActiveSession);
+    if (activeSessions.length > 0) {
+      process.stdout.write(yellow(`  Active OAuth sessions: ${activeSessions.map((s: DetectedOAuthSession) => s.provider).join(', ')}\n`));
+    }
+    // Project
+    process.stdout.write(`  Project: ${scan.projectName ?? 'unknown'} (${scan.projectType})\n`);
+    process.stdout.write('\n');
+  }
+
+  // --- Step 2: Credential Audit ---
+  if (isText) process.stdout.write(bold('Step 2: Credential Audit\n'));
+  let credentialFindings = 0;
+  try {
+    const { quickCredentialScan } = await import('../util/credential-patterns.js');
+    const matches = quickCredentialScan(targetDir);
+    credentialFindings = matches.length;
+    if (isText) {
+      if (matches.length === 0) {
+        process.stdout.write(green('  No hardcoded credentials found\n'));
+      } else {
+        process.stdout.write(yellow(`  ${matches.length} credential${matches.length !== 1 ? 's' : ''} found\n`));
+        for (const m of matches.slice(0, 5)) {
+          process.stdout.write(`    ${m.severity.toUpperCase()}: ${m.title} in ${m.filePath}:${m.line}\n`);
+        }
+        if (matches.length > 5) {
+          process.stdout.write(dim(`    ... and ${matches.length - 5} more\n`));
+        }
+        process.stdout.write(dim('  Run: opena2a protect\n'));
+      }
+    }
+  } catch {
+    if (isText) process.stdout.write(dim('  Credential scan skipped (module unavailable)\n'));
+  }
+  steps.push({ name: 'Credential audit', status: credentialFindings > 0 ? 'warn' : 'done' });
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 3: Config Integrity Baseline ---
+  if (isText) process.stdout.write(bold('Step 3: Config Integrity Baseline\n'));
+  try {
+    const { guard } = await import('../commands/guard.js');
+    await guard({
+      subcommand: 'sign',
+      targetDir,
+      ci: true,
+      format: 'json',
+      verbose: false,
+    });
+    steps.push({ name: 'Config signing', status: 'done' });
+    if (isText) process.stdout.write(green('  Config files signed as baseline\n'));
+  } catch {
+    steps.push({ name: 'Config signing', status: 'skipped' });
+    if (isText) process.stdout.write(dim('  Config signing skipped\n'));
+  }
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 4: Generate Policy ---
+  if (isText) process.stdout.write(bold('Step 4: Generate Policy\n'));
+
+  const policy = generatePolicyFromScan(scan);
+  const shieldDir = getShieldDir();
+  const policyPath = join(shieldDir, SHIELD_POLICY_FILE);
+
+  if (existsSync(policyPath) && !ci) {
+    if (isText) {
+      process.stdout.write(yellow('  Existing policy found. Preserving current policy.\n'));
+      process.stdout.write(dim('  To regenerate: delete ~/.opena2a/shield/policy.yaml and re-run init\n'));
+    }
+  } else {
+    savePolicy(policy, policyPath);
+    recordPolicyHash(policyPath);
+    if (isText) {
+      process.stdout.write(green('  Policy generated (adaptive mode)\n'));
+      process.stdout.write(`  Shield will learn agent behavior before suggesting rules.\n`);
+      const denyProcs = policy.default.processes.deny;
+      if (denyProcs.length > 0) {
+        process.stdout.write(`  Recommended blocks: ${denyProcs.join(', ')}\n`);
+      }
+    }
+  }
+  steps.push({ name: 'Policy generation', status: 'done' });
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 5: Shell Integration ---
+  if (isText) process.stdout.write(bold('Step 5: Shell Integration\n'));
+  let shellHookInstalled = false;
+
+  const shell = process.env.SHELL?.includes('zsh') ? 'zsh' as const
+    : process.env.SHELL?.includes('bash') ? 'bash' as const
+    : null;
+
+  if (shell && !ci) {
+    const rcFile = shell === 'zsh'
+      ? join(homedir(), '.zshrc')
+      : join(homedir(), '.bashrc');
+
+    let rcContent = '';
+    try { rcContent = readFileSync(rcFile, 'utf-8'); } catch { /* new file */ }
+
+    if (rcContent.includes('opena2a_shield_preexec') || rcContent.includes('opena2a_shield_debug')) {
+      shellHookInstalled = true;
+      if (isText) process.stdout.write(green('  Shell hooks already installed\n'));
+    } else {
+      const hookContent = getExpectedHookContent(shell);
+      writeFileSync(rcFile, rcContent + '\n' + hookContent + '\n', { mode: 0o600 });
+      shellHookInstalled = true;
+      if (isText) process.stdout.write(green(`  Shell hooks installed in ~/.${shell}rc\n`));
+    }
+  } else if (ci) {
+    if (isText) process.stdout.write(dim('  Shell hooks skipped (CI mode)\n'));
+  } else {
+    if (isText) process.stdout.write(dim('  Shell not detected (zsh or bash required)\n'));
+  }
+  steps.push({ name: 'Shell integration', status: shellHookInstalled ? 'done' : 'skipped' });
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 6: ARP Initialization ---
+  if (isText) process.stdout.write(bold('Step 6: Runtime Protection\n'));
+  try {
+    const { runtime } = await import('../commands/runtime.js');
+    await runtime({
+      subcommand: 'init',
+      targetDir,
+      ci: true,
+      format: 'json',
+      verbose: false,
+    });
+    steps.push({ name: 'ARP init', status: 'done' });
+    if (isText) process.stdout.write(green('  ARP config generated\n'));
+  } catch {
+    steps.push({ name: 'ARP init', status: 'skipped' });
+    if (isText) process.stdout.write(dim('  ARP initialization skipped (hackmyagent not installed)\n'));
+  }
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 7: Browser Guard ---
+  if (isText) process.stdout.write(bold('Step 7: Browser Guard\n'));
+  const hasBrowserGuard = existsSync(join(homedir(), '.config', 'opena2a', 'browser-guard.json')) ||
+    existsSync(join(homedir(), '.opena2a', 'browser-guard.json'));
+  if (hasBrowserGuard) {
+    steps.push({ name: 'Browser Guard', status: 'done' });
+    if (isText) process.stdout.write(green('  Browser Guard detected\n'));
+  } else {
+    steps.push({ name: 'Browser Guard', status: 'skipped' });
+    if (isText) {
+      process.stdout.write(dim('  Browser Guard not installed\n'));
+      process.stdout.write(dim('  Browser session protection is optional.\n'));
+    }
+  }
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 8: Summary ---
+  // Save scan results
+  const scanPath = join(shieldDir, SHIELD_SCAN_FILE);
+  writeFileSync(scanPath, JSON.stringify(scan, null, 2) + '\n', { mode: 0o600 });
+
+  // Write init event
+  writeEvent({
+    source: 'shield',
+    category: 'shield.init',
+    severity: 'info',
+    agent: null,
+    sessionId: null,
+    action: 'shield.init',
+    target: targetDir,
+    outcome: 'allowed',
+    detail: {
+      clis: scan.clis.length,
+      assistants: scan.assistants.filter((a: DetectedAssistant) => a.detected).length,
+      mcpServers: scan.mcpServers.length,
+      oauthSessions: scan.oauthSessions.filter((s: DetectedOAuthSession) => s.hasActiveSession).length,
+      credentialFindings,
+      shellHookInstalled,
+    },
+    orgId: null,
+    managed: false,
+    agentId: null,
+  });
+
+  steps.push({ name: 'Summary', status: 'done' });
+
+  if (isText) {
+    process.stdout.write(bold('Step 8: Summary\n'));
+    const doneCount = steps.filter(s => s.status === 'done').length;
+    const warnCount = steps.filter(s => s.status === 'warn').length;
+    process.stdout.write(`  ${green(`${doneCount} steps completed`)}`);
+    if (warnCount > 0) process.stdout.write(`, ${yellow(`${warnCount} warnings`)}`);
+    process.stdout.write('\n');
+    process.stdout.write(`  Policy: ${policyPath}\n`);
+    process.stdout.write(`  Events: ${join(shieldDir, 'events.jsonl')}\n`);
+    process.stdout.write('\n');
+    process.stdout.write(cyan('  Shield is now in adaptive mode. It will learn your agent behavior\n'));
+    process.stdout.write(cyan('  and suggest a policy once patterns stabilize.\n'));
+    process.stdout.write('\n');
+    process.stdout.write(dim('  View status:  opena2a shield status\n'));
+    process.stdout.write(dim('  View events:  opena2a shield log\n'));
+    process.stdout.write(dim('  Run check:    opena2a shield selfcheck\n'));
+    process.stdout.write('\n');
+  }
+
+  const result: InitResult = {
+    scan,
+    policy,
+    shellHookInstalled,
+    policyPath,
+    steps,
+  };
+
+  if (format === 'json' || ci) {
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  }
+
+  const hasFailure = credentialFindings > 0;
+  return { exitCode: hasFailure ? 1 : 0, result };
+}

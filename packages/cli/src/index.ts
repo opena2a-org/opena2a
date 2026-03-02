@@ -161,6 +161,41 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
+  // Shield command (unified workstation security)
+  program
+    .command('shield <subcommand>')
+    .description('Unified workstation security (init|status|log|evaluate|selfcheck|recover)')
+    .option('--dir <path>', 'Target directory')
+    .option('--agent <name>', 'Filter by agent name')
+    .option('--count <n>', 'Number of entries (log)')
+    .option('--since <date>', 'Filter since date: ISO 8601 or relative (7d, 1w)')
+    .option('--severity <level>', 'Minimum severity: info, low, medium, high, critical')
+    .option('--source <name>', 'Filter by event source')
+    .option('--category <name>', 'Filter by event category')
+    .option('--verify', 'Verify integrity and exit lockdown (recover)')
+    .option('--reset', 'Reset all integrity hashes and hooks (recover)')
+    .option('--forensic', 'Export forensic evidence bundle (recover)')
+    .action(async (subcommand: string, opts) => {
+      const { shield } = await import('./commands/shield.js');
+      const globalOpts = program.opts();
+      process.exitCode = await shield({
+        subcommand: subcommand as 'init' | 'status' | 'log' | 'evaluate' | 'selfcheck' | 'recover',
+        targetDir: opts.dir,
+        agent: opts.agent,
+        count: opts.count ? parseInt(opts.count, 10) : undefined,
+        since: opts.since,
+        severity: opts.severity,
+        source: opts.source,
+        category: opts.category,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        verify: opts.verify,
+        reset: opts.reset,
+        forensic: opts.forensic,
+      });
+    });
+
   // Self-register command
   program
     .command('self-register')
