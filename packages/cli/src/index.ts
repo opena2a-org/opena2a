@@ -66,6 +66,28 @@ async function main(): Promise<void> {
     }
   }
 
+  // Self-register command
+  program
+    .command('self-register')
+    .description('Register OpenA2A tools in the public registry with security scan results')
+    .option('--registry-url <url>', 'Registry URL')
+    .option('--skip-scan', 'Skip HMA scanning, register metadata only')
+    .option('--only <tools>', 'Comma-separated tool names')
+    .option('--dry-run', 'Show what would happen without making changes')
+    .action(async (opts) => {
+      const { selfRegister } = await import('./commands/self-register.js');
+      const globalOpts = program.opts();
+      process.exitCode = await selfRegister({
+        registryUrl: opts.registryUrl,
+        skipScan: opts.skipScan,
+        only: opts.only?.split(','),
+        dryRun: opts.dryRun,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Config command
   program
     .command('config <action> [key] [value]')
