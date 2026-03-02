@@ -23,6 +23,7 @@ export interface RuntimeOptions {
   ci?: boolean;
   format?: 'text' | 'json';
   verbose?: boolean;
+  force?: boolean;
 }
 
 interface RuntimeStatus {
@@ -224,12 +225,12 @@ async function runtimeInit(targetDir: string, options: RuntimeOptions): Promise<
   const project = detectProject(targetDir);
   const configPath = path.join(targetDir, 'arp.yaml');
 
-  if (fs.existsSync(configPath) && !options.verbose) {
+  if (fs.existsSync(configPath) && !options.force) {
     if (isJson) {
       process.stdout.write(JSON.stringify({ exists: true, path: configPath }, null, 2) + '\n');
     } else {
       process.stdout.write(yellow(`Config already exists: ${configPath}\n`));
-      process.stdout.write(dim('Use --verbose to overwrite.\n'));
+      process.stdout.write(dim('Use --force to overwrite.\n'));
     }
     return 0;
   }

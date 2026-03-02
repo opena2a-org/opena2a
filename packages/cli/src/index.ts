@@ -8,8 +8,9 @@ import { handleContext } from './contextual/index.js';
 import { handleNaturalLanguage } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY } from './adapters/registry.js';
+import { getVersion } from './util/version.js';
 
-const VERSION = '0.1.0';
+const VERSION = getVersion();
 
 async function main(): Promise<void> {
   const program = new Command();
@@ -142,8 +143,9 @@ Learn more: https://opena2a.org/docs`);
     .command('runtime <subcommand>')
     .description('Agent runtime protection (start|status|tail|init)')
     .option('--config <path>', 'Path to ARP config file')
-    .option('--count <n>', 'Number of events to show (tail)')
+    .option('--count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
+    .option('--force', 'Overwrite existing config (init)')
     .action(async (subcommand: string, opts) => {
       const { runtime } = await import('./commands/runtime.js');
       const globalOpts = program.opts();
@@ -155,6 +157,7 @@ Learn more: https://opena2a.org/docs`);
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
+        force: opts.force,
       });
     });
 
@@ -222,6 +225,11 @@ Learn more: https://opena2a.org/docs`);
   program
     .command('config <action> [key] [value]')
     .description('Manage OpenA2A configuration')
+    .addHelpText('after', `
+Valid actions:
+  show                  Display current configuration
+  contribute [on|off]   Enable or disable community data contributions
+  llm [on|off]          Enable or disable LLM-powered features`)
     .action(async (action: string, key?: string, value?: string) => {
       const shared = await import('@opena2a/shared');
       const { loadUserConfig, saveUserConfig, setContributeEnabled } = 'default' in shared ? (shared as any).default : shared;

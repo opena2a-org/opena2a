@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { bold, green, yellow, red, dim, gray, cyan } from '../util/colors.js';
@@ -118,7 +119,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
       filePath: relPath,
       hash,
       signedAt: new Date().toISOString(),
-      signedBy: 'opena2a-cli',
+      signedBy: os.userInfo().username + '@opena2a-cli',
       fileSize: stat.size,
     });
   }
@@ -230,7 +231,7 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     printVerifyReport(report);
   }
 
-  return report.tampered > 0 ? 1 : 0;
+  return (report.tampered > 0 || report.missing > 0) ? 1 : 0;
 }
 
 // --- Status ---

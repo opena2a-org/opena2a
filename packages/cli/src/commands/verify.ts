@@ -258,7 +258,7 @@ async function verifyPackage(
   }
 
   // Step 4: Query trust profile and oracle verdict (parallel, non-blocking)
-  const type = packageName.startsWith('@') ? 'ai_tool' : 'ai_tool';
+  const type = packageName.startsWith('@') ? 'mcp_server' : 'ai_tool';
   const [trustProfile, oracle] = await Promise.all([
     queryTrustProfile(registryUrl, packageName, type),
     queryOracleVerdict(registryUrl, packageName),

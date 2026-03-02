@@ -11,6 +11,7 @@ import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject } from '../util/detect.js';
 import { quickCredentialScan } from '../util/credential-patterns.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
+import { getVersion } from '../util/version.js';
 
 // --- Types ---
 
@@ -150,7 +151,8 @@ export async function init(options: InitOptions): Promise<number> {
     }
   }
 
-  return 0;
+  const hasCritical = nextSteps.some(s => s.severity === 'critical');
+  return hasCritical ? 1 : 0;
 }
 
 // --- Hygiene checks ---
@@ -335,7 +337,7 @@ function formatProjectType(project: ReturnType<typeof detectProject>): string {
 }
 
 function printReport(report: InitReport, _verbose?: boolean): void {
-  const VERSION = '0.1.0';
+  const VERSION = getVersion();
 
   process.stdout.write('\n');
   process.stdout.write(bold('  OpenA2A Security Initialization') + dim(`  v${VERSION}`) + '\n\n');

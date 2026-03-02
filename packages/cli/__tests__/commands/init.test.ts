@@ -64,7 +64,7 @@ describe('init', () => {
       format: 'json',
     }));
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1); // critical next step: migrate credentials
     const report = JSON.parse(output);
     expect(report.credentialFindings).toBeGreaterThan(0);
     expect(report.trustScore).toBeLessThan(90);
