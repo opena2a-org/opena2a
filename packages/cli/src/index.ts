@@ -26,6 +26,7 @@ async function main(): Promise<void> {
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
     .addHelpText('after', `
 Quick Start:
+  $ opena2a shield init          Unified security setup (scan, policy, hooks)
   $ opena2a init                 Assess your project's security posture
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
@@ -160,6 +161,33 @@ Learn more: https://opena2a.org/docs`);
         format: globalOpts.format,
         verbose: globalOpts.verbose,
         force: opts.force,
+      });
+    });
+
+  // Shield command (unified security orchestration)
+  program
+    .command('shield <subcommand>')
+    .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report)')
+    .option('--dir <path>', 'Target directory')
+    .option('--agent <name>', 'Agent name filter')
+    .option('--count <n>', 'Event count (log)')
+    .option('--since <timespec>', 'Time filter: 7d, 1w, 1m, ISO 8601')
+    .option('--severity <level>', 'Severity filter')
+    .option('--source <source>', 'Source filter')
+    .option('--category <cat>', 'Category filter')
+    .option('--verify', 'Verify before recovering')
+    .option('--reset', 'Force exit lockdown')
+    .option('--forensic', 'Forensic mode')
+    .option('--analyze', 'Enable LLM analysis')
+    .action(async (subcommand: string, opts) => {
+      const { shield } = await import('./commands/shield.js');
+      const globalOpts = program.opts();
+      process.exitCode = await shield({
+        subcommand,
+        ...opts,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
       });
     });
 
