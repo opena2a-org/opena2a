@@ -167,7 +167,7 @@ Learn more: https://opena2a.org/docs`);
   // Shield command (unified security orchestration)
   program
     .command('shield <subcommand>')
-    .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report)')
+    .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report|session|suggest|explain|triage)')
     .option('--dir <path>', 'Target directory')
     .option('--agent <name>', 'Agent name filter')
     .option('--count <n>', 'Event count (log)')
