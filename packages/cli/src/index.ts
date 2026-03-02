@@ -88,12 +88,28 @@ async function main(): Promise<void> {
             process.stdout.write(`Consented: ${config.contribute.consentedAt}\n`);
           }
         }
+      } else if (action === 'llm') {
+        const { setLlmEnabled: setLlm } = 'default' in shared ? (shared as any).default : shared;
+        if (key === 'on') {
+          setLlm(true);
+          process.stdout.write('LLM features enabled.\n');
+        } else if (key === 'off') {
+          setLlm(false);
+          process.stdout.write('LLM features disabled.\n');
+        } else {
+          const config = loadUserConfig();
+          process.stdout.write(`LLM features: ${config.llm.enabled ? 'enabled' : 'disabled'}\n`);
+          if (config.llm.consentedAt) {
+            process.stdout.write(`Consented: ${config.llm.consentedAt}\n`);
+          }
+        }
       } else if (action === 'show') {
         const config = loadUserConfig();
         process.stdout.write(JSON.stringify(config, null, 2) + '\n');
       } else {
         process.stderr.write(`Unknown config action: ${action}\n`);
-        process.stderr.write('Usage: opena2a config contribute on|off|status\n');
+        process.stderr.write('Usage: opena2a config contribute on|off\n');
+        process.stderr.write('       opena2a config llm on|off\n');
         process.stderr.write('       opena2a config show\n');
         process.exitCode = 1;
       }

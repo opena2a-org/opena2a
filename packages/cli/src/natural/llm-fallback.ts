@@ -1,4 +1,4 @@
-import { bold, cyan, yellow, gray } from '../util/colors.js';
+import { bold, cyan, yellow, gray, dim, green } from '../util/colors.js';
 
 const SYSTEM_PROMPT = `You are OpenA2A CLI, an AI agent security platform. Given a user's natural language query, suggest the most appropriate CLI command.
 
@@ -27,9 +27,70 @@ interface LLMSuggestion {
   reason: string;
 }
 
+/**
+ * Check if LLM features have been consented to. If not, prompt for consent
+ * on first encounter (TTY only). Returns true if LLM calls are allowed.
+ */
+async function ensureLlmConsent(): Promise<boolean> {
+  // Non-TTY or CI: no consent possible
+  if (!process.stdin.isTTY || process.env.CI) {
+    return false;
+  }
+
+  // Check existing consent
+  try {
+    const shared = await import('@opena2a/shared');
+    const mod = 'default' in shared ? (shared as any).default : shared;
+
+    if (mod.isLlmEnabled()) {
+      return true;
+    }
+
+    // First encounter: explain and ask
+    process.stdout.write('\n' + bold('LLM-assisted command matching') + '\n\n');
+    process.stdout.write(
+      'When your input does not match any known command, OpenA2A can\n' +
+      'use Claude Haiku to suggest the best match.\n\n'
+    );
+    process.stdout.write(dim('Model: ') + 'Claude Haiku (claude-haiku-4-5)\n');
+    process.stdout.write(dim('Estimated cost: ') + '~150 tokens, ~$0.0002 per call\n');
+    process.stdout.write(dim('Data: ') + 'Uses your ANTHROPIC_API_KEY. No data is stored or shared.\n\n');
+
+    try {
+      const { confirm } = await import('@inquirer/prompts');
+      const enabled = await confirm({
+        message: 'Enable LLM-assisted command matching?',
+        default: false,
+      });
+
+      mod.setLlmEnabled(enabled);
+
+      if (enabled) {
+        process.stdout.write(green('LLM features enabled.') + '\n\n');
+        return true;
+      } else {
+        process.stdout.write(dim('LLM features disabled. ') +
+          'You can enable later: ' + cyan('opena2a config llm on') + '\n\n');
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  } catch {
+    // shared not available, allow LLM (backward compat)
+    return true;
+  }
+}
+
 export async function llmFallback(input: string): Promise<LLMSuggestion | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
+    return null;
+  }
+
+  // Check consent before making API call
+  const consented = await ensureLlmConsent();
+  if (!consented) {
     return null;
   }
 

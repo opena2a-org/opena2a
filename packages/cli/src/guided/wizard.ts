@@ -90,6 +90,12 @@ export async function runWizard(): Promise<string | null> {
       choices: commandChoices,
     });
 
+    // Intercept attack mode to provide guided walkthrough
+    if (selectedCommand === 'opena2a scan attack') {
+      const { runAttackWalkthrough } = await import('./attack-walkthrough.js');
+      return runAttackWalkthrough();
+    }
+
     // Show the expert command
     process.stdout.write(`\n${gray('Next time:')} ${cyan(selectedCommand)}\n\n`);
 

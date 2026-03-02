@@ -35,6 +35,10 @@ interface CredentialMatch {
   severity: string;
   /** Human-readable title */
   title: string;
+  /** Plain-language explanation of the risk */
+  explanation?: string;
+  /** Business impact description */
+  businessImpact?: string;
 }
 
 interface MigrationResult {
@@ -82,6 +86,8 @@ export interface ProtectOptions {
   format?: 'text' | 'json';
   /** Skip verification re-scan */
   skipVerify?: boolean;
+  /** Path to write interactive HTML report */
+  report?: string;
 }
 
 // --- Credential patterns ---
@@ -92,6 +98,8 @@ interface CredentialPattern {
   pattern: RegExp;
   envVarPrefix: string;
   severity: string;
+  explanation: string;
+  businessImpact: string;
 }
 
 const CREDENTIAL_PATTERNS: CredentialPattern[] = [
@@ -101,6 +109,8 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     pattern: /sk-ant-api\d{2}-[A-Za-z0-9_-]{80,}/g,
     envVarPrefix: 'ANTHROPIC_API_KEY',
     severity: 'critical',
+    explanation: 'Anthropic API key hardcoded in source. Anyone who reads this file can use your Anthropic account and access Claude models.',
+    businessImpact: 'Thousands in unauthorized API charges within hours. Bots actively scan for exposed keys in public repos.',
   },
   {
     id: 'CRED-002',
@@ -108,6 +118,8 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     pattern: /sk-[A-Za-z0-9]{20,}/g,
     envVarPrefix: 'OPENAI_API_KEY',
     severity: 'critical',
+    explanation: 'OpenAI API key hardcoded in source. Grants full API access to anyone with the source code.',
+    businessImpact: 'Unauthorized model usage, data extraction, and billing abuse. Exposed keys are exploited within minutes.',
   },
   {
     id: 'DRIFT-001',
@@ -115,6 +127,8 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     pattern: /AIza[0-9A-Za-z_-]{35}/g,
     envVarPrefix: 'GOOGLE_API_KEY',
     severity: 'high',
+    explanation: 'Google API key may have been provisioned for Maps but also grants Gemini AI access. Scope drift means the key can do more than intended.',
+    businessImpact: 'Attacker could run AI workloads billed to your account. Cross-service scope drift means you pay for services you did not authorize.',
   },
   {
     id: 'DRIFT-002',
@@ -122,6 +136,8 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     pattern: /AKIA[0-9A-Z]{16}/g,
     envVarPrefix: 'AWS_ACCESS_KEY_ID',
     severity: 'high',
+    explanation: 'AWS access key may grant Bedrock LLM access beyond its intended S3/EC2 scope. IAM policies often over-provision.',
+    businessImpact: 'Cross-service privilege escalation. AI model invocations billed to your account. Potential data exfiltration via Bedrock.',
   },
   {
     id: 'CRED-003',
@@ -129,6 +145,8 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g,
     envVarPrefix: 'GITHUB_TOKEN',
     severity: 'high',
+    explanation: 'GitHub token hardcoded in source. Grants repository access, potentially including private repos and org resources.',
+    businessImpact: 'Code theft, supply chain injection via unauthorized commits, and access to private repositories.',
   },
   {
     id: 'CRED-004',
@@ -136,6 +154,8 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     pattern: /(?:api[_-]?key|apikey|secret[_-]?key)\s*[:=]\s*['"]([A-Za-z0-9_\-/.]{20,})['"]/gi,
     envVarPrefix: 'API_KEY',
     severity: 'medium',
+    explanation: 'Generic API key found in a variable assignment. The pattern suggests a secret intended for environment variables, not source code.',
+    businessImpact: 'Depends on the service -- could expose billing, data, or administrative access. Rotate immediately.',
   },
 ];
 
@@ -214,6 +234,20 @@ export async function protect(options: ProtectOptions): Promise<number> {
       m.envVar,
     ]);
     process.stdout.write(table(findingsRows, ['Severity', 'ID', 'Type', 'Location', 'Env Var']) + '\n\n');
+
+    // Show detailed explanations (non-CI only)
+    if (!options.ci) {
+      for (const m of matches) {
+        process.stdout.write(bold(`${m.findingId}: ${m.title}`) + '\n');
+        if (m.explanation) {
+          process.stdout.write(dim('  Why: ') + m.explanation + '\n');
+        }
+        if (m.businessImpact) {
+          process.stdout.write(dim('  Impact: ') + yellow(m.businessImpact) + '\n');
+        }
+        process.stdout.write('\n');
+      }
+    }
   }
 
   if (options.dryRun) {
@@ -221,6 +255,12 @@ export async function protect(options: ProtectOptions): Promise<number> {
       process.stdout.write(yellow('[DRY RUN] Would migrate the above credentials.\n'));
       process.stdout.write(dim('Run without --dry-run to apply changes.\n'));
     }
+
+    // Generate HTML report even in dry-run mode
+    if (options.report) {
+      await writeHtmlReport(options.report, targetDir, matches, isJson);
+    }
+
     return 0;
   }
 
@@ -281,6 +321,24 @@ export async function protect(options: ProtectOptions): Promise<number> {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
     printReport(report);
+
+    // Offer 1Password migration after successful credential migration
+    if (report.migrated > 0 && !options.ci) {
+      try {
+        const { offer1PasswordMigration } = await import('./onepassword-migration.js');
+        await offer1PasswordMigration({
+          credentialCount: report.migrated,
+          ci: options.ci,
+        });
+      } catch {
+        // 1Password migration module not critical -- skip silently
+      }
+    }
+  }
+
+  // Generate interactive HTML report if --report path provided
+  if (options.report) {
+    await writeHtmlReport(options.report, targetDir, matches, isJson);
   }
 
   return failed > 0 ? 1 : 0;
@@ -333,6 +391,8 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
             envVar,
             severity: pattern.severity,
             title: pattern.title,
+            explanation: pattern.explanation,
+            businessImpact: pattern.businessImpact,
           });
         }
       }
@@ -710,6 +770,68 @@ function printReport(report: ProtectReport): void {
 }
 
 // --- Utilities ---
+
+async function writeHtmlReport(
+  reportPath: string,
+  targetDir: string,
+  matches: CredentialMatch[],
+  quiet: boolean
+): Promise<void> {
+  try {
+    const { generateInteractiveHtml } = await import('../report/interactive-html.js');
+    const reportData = {
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        toolVersion: '0.1.0',
+        targetName: path.basename(targetDir),
+        scanType: 'protect',
+      },
+      summary: {
+        totalFindings: matches.length,
+        bySeverity: countBySeverity(matches),
+        score: calculateScore(matches),
+      },
+      findings: matches.map(m => ({
+        id: m.findingId,
+        severity: m.severity as 'critical' | 'high' | 'medium' | 'low' | 'info',
+        title: m.title,
+        description: `Hardcoded ${m.title} found in source code.`,
+        explanation: m.explanation,
+        businessImpact: m.businessImpact,
+        category: m.findingId.startsWith('DRIFT') ? 'Scope Drift' : 'Credential Exposure',
+        file: path.relative(targetDir, m.filePath),
+        line: m.line,
+        fix: `Replace with environment variable: ${m.envVar}`,
+        passed: false,
+      })),
+    };
+    const html = generateInteractiveHtml(reportData);
+    fs.writeFileSync(reportPath, html, 'utf-8');
+    if (!quiet) {
+      process.stdout.write(green(`\nHTML report written to ${reportPath}\n`));
+    }
+  } catch (err) {
+    process.stderr.write(red(`Failed to generate HTML report: ${err instanceof Error ? err.message : String(err)}\n`));
+  }
+}
+
+function countBySeverity(matches: CredentialMatch[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const m of matches) {
+    counts[m.severity] = (counts[m.severity] || 0) + 1;
+  }
+  return counts;
+}
+
+function calculateScore(matches: CredentialMatch[]): number {
+  if (matches.length === 0) return 100;
+  const weights: Record<string, number> = { critical: 25, high: 15, medium: 8, low: 3, info: 1 };
+  let penalty = 0;
+  for (const m of matches) {
+    penalty += weights[m.severity] || 5;
+  }
+  return Math.max(0, 100 - penalty);
+}
 
 function findProjectRoot(startPath: string): string | null {
   let dir = path.dirname(startPath);

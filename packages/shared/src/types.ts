@@ -24,4 +24,6 @@ export interface Finding {
   file?: string;
   line?: number;
   remediation?: string;
+  explanation?: string;
+  businessImpact?: string;
 }
