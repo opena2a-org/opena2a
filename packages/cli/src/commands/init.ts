@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject } from '../util/detect.js';
 import { quickCredentialScan } from '../util/credential-patterns.js';
+import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 
 // --- Types ---
 
@@ -43,6 +44,7 @@ interface InitReport {
   trustScore: number;
   grade: string;
   nextSteps: NextStep[];
+  advisories: { count: number; matchedPackages: string[] };
 }
 
 // --- Core ---
@@ -68,13 +70,21 @@ export async function init(options: InitOptions): Promise<number> {
   // 3. Security hygiene checks
   const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
 
-  // 4. Calculate trust score
+  // 4. Check advisories (non-blocking)
+  let advisoryCheck: AdvisoryCheck = { advisories: [], matchedPackages: [], total: 0, fromCache: false };
+  try {
+    advisoryCheck = await checkAdvisories(targetDir);
+  } catch {
+    // Advisory check is best-effort, don't fail init
+  }
+
+  // 5. Calculate trust score
   const { score, grade } = calculateTrustScore(credsBySeverity, checks, targetDir);
 
-  // 5. Generate next steps
+  // 6. Generate next steps
   const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks);
 
-  // 6. Build report
+  // 7. Build report
   const report: InitReport = {
     projectName: project.name,
     projectVersion: project.version,
@@ -86,13 +96,21 @@ export async function init(options: InitOptions): Promise<number> {
     trustScore: score,
     grade,
     nextSteps,
+    advisories: {
+      count: advisoryCheck.advisories.length,
+      matchedPackages: advisoryCheck.matchedPackages,
+    },
   };
 
-  // 7. Output
+  // 8. Output
   if (options.format === 'json') {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
     printReport(report);
+    // Show advisory warnings after main report
+    if (advisoryCheck.advisories.length > 0) {
+      printAdvisoryWarnings(advisoryCheck);
+    }
   }
 
   return 0;
