@@ -43,7 +43,7 @@ export interface ResolvedPackage {
 
 const VERIFIABLE_PACKAGES = [
   'hackmyagent', 'secretless-ai', 'hma-researcher', 'hma-hunter',
-  '@opena2a/arp', '@opena2a/oasb', 'aibrowserguard', 'ai-trust',
+  'aibrowserguard', 'ai-trust',
 ];
 
 // --- Testable internals ---
