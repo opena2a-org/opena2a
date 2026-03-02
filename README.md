@@ -18,7 +18,14 @@ Credential detection, scope drift analysis, config integrity, runtime monitoring
 ## Install
 
 ```bash
-npx opena2a init
+# Try without installing
+npx opena2a-cli init
+
+# Install globally
+npm install -g opena2a-cli
+
+# Homebrew (macOS/Linux)
+brew tap opena2a-org/tap && brew install opena2a
 ```
 
 No configuration required. Works with Node.js, Python, Go, and MCP server projects.
@@ -201,8 +208,6 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
 | `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
-| `opena2a research` | [HMA Researcher](https://github.com/opena2a-org/hma-researcher) | Autonomous security research agent |
-| `opena2a hunt` | [HMA Hunter](https://github.com/opena2a-org/hma-hunter) | Multi-turn attack decomposition |
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 | `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |
@@ -218,16 +223,16 @@ All commands support `--format json` and `--ci` flags for pipeline integration:
 ```yaml
 # GitHub Actions example
 - name: Security assessment
-  run: npx opena2a init --ci --format json > security-report.json
+  run: npx opena2a-cli init --ci --format json > security-report.json
 
 - name: Credential check
   run: |
-    npx opena2a protect --dry-run --ci --format json > cred-report.json
+    npx opena2a-cli protect --dry-run --ci --format json > cred-report.json
     # Fail if credentials found
     jq -e '.totalFound == 0' cred-report.json
 
 - name: Config integrity
-  run: npx opena2a guard verify --ci
+  run: npx opena2a-cli guard verify --ci
 ```
 
 ## Output Formats
@@ -256,8 +261,6 @@ opena2a CLI
        +-- secrets   -> secretless-ai
        +-- benchmark -> @opena2a/oasb
        +-- registry  -> ai-trust
-       +-- research  -> hma-researcher
-       +-- hunt      -> hma-hunter
        +-- train     -> opena2a/dvaa (Docker)
        +-- crypto    -> cryptoserve (Python)
        +-- identity  -> aim
