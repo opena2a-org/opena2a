@@ -206,13 +206,13 @@ The CLI orchestrates these specialized tools through a unified interface:
 |---------|------|------|-------------|
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Credential management for AI coding tools |
+| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Identity-aware credential broker daemon |
+| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Data loss prevention for AI tool transcripts |
+| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity management |
 | `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | [docs](https://opena2a.org/docs/oasb) | 222 attack scenarios, compliance scoring |
 | `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | | Trust Registry queries, package verification |
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | [docs](https://opena2a.org/docs/dvaa) | Vulnerable AI agent for training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | [docs](https://opena2a.org/docs/cryptoserve) | Cryptographic inventory, PQC readiness |
-| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity management |
-| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Identity-aware credential broker daemon |
-| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Data loss prevention for AI tool transcripts |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
 
@@ -259,13 +259,13 @@ opena2a CLI
   +-- Adapters (install on first use)
        +-- scan      -> hackmyagent
        +-- secrets   -> secretless-ai
+       +-- broker    -> secretless-ai
+       +-- dlp       -> secretless-ai
+       +-- identity  -> aim
        +-- benchmark -> @opena2a/oasb
        +-- registry  -> ai-trust
        +-- train     -> opena2a/dvaa (Docker)
        +-- crypto    -> cryptoserve (Python)
-       +-- identity  -> aim
-       +-- broker    -> secretless-ai
-       +-- dlp       -> secretless-ai
 ```
 
 ## Credential Patterns
