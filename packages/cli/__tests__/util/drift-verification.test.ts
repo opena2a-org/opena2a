@@ -142,11 +142,11 @@ describe('verifyGeminiAccess', () => {
   it('calls the correct Google API endpoint', async () => {
     mockFetch.mockResolvedValueOnce({ status: 403 });
 
-    await verifyGeminiAccess('AIzaMyTestKey1234567890');
+    await verifyGeminiAccess('AIzaFAKEKEYfortesting00');
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models?key=AIzaMyTestKey1234567890');
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models?key=AIzaFAKEKEYfortesting00');
     expect(opts.method).toBe('GET');
     expect(opts.headers['User-Agent']).toBe('opena2a-drift-check/1.0');
   });

@@ -1,0 +1,6 @@
+[allowlist]
+  description = "Allowlist for test files with fake credentials"
+  paths = [
+    '''__tests__/.*\.test\.ts$''',
+    '''__tests__/.*\.test\.js$''',
+  ]
