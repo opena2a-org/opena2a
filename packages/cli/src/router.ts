@@ -89,9 +89,45 @@ export async function dispatchCommand(
     });
   }
 
+  // Handle 'init' directly (not adapter-based)
+  if (command === 'init') {
+    const { init } = await import('./commands/init.js');
+    return init({
+      targetDir: args[0] ?? process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as 'text' | 'json') ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'guard' directly (ConfigGuard)
+  if (command === 'guard') {
+    const { guard } = await import('./commands/guard.js');
+    const subcommand = args[0] ?? 'status';
+    return guard({
+      subcommand: subcommand as 'sign' | 'verify' | 'status',
+      targetDir: process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as 'text' | 'json') ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'runtime' directly (ARP wrapper)
+  if (command === 'runtime') {
+    const { runtime } = await import('./commands/runtime.js');
+    const subcommand = args[0] ?? 'status';
+    return runtime({
+      subcommand: subcommand as 'start' | 'status' | 'tail' | 'init',
+      targetDir: process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as 'text' | 'json') ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
-    init: { adapter: 'scan', defaultArgs: ['init'] },
     check: { adapter: 'scan', defaultArgs: ['secure'] },
     status: { adapter: 'scan', defaultArgs: ['status'] },
     publish: { adapter: 'registry', defaultArgs: ['check'] },

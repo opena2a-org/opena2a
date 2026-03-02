@@ -1,0 +1,340 @@
+/**
+ * opena2a init -- Initialize security posture assessment for a project.
+ *
+ * Detects project type, scans for credentials, checks hygiene,
+ * calculates trust score, and generates prioritized next steps.
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
+import { detectProject } from '../util/detect.js';
+import { quickCredentialScan } from '../util/credential-patterns.js';
+
+// --- Types ---
+
+export interface InitOptions {
+  targetDir?: string;
+  ci?: boolean;
+  format?: 'text' | 'json';
+  verbose?: boolean;
+}
+
+interface HygieneCheck {
+  label: string;
+  status: 'pass' | 'warn' | 'fail' | 'info';
+  detail: string;
+}
+
+interface NextStep {
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description: string;
+  command: string;
+}
+
+interface InitReport {
+  projectName: string | null;
+  projectVersion: string | null;
+  projectType: string;
+  directory: string;
+  credentialFindings: number;
+  credentialsBySeverity: Record<string, number>;
+  hygieneChecks: HygieneCheck[];
+  trustScore: number;
+  grade: string;
+  nextSteps: NextStep[];
+}
+
+// --- Core ---
+
+export async function init(options: InitOptions): Promise<number> {
+  const targetDir = path.resolve(options.targetDir ?? process.cwd());
+
+  if (!fs.existsSync(targetDir)) {
+    process.stderr.write(red(`Directory not found: ${targetDir}\n`));
+    return 1;
+  }
+
+  // 1. Detect project type
+  const project = detectProject(targetDir);
+
+  // 2. Quick credential scan
+  const credentialMatches = quickCredentialScan(targetDir);
+  const credsBySeverity: Record<string, number> = {};
+  for (const m of credentialMatches) {
+    credsBySeverity[m.severity] = (credsBySeverity[m.severity] || 0) + 1;
+  }
+
+  // 3. Security hygiene checks
+  const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
+
+  // 4. Calculate trust score
+  const { score, grade } = calculateTrustScore(credsBySeverity, checks, targetDir);
+
+  // 5. Generate next steps
+  const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks);
+
+  // 6. Build report
+  const report: InitReport = {
+    projectName: project.name,
+    projectVersion: project.version,
+    projectType: formatProjectType(project),
+    directory: targetDir,
+    credentialFindings: credentialMatches.length,
+    credentialsBySeverity: credsBySeverity,
+    hygieneChecks: checks,
+    trustScore: score,
+    grade,
+    nextSteps,
+  };
+
+  // 7. Output
+  if (options.format === 'json') {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  } else {
+    printReport(report);
+  }
+
+  return 0;
+}
+
+// --- Hygiene checks ---
+
+function runHygieneChecks(
+  dir: string,
+  project: ReturnType<typeof detectProject>,
+  credCount: number,
+): HygieneCheck[] {
+  const checks: HygieneCheck[] = [];
+
+  // Credential scan result
+  if (credCount === 0) {
+    checks.push({ label: 'Credential scan', status: 'pass', detail: 'no findings' });
+  } else {
+    checks.push({
+      label: 'Credential scan',
+      status: 'fail',
+      detail: `${credCount} finding${credCount === 1 ? '' : 's'}`,
+    });
+  }
+
+  // .gitignore
+  const gitignorePath = path.join(dir, '.gitignore');
+  if (fs.existsSync(gitignorePath)) {
+    checks.push({ label: '.gitignore', status: 'pass', detail: 'present' });
+
+    // .env protection
+    const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+    if (gitignoreContent.includes('.env')) {
+      checks.push({ label: '.env protection', status: 'pass', detail: 'in .gitignore' });
+    } else {
+      checks.push({ label: '.env protection', status: 'warn', detail: 'NOT in .gitignore' });
+    }
+  } else {
+    checks.push({ label: '.gitignore', status: 'warn', detail: 'missing' });
+    checks.push({ label: '.env protection', status: 'warn', detail: 'no .gitignore' });
+  }
+
+  // Lock file
+  const lockFiles = [
+    { file: 'package-lock.json', label: 'package-lock.json' },
+    { file: 'yarn.lock', label: 'yarn.lock' },
+    { file: 'pnpm-lock.yaml', label: 'pnpm-lock.yaml' },
+    { file: 'bun.lockb', label: 'bun.lockb' },
+    { file: 'go.sum', label: 'go.sum' },
+    { file: 'poetry.lock', label: 'poetry.lock' },
+    { file: 'Pipfile.lock', label: 'Pipfile.lock' },
+  ];
+  const foundLock = lockFiles.find(lf => fs.existsSync(path.join(dir, lf.file)));
+  if (foundLock) {
+    checks.push({ label: 'Lock file', status: 'pass', detail: foundLock.label });
+  } else {
+    checks.push({ label: 'Lock file', status: 'warn', detail: 'none found' });
+  }
+
+  // Security config
+  const securityConfigs = ['.opena2a.yaml', '.opena2a.json', '.opena2a/guard/signatures.json'];
+  const foundConfig = securityConfigs.find(sc => fs.existsSync(path.join(dir, sc)));
+  if (foundConfig) {
+    checks.push({ label: 'Security config', status: 'pass', detail: foundConfig });
+  } else {
+    checks.push({ label: 'Security config', status: 'info', detail: 'none' });
+  }
+
+  // MCP config
+  if (project.hasMcp) {
+    checks.push({ label: 'MCP config', status: 'info', detail: 'found' });
+  }
+
+  return checks;
+}
+
+// --- Trust score ---
+
+function calculateTrustScore(
+  credsBySeverity: Record<string, number>,
+  checks: HygieneCheck[],
+  dir: string,
+): { score: number; grade: string } {
+  let score = 100;
+
+  // Credential penalties
+  score -= (credsBySeverity['critical'] || 0) * 25;
+  score -= (credsBySeverity['high'] || 0) * 15;
+  score -= (credsBySeverity['medium'] || 0) * 8;
+  score -= (credsBySeverity['low'] || 0) * 3;
+
+  // Hygiene penalties
+  const gitignoreCheck = checks.find(c => c.label === '.gitignore');
+  if (gitignoreCheck?.status !== 'pass') score -= 15;
+
+  const envCheck = checks.find(c => c.label === '.env protection');
+  if (envCheck?.status === 'warn') score -= 10;
+
+  const lockCheck = checks.find(c => c.label === 'Lock file');
+  if (lockCheck?.status !== 'pass') score -= 5;
+
+  // Bonus for security config
+  const secConfig = checks.find(c => c.label === 'Security config');
+  if (secConfig?.status === 'pass') score += 5;
+
+  score = Math.max(0, Math.min(100, score));
+
+  let grade: string;
+  if (score >= 90) grade = 'A';
+  else if (score >= 80) grade = 'B';
+  else if (score >= 70) grade = 'C';
+  else if (score >= 60) grade = 'D';
+  else grade = 'F';
+
+  return { score, grade };
+}
+
+// --- Next steps ---
+
+function generateNextSteps(
+  credCount: number,
+  credsBySeverity: Record<string, number>,
+  checks: HygieneCheck[],
+): NextStep[] {
+  const steps: NextStep[] = [];
+
+  // Credentials -> protect
+  if (credCount > 0) {
+    steps.push({
+      severity: 'critical',
+      description: `Migrate ${credCount} hardcoded credential${credCount === 1 ? '' : 's'}`,
+      command: 'opena2a protect',
+    });
+  }
+
+  // .env protection
+  const envCheck = checks.find(c => c.label === '.env protection');
+  if (envCheck?.status === 'warn') {
+    steps.push({
+      severity: 'high',
+      description: 'Add .env to .gitignore',
+      command: "echo '.env' >> .gitignore",
+    });
+  }
+
+  // No .gitignore
+  const gitignoreCheck = checks.find(c => c.label === '.gitignore');
+  if (gitignoreCheck?.status !== 'pass') {
+    steps.push({
+      severity: 'high',
+      description: 'Create .gitignore',
+      command: 'npx gitignore node',
+    });
+  }
+
+  // Sign config files
+  steps.push({
+    severity: 'medium',
+    description: 'Sign config files for integrity',
+    command: 'opena2a guard sign',
+  });
+
+  // Runtime protection
+  steps.push({
+    severity: 'low',
+    description: 'Start runtime protection',
+    command: 'opena2a runtime start',
+  });
+
+  return steps;
+}
+
+// --- Output ---
+
+function formatProjectType(project: ReturnType<typeof detectProject>): string {
+  const parts: string[] = [];
+  switch (project.type) {
+    case 'node': parts.push('Node.js'); break;
+    case 'go': parts.push('Go'); break;
+    case 'python': parts.push('Python'); break;
+    default: parts.push('Unknown');
+  }
+  if (project.hasMcp) parts.push('+ MCP server');
+  return parts.join(' ');
+}
+
+function printReport(report: InitReport): void {
+  const VERSION = '0.1.0';
+
+  process.stdout.write('\n');
+  process.stdout.write(bold('  OpenA2A Security Initialization') + dim(`  v${VERSION}`) + '\n\n');
+
+  // Project info
+  const projectDisplay = report.projectName
+    ? `${report.projectName}${report.projectVersion ? ' v' + report.projectVersion : ''}`
+    : path.basename(report.directory);
+
+  process.stdout.write(`  ${dim('Project')}      ${projectDisplay}\n`);
+  process.stdout.write(`  ${dim('Type')}         ${report.projectType}\n`);
+  process.stdout.write(`  ${dim('Directory')}    ${report.directory}\n`);
+  process.stdout.write('\n');
+
+  // Security posture
+  process.stdout.write(bold('  Security Posture') + '\n');
+  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+
+  for (const check of report.hygieneChecks) {
+    const statusDisplay = check.status === 'pass' ? green(check.detail)
+      : check.status === 'fail' ? red(check.detail)
+      : check.status === 'warn' ? yellow(check.detail)
+      : dim(check.detail);
+
+    process.stdout.write(`  ${dim(check.label.padEnd(20))} ${statusDisplay}\n`);
+  }
+
+  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+
+  // Trust score
+  const scoreColor = report.trustScore >= 80 ? green
+    : report.trustScore >= 60 ? yellow
+    : red;
+
+  process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${report.trustScore} / 100`)}  ${dim('[Grade:')} ${scoreColor(report.grade)}${dim(']')}\n`);
+  process.stdout.write('\n');
+
+  // Next steps
+  if (report.nextSteps.length > 0) {
+    process.stdout.write(bold('  Next Steps') + '\n');
+    process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+
+    for (const step of report.nextSteps) {
+      const severityTag = step.severity === 'critical' ? red(`[CRITICAL]`)
+        : step.severity === 'high' ? yellow(`[HIGH]`)
+        : step.severity === 'medium' ? cyan(`[MEDIUM]`)
+        : dim(`[LOW]`);
+
+      process.stdout.write(`  ${severityTag.padEnd(22)} ${step.description}\n`);
+      process.stdout.write(`  ${' '.repeat(12)} ${dim(step.command)}\n\n`);
+    }
+
+    process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+  }
+
+  process.stdout.write('\n');
+}

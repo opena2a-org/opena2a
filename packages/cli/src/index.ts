@@ -44,8 +44,8 @@ async function main(): Promise<void> {
       });
   }
 
-  // Intent commands
-  for (const intent of ['init', 'check', 'protect', 'status', 'publish']) {
+  // Intent commands (init is handled as a direct command below)
+  for (const intent of ['check', 'protect', 'status', 'publish']) {
     if (!ADAPTER_REGISTRY[intent]) {
       program
         .command(intent)
@@ -65,6 +65,62 @@ async function main(): Promise<void> {
         });
     }
   }
+
+  // Init command (direct, not adapter-based)
+  program
+    .command('init')
+    .description('Initialize OpenA2A security in your project')
+    .option('--dir <path>', 'Target directory')
+    .action(async (opts) => {
+      const { init } = await import('./commands/init.js');
+      const globalOpts = program.opts();
+      process.exitCode = await init({
+        targetDir: opts.dir,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
+  // Guard command (ConfigGuard)
+  program
+    .command('guard <subcommand>')
+    .description('Config file integrity signing and verification (sign|verify|status)')
+    .option('--files <files...>', 'Specific files to guard')
+    .option('--dir <path>', 'Target directory')
+    .action(async (subcommand: string, opts) => {
+      const { guard } = await import('./commands/guard.js');
+      const globalOpts = program.opts();
+      process.exitCode = await guard({
+        subcommand: subcommand as 'sign' | 'verify' | 'status',
+        files: opts.files,
+        targetDir: opts.dir,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
+  // Runtime command (ARP wrapper)
+  program
+    .command('runtime <subcommand>')
+    .description('Agent runtime protection (start|status|tail|init)')
+    .option('--config <path>', 'Path to ARP config file')
+    .option('--count <n>', 'Number of events to show (tail)')
+    .option('--dir <path>', 'Target directory')
+    .action(async (subcommand: string, opts) => {
+      const { runtime } = await import('./commands/runtime.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runtime({
+        subcommand: subcommand as 'start' | 'status' | 'tail' | 'init',
+        configPath: opts.config,
+        count: opts.count ? parseInt(opts.count, 10) : undefined,
+        targetDir: opts.dir,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
 
   // Self-register command
   program

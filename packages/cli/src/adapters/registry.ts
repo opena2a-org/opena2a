@@ -13,12 +13,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'secretless-ai',
     description: 'Manage credentials for AI coding tools (Secretless)',
   },
-  runtime: {
-    name: 'runtime',
-    method: 'import',
-    packageName: '@opena2a/arp',
-    description: 'Agent runtime protection -- process, network, filesystem monitoring',
-  },
+  // runtime is now handled directly by packages/cli/src/commands/runtime.ts
   benchmark: {
     name: 'benchmark',
     method: 'import',
@@ -61,12 +56,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     command: 'aim',
     description: 'Agent identity management (AIM SDK)',
   },
-  guard: {
-    name: 'guard',
-    method: 'spawn',
-    command: 'aibrowserguard',
-    description: 'Browser extension for AI tool security (BrowserGuard)',
-  },
+  // guard is now handled directly by packages/cli/src/commands/guard.ts (ConfigGuard)
   broker: {
     name: 'broker',
     method: 'import',

@@ -53,8 +53,9 @@ describe('input classifier', () => {
 
 describe('adapter registry', () => {
   it('has all expected adapters', () => {
-    const expected = ['scan', 'secrets', 'runtime', 'benchmark', 'registry',
-      'research', 'hunt', 'train', 'crypto', 'identity', 'guard', 'broker', 'dlp'];
+    // guard and runtime are now handled directly (not adapter-based)
+    const expected = ['scan', 'secrets', 'benchmark', 'registry',
+      'research', 'hunt', 'train', 'crypto', 'identity', 'broker', 'dlp'];
     for (const name of expected) {
       expect(ADAPTER_REGISTRY[name]).toBeDefined();
     }
