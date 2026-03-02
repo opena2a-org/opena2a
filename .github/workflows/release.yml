@@ -21,6 +21,17 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
+
+      - name: Generate release manifest
+        run: |
+          cd packages/cli
+          echo '{"version":"${{ github.ref_name }}","generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","algorithm":"sha256","artifacts":{}}' > dist/manifest.json
+          find dist -type f -name '*.js' -o -name '*.d.ts' | sort | while read f; do
+            hash=$(shasum -a 256 "$f" | cut -d' ' -f1)
+            node -e "const m=require('./dist/manifest.json');m.artifacts['$(basename $f)']='$hash';require('fs').writeFileSync('./dist/manifest.json',JSON.stringify(m,null,2))"
+          done
+          cat dist/manifest.json
+
       - run: npm run test
 
       - name: Publish CLI package

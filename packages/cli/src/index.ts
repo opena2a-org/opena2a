@@ -88,6 +88,44 @@ async function main(): Promise<void> {
       });
     });
 
+  // Verify command
+  program
+    .command('verify')
+    .description('Verify binary integrity of installed OpenA2A packages')
+    .option('--package <name>', 'Specific package to verify')
+    .option('--registry-url <url>', 'Registry URL')
+    .action(async (opts) => {
+      const { verify } = await import('./commands/verify.js');
+      const globalOpts = program.opts();
+      process.exitCode = await verify({
+        packageName: opts.package,
+        registryUrl: opts.registryUrl,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
+  // Baselines command
+  program
+    .command('baselines')
+    .description('Collect behavioral observations for crowdsourced agent profiles (opt-in)')
+    .requiredOption('--package <name>', 'Package to observe')
+    .option('--duration <seconds>', 'Observation duration', '60')
+    .option('--registry-url <url>', 'Registry URL')
+    .action(async (opts) => {
+      const { baselines } = await import('./commands/baselines.js');
+      const globalOpts = program.opts();
+      process.exitCode = await baselines({
+        packageName: opts.package,
+        duration: parseInt(opts.duration, 10),
+        registryUrl: opts.registryUrl,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Config command
   program
     .command('config <action> [key] [value]')
