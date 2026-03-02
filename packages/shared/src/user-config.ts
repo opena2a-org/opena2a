@@ -18,6 +18,11 @@ export interface PreferencesConfig {
   rememberedChoices: Record<string, boolean>;
 }
 
+export interface TelemetryConfig {
+  scanCount: number;
+  contributePromptDismissedAt: string | null;
+}
+
 export interface UserConfig {
   version: 1;
   contribute: ContributeConfig;
@@ -26,6 +31,7 @@ export interface UserConfig {
   };
   llm: LlmConfig;
   preferences: PreferencesConfig;
+  telemetry: TelemetryConfig;
 }
 
 const DEFAULT_CONFIG: UserConfig = {
@@ -45,6 +51,10 @@ const DEFAULT_CONFIG: UserConfig = {
   },
   preferences: {
     rememberedChoices: {},
+  },
+  telemetry: {
+    scanCount: 0,
+    contributePromptDismissedAt: null,
   },
 };
 
@@ -76,6 +86,7 @@ export function loadUserConfig(): UserConfig {
           ...(parsed.preferences?.rememberedChoices ?? {}),
         },
       },
+      telemetry: { ...DEFAULT_CONFIG.telemetry, ...parsed.telemetry },
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -126,5 +137,51 @@ export function getRememberedChoice(actionId: string): boolean | undefined {
 export function setRememberedChoice(actionId: string, value: boolean): void {
   const config = loadUserConfig();
   config.preferences.rememberedChoices[actionId] = value;
+  saveUserConfig(config);
+}
+
+// --- Scan telemetry ---
+
+const CONTRIBUTE_PROMPT_THRESHOLD = 3;
+const CONTRIBUTE_PROMPT_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+export function incrementScanCount(): number {
+  const config = loadUserConfig();
+  config.telemetry.scanCount = (config.telemetry.scanCount ?? 0) + 1;
+  saveUserConfig(config);
+  return config.telemetry.scanCount;
+}
+
+export function getScanCount(): number {
+  return loadUserConfig().telemetry.scanCount ?? 0;
+}
+
+/**
+ * Returns true if the user should be shown a one-time prompt to opt into
+ * sharing anonymized scan reports. Only shown after the user has completed
+ * enough scans to have seen value, and not if they already opted in or
+ * recently dismissed the prompt.
+ */
+export function shouldPromptContribute(): boolean {
+  const config = loadUserConfig();
+
+  // Already opted in
+  if (config.contribute.enabled) return false;
+
+  // Not enough scans yet
+  if ((config.telemetry.scanCount ?? 0) < CONTRIBUTE_PROMPT_THRESHOLD) return false;
+
+  // Dismissed recently
+  if (config.telemetry.contributePromptDismissedAt) {
+    const dismissedAt = new Date(config.telemetry.contributePromptDismissedAt).getTime();
+    if (Date.now() - dismissedAt < CONTRIBUTE_PROMPT_COOLDOWN_MS) return false;
+  }
+
+  return true;
+}
+
+export function dismissContributePrompt(): void {
+  const config = loadUserConfig();
+  config.telemetry.contributePromptDismissedAt = new Date().toISOString();
   saveUserConfig(config);
 }

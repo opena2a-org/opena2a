@@ -91,6 +91,10 @@ ${CSS}
 
   <footer class="footer">
     <span>Generated ${escapeHtml(data.metadata.generatedAt)} by OpenA2A v${escapeHtml(data.metadata.toolVersion)}</span>
+    <span class="footer-sep"> | </span>
+    <a href="https://opena2a.org/star" target="_blank" rel="noopener noreferrer">Open Source</a>
+    <span class="footer-sep"> | </span>
+    <a href="https://github.com/opena2a-org" target="_blank" rel="noopener noreferrer">GitHub</a>
   </footer>
 </div>
 <script>
@@ -147,6 +151,7 @@ a:hover{text-decoration:underline}
 .view.active{display:block}
 
 .footer{text-align:center;padding:24px;color:var(--dim);font-size:12px;border-top:1px solid var(--border);margin-top:48px}
+.footer-sep{color:var(--border);margin:0 4px}
 
 /* Dashboard */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--gap);margin-bottom:24px}

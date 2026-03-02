@@ -10,6 +10,11 @@ import {
   setLlmEnabled,
   getRememberedChoice,
   setRememberedChoice,
+  incrementScanCount,
+  getScanCount,
+  shouldPromptContribute,
+  dismissContributePrompt,
+  setContributeEnabled,
 } from '@opena2a/shared';
 
 describe('UserConfig extensions', () => {
@@ -114,5 +119,60 @@ describe('UserConfig extensions', () => {
     expect(config.llm.consentVersion).toBe('1.0');
     expect(config.preferences).toBeDefined();
     expect(typeof config.preferences.rememberedChoices).toBe('object');
+
+    // Telemetry defaults merged
+    expect(config.telemetry).toBeDefined();
+    expect(config.telemetry.scanCount).toBe(0);
+  });
+
+  it('incrementScanCount tracks cumulative scans', () => {
+    const count1 = incrementScanCount();
+    expect(count1).toBe(1);
+    const count2 = incrementScanCount();
+    expect(count2).toBe(2);
+    const count3 = incrementScanCount();
+    expect(count3).toBe(3);
+    expect(getScanCount()).toBe(3);
+  });
+
+  it('shouldPromptContribute returns false before threshold (3 scans required)', () => {
+    // Verify clean state
+    const config = loadUserConfig();
+    const startCount = config.telemetry?.scanCount ?? 0;
+    // Increment to 2 from wherever we start (should be 0 after cleanup)
+    const finalCount = startCount + 2;
+    incrementScanCount();
+    incrementScanCount();
+    expect(getScanCount()).toBe(finalCount);
+    // With fewer than 3 scans, should not prompt
+    if (finalCount < 3) {
+      expect(shouldPromptContribute()).toBe(false);
+    }
+  });
+
+  it('shouldPromptContribute returns true at threshold', () => {
+    // Explicitly reach threshold of 3
+    incrementScanCount();
+    incrementScanCount();
+    incrementScanCount();
+    expect(getScanCount()).toBeGreaterThanOrEqual(3);
+    expect(shouldPromptContribute()).toBe(true);
+  });
+
+  it('shouldPromptContribute returns false when already opted in', () => {
+    incrementScanCount();
+    incrementScanCount();
+    incrementScanCount();
+    setContributeEnabled(true);
+    expect(shouldPromptContribute()).toBe(false);
+  });
+
+  it('dismissContributePrompt prevents re-prompt', () => {
+    incrementScanCount();
+    incrementScanCount();
+    incrementScanCount();
+    expect(shouldPromptContribute()).toBe(true);
+    dismissContributePrompt();
+    expect(shouldPromptContribute()).toBe(false);
   });
 });

@@ -355,4 +355,6 @@ function printReport(report: InitReport): void {
   }
 
   process.stdout.write('\n');
+  process.stdout.write(dim('  Open source: https://opena2a.org/star') + '\n');
+  process.stdout.write('\n');
 }

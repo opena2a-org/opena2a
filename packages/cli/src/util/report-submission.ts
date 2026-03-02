@@ -7,9 +7,12 @@
  * 2. Findings are shared (opt-in) with the registry
  * 3. Registry aggregates data and generates advisories
  * 4. Other users see advisories via `opena2a init` and `opena2a verify`
+ *
+ * Contribution prompting is delayed until after the user has run 3+ scans,
+ * so they see value before being asked to share.
  */
 
-import { dim, green, yellow } from './colors.js';
+import { dim, yellow, cyan } from './colors.js';
 
 // --- Types ---
 
@@ -101,14 +104,17 @@ export async function submitScanReport(
   }
 }
 
-// --- Config check ---
+// --- Config helpers (dynamic import to avoid circular deps) ---
+
+async function loadShared(): Promise<any> {
+  const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+  return 'default' in shared ? shared.default : shared;
+}
 
 export async function isContributeEnabled(): Promise<boolean> {
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
-    const mod = 'default' in shared ? shared.default : shared;
-    const config = mod.loadUserConfig();
-    return config.contribute?.enabled ?? false;
+    const mod = await loadShared();
+    return mod.isContributeEnabled();
   } catch {
     return false;
   }
@@ -116,11 +122,39 @@ export async function isContributeEnabled(): Promise<boolean> {
 
 export async function getRegistryUrl(): Promise<string> {
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
-    const mod = 'default' in shared ? shared.default : shared;
+    const mod = await loadShared();
     const config = mod.loadUserConfig();
     return config.registry?.url ?? 'https://registry.opena2a.org';
   } catch {
     return 'https://registry.opena2a.org';
   }
+}
+
+/**
+ * Record that a scan was completed and conditionally show the contribute prompt.
+ * Only prompts after 3+ scans, and not if the user already opted in or recently
+ * dismissed the prompt. This lets us demonstrate value first.
+ */
+export async function recordScanAndMaybePrompt(): Promise<void> {
+  try {
+    const mod = await loadShared();
+    mod.incrementScanCount();
+
+    if (mod.shouldPromptContribute()) {
+      printContributePrompt();
+      // Mark as shown so it doesn't repeat every scan
+      mod.dismissContributePrompt();
+    }
+  } catch {
+    // Non-critical
+  }
+}
+
+function printContributePrompt(): void {
+  process.stderr.write('\n');
+  process.stderr.write(cyan('  Your scans help the community detect unsafe tools.\n'));
+  process.stderr.write(dim('  Share anonymized scan reports with the OpenA2A registry?\n'));
+  process.stderr.write(dim('  Enable:  ') + yellow('opena2a config contribute on') + '\n');
+  process.stderr.write(dim('  Details: https://opena2a.org/telemetry\n'));
+  process.stderr.write('\n');
 }
