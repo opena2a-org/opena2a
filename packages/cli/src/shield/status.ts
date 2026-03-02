@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import type { ShieldStatus, ProductStatus, PolicyMode, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 
@@ -17,10 +17,19 @@ function tryExec(cmd: string): string | null {
   }
 }
 
+/** Resolve a binary via which, returning the path or null. */
+function whichBinary(name: string): string | null {
+  try {
+    return execFileSync('which', [name], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch {
+    return null;
+  }
+}
+
 function detectProduct(name: string): ProductStatus {
   switch (name) {
     case 'Secretless': {
-      const version = tryExec('npx secretless-ai --version 2>/dev/null');
+      const version = whichBinary('secretless-ai') ? tryExec('secretless-ai --version 2>/dev/null') : null;
       const configExists = existsSync(join(process.cwd(), '.secretless.json')) ||
         existsSync(join(homedir(), '.secretless', 'config.json'));
       return {
@@ -62,7 +71,7 @@ function detectProduct(name: string): ProductStatus {
     }
 
     case 'HMA': {
-      const version = tryExec('npx hackmyagent --version 2>/dev/null');
+      const version = whichBinary('hackmyagent') ? tryExec('hackmyagent --version 2>/dev/null') : null;
       return {
         name: 'HackMyAgent',
         installed: version !== null,
@@ -74,7 +83,7 @@ function detectProduct(name: string): ProductStatus {
 
     case 'Registry': {
       // Registry is typically a remote service; check if CLI supports it
-      const hasRegistry = tryExec('npx opena2a registry --help 2>/dev/null');
+      const hasRegistry = whichBinary('opena2a') !== null;
       return {
         name: 'Registry',
         installed: hasRegistry !== null,

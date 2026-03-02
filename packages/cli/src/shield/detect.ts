@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { homedir, hostname, platform } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -31,6 +31,15 @@ import { detectProject } from '../util/detect.js';
 function tryExec(cmd: string): string | null {
   try {
     return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Run a binary with args without shell interpretation (safe from injection). */
+function tryExecFile(binary: string, args: string[]): string | null {
+  try {
+    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
     return null;
   }
@@ -124,12 +133,12 @@ function detectClis(): DetectedCli[] {
   const results: DetectedCli[] = [];
 
   for (const spec of CLI_SPECS) {
-    const binaryPath = tryExec(`which ${spec.binary}`);
+    const binaryPath = tryExecFile('which', [spec.binary]);
     if (!binaryPath) continue;
 
     // Extract version string -- take only the first line to keep it concise
     let version: string | null = null;
-    const rawVersion = tryExec(`${spec.binary} ${spec.versionFlag}`);
+    const rawVersion = tryExecFile(spec.binary, spec.versionFlag.split(/\s+/));
     if (rawVersion) {
       version = rawVersion.split('\n')[0].trim();
     }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type {
@@ -163,14 +163,22 @@ export async function shieldInit(options: {
       : join(homedir(), '.bashrc');
 
     let rcContent = '';
-    try { rcContent = readFileSync(rcFile, 'utf-8'); } catch { /* new file */ }
+    if (existsSync(rcFile)) {
+      try { rcContent = readFileSync(rcFile, 'utf-8'); } catch {
+        if (isText) process.stdout.write(yellow('  Cannot read rc file, skipping shell hooks\n'));
+        steps.push({ name: 'Shell integration', status: 'skipped' });
+        if (isText) process.stdout.write('\n');
+        // Skip shell integration entirely if we can't read an existing file
+        rcContent = '';
+      }
+    }
 
     if (rcContent.includes('opena2a_shield_preexec') || rcContent.includes('opena2a_shield_debug')) {
       shellHookInstalled = true;
       if (isText) process.stdout.write(green('  Shell hooks already installed\n'));
     } else {
       const hookContent = getExpectedHookContent(shell);
-      writeFileSync(rcFile, rcContent + '\n' + hookContent + '\n', { mode: 0o600 });
+      appendFileSync(rcFile, '\n' + hookContent + '\n', { mode: 0o600 });
       shellHookInstalled = true;
       if (isText) process.stdout.write(green(`  Shell hooks installed in ~/.${shell}rc\n`));
     }
