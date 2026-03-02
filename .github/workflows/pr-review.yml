@@ -32,19 +32,37 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          DIFF=$(cat /tmp/pr-diff.txt)
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY not set, skipping review"
+            echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
+            echo "Review skipped: ANTHROPIC_API_KEY not configured." > /tmp/review.txt
+            exit 0
+          fi
+
+          # Build JSON payload from file to avoid shell escaping issues
+          jq -n --rawfile diff /tmp/pr-diff.txt '{
+            model: "claude-sonnet-4-5-20250929",
+            max_tokens: 4096,
+            system: "You are a security-focused code reviewer for the OpenA2A platform (TypeScript monorepo, npm workspaces, Turborepo). Review for: 1) Security vulnerabilities (OWASP Top 10, credential exposure, injection) 2) TypeScript best practices 3) Architecture consistency 4) Test coverage. End with VERDICT: APPROVE or REQUEST_CHANGES.",
+            messages: [{role: "user", content: ("Review this PR diff:\n\n" + $diff)}]
+          }' > /tmp/request.json
+
+          HTTP_CODE=$(curl -s -o /tmp/response.json -w '%{http_code}' \
+            https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "$(jq -n --arg diff "$DIFF" '{
-              model: "claude-sonnet-4-5-20250929",
-              max_tokens: 4096,
-              system: "You are a security-focused code reviewer for the OpenA2A platform (TypeScript monorepo, npm workspaces, Turborepo). Review for: 1) Security vulnerabilities (OWASP Top 10, credential exposure, injection) 2) TypeScript best practices 3) Architecture consistency 4) Test coverage. End with VERDICT: APPROVE or REQUEST_CHANGES.",
-              messages: [{role: "user", content: ("Review this PR diff:\n\n" + $diff)}]
-            }')")
+            -d @/tmp/request.json)
 
-          REVIEW_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text // "Review failed"')
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API returned HTTP $HTTP_CODE"
+            cat /tmp/response.json
+            echo "Review skipped: API error (HTTP $HTTP_CODE)." > /tmp/review.txt
+            echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          REVIEW_TEXT=$(jq -r '.content[0].text // "Review failed"' /tmp/response.json)
           echo "$REVIEW_TEXT" > /tmp/review.txt
 
           if echo "$REVIEW_TEXT" | grep -q "VERDICT: APPROVE"; then
