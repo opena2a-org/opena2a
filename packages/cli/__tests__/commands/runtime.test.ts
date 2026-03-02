@@ -142,7 +142,7 @@ describe('runtime', () => {
     expect(result.total).toBe(2);
   });
 
-  it('start returns 1 when @opena2a/arp is not installed', async () => {
+  it('start returns 1 when hackmyagent is not installed', async () => {
     const { exitCode, output } = await captureStdout(() => runtime({
       subcommand: 'start',
       targetDir: tempDir,

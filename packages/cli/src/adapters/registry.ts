@@ -17,7 +17,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
   benchmark: {
     name: 'benchmark',
     method: 'import',
-    packageName: '@opena2a/oasb',
+    packageName: 'hackmyagent',
     description: 'Run security benchmark against AI agent (OASB)',
   },
   registry: {
