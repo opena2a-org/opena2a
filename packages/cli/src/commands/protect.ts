@@ -431,6 +431,11 @@ function storeInDotEnv(credential: CredentialMatch): boolean {
 
 /**
  * Replace the hardcoded credential in the source file with an environment variable reference.
+ *
+ * For programming languages (JS, Python, Go, etc.), the credential is typically
+ * inside quotes: `apiKey: "sk-ant-..."`. We must strip those quotes so the result
+ * is `apiKey: process.env.ANTHROPIC_API_KEY` (code expression) rather than
+ * `apiKey: "process.env.ANTHROPIC_API_KEY"` (string literal, broken at runtime).
  */
 function replaceInSource(credential: CredentialMatch): boolean {
   const content = fs.readFileSync(credential.filePath, 'utf-8');
@@ -441,11 +446,38 @@ function replaceInSource(credential: CredentialMatch): boolean {
 
   if (!replacement) return false;
 
-  const newContent = content.replace(credential.value, replacement);
+  let newContent: string;
+
+  if (shouldStripQuotes(ext)) {
+    // For programming languages, replace the entire quoted expression
+    // (including surrounding quotes) with the bare env var reference
+    const quotedDouble = `"${credential.value}"`;
+    const quotedSingle = `'${credential.value}'`;
+
+    if (content.includes(quotedDouble)) {
+      newContent = content.replace(quotedDouble, replacement);
+    } else if (content.includes(quotedSingle)) {
+      newContent = content.replace(quotedSingle, replacement);
+    } else {
+      // No quotes found (e.g., template literal or unquoted), replace value directly
+      newContent = content.replace(credential.value, replacement);
+    }
+  } else {
+    // For config files (YAML, JSON, .env, etc.), replace value inside quotes
+    newContent = content.replace(credential.value, replacement);
+  }
+
   if (newContent === content) return false; // nothing changed
 
   fs.writeFileSync(credential.filePath, newContent, 'utf-8');
   return true;
+}
+
+/**
+ * Programming languages where env var references must NOT be inside string quotes.
+ */
+function shouldStripQuotes(ext: string): boolean {
+  return ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rb', '.java', '.kt', '.rs'].includes(ext);
 }
 
 /**
@@ -646,6 +678,10 @@ function printReport(report: ProtectReport): void {
     process.stdout.write('  3. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
     process.stdout.write('  4. Start the broker: ' + dim('opena2a broker start') + '\n');
     process.stdout.write('  5. Re-scan to confirm: ' + dim('opena2a scan .') + '\n');
+    process.stdout.write('\n' + dim('Continue hardening:') + '\n');
+    process.stdout.write(dim('  opena2a guard sign        Sign config files for tamper detection') + '\n');
+    process.stdout.write(dim('  opena2a runtime start     Enable runtime monitoring') + '\n');
+    process.stdout.write(dim('  opena2a init              Re-assess trust score after migration') + '\n');
   }
 }
 

@@ -22,7 +22,21 @@ async function main(): Promise<void> {
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
-    .option('--contribute', 'Share anonymized scan results with OpenA2A community');
+    .option('--contribute', 'Share anonymized scan results with OpenA2A community')
+    .addHelpText('after', `
+Quick Start:
+  $ opena2a init                 Assess your project's security posture
+  $ opena2a protect              Detect and migrate hardcoded credentials
+  $ opena2a guard sign           Sign config files for tamper detection
+  $ opena2a scan secure          Run 150+ security checks on your AI agent
+
+Smart Features:
+  $ opena2a                      Interactive guided mode (no args)
+  $ opena2a ~<query>             Search commands (e.g. opena2a ~drift)
+  $ opena2a ?                    Get smart recommendations for your project
+  $ opena2a "scan for secrets"   Natural language command matching
+
+Learn more: https://opena2a.org/docs`);
 
   // Register all adapter-backed commands
   for (const [name, config] of Object.entries(ADAPTER_REGISTRY)) {

@@ -392,6 +392,11 @@ function printReport(report: InitReport, _verbose?: boolean): void {
   }
 
   process.stdout.write('\n');
-  process.stdout.write(dim('  Open source: https://opena2a.org/star') + '\n');
+
+  // Quick start hints for new users
+  process.stdout.write(dim('  Tip: Try these commands to explore further:') + '\n');
+  process.stdout.write(dim('    opena2a ~<query>     Search commands (e.g. opena2a ~drift)') + '\n');
+  process.stdout.write(dim('    opena2a ?             Get smart recommendations') + '\n');
+  process.stdout.write(dim('    opena2a --help        See all available commands') + '\n');
   process.stdout.write('\n');
 }
