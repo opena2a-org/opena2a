@@ -39,6 +39,23 @@ async function shieldStatus(options: ShieldOptions): Promise<number> {
   const status = getShieldStatus(options.targetDir);
   const format = (options.format as 'text' | 'json') ?? 'text';
   process.stdout.write(formatStatus(status, format) + '\n');
+
+  // Append LLM intelligence stats if available
+  if (format === 'text') {
+    try {
+      const { getCacheStats } = await import('../shield/llm.js');
+      const stats = getCacheStats();
+      if (stats.totalEntries > 0) {
+        process.stdout.write('\nLLM Intelligence:\n');
+        process.stdout.write(`  Cache entries: ${stats.validEntries}/${stats.totalEntries} (valid/total)\n`);
+        process.stdout.write(`  Tokens used: ${stats.totalInputTokens} in / ${stats.totalOutputTokens} out\n`);
+        process.stdout.write(`  Estimated cost: $${stats.estimatedCostUsd.toFixed(4)}\n`);
+      }
+    } catch {
+      // LLM module not available, skip
+    }
+  }
+
   return 0;
 }
 
@@ -54,7 +71,31 @@ async function shieldLog(options: ShieldOptions): Promise<number> {
   });
 
   if (options.format === 'json') {
-    process.stdout.write(JSON.stringify(events, null, 2) + '\n');
+    if (options.analyze) {
+      const { explainAnomaly } = await import('../shield/llm.js');
+      const allEvents = readEvents({ count: 200 });
+      const normalActions = [...new Set(
+        allEvents.filter(e => e.severity === 'info').map(e => e.action)
+      )].slice(0, 20);
+
+      const analyzed = [];
+      for (const e of events) {
+        const item: Record<string, unknown> = { ...e };
+        if (e.severity === 'high' || e.severity === 'critical') {
+          const seenActions = new Set(allEvents.map(ev => `${ev.action}:${ev.target}`));
+          const explanation = await explainAnomaly(e, {
+            agentName: e.agent ?? 'unknown',
+            normalActions,
+            isFirstOccurrence: !seenActions.has(`${e.action}:${e.target}`),
+          });
+          if (explanation) item.analysis = explanation;
+        }
+        analyzed.push(item);
+      }
+      process.stdout.write(JSON.stringify(analyzed, null, 2) + '\n');
+    } else {
+      process.stdout.write(JSON.stringify(events, null, 2) + '\n');
+    }
     return 0;
   }
 
@@ -83,6 +124,37 @@ async function shieldLog(options: ShieldOptions): Promise<number> {
     const target = (e.target ?? '').slice(0, 29).padEnd(30);
     const outcome = e.outcome ?? '';
     process.stdout.write(`${time} ${source}${agent}${action}${target}${outcome}\n`);
+  }
+
+  // With --analyze, append LLM insights for high-severity events
+  if (options.analyze) {
+    const highSeverity = events.filter(e => e.severity === 'high' || e.severity === 'critical');
+    if (highSeverity.length > 0) {
+      const { explainAnomaly } = await import('../shield/llm.js');
+      const allEvents = readEvents({ count: 200 });
+      const normalActions = [...new Set(
+        allEvents.filter(e => e.severity === 'info').map(e => e.action)
+      )].slice(0, 20);
+
+      process.stdout.write('\n--- LLM Analysis ---\n\n');
+
+      for (const e of highSeverity.slice(0, 5)) {
+        const seenActions = new Set(allEvents.map(ev => `${ev.action}:${ev.target}`));
+        const explanation = await explainAnomaly(e, {
+          agentName: e.agent ?? 'unknown',
+          normalActions,
+          isFirstOccurrence: !seenActions.has(`${e.action}:${e.target}`),
+        });
+        if (explanation) {
+          process.stdout.write(`[${explanation.severity.toUpperCase()}] ${e.action} -> ${e.target}\n`);
+          process.stdout.write(`  ${explanation.explanation}\n`);
+          if (explanation.riskFactors.length > 0) {
+            process.stdout.write(`  Risk factors: ${explanation.riskFactors.join(', ')}\n`);
+          }
+          process.stdout.write(`  Suggested: ${explanation.suggestedAction}\n\n`);
+        }
+      }
+    }
   }
 
   return 0;

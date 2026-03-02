@@ -336,6 +336,8 @@ export interface ShieldOptions {
   verify?: boolean;
   reset?: boolean;
   forensic?: boolean;
+  // LLM intelligence flags
+  analyze?: boolean;
 }
 
 // --- Shield User Config ---
@@ -355,6 +357,61 @@ export interface ShieldUserConfig {
   };
 }
 
+// --- LLM Intelligence ---
+
+export type LlmAnalysisType =
+  | 'policy-suggestion'
+  | 'anomaly-explanation'
+  | 'report-narrative'
+  | 'incident-triage';
+
+export interface PolicySuggestion {
+  agent: string;
+  rules: Partial<PolicyRules>;
+  reasoning: string;
+  confidence: number; // 0.0-1.0
+  basedOnActions: number;
+  basedOnSessions: number;
+}
+
+export interface AnomalyExplanation {
+  eventId: string;
+  severity: EventSeverity;
+  explanation: string;
+  riskFactors: string[];
+  suggestedAction: 'ignore' | 'investigate' | 'block';
+}
+
+export interface ReportNarrative {
+  summary: string;
+  highlights: string[];
+  concerns: string[];
+  recommendations: string[];
+}
+
+export interface IncidentTriage {
+  eventIds: string[];
+  classification: 'false-positive' | 'suspicious' | 'confirmed-threat';
+  severity: EventSeverity;
+  explanation: string;
+  responseSteps: string[];
+}
+
+export interface LlmCacheEntry {
+  key: string;
+  analysisType: LlmAnalysisType;
+  result: PolicySuggestion | AnomalyExplanation | ReportNarrative | IncidentTriage;
+  createdAt: string;
+  ttlMs: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface LlmCache {
+  version: 1;
+  entries: LlmCacheEntry[];
+}
+
 // --- Constants ---
 
 export const SHIELD_DIR = '.opena2a/shield';
@@ -365,6 +422,13 @@ export const SHIELD_SCAN_FILE = 'scan.json';
 export const SHIELD_CONFIG_FILE = 'config.json';
 export const SHIELD_BASELINES_DIR = 'baselines';
 export const SHIELD_REPORTS_DIR = 'reports';
+export const SHIELD_LLM_CACHE_FILE = 'llm-cache.json';
+
+// LLM cache TTLs (milliseconds)
+export const LLM_CACHE_TTL_POLICY = 24 * 60 * 60 * 1000;      // 24h
+export const LLM_CACHE_TTL_ANOMALY = 7 * 24 * 60 * 60 * 1000; // 7d
+export const LLM_CACHE_TTL_NARRATIVE = 30 * 24 * 60 * 60 * 1000; // 30d (per report)
+export const LLM_CACHE_TTL_TRIAGE = 60 * 60 * 1000;            // 1h
 
 export const MAX_EVENTS_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 

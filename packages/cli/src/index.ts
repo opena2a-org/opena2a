@@ -175,6 +175,7 @@ Learn more: https://opena2a.org/docs`);
     .option('--verify', 'Verify integrity and exit lockdown (recover)')
     .option('--reset', 'Reset all integrity hashes and hooks (recover)')
     .option('--forensic', 'Export forensic evidence bundle (recover)')
+    .option('--analyze', 'Use LLM to analyze high-severity events (requires ANTHROPIC_API_KEY)')
     .action(async (subcommand: string, opts) => {
       const { shield } = await import('./commands/shield.js');
       const globalOpts = program.opts();
@@ -193,6 +194,7 @@ Learn more: https://opena2a.org/docs`);
         verify: opts.verify,
         reset: opts.reset,
         forensic: opts.forensic,
+        analyze: opts.analyze,
       });
     });
 
