@@ -52,6 +52,8 @@ Run `opena2a init` in any project directory to get an instant security assessmen
   MCP config           found
   -----------------------------------------------
   Trust Score      30 / 100  [Grade: F]
+  Shield Posture   25 / 100  (CRITICAL)
+  Products         1/7 active
 
   Next Steps
   -----------------------------------------------
@@ -175,6 +177,198 @@ Manage user preferences and feature toggles.
 opena2a config show               # Display current configuration
 opena2a config contribute on      # Enable community data sharing
 opena2a config llm on             # Enable LLM-powered command matching
+```
+
+## Shield: Unified Security Orchestration
+
+Shield ties all OpenA2A products into a single security layer for AI coding assistants. It provides a tamper-evident event log, policy evaluation, runtime monitoring, session identification, integrity verification, and LLM-powered analysis.
+
+```bash
+opena2a shield init              # Full environment scan + policy generation
+opena2a shield status            # Product availability and integrity state
+opena2a shield selfcheck         # Run integrity checks across all subsystems
+```
+
+### How Shield protects your workstation
+
+| Capability | What it does | Status |
+|-----------|-------------|--------|
+| **Credential scanning** | Detects hardcoded API keys (Anthropic, OpenAI, AWS, Google, GitHub) | Active |
+| **Scope drift detection** | Finds API keys that silently access unintended services (DRIFT-001, DRIFT-002) | Active |
+| **Tamper-evident event log** | SHA-256 hash-chained event log -- any modification breaks the chain | Active |
+| **Policy evaluation** | Allow/deny rules for processes, credentials, network, filesystem, MCP servers | Active |
+| **Session identification** | Detects which AI assistant is running (Claude Code, Cursor, Copilot, Windsurf) | Active |
+| **Config integrity** | Signs config files and detects unauthorized modifications | Active |
+| **ARP bridge** | Imports runtime protection events from HackMyAgent's ARP into Shield's log | Active |
+| **Posture scoring** | 0-100 security score based on active products, policy, hooks, credentials | Active |
+| **LLM intelligence** | AI-powered policy suggestions, anomaly explanations, incident triage | Active (opt-in) |
+| **Integrity selfcheck** | Verifies policy, shell hooks, event chain, process, and artifact signatures | Active |
+| **Lockdown mode** | Enters lockdown when integrity checks fail; requires explicit recovery | Active |
+| **Adaptive learning** | Observes agent behavior to build per-agent baselines and suggest policies | Architecture ready |
+
+Shield currently operates in **observation and detection** mode. It logs, classifies, and surfaces security events for the developer to act on. Enforcement (automatic blocking) is on the roadmap once baselines are established through the adaptive learning phase.
+
+### Subcommands
+
+#### `opena2a shield init`
+
+Full environment scan: detects project type, scans for credentials, discovers AI assistants, MCP servers, and OAuth sessions, generates a YAML policy file, installs shell hooks, and writes a genesis event to the tamper-evident log.
+
+```bash
+opena2a shield init                    # Scan current directory
+opena2a shield init --dir ./my-agent   # Scan specific directory
+opena2a shield init --format json      # Machine-readable output
+```
+
+#### `opena2a shield status`
+
+Shows product availability, policy mode, shell integration, and integrity state.
+
+```bash
+opena2a shield status
+opena2a shield status --format json
+```
+
+#### `opena2a shield log`
+
+Query the tamper-evident event log with filters.
+
+```bash
+opena2a shield log                           # Last 20 events
+opena2a shield log --count 50               # Last 50 events
+opena2a shield log --severity high          # High+ severity only
+opena2a shield log --source arp             # ARP runtime events
+opena2a shield log --agent claude-code      # Events from Claude Code
+opena2a shield log --since 7d              # Last 7 days
+opena2a shield log --format json           # JSON output
+```
+
+#### `opena2a shield selfcheck`
+
+Runs five integrity checks: policy hash, shell hook content, event chain validity, process binary, and artifact signatures. Returns `healthy`, `degraded`, or `compromised` status.
+
+```bash
+opena2a shield selfcheck
+opena2a shield check                    # Alias
+opena2a shield selfcheck --format json
+```
+
+#### `opena2a shield policy`
+
+Show the loaded security policy (mode, rule counts, agent overrides).
+
+```bash
+opena2a shield policy
+opena2a shield policy --format json
+```
+
+#### `opena2a shield evaluate`
+
+Evaluate an action against the loaded policy. Returns `ALLOWED`, `BLOCKED`, or `MONITORED`.
+
+```bash
+opena2a shield evaluate --category processes --agent claude-code
+opena2a shield evaluate --format json
+```
+
+#### `opena2a shield monitor`
+
+Import ARP (Agent Runtime Protection) events into Shield's hash-chained log and display runtime stats.
+
+```bash
+opena2a shield monitor                      # Import events + show stats
+opena2a shield monitor --agent cursor       # Tag imported events
+opena2a shield monitor --since 7d          # Stats for last 7 days
+opena2a shield monitor --format json
+```
+
+#### `opena2a shield report`
+
+Generate a security posture report from event data. Includes severity breakdown, agent activity, policy violations, and top actions.
+
+```bash
+opena2a shield report                       # Last 7 days
+opena2a shield report --since 30d          # Last 30 days
+opena2a shield report --analyze            # Include LLM narrative
+opena2a shield report --format json
+```
+
+#### `opena2a shield session`
+
+Detect the current AI coding assistant session. Identifies Claude Code, Cursor, GitHub Copilot, Windsurf, Aider, and Continue.
+
+```bash
+opena2a shield session
+opena2a shield session --verbose            # Show raw detection signals
+opena2a shield session --format json
+```
+
+#### `opena2a shield recover`
+
+Exit lockdown mode after integrity failures. Optionally re-verify before lifting lockdown.
+
+```bash
+opena2a shield recover                      # Exit lockdown
+opena2a shield recover --verify             # Verify first, then exit
+```
+
+#### `opena2a shield suggest`
+
+LLM-powered policy suggestion based on observed agent behavior. Requires LLM backend (enable with `opena2a config llm on`).
+
+```bash
+opena2a shield suggest                      # Suggest policy from all events
+opena2a shield suggest --agent cursor       # For specific agent
+opena2a shield suggest --format json
+```
+
+#### `opena2a shield explain`
+
+LLM-powered explanation of security events. Provides severity assessment, risk factors, and recommended actions.
+
+```bash
+opena2a shield explain                      # Explain most recent event
+opena2a shield explain --count 5           # Explain last 5 events
+opena2a shield explain --severity high     # High+ severity only
+```
+
+#### `opena2a shield triage`
+
+LLM-powered incident classification. Correlates multiple events and classifies as false-positive, suspicious, or confirmed-threat.
+
+```bash
+opena2a shield triage                       # Triage high+ severity events
+opena2a shield triage --severity medium    # Include medium severity
+opena2a shield triage --agent windsurf     # For specific agent
+```
+
+### Event Log Format
+
+Shield maintains a tamper-evident event log at `~/.opena2a/shield/events.jsonl`. Each event is SHA-256 hash-chained to the previous event, starting from a genesis hash. Any modification to a past event breaks the chain and is detected by `selfcheck`.
+
+```
+[2026-03-02T12:00:00Z] [HIGH] process.anomaly -> curl evil.com (monitored)
+[2026-03-02T12:01:00Z] [CRITICAL] prompt.threat -> injection-attempt (blocked)
+[2026-03-02T12:02:00Z] [INFO] process.spawn -> /usr/bin/ls (allowed)
+```
+
+### Quick Start
+
+```bash
+# 1. Initialize Shield in your project
+opena2a shield init
+
+# 2. Check what AI assistants are running
+opena2a shield session
+
+# 3. View security events
+opena2a shield log --severity medium
+
+# 4. Generate a posture report
+opena2a shield report
+
+# 5. Run integrity verification
+opena2a shield selfcheck
 ```
 
 ## Smart Input Modes
