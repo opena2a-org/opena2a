@@ -105,7 +105,7 @@ When drift is detected, `opena2a protect` migrates the key to environment variab
 
 ## Core Commands
 
-### `opena2a init`
+### [`opena2a init`](https://opena2a.org/docs/cli/commands/init)
 
 Assess your project's security posture. Detects project type, scans for credentials, checks hygiene (`.gitignore`, `.env` protection, lock file, security config), calculates a trust score (0-100), and provides prioritized next steps.
 
@@ -116,7 +116,7 @@ opena2a init --verbose          # Show individual credential details
 opena2a init --format json      # Machine-readable output for CI
 ```
 
-### `opena2a protect`
+### [`opena2a protect`](https://opena2a.org/docs/cli/commands/protect)
 
 Detect hardcoded credentials and migrate them to environment variables. Supports Anthropic, OpenAI, Google, AWS, GitHub, and generic API key patterns. Language-aware replacements for JS/TS, Python, Go, Ruby, Java, and Rust.
 
@@ -133,7 +133,7 @@ Migration flow:
 3. **Replace** -- Swap hardcoded values with language-appropriate env var references
 4. **Verify** -- Re-scan to confirm all credentials are removed from source
 
-### `opena2a guard`
+### [`opena2a guard`](https://opena2a.org/docs/cli/commands/guard)
 
 Config file integrity protection. Sign your config files and detect unauthorized modifications.
 
@@ -145,7 +145,7 @@ opena2a guard status            # Show signature summary
 
 Default files: `mcp.json`, `package.json`, `tsconfig.json`, `arp.yaml`, `go.mod`, `Dockerfile`, and more.
 
-### `opena2a runtime`
+### [`opena2a runtime`](https://opena2a.org/docs/cli/commands/runtime)
 
 Agent Runtime Protection (ARP) wrapper. Monitor process, network, and filesystem activity.
 
@@ -156,7 +156,7 @@ opena2a runtime status          # Show monitor/interceptor status
 opena2a runtime tail            # View recent security events
 ```
 
-### `opena2a verify`
+### [`opena2a verify`](https://opena2a.org/docs/cli/commands/verify)
 
 Binary integrity verification. Compares installed package hashes against the OpenA2A Trust Registry to detect supply chain tampering.
 
@@ -184,7 +184,7 @@ opena2a config contribute on      # Enable community data sharing
 opena2a config llm on             # Enable LLM-powered command matching
 ```
 
-## Smart Input Modes
+## [Smart Input Modes](https://opena2a.org/docs/cli/input-modes)
 
 The CLI includes built-in intelligence for command discovery:
 
@@ -202,21 +202,21 @@ Semantic search uses a weighted index of tags, synonyms, and domains -- no API c
 
 The CLI orchestrates these specialized tools through a unified interface:
 
-| Command | Tool | Description |
-|---------|------|-------------|
-| `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
-| `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
-| `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
-| `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
-| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for training |
-| `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
-| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |
-| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Identity-aware credential broker daemon |
-| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
+| Command | Tool | Docs | Description |
+|---------|------|------|-------------|
+| `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
+| `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Credential management for AI coding tools |
+| `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | [docs](https://opena2a.org/docs/oasb) | 222 attack scenarios, compliance scoring |
+| `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | | Trust Registry queries, package verification |
+| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | [docs](https://opena2a.org/docs/dvaa) | Vulnerable AI agent for training |
+| `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | [docs](https://opena2a.org/docs/cryptoserve) | Cryptographic inventory, PQC readiness |
+| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity management |
+| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Identity-aware credential broker daemon |
+| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Data loss prevention for AI tool transcripts |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
 
-## CI/CD Integration
+## [CI/CD Integration](https://opena2a.org/docs/cli/ci-cd)
 
 All commands support `--format json` and `--ci` flags for pipeline integration:
 
