@@ -204,8 +204,8 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 | `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |
-| `opena2a broker` | Secretless AI | Identity-aware credential broker daemon |
-| `opena2a dlp` | Secretless AI | Data loss prevention for AI tool transcripts |
+| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Identity-aware credential broker daemon |
+| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
 
