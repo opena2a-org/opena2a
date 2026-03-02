@@ -9,7 +9,7 @@ const INTENT_MAPPINGS: IntentMapping[] = [
   {
     patterns: [
       /\b(is|are)\s+(my|this|the)\s+\w+\s+(safe|secure|vulnerable|protected)\b/i,
-      /\b(scan|check|audit|analyze|inspect|review)\s+(my|this|the)?\s*(agent|server|project|app|code)\b/i,
+      /\b(scan|check|audit|analyze|inspect|review)\s+(my|this|the)?\s*(\w+\s+){0,2}(agent|server|project|app|code)\b/i,
       /\bfind\s+(vulnerabilities|security\s+issues|problems|bugs)\b/i,
       /\bsecurity\s+(scan|check|audit|assessment|review)\b/i,
       /\bhow\s+secure\s+is\b/i,
