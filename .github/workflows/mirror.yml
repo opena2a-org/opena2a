@@ -1,0 +1,46 @@
+name: Mirror to Downstream Repos
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - package: hackmyagent
+            repo: opena2a-org/hackmyagent
+          - package: secretless
+            repo: opena2a-org/secretless
+          - package: arp
+            repo: opena2a-org/arp
+          - package: oasb
+            repo: opena2a-org/oasb
+          - package: ai-trust
+            repo: opena2a-org/ai-trust
+          - package: trust-gate
+            repo: opena2a-org/trust-gate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- packages/${{ matrix.package }}/ 2>/dev/null || echo "")
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Mirror subtree
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          echo "Changes detected in packages/${{ matrix.package }}, would push to ${{ matrix.repo }}"
+          # Subtree push will be enabled after initial import
+          # git subtree push --prefix=packages/${{ matrix.package }} \
+          #   https://x-access-token:${{ secrets.MIRROR_TOKEN }}@github.com/${{ matrix.repo }}.git main

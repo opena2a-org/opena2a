@@ -1,0 +1,69 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DIFF=$(gh pr diff ${{ github.event.pull_request.number }} | head -c 122880)
+          echo "$DIFF" > /tmp/pr-diff.txt
+
+      - name: Claude review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          DIFF=$(cat /tmp/pr-diff.txt)
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n --arg diff "$DIFF" '{
+              model: "claude-sonnet-4-5-20250929",
+              max_tokens: 4096,
+              system: "You are a security-focused code reviewer for the OpenA2A platform (TypeScript monorepo, npm workspaces, Turborepo). Review for: 1) Security vulnerabilities (OWASP Top 10, credential exposure, injection) 2) TypeScript best practices 3) Architecture consistency 4) Test coverage. End with VERDICT: APPROVE or REQUEST_CHANGES.",
+              messages: [{role: "user", content: ("Review this PR diff:\n\n" + $diff)}]
+            }')")
+
+          REVIEW_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text // "Review failed"')
+          echo "$REVIEW_TEXT" > /tmp/review.txt
+
+          if echo "$REVIEW_TEXT" | grep -q "VERDICT: APPROVE"; then
+            echo "verdict=APPROVE" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=REQUEST_CHANGES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW_BODY=$(cat /tmp/review.txt)
+          VERDICT="${{ steps.review.outputs.verdict }}"
+
+          if [ "$VERDICT" = "APPROVE" ]; then
+            gh pr review ${{ github.event.pull_request.number }} --approve --body "$REVIEW_BODY" || \
+              gh pr comment ${{ github.event.pull_request.number }} --body "$REVIEW_BODY"
+          else
+            gh pr review ${{ github.event.pull_request.number }} --request-changes --body "$REVIEW_BODY" || \
+              gh pr comment ${{ github.event.pull_request.number }} --body "$REVIEW_BODY"
+          fi

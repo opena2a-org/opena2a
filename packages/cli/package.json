@@ -1,0 +1,47 @@
+{
+  "name": "opena2a",
+  "version": "0.1.0",
+  "description": "Unified CLI for the OpenA2A security platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "opena2a": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && cp src/semantic/command-index.json dist/semantic/",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@opena2a/shared": "0.1.0",
+    "commander": "^13.1.0",
+    "@inquirer/prompts": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/node": "^22.0.0"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/opena2a.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "security",
+    "scanner",
+    "mcp",
+    "credentials",
+    "identity"
+  ]
+}
