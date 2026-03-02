@@ -508,16 +508,23 @@ function replaceInSource(credential: CredentialMatch): boolean {
 
   if (shouldStripQuotes(ext)) {
     // For programming languages, replace the entire quoted expression
-    // (including surrounding quotes) with the bare env var reference
-    const quotedDouble = `"${credential.value}"`;
-    const quotedSingle = `'${credential.value}'`;
+    // (including surrounding quotes) with the bare env var reference.
+    // Use regex to find the enclosing quoted string so we handle cases
+    // where the matched credential is a substring of the quoted content
+    // (e.g., regex matches 20-char AWS key but string has trailing chars).
+    const escVal = credential.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const dblQuoteRegex = new RegExp(`"[^"]*${escVal}[^"]*"`);
+    const sglQuoteRegex = new RegExp(`'[^']*${escVal}[^']*'`);
 
-    if (content.includes(quotedDouble)) {
-      newContent = content.replace(quotedDouble, replacement);
-    } else if (content.includes(quotedSingle)) {
-      newContent = content.replace(quotedSingle, replacement);
+    const dblMatch = content.match(dblQuoteRegex);
+    const sglMatch = content.match(sglQuoteRegex);
+
+    if (dblMatch) {
+      newContent = content.replace(dblMatch[0], replacement);
+    } else if (sglMatch) {
+      newContent = content.replace(sglMatch[0], replacement);
     } else {
-      // No quotes found (e.g., template literal or unquoted), replace value directly
+      // No enclosing quotes found (e.g., template literal or unquoted)
       newContent = content.replace(credential.value, replacement);
     }
   } else {
