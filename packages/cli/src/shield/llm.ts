@@ -197,9 +197,11 @@ export async function checkLlmAvailable(): Promise<string | null> {
   try {
     const shared = await import('@opena2a/shared');
     const mod = 'default' in shared ? (shared as any).default : shared;
+    if (typeof mod?.isLlmEnabled !== 'function') return null;
     if (!mod.isLlmEnabled()) return null;
   } catch {
-    // shared not available -- allow (backward compat)
+    // shared not available -- deny (require explicit consent)
+    return null;
   }
 
   return apiKey;
@@ -294,9 +296,9 @@ Generate a security policy that allows the observed safe behavior and blocks pot
 
     const suggestion: PolicySuggestion = {
       agent,
-      rules: parsed.rules ?? {},
-      reasoning: parsed.reasoning ?? '',
-      confidence: Math.max(0, Math.min(1, parsed.confidence ?? 0.5)),
+      rules: typeof parsed.rules === 'object' && parsed.rules !== null ? parsed.rules : {},
+      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+      confidence: Math.max(0, Math.min(1, typeof parsed.confidence === 'number' ? parsed.confidence : 0.5)),
       basedOnActions: behaviorSummary.totalActions,
       basedOnSessions: behaviorSummary.totalSessions,
     };
@@ -386,12 +388,20 @@ Assess this action.`;
       suggestedAction: 'ignore' | 'investigate' | 'block';
     };
 
+    // Validate enum fields against allowlists
+    const validSeverities = ['info', 'low', 'medium', 'high', 'critical'];
+    const validActions = ['ignore', 'investigate', 'block'];
+    const severity = validSeverities.includes(parsed.severity) ? parsed.severity : event.severity;
+    const suggestedAction = validActions.includes(parsed.suggestedAction)
+      ? parsed.suggestedAction : 'investigate';
+
     const explanation: AnomalyExplanation = {
       eventId: event.id,
-      severity: parsed.severity ?? event.severity,
-      explanation: parsed.explanation ?? '',
-      riskFactors: parsed.riskFactors ?? [],
-      suggestedAction: parsed.suggestedAction ?? 'investigate',
+      severity,
+      explanation: typeof parsed.explanation === 'string' ? parsed.explanation : '',
+      riskFactors: Array.isArray(parsed.riskFactors)
+        ? parsed.riskFactors.filter((f: unknown) => typeof f === 'string') : [],
+      suggestedAction,
     };
 
     cache.entries.push({
@@ -486,11 +496,14 @@ Generate a weekly narrative.`;
   try {
     const parsed = JSON.parse(result.text) as ReportNarrative;
 
+    const filterStrings = (arr: unknown): string[] =>
+      Array.isArray(arr) ? arr.filter((s: unknown) => typeof s === 'string') : [];
+
     const narrative: ReportNarrative = {
-      summary: parsed.summary ?? '',
-      highlights: parsed.highlights ?? [],
-      concerns: parsed.concerns ?? [],
-      recommendations: parsed.recommendations ?? [],
+      summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+      highlights: filterStrings(parsed.highlights),
+      concerns: filterStrings(parsed.concerns),
+      recommendations: filterStrings(parsed.recommendations),
     };
 
     cache.entries.push({
@@ -579,12 +592,21 @@ Classify this incident.`;
       responseSteps: string[];
     };
 
+    // Validate enum fields against allowlists
+    const validClassifications = ['false-positive', 'suspicious', 'confirmed-threat'];
+    const validSeverities = ['info', 'low', 'medium', 'high', 'critical'];
+    const classification = validClassifications.includes(parsed.classification)
+      ? parsed.classification : 'suspicious';
+    const severity = validSeverities.includes(parsed.severity)
+      ? parsed.severity : 'medium';
+
     const triage: IncidentTriage = {
       eventIds,
-      classification: parsed.classification ?? 'suspicious',
-      severity: parsed.severity ?? 'medium',
-      explanation: parsed.explanation ?? '',
-      responseSteps: parsed.responseSteps ?? [],
+      classification,
+      severity,
+      explanation: typeof parsed.explanation === 'string' ? parsed.explanation : '',
+      responseSteps: Array.isArray(parsed.responseSteps)
+        ? parsed.responseSteps.filter((s: unknown) => typeof s === 'string') : [],
     };
 
     cache.entries.push({
