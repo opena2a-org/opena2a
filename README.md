@@ -27,6 +27,10 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 
 Run `opena2a init` in any project directory to get an instant security assessment:
 
+<p align="center">
+  <img src="docs/vhs/init.gif" alt="opena2a init demo" width="700" />
+</p>
+
 ```
   OpenA2A Security Initialization  v0.1.0
 
@@ -74,6 +78,10 @@ opena2a protect       # Migrate credentials to env vars + vault
 opena2a guard sign    # Sign config files for tamper detection
 opena2a init          # Re-assess -- watch your score improve
 ```
+
+<p align="center">
+  <img src="docs/vhs/protect.gif" alt="opena2a protect demo" width="700" />
+</p>
 
 ## Scope Drift Detection
 
