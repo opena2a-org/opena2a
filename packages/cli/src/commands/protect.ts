@@ -50,6 +50,8 @@ interface ProtectReport {
   verificationPassed: boolean;
   /** Duration in milliseconds */
   durationMs: number;
+  /** Liveness verification results for DRIFT findings (key value -> result) */
+  livenessResults?: Record<string, LivenessResult>;
 }
 
 export interface ProtectOptions {
@@ -65,6 +67,8 @@ export interface ProtectOptions {
   format?: 'text' | 'json';
   /** Skip verification re-scan */
   skipVerify?: boolean;
+  /** Skip liveness verification for DRIFT findings (offline/CI) */
+  skipLiveness?: boolean;
   /** Path to write interactive HTML report */
   report?: string;
 }
@@ -79,6 +83,11 @@ import {
   type CredentialPattern,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
+import {
+  verifyDriftFindings,
+  applyLivenessResults,
+  type LivenessResult,
+} from '../util/drift-verification.js';
 
 // --- Core logic ---
 
@@ -102,7 +111,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
   const spinner = new Spinner('Scanning for credentials...');
   spinner.start();
 
-  const matches = scanForCredentials(targetDir);
+  let matches = scanForCredentials(targetDir);
   spinner.stop();
 
   const isJson = options.format === 'json';
@@ -124,6 +133,45 @@ export async function protect(options: ProtectOptions): Promise<number> {
       process.stdout.write(green('No hardcoded credentials detected.\n'));
     }
     return 0;
+  }
+
+  // Phase 1.5: Liveness verification for DRIFT findings
+  let livenessResults: Map<string, LivenessResult> | undefined;
+  const hasDriftFindings = matches.some(m => m.findingId.startsWith('DRIFT-'));
+
+  if (hasDriftFindings && !options.skipLiveness) {
+    if (!isJson) {
+      spinner.update('Verifying credential drift (liveness check)...');
+      spinner.start();
+    }
+
+    livenessResults = await verifyDriftFindings(matches);
+    matches = applyLivenessResults(matches, livenessResults);
+
+    if (!isJson) {
+      spinner.stop();
+      for (const [_key, result] of livenessResults) {
+        if (result.live) {
+          process.stdout.write(
+            red(`${result.findingId}: DRIFT CONFIRMED`) +
+            ' -- ' + result.detail + '\n'
+          );
+          process.stdout.write(
+            '  Severity escalated: ' + yellow('high') + ' -> ' + red('critical') + '\n\n'
+          );
+        } else if (result.checked && !result.error) {
+          process.stdout.write(
+            dim(`${result.findingId}: ${result.detail}`) + '\n\n'
+          );
+        } else if (result.error) {
+          process.stdout.write(
+            dim(`${result.findingId}: ${result.detail}`) + '\n\n'
+          );
+        }
+      }
+    }
+  } else if (hasDriftFindings && options.skipLiveness && !isJson) {
+    process.stdout.write(dim('Liveness verification skipped (--skip-liveness)\n\n'));
   }
 
   if (!isJson) {
@@ -215,6 +263,15 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
   // Phase 5: Report
   const durationMs = Date.now() - startTime;
+  // Convert liveness results map to plain object for JSON serialization
+  let livenessRecord: Record<string, LivenessResult> | undefined;
+  if (livenessResults && livenessResults.size > 0) {
+    livenessRecord = {};
+    for (const [key, val] of livenessResults) {
+      livenessRecord[key] = val;
+    }
+  }
+
   const report: ProtectReport = {
     targetDir,
     totalFound: matches.length,
@@ -224,6 +281,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     results,
     verificationPassed,
     durationMs,
+    livenessResults: livenessRecord,
   };
 
   if (options.format === 'json') {

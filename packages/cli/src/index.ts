@@ -66,6 +66,7 @@ Learn more: https://opena2a.org/docs`);
     .option('--dry-run', 'Show what would change without modifying files')
     .option('--report <path>', 'Write interactive HTML report')
     .option('--skip-verify', 'Skip verification re-scan')
+    .option('--skip-liveness', 'Skip drift liveness verification (offline/CI)')
     .option('--dir <path>', 'Target directory')
     .action(async (opts) => {
       const { protect: runProtect } = await import('./commands/protect.js');
@@ -77,6 +78,7 @@ Learn more: https://opena2a.org/docs`);
         ci: globalOpts.ci,
         format: globalOpts.format as 'text' | 'json',
         skipVerify: opts.skipVerify,
+        skipLiveness: opts.skipLiveness,
         report: opts.report,
       });
     });

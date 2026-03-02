@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { protect } from '../../src/commands/protect.js';
+
+const mockFetch = vi.fn();
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-protect-'));
@@ -19,10 +21,15 @@ describe('protect command', () => {
     tempDir = createTempDir();
     // Create a package.json so it's recognized as a project root
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name": "test"}');
+    // Mock fetch for liveness verification (default: no Gemini access)
+    vi.stubGlobal('fetch', mockFetch);
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ status: 403 });
   });
 
   afterEach(() => {
     cleanupDir(tempDir);
+    vi.unstubAllGlobals();
   });
 
   it('returns 0 when no credentials are found', async () => {
@@ -292,5 +299,105 @@ describe('protect command', () => {
     expect(report.totalFound).toBeGreaterThan(0);
     expect(report.results).toBeInstanceOf(Array);
     expect(report).toHaveProperty('durationMs');
+  });
+
+  it('escalates DRIFT-001 to critical when Gemini access confirmed', async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      json: async () => ({ models: [{ name: 'gemini-pro' }] }),
+    });
+
+    const fakeKey = 'AIza' + 'L'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'api.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipVerify: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const output = chunks.join('');
+    const report = JSON.parse(output);
+
+    // Severity should be escalated to critical
+    const driftResult = report.results.find(
+      (r: any) => r.credential.findingId === 'DRIFT-001'
+    );
+    expect(driftResult.credential.severity).toBe('critical');
+
+    // Liveness results should be included
+    expect(report.livenessResults).toBeDefined();
+    const livenessEntry = Object.values(report.livenessResults)[0] as any;
+    expect(livenessEntry.live).toBe(true);
+    expect(livenessEntry.escalatedSeverity).toBe('critical');
+  });
+
+  it('keeps DRIFT-001 as high when Gemini access denied', async () => {
+    mockFetch.mockResolvedValueOnce({ status: 403 });
+
+    const fakeKey = 'AIza' + 'M'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'config.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipVerify: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const output = chunks.join('');
+    const report = JSON.parse(output);
+
+    const driftResult = report.results.find(
+      (r: any) => r.credential.findingId === 'DRIFT-001'
+    );
+    expect(driftResult.credential.severity).toBe('high');
+  });
+
+  it('skips liveness verification with --skip-liveness', async () => {
+    const fakeKey = 'AIza' + 'N'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'config.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      dryRun: true,
+      ci: true,
+      skipLiveness: true,
+    });
+
+    // fetch should not have been called
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
