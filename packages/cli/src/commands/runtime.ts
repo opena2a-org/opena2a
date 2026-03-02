@@ -2,7 +2,7 @@
  * opena2a runtime -- ARP (Agent Runtime Protection) wrapper.
  *
  * Subcommands:
- * - start:  Start ARP monitoring (dynamic import of @opena2a/arp)
+ * - start:  Start ARP monitoring (dynamic import of hackmyagent/arp)
  * - status: Show protection status, monitors, budget
  * - tail:   Read last N events from .opena2a/arp/events.jsonl
  * - init:   Auto-generate arp.yaml from detected project type
@@ -63,14 +63,14 @@ async function runtimeStart(targetDir: string, options: RuntimeOptions): Promise
   // Check for ARP installation
   let arp: any;
   try {
-    arp = await (Function('return import("@opena2a/arp")')() as Promise<any>);
+    arp = await (Function('return import("hackmyagent/arp")')() as Promise<any>);
   } catch {
     if (isJson) {
-      process.stdout.write(JSON.stringify({ error: '@opena2a/arp not installed' }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ error: 'hackmyagent not installed' }, null, 2) + '\n');
     } else {
-      process.stderr.write(red('@opena2a/arp is not installed.\n'));
+      process.stderr.write(red('hackmyagent is not installed.\n'));
       process.stderr.write('\nInstall it:\n');
-      process.stderr.write(dim('  npm install -g @opena2a/arp\n'));
+      process.stderr.write(dim('  npm install -g hackmyagent\n'));
       process.stderr.write('\nOr generate config first:\n');
       process.stderr.write(dim('  opena2a runtime init\n'));
     }

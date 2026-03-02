@@ -15,6 +15,12 @@ Credential detection, scope drift analysis, config integrity, runtime monitoring
 
 ---
 
+## Requirements
+
+- Node.js >= 18
+- Optional: Docker (for `opena2a train`)
+- Optional: Python 3.9+ (for `opena2a crypto`)
+
 ## Install
 
 ```bash
@@ -264,7 +270,7 @@ opena2a CLI
        +-- broker    -> secretless-ai
        +-- dlp       -> secretless-ai
        +-- identity  -> aim
-       +-- benchmark -> @opena2a/oasb
+       +-- benchmark -> hackmyagent
        +-- registry  -> ai-trust
        +-- train     -> opena2a/dvaa (Docker)
        +-- crypto    -> cryptoserve (Python)
@@ -311,12 +317,6 @@ We contribute security fixes back to the open-source projects we audit.
 - Skill scanner false positive reduction ([#10530](https://github.com/open-webui/open-webui/pull/10530))
 
 **[Nanobot](https://github.com/HKUDS/nanobot)** -- Path traversal, XSS, and shell escape fixes ([#472](https://github.com/HKUDS/nanobot/pull/472))
-
-## Requirements
-
-- Node.js >= 18
-- Optional: Docker (for `opena2a train`)
-- Optional: Python 3.9+ (for `opena2a crypto`)
 
 ## License
 
