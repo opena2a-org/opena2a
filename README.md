@@ -239,6 +239,53 @@ opena2a config contribute on      # Enable community data sharing
 opena2a config llm on             # Enable LLM-powered command matching
 ```
 
+### `opena2a shield`
+
+Unified security orchestration. Shield ties together all OpenA2A products into a single command surface. Run `shield init` to set up your project, then use `shield status` to monitor posture across credentials, config integrity, runtime protection, and policy compliance.
+
+**Subcommands:**
+
+```bash
+opena2a shield init               # Full environment scan, policy generation, shell hooks
+opena2a shield status             # View security posture across all products
+opena2a shield log                # Query the tamper-evident event log
+opena2a shield selfcheck          # Run integrity checks across all subsystems
+opena2a shield policy             # Show loaded policy summary
+opena2a shield evaluate <action>  # Evaluate an action against the active policy
+opena2a shield recover            # Exit lockdown mode after incident resolution
+opena2a shield report             # Generate a security posture report
+opena2a shield monitor            # Continuous security monitoring daemon
+opena2a shield session            # Show current AI coding assistant session identity
+opena2a shield baseline           # View adaptive enforcement baselines for agents
+opena2a shield suggest            # LLM-powered policy suggestions from observed behavior
+opena2a shield explain            # LLM-powered anomaly explanations for events
+opena2a shield triage             # LLM-powered incident classification and response
+```
+
+**Key flags:**
+
+```bash
+--analyze                         # Include LLM-powered analysis in reports
+--forensic                        # Deep forensic mode for log/report
+--since <time>                    # Filter events by time (e.g., "1h", "24h")
+--severity <level>                # Filter by severity (info, warning, error, critical)
+--ci                              # Machine-readable output for CI pipelines
+--format json                     # JSON output
+```
+
+**Example workflow:**
+
+```bash
+opena2a shield init                      # One-command security setup
+opena2a shield status                    # Check posture at a glance
+opena2a shield report --analyze          # Full posture report with LLM analysis
+opena2a shield log --since 1h            # Review recent security events
+opena2a shield triage                    # Classify and prioritize open incidents
+opena2a shield suggest                   # Get policy improvement recommendations
+```
+
+Shield stores events in a local tamper-evident log at `.opena2a/shield/events.jsonl` and policies at `.opena2a/shield/policy.yaml`. No network calls are made unless LLM-powered subcommands are explicitly invoked.
+
 ## [Smart Input Modes](https://opena2a.org/docs/cli/input-modes)
 
 The CLI includes built-in intelligence for command discovery:
@@ -255,21 +302,37 @@ Semantic search uses a weighted index of tags, synonyms, and domains -- no API c
 
 ## Adapter Commands
 
-The CLI orchestrates these specialized tools through a unified interface:
+The CLI orchestrates specialized tools through a unified interface. Each command maps to a standalone product that can also be used independently.
 
-| Command | Tool | Docs | Description |
-|---------|------|------|-------------|
+| Command | Product | Docs | Description |
+|---------|---------|------|-------------|
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Credential management for AI coding tools |
+| `opena2a hunt` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | Autonomous vulnerability hunter |
+| `opena2a research` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | Autonomous security research agent |
 | `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Identity-aware credential broker daemon |
 | `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Data loss prevention for AI tool transcripts |
-| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity management |
-| `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | [docs](https://opena2a.org/docs/oasb) | 222 attack scenarios, compliance scoring |
-| `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | | Trust Registry queries, package verification |
-| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | [docs](https://opena2a.org/docs/dvaa) | Vulnerable AI agent for training |
+| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity and access management |
+| `opena2a benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/oasb) | 222 attack scenarios, compliance scoring (OASB) |
+| `opena2a registry` | [Trust Registry](https://registry.opena2a.org) | | Trust Registry queries, package verification |
+| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | [docs](https://opena2a.org/docs/dvaa) | Vulnerable AI agent for security training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | [docs](https://opena2a.org/docs/cryptoserve) | Cryptographic inventory, PQC readiness |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
+
+**Command-to-product mapping:**
+
+| Product | CLI Commands |
+|---------|-------------|
+| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `scan`, `hunt`, `research`, `benchmark` |
+| [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `protect`, `secrets`, `broker`, `dlp` |
+| [AIM](https://github.com/opena2a-org/agent-identity-management) | `identity` |
+| [Trust Registry](https://registry.opena2a.org) | `registry`, `verify` |
+| [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `train` |
+| [CryptoServe](https://github.com/ecolibria/crypto-serve) | `crypto` |
+| ConfigGuard (built-in) | `guard` |
+| ARP (included in HackMyAgent) | `runtime` |
+| Shield (built-in) | `shield` |
 
 ## [CI/CD Integration](https://opena2a.org/docs/cli/ci-cd)
 
@@ -303,24 +366,28 @@ All commands support `--format json` and `--ci` flags for pipeline integration:
 ```
 opena2a CLI
   |
-  +-- init          Project assessment, trust scoring
-  +-- protect       Credential detection + migration
-  +-- guard         Config file integrity (sign, verify, watch, policy, hooks, snapshots)
-  +-- runtime       ARP monitoring wrapper
-  +-- verify        Binary integrity via Trust Registry
-  +-- self-register Tool registration in Trust Registry
-  +-- config        User preferences
+  +-- Built-in Commands
+  |    +-- init          Project assessment, trust scoring
+  |    +-- protect       Credential detection + migration (Secretless AI)
+  |    +-- guard         Config file integrity (ConfigGuard)
+  |    +-- runtime       Agent runtime protection (ARP)
+  |    +-- shield        Unified security orchestration
+  |    +-- verify        Binary integrity via Trust Registry
+  |    +-- self-register Tool registration in Trust Registry
+  |    +-- config        User preferences
   |
   +-- Adapters (install on first use)
-       +-- scan      -> hackmyagent
-       +-- secrets   -> secretless-ai
-       +-- broker    -> secretless-ai
-       +-- dlp       -> secretless-ai
-       +-- identity  -> aim
-       +-- benchmark -> hackmyagent
-       +-- registry  -> ai-trust
-       +-- train     -> opena2a/dvaa (Docker)
-       +-- crypto    -> cryptoserve (Python)
+       +-- scan      -> HackMyAgent
+       +-- secrets   -> Secretless AI
+       +-- hunt      -> HackMyAgent
+       +-- research  -> HackMyAgent
+       +-- broker    -> Secretless AI
+       +-- dlp       -> Secretless AI
+       +-- identity  -> AIM
+       +-- benchmark -> HackMyAgent (OASB)
+       +-- registry  -> Trust Registry
+       +-- train     -> DVAA (Docker)
+       +-- crypto    -> CryptoServe (Python)
 ```
 
 ## Credential Patterns
@@ -347,6 +414,21 @@ Language-aware replacements:
 | Java/Kotlin | `System.getenv("VAR_NAME")` |
 | Rust | `std::env::var("VAR_NAME").unwrap_or_default()` |
 | YAML/TOML/JSON | `${VAR_NAME}` |
+
+## Ecosystem
+
+OpenA2A is a platform of specialized security tools, each usable standalone or through the CLI.
+
+| Product | Install | Purpose |
+|---------|---------|---------|
+| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `npx hackmyagent secure` | Security scanner, attack simulation, benchmarks, runtime protection |
+| [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `npx secretless-ai init` | Credential management, broker, DLP for AI coding tools |
+| [AIM](https://github.com/opena2a-org/agent-identity-management) | Self-hosted (Go) | Agent identity and access management |
+| [AI Browser Guard](https://github.com/opena2a-org/ai-browser-guard) | Chrome Web Store | Browser extension for AI agent detection and control |
+| [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `docker pull opena2a/dvaa` | Deliberately vulnerable AI agent for security training |
+| [Trust Registry](https://registry.opena2a.org) | `registry.opena2a.org` | Supply chain verification, trust scores, package metadata |
+
+All products are open source under Apache-2.0.
 
 ## Upstream Contributions
 
