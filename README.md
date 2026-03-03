@@ -97,6 +97,20 @@ opena2a init          # Re-assess -- watch your score improve
   <img src="docs/vhs/protect.gif" alt="opena2a protect demo" width="700" />
 </p>
 
+## Smart Input Modes
+
+Five ways to interact with the CLI -- no memorization required:
+
+```bash
+opena2a                           # Interactive guided wizard (no args)
+opena2a ~drift                    # Semantic search -- finds related commands
+opena2a ~api keys                 # Semantic search with domain expansion
+opena2a ?                         # Context-aware recommendations for your project
+opena2a "find leaked credentials" # Natural language command matching
+```
+
+Semantic search uses a weighted index of tags, synonyms, and domains -- no API calls. Natural language mode falls back to Claude Haiku when static matching is insufficient (opt-in, ~$0.0002 per query).
+
 ## Scope Drift Detection
 
 API keys provisioned for one service often silently grant access to others. A Google Maps key can call Gemini. An AWS S3 key may reach Bedrock.
@@ -285,20 +299,6 @@ opena2a shield suggest                   # Get policy improvement recommendation
 ```
 
 Shield stores events in a local tamper-evident log at `.opena2a/shield/events.jsonl` and policies at `.opena2a/shield/policy.yaml`. No network calls are made unless LLM-powered subcommands are explicitly invoked.
-
-## [Smart Input Modes](https://opena2a.org/docs/cli/input-modes)
-
-The CLI includes built-in intelligence for command discovery:
-
-```bash
-opena2a                           # Interactive guided wizard
-opena2a ~drift                    # Semantic search (finds protect, init)
-opena2a ~api keys                 # Semantic search with domain expansion
-opena2a ?                         # Context-aware recommendations
-opena2a "find leaked credentials" # Natural language matching
-```
-
-Semantic search uses a weighted index of tags, synonyms, and domains -- no API calls required. Natural language mode falls back to Claude Haiku when static matching is insufficient (opt-in, costs ~$0.0002 per query).
 
 ## Adapter Commands
 
