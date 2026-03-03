@@ -145,12 +145,12 @@ export async function guard(options: GuardOptions): Promise<number> {
       return guardHook(action, targetDir);
     }
     case 'resign': {
-      const { guardResign } = await import('./guard-snapshots.js');
-      return guardResign(targetDir, options);
+      const { guardResign: resign } = await import('./guard-snapshots.js');
+      return resign(targetDir, options);
     }
     case 'snapshot': {
-      const { guardSnapshot } = await import('./guard-snapshots.js');
-      return guardSnapshot(targetDir, options);
+      const { guardSnapshot: snapshot } = await import('./guard-snapshots.js');
+      return snapshot(targetDir, options);
     }
     default:
       process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n`));
