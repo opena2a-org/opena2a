@@ -23,6 +23,7 @@ export interface GuardOptions {
   ci?: boolean;
   format?: 'text' | 'json';
   verbose?: boolean;
+  enforce?: boolean;
 }
 
 interface ConfigSignature {
