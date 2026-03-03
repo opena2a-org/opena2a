@@ -17,7 +17,7 @@ import { Spinner } from '../util/spinner.js';
 import { writeEvent, getShieldDir } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
-import { scanMcpConfig, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
+import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
 
 // --- Types ---
 
@@ -108,9 +108,20 @@ export async function init(options: InitOptions): Promise<number> {
   // 1. Detect project type
   const project = detectProject(targetDir);
 
-  // 2. Quick credential scan
+  // 2. Quick credential scan (source files + MCP configs)
   if (isTTY) spinner.update('Scanning for credentials...');
   const credentialMatches = quickCredentialScan(targetDir);
+
+  // Scan MCP config files for credentials (these are skipped by walkFiles)
+  const mcpCreds = scanMcpCredentials(targetDir);
+  const seenCredValues = new Set(credentialMatches.map(m => m.value));
+  for (const mc of mcpCreds) {
+    if (!seenCredValues.has(mc.value)) {
+      credentialMatches.push(mc);
+      seenCredValues.add(mc.value);
+    }
+  }
+
   const credsBySeverity: Record<string, number> = {};
   for (const m of credentialMatches) {
     credsBySeverity[m.severity] = (credsBySeverity[m.severity] || 0) + 1;

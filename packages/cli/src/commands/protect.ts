@@ -88,6 +88,7 @@ import {
   applyLivenessResults,
   type LivenessResult,
 } from '../util/drift-verification.js';
+import { scanMcpCredentials } from '../util/ai-config.js';
 
 // --- Core logic ---
 
@@ -107,11 +108,22 @@ export async function protect(options: ProtectOptions): Promise<number> {
     process.stderr.write(yellow('[DRY RUN] No files will be modified.\n\n'));
   }
 
-  // Phase 1: Scan for credentials
+  // Phase 1: Scan for credentials (source files + MCP configs)
   const spinner = new Spinner('Scanning for credentials...');
   spinner.start();
 
   let matches = scanForCredentials(targetDir);
+
+  // Also scan MCP config files (skipped by walkFiles due to dot-file/JSON filtering)
+  const mcpCreds = scanMcpCredentials(targetDir);
+  const seenValues = new Set(matches.map(m => m.value));
+  for (const mc of mcpCreds) {
+    if (!seenValues.has(mc.value)) {
+      matches.push(mc);
+      seenValues.add(mc.value);
+    }
+  }
+
   spinner.stop();
 
   const isJson = options.format === 'json';

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { scanMcpConfig, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../../src/util/ai-config.js';
+import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../../src/util/ai-config.js';
 
 describe('ai-config', () => {
   let tempDir: string;
@@ -60,12 +60,13 @@ describe('ai-config', () => {
     });
 
     it('detects hardcoded credentials in env', () => {
+      const fakeKey = 'sk-ant-api03-' + 'A'.repeat(85);
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
           'api-server': {
             command: 'node',
             args: ['server.js'],
-            env: { API_KEY: 'sk-ant-abc123def456' },
+            env: { API_KEY: fakeKey },
           },
         },
       }));
@@ -121,10 +122,10 @@ describe('ai-config', () => {
       expect(findings.some(f => f.findingId === 'MCP-TOOLS')).toBe(true);
     });
 
-    it('detects multiple credential prefixes', () => {
+    it('detects multiple credential types', () => {
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
-          'github': { command: 'node', args: [], env: { TOKEN: 'ghp_abcdef123456' } },
+          'github': { command: 'node', args: [], env: { TOKEN: 'ghp_' + 'A'.repeat(36) } },
           'aws': { command: 'node', args: [], env: { KEY: 'AKIA1234567890ABCDEF' } },
         },
       }));
@@ -136,12 +137,13 @@ describe('ai-config', () => {
     });
 
     it('reports both MCP-TOOLS and MCP-CRED from same file', () => {
+      const fakeKey = 'sk-ant-api03-' + 'B'.repeat(85);
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
           'fs-with-creds': {
             command: 'filesystem-server',
             args: [],
-            env: { KEY: 'sk-live_abc123' },
+            env: { KEY: fakeKey },
           },
         },
       }));
@@ -149,6 +151,118 @@ describe('ai-config', () => {
       const findings = scanMcpConfig(tempDir);
       expect(findings.some(f => f.findingId === 'MCP-TOOLS')).toBe(true);
       expect(findings.some(f => f.findingId === 'MCP-CRED')).toBe(true);
+    });
+  });
+
+  // --- scanAiConfigFiles ---
+
+  // --- scanMcpCredentials ---
+
+  describe('scanMcpCredentials', () => {
+    it('returns empty for no MCP config files', () => {
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches).toHaveLength(0);
+    });
+
+    it('returns CredentialMatch for Anthropic key in MCP env', () => {
+      const fakeKey = 'sk-ant-api03-' + 'C'.repeat(85);
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'claude': { command: 'node', args: ['server.js'], env: { ANTHROPIC_API_KEY: fakeKey } },
+        },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(1);
+      expect(matches[0].findingId).toBe('CRED-001');
+      expect(matches[0].severity).toBe('critical');
+      expect(matches[0].title).toContain('MCP config');
+      expect(matches[0].explanation).toContain('claude');
+      expect(matches[0].value).toBe(fakeKey);
+    });
+
+    it('detects Google API key (drift) in MCP env', () => {
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'maps': { command: 'node', args: [], env: { GMAP_KEY: 'AIzaSyB1tLCTD6VAkDQgvpMuJMRU8ksKYLEB_m8' } },
+        },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(1);
+      expect(matches[0].findingId).toBe('DRIFT-001');
+      expect(matches[0].severity).toBe('high');
+    });
+
+    it('detects GitHub token in MCP env', () => {
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'gh': { command: 'node', args: [], env: { GH_TOKEN: 'ghp_' + 'X'.repeat(36) } },
+        },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(1);
+      expect(matches[0].findingId).toBe('CRED-003');
+    });
+
+    it('skips env var references ($VAR)', () => {
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'safe': { command: 'node', args: [], env: { KEY: '$ANTHROPIC_API_KEY' } },
+        },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches).toHaveLength(0);
+    });
+
+    it('deduplicates same key across servers', () => {
+      const fakeKey = 'sk-ant-api03-' + 'D'.repeat(85);
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'server1': { command: 'node', args: [], env: { KEY: fakeKey } },
+          'server2': { command: 'node', args: [], env: { KEY: fakeKey } },
+        },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(1);
+    });
+
+    it('finds credentials across multiple MCP config files', () => {
+      const key1 = 'sk-ant-api03-' + 'E'.repeat(85);
+      const key2 = 'ghp_' + 'F'.repeat(36);
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: { 'a': { command: 'node', args: [], env: { K: key1 } } },
+      }));
+      fs.writeFileSync(path.join(tempDir, '.mcp.json'), JSON.stringify({
+        mcpServers: { 'b': { command: 'node', args: [], env: { T: key2 } } },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(2);
+    });
+
+    it('includes line number from raw file', () => {
+      const fakeKey = 'sk-ant-api03-' + 'G'.repeat(85);
+      // Write with newlines so key is on a specific line
+      const content = `{
+  "mcpServers": {
+    "test": {
+      "command": "node",
+      "args": [],
+      "env": {
+        "KEY": "${fakeKey}"
+      }
+    }
+  }
+}`;
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), content);
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(1);
+      expect(matches[0].line).toBeGreaterThan(1);
     });
   });
 

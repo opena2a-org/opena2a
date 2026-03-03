@@ -7,6 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { CREDENTIAL_PATTERNS, type CredentialMatch } from './credential-patterns.js';
 
 // --- Types ---
 
@@ -20,13 +21,11 @@ export interface AiConfigFinding {
 
 // --- Constants ---
 
-const MCP_CONFIG_FILES = ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json'];
+export const MCP_CONFIG_FILES = ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json'];
 
 const HIGH_RISK_SERVER_PATTERNS = [
   'filesystem', 'shell', 'bash', 'database', 'exec',
 ];
-
-const CREDENTIAL_PREFIXES = ['sk-ant-', 'sk-', 'ghp_', 'AKIA', 'AIza'];
 
 const AI_CONFIG_FILES: { path: string; isDir: boolean }[] = [
   { path: 'CLAUDE.md', isDir: false },
@@ -93,17 +92,21 @@ export function scanMcpConfig(dir: string): AiConfigFinding[] {
         riskyServers.push(name);
       }
 
-      // Check env values for hardcoded credentials
+      // Check env values for any non-variable-reference secrets
       const env = cfg['env'] as Record<string, unknown> | undefined;
       if (env && typeof env === 'object') {
         for (const [, val] of Object.entries(env)) {
           const strVal = String(val ?? '');
-          if (strVal.startsWith('$')) continue; // Environment variable reference -- safe
-          const hasCredPrefix = CREDENTIAL_PREFIXES.some(prefix => strVal.startsWith(prefix));
-          if (hasCredPrefix) {
-            credServers.push(name);
-            break;
+          if (strVal.startsWith('$') || strVal.length < 8) continue;
+          // Run full credential patterns against the value
+          for (const pattern of CREDENTIAL_PATTERNS) {
+            const re = new RegExp(pattern.pattern.source, pattern.pattern.flags);
+            if (re.test(strVal)) {
+              credServers.push(name);
+              break;
+            }
           }
+          if (credServers.includes(name)) break;
         }
       }
     }
@@ -130,6 +133,86 @@ export function scanMcpConfig(dir: string): AiConfigFinding[] {
   }
 
   return findings;
+}
+
+/**
+ * Deep-scan MCP config files for credentials using the full credential
+ * pattern library. Returns CredentialMatch objects so they integrate
+ * into the normal credential pipeline (scoring, grouping, protect).
+ */
+export function scanMcpCredentials(dir: string): CredentialMatch[] {
+  const matches: CredentialMatch[] = [];
+  const seen = new Set<string>();
+
+  for (const configFile of MCP_CONFIG_FILES) {
+    const fullPath = path.join(dir, configFile);
+    if (!fs.existsSync(fullPath)) continue;
+
+    let parsed: Record<string, unknown>;
+    try {
+      const raw = fs.readFileSync(fullPath, 'utf-8');
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+
+    const servers = (parsed['mcpServers'] ?? parsed['mcp_servers'] ?? {}) as Record<string, unknown>;
+    if (typeof servers !== 'object' || servers === null) continue;
+
+    for (const [serverName, config] of Object.entries(servers)) {
+      const cfg = config as Record<string, unknown> | undefined;
+      if (!cfg || typeof cfg !== 'object') continue;
+
+      const env = cfg['env'] as Record<string, unknown> | undefined;
+      if (!env || typeof env !== 'object') continue;
+
+      for (const [envKey, val] of Object.entries(env)) {
+        const strVal = String(val ?? '');
+        if (strVal.startsWith('$') || strVal.length < 8) continue;
+
+        for (const pattern of CREDENTIAL_PATTERNS) {
+          const re = new RegExp(pattern.pattern.source, pattern.pattern.flags);
+          const match = re.exec(strVal);
+          if (!match) continue;
+
+          const value = match[1] ?? match[0];
+          const dedupKey = `${value}:${fullPath}`;
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+
+          // Find the line number in the raw file
+          const rawContent = fs.readFileSync(fullPath, 'utf-8');
+          const lines = rawContent.split('\n');
+          let lineNum = 1;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes(value)) {
+              lineNum = i + 1;
+              break;
+            }
+          }
+
+          const base = pattern.envVarPrefix;
+          const existing = matches.filter(m => m.envVar.startsWith(base));
+          const envVar = existing.length === 0 ? base : `${base}_${existing.length + 1}`;
+
+          matches.push({
+            value,
+            filePath: fullPath,
+            line: lineNum,
+            findingId: pattern.id,
+            envVar,
+            severity: pattern.severity,
+            title: `${pattern.title} (in MCP config)`,
+            explanation: `${pattern.explanation} Found in MCP server "${serverName}" env.${envKey} in ${configFile}.`,
+            businessImpact: pattern.businessImpact,
+          });
+          break; // One pattern match per env value is enough
+        }
+      }
+    }
+  }
+
+  return matches;
 }
 
 /**

@@ -299,12 +299,13 @@ describe('init', () => {
     expect(mcpFinding.severity).toBe('high');
   });
 
-  it('detects MCP hardcoded credentials', async () => {
+  it('detects MCP hardcoded credentials as proper credential findings', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    const fakeKey = 'sk-ant-api03-' + 'M'.repeat(85);
     fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
       mcpServers: {
-        'api': { command: 'node', args: ['server.js'], env: { KEY: 'sk-ant-abc123def' } },
+        'api': { command: 'node', args: ['server.js'], env: { KEY: fakeKey } },
       },
     }));
 
@@ -314,9 +315,14 @@ describe('init', () => {
     }));
 
     const report = JSON.parse(output);
-    const mcpCred = report.findings.find((f: any) => f.findingId === 'MCP-CRED');
-    expect(mcpCred).toBeDefined();
-    expect(mcpCred.severity).toBe('high');
+    // MCP credentials now show up as real CRED-001 findings (critical severity)
+    expect(report.credentialFindings).toBeGreaterThan(0);
+    const credFinding = report.findings.find((f: any) => f.findingId === 'CRED-001');
+    expect(credFinding).toBeDefined();
+    expect(credFinding.severity).toBe('critical');
+    // MCP-CRED hygiene check should also still appear
+    const mcpCredCheck = report.hygieneChecks.find((c: any) => c.label === 'MCP credentials');
+    expect(mcpCredCheck).toBeDefined();
   });
 
   it('detects AI config files not excluded from git', async () => {
@@ -398,9 +404,10 @@ describe('init', () => {
   it('generates MCP-related actions when MCP findings exist', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    const fakeKey = 'sk-ant-api03-' + 'N'.repeat(85);
     fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
       mcpServers: {
-        'fs': { command: 'filesystem-server', args: [], env: { KEY: 'sk-test123' } },
+        'fs': { command: 'filesystem-server', args: [], env: { KEY: fakeKey } },
       },
     }));
 
@@ -411,9 +418,10 @@ describe('init', () => {
 
     const report = JSON.parse(output);
     const mcpToolAction = report.actions.find((a: any) => a.description.includes('MCP server permissions'));
-    const mcpCredAction = report.actions.find((a: any) => a.description.includes('MCP config credentials'));
     expect(mcpToolAction).toBeDefined();
-    expect(mcpCredAction).toBeDefined();
+    // MCP credential is now a regular CRED finding, so protect action covers it
+    const protectAction = report.actions.find((a: any) => a.command === 'opena2a protect');
+    expect(protectAction).toBeDefined();
   });
 
   it('text output uses -N deduction format (not +N recoverable)', async () => {
