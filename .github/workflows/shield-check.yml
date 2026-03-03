@@ -1,0 +1,137 @@
+name: Shield Security Check
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'turbo.json'
+
+concurrency:
+  group: shield-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  shield:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Shield init
+        id: init
+        run: |
+          node packages/cli/dist/index.js shield init --ci --format json > /tmp/shield-init.json 2>&1 || true
+          cat /tmp/shield-init.json
+
+      - name: Shield selfcheck
+        id: selfcheck
+        run: |
+          node packages/cli/dist/index.js shield selfcheck --ci --format json > /tmp/shield-selfcheck.json 2>&1
+          cat /tmp/shield-selfcheck.json
+
+          STATUS=$(jq -r '.status // "unknown"' /tmp/shield-selfcheck.json)
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+          CHECKS=$(jq -r '.checks[]? | "\(.name): \(.status) - \(.detail)"' /tmp/shield-selfcheck.json)
+          echo "checks<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHECKS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Shield report
+        id: report
+        run: |
+          node packages/cli/dist/index.js shield report --ci --format json --since 30d > /tmp/shield-report.json 2>&1 || true
+          cat /tmp/shield-report.json
+
+          SCORE=$(jq -r '.posture.score // "N/A"' /tmp/shield-report.json 2>/dev/null || echo "N/A")
+          GRADE=$(jq -r '.posture.grade // "N/A"' /tmp/shield-report.json 2>/dev/null || echo "N/A")
+          TOTAL=$(jq -r '.totalEvents // 0' /tmp/shield-report.json 2>/dev/null || echo "0")
+
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo "grade=$GRADE" >> "$GITHUB_OUTPUT"
+          echo "total_events=$TOTAL" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate results
+        run: |
+          STATUS="${{ steps.selfcheck.outputs.status }}"
+          echo "Shield status: $STATUS"
+
+          if [ "$STATUS" = "compromised" ] || [ "$STATUS" = "lockdown" ]; then
+            echo "::error::Shield integrity check failed with status: $STATUS"
+            echo ""
+            echo "Selfcheck details:"
+            echo "${{ steps.selfcheck.outputs.checks }}"
+            exit 1
+          fi
+
+          if [ "$STATUS" = "degraded" ]; then
+            echo "::warning::Shield integrity check returned degraded status"
+          fi
+
+          echo "Shield check passed with status: $STATUS"
+
+      - name: Post summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATUS="${{ steps.selfcheck.outputs.status }}"
+          SCORE="${{ steps.report.outputs.score }}"
+          GRADE="${{ steps.report.outputs.grade }}"
+          TOTAL="${{ steps.report.outputs.total_events }}"
+
+          if [ "$STATUS" = "healthy" ]; then
+            STATUS_LABEL="PASS - healthy"
+          elif [ "$STATUS" = "degraded" ]; then
+            STATUS_LABEL="WARN - degraded"
+          elif [ "$STATUS" = "compromised" ]; then
+            STATUS_LABEL="FAIL - compromised"
+          elif [ "$STATUS" = "lockdown" ]; then
+            STATUS_LABEL="FAIL - lockdown"
+          else
+            STATUS_LABEL="UNKNOWN - $STATUS"
+          fi
+
+          BODY=$(cat <<'EOFBODY'
+          ## Shield Security Check
+
+          | Check | Result |
+          |-------|--------|
+          | Integrity | STATUS_PLACEHOLDER |
+          | Posture Score | SCORE_PLACEHOLDER (GRADE_PLACEHOLDER) |
+          | Events (30d) | TOTAL_PLACEHOLDER |
+
+          <details>
+          <summary>Selfcheck details</summary>
+
+          ```
+          CHECKS_PLACEHOLDER
+          ```
+          </details>
+
+          ---
+          *Run `opena2a shield selfcheck` locally to reproduce.*
+          EOFBODY
+          )
+
+          BODY="${BODY//STATUS_PLACEHOLDER/$STATUS_LABEL}"
+          BODY="${BODY//SCORE_PLACEHOLDER/$SCORE}"
+          BODY="${BODY//GRADE_PLACEHOLDER/$GRADE}"
+          BODY="${BODY//TOTAL_PLACEHOLDER/$TOTAL}"
+
+          CHECKS="${{ steps.selfcheck.outputs.checks }}"
+          BODY="${BODY//CHECKS_PLACEHOLDER/$CHECKS}"
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY" || true

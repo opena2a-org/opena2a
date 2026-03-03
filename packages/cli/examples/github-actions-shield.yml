@@ -1,0 +1,42 @@
+# Shield Security Check - GitHub Actions Example
+#
+# Copy this workflow into your project's .github/workflows/ directory
+# to run Shield integrity checks on every push and pull request.
+#
+# Prerequisites:
+#   npm install -g opena2a-cli
+#   -- or use npx as shown below --
+#
+# Shield verifies:
+#   - Policy file integrity (tamper detection)
+#   - Shell hook integrity (configuration validation)
+#   - Event chain integrity (hash chain verification)
+#   - Process integrity (runtime environment)
+#   - Artifact signatures (signed artifact validation)
+#
+# Exit codes:
+#   0 = healthy or degraded (pass)
+#   1 = compromised or lockdown (fail)
+
+name: Shield Security Check
+
+on: [push, pull_request]
+
+jobs:
+  shield:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Initialize Shield
+        run: npx opena2a-cli shield init --ci --format json
+
+      - name: Run integrity selfcheck
+        run: npx opena2a-cli shield selfcheck --ci
+
+      - name: Generate security report
+        run: npx opena2a-cli shield report --ci --format json
