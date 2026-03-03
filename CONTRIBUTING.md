@@ -62,8 +62,8 @@ cd packages/cli && npx vitest
    - Shield modules go in `packages/cli/src/shield/`
    - Shared utilities go in `packages/shared/src/`
 
-3. **Add tests** for new functionality. Tests live alongside source files
-   in `__tests__/` directories and use [Vitest](https://vitest.dev/).
+3. **Add tests** for new functionality. Tests live in `packages/cli/__tests__/`
+   (organized by module: `commands/`, `shield/`, etc.) and use [Vitest](https://vitest.dev/).
 
 4. **Build and test** before submitting:
    ```bash
@@ -90,7 +90,7 @@ cd packages/cli && npx vitest
 
 1. Create `packages/cli/src/commands/yourcommand.ts`
 2. Register it in `packages/cli/src/index.ts`
-3. Add tests in `packages/cli/src/commands/__tests__/yourcommand.test.ts`
+3. Add tests in `packages/cli/__tests__/commands/yourcommand.test.ts`
 
 ### Adapter command (wraps external tool)
 
