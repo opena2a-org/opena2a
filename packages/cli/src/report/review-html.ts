@@ -293,21 +293,37 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     for(var i=0;i<phases.length;i++) h+=phaseCard(phases[i]);
     h+='</div>';
 
-    // Score explainer -- structured as two mini-grids
+    // Score breakdown -- show actual score, weight, weighted contribution per dimension
+    var dims=[
+      {name:'Hygiene',weight:35,score:report.initData.trustScore,tab:'hygiene'},
+      {name:'Shield',weight:25,score:report.shieldData.postureScore,tab:'shield'},
+      {name:'Credentials',weight:22,score:phases.length>1?phases[1].score:0,tab:'credentials'},
+      {name:'Integrity',weight:18,score:phases.length>2?phases[2].score:0,tab:'integrity'}
+    ];
     h+='<div class="score-explainer">';
-    h+='<div style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Score Breakdown</div>';
-    h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px">';
-    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">35%</div><div style="font-size:11px;color:var(--muted)">Hygiene</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">25%</div><div style="font-size:11px;color:var(--muted)">Shield</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">22%</div><div style="font-size:11px;color:var(--muted)">Credentials</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">18%</div><div style="font-size:11px;color:var(--muted)">Integrity</div></div>';
+    h+='<div style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">Score Breakdown</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:10px">';
+    for(var i=0;i<dims.length;i++){
+      var d=dims[i];
+      var weighted=Math.round(d.score*d.weight/100);
+      var clr=scoreColor(d.score);
+      h+='<div style="display:grid;grid-template-columns:100px 1fr 60px 50px;align-items:center;gap:10px;cursor:pointer" onclick="goToTab(&quot;'+d.tab+'&quot;)">';
+      h+='<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:13px;color:var(--muted)">'+esc(d.name)+'</span></div>';
+      h+='<div style="position:relative;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden"><div style="position:absolute;left:0;top:0;height:100%;width:'+d.score+'%;background:'+clr+';border-radius:4px;transition:width 0.3s"></div></div>';
+      h+='<div style="text-align:right;font-size:14px;font-weight:700;color:'+clr+'">'+d.score+'<span style="font-size:11px;color:var(--dim);font-weight:400">/100</span></div>';
+      h+='<div style="text-align:right;font-size:11px;color:var(--dim)">x '+d.weight+'%</div>';
+      h+='</div>';
+    }
     h+='</div>';
-    h+='<div style="display:flex;gap:12px;justify-content:center;font-size:13px;color:var(--dim);border-top:1px solid rgba(51,65,85,0.4);padding-top:8px">';
-    h+='<span><strong style="color:var(--green);font-size:15px">A</strong> 90+</span>';
-    h+='<span><strong style="color:var(--primary);font-size:15px">B</strong> 80+</span>';
-    h+='<span><strong style="color:var(--medium);font-size:15px">C</strong> 70+</span>';
-    h+='<span><strong style="color:var(--amber);font-size:15px">D</strong> 60+</span>';
-    h+='<span><strong style="color:var(--red);font-size:15px">F</strong> &lt;60</span>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(51,65,85,0.4);margin-top:12px;padding-top:8px">';
+    h+='<div style="display:flex;gap:12px;font-size:12px;color:var(--dim)">';
+    h+='<span><strong style="color:var(--green)">A</strong> 90+</span>';
+    h+='<span><strong style="color:var(--primary)">B</strong> 80+</span>';
+    h+='<span><strong style="color:var(--medium)">C</strong> 70+</span>';
+    h+='<span><strong style="color:var(--high)">D</strong> 60+</span>';
+    h+='<span><strong style="color:var(--red)">F</strong> &lt;60</span>';
+    h+='</div>';
+    h+='<div style="font-size:12px;color:var(--dim)">Click a row to view details</div>';
     h+='</div>';
     h+='</div>';
 
