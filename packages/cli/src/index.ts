@@ -166,7 +166,7 @@ Learn more: https://opena2a.org/docs`);
 
   // Shield command (unified security orchestration)
   program
-    .command('shield <subcommand>')
+    .command('shield <subcommand> [args...]')
     .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report|monitor|session|suggest|explain|triage)')
     .option('--dir <path>', 'Target directory')
     .option('--agent <name>', 'Agent name filter')
@@ -179,11 +179,12 @@ Learn more: https://opena2a.org/docs`);
     .option('--reset', 'Force exit lockdown')
     .option('--forensic', 'Forensic mode')
     .option('--analyze', 'Enable LLM analysis')
-    .action(async (subcommand: string, opts) => {
+    .action(async (subcommand: string, args: string[], opts) => {
       const { shield } = await import('./commands/shield.js');
       const globalOpts = program.opts();
       process.exitCode = await shield({
         subcommand,
+        args,
         ...opts,
         ci: globalOpts.ci,
         format: globalOpts.format,

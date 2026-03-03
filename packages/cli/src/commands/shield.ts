@@ -24,6 +24,7 @@ import { bold, dim, gray, green, yellow, red, cyan } from '../util/colors.js';
 
 export interface ShieldOptions {
   subcommand: string;
+  args?: string[];
   dir?: string;
   agent?: string;
   count?: string;
@@ -213,6 +214,7 @@ async function handlePolicy(options: ShieldOptions): Promise<number> {
 
 async function handleEvaluate(options: ShieldOptions): Promise<number> {
   const { loadPolicy, evaluatePolicy } = await import('../shield/policy.js');
+  const { writeEvent } = await import('../shield/events.js');
   const isJson = options.format === 'json';
 
   const policy = loadPolicy(options.dir);
@@ -226,17 +228,69 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
     return 1;
   }
 
-  const category = options.category ?? 'processes';
+  // Determine the command string from positional args or fall back to category-based evaluation.
+  const commandString = options.args && options.args.length > 0
+    ? options.args.join(' ')
+    : null;
+
   const agent = options.agent ?? null;
-  const target = '';
+  let category: string;
+  let target: string;
+
+  if (commandString) {
+    // Shell hook mode: parse the command to extract the binary name (first word).
+    // Handle pipes, subshells, and quoted strings by taking the first token.
+    const trimmed = commandString.trim();
+    const firstWord = trimmed.split(/[\s|;&]/)[0] ?? trimmed;
+    category = 'processes';
+    target = firstWord;
+  } else {
+    // Explicit category mode (used by direct API calls)
+    category = options.category ?? 'processes';
+    target = '';
+  }
 
   const decision = evaluatePolicy(policy, agent, category, target);
 
+  // Write enforcement events for non-allowed decisions
+  if (decision.outcome === 'blocked') {
+    writeEvent({
+      source: 'shield',
+      category: 'enforcement',
+      severity: 'high',
+      agent,
+      sessionId: null,
+      action: 'command.blocked',
+      target: commandString ?? target,
+      outcome: 'blocked',
+      detail: { rule: decision.rule, mode: policy.mode },
+      orgId: null,
+      managed: false,
+      agentId: null,
+    });
+    process.stderr.write(`[shield] blocked: ${commandString ?? target} (rule: ${decision.rule})\n`);
+  } else if (decision.outcome === 'monitored') {
+    writeEvent({
+      source: 'shield',
+      category: 'enforcement',
+      severity: 'medium',
+      agent,
+      sessionId: null,
+      action: 'command.monitored',
+      target: commandString ?? target,
+      outcome: 'monitored',
+      detail: { rule: decision.rule, mode: policy.mode },
+      orgId: null,
+      managed: false,
+      agentId: null,
+    });
+  }
+
   if (isJson) {
     process.stdout.write(JSON.stringify(decision, null, 2) + '\n');
-  } else {
+  } else if (decision.outcome !== 'blocked') {
+    // Only print non-blocked outcomes to stdout (blocked warning goes to stderr above)
     const outcomeLabel = decision.outcome === 'allowed' ? green('ALLOWED')
-      : decision.outcome === 'blocked' ? red('BLOCKED')
       : yellow('MONITORED');
     process.stdout.write(`${outcomeLabel}  rule=${decision.rule}\n`);
   }

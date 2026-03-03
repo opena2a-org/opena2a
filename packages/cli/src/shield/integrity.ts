@@ -134,7 +134,9 @@ export function getExpectedHookContent(shell: 'zsh' | 'bash'): string {
     return [
       HOOK_START_MARKER,
       'opena2a_shield_preexec() {',
-      '  opena2a shield evaluate "$1"',
+      '  if ! opena2a shield evaluate "$1" 2>/dev/null; then',
+      '    return 1',
+      '  fi',
       '}',
       'autoload -Uz add-zsh-hook',
       'add-zsh-hook preexec opena2a_shield_preexec',
@@ -146,7 +148,9 @@ export function getExpectedHookContent(shell: 'zsh' | 'bash'): string {
   return [
     HOOK_START_MARKER,
     'opena2a_shield_debug() {',
-    '  opena2a shield evaluate "$BASH_COMMAND"',
+    '  if ! opena2a shield evaluate "$BASH_COMMAND" 2>/dev/null; then',
+    '    return 1',
+    '  fi',
     '}',
     "trap 'opena2a_shield_debug' DEBUG",
     HOOK_END_MARKER,
