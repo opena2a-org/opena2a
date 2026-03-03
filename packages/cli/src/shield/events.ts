@@ -250,7 +250,7 @@ export interface EventFilters {
  * Returns null if parsing fails entirely.
  */
 function parseSince(since: string): Date | null {
-  const relativeMatch = since.match(/^(\d+)([dwm])$/);
+  const relativeMatch = since.match(/^(\d+)([hdwm])$/);
   if (relativeMatch) {
     const amount = parseInt(relativeMatch[1], 10);
     const unit = relativeMatch[2];
@@ -258,6 +258,9 @@ function parseSince(since: string): Date | null {
     let ms: number;
 
     switch (unit) {
+      case 'h':
+        ms = amount * 60 * 60 * 1000;
+        break;
       case 'd':
         ms = amount * 24 * 60 * 60 * 1000;
         break;

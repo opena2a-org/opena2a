@@ -89,7 +89,9 @@ export async function dispatchCommand(
     });
   }
 
-  // Handle 'init' directly (not adapter-based)
+  // 'init' is registered directly in Commander (index.ts).
+  // Only dispatch here when called from guided wizard / natural language,
+  // which bypass Commander parsing.
   if (command === 'init') {
     const { init } = await import('./commands/init.js');
     return init({

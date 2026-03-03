@@ -233,10 +233,11 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
     return 1;
   }
 
-  // Determine the command string from positional args or fall back to category-based evaluation.
-  const commandString = options.args && options.args.length > 0
-    ? options.args.join(' ')
-    : null;
+  // Determine the command string from positional args.
+  // Filter out what looks like a directory path (starts with / or ./ or contains path separators).
+  const rawArgs = options.args ?? [];
+  const commandArgs = rawArgs.filter(a => !a.startsWith('/') && !a.startsWith('./') && !a.startsWith('../'));
+  const commandString = commandArgs.length > 0 ? commandArgs.join(' ') : null;
 
   const agent = options.agent ?? null;
   let category: string;

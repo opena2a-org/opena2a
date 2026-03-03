@@ -62,18 +62,18 @@ Learn more: https://opena2a.org/docs`);
 
   // Protect command (direct, not adapter-based)
   program
-    .command('protect')
+    .command('protect [directory]')
     .description('Detect and migrate credentials to encrypted vault')
     .option('--dry-run', 'Show what would change without modifying files')
     .option('--report <path>', 'Write interactive HTML report')
     .option('--skip-verify', 'Skip verification re-scan')
     .option('--skip-liveness', 'Skip drift liveness verification (offline/CI)')
     .option('--dir <path>', 'Target directory')
-    .action(async (opts) => {
+    .action(async (directory: string | undefined, opts) => {
       const { protect: runProtect } = await import('./commands/protect.js');
       const globalOpts = program.opts();
       process.exitCode = await runProtect({
-        targetDir: opts.dir ?? process.cwd(),
+        targetDir: opts.dir ?? directory ?? process.cwd(),
         dryRun: opts.dryRun,
         verbose: globalOpts.verbose,
         ci: globalOpts.ci,
@@ -108,14 +108,14 @@ Learn more: https://opena2a.org/docs`);
 
   // Init command (direct, not adapter-based)
   program
-    .command('init')
+    .command('init [directory]')
     .description('Initialize OpenA2A security in your project')
     .option('--dir <path>', 'Target directory')
-    .action(async (opts) => {
+    .action(async (directory: string | undefined, opts) => {
       const { init } = await import('./commands/init.js');
       const globalOpts = program.opts();
       process.exitCode = await init({
-        targetDir: opts.dir,
+        targetDir: opts.dir ?? directory,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -202,17 +202,17 @@ Learn more: https://opena2a.org/docs`);
 
   // Review command (unified security review)
   program
-    .command('review')
+    .command('review [directory]')
     .description('Run all security checks and open unified HTML dashboard')
     .option('--dir <path>', 'Target directory')
     .option('--report <path>', 'Output path for HTML report')
     .option('--no-open', 'Do not auto-open report in browser')
     .option('--skip-hma', 'Skip HMA scan even if available')
-    .action(async (opts) => {
+    .action(async (directory: string | undefined, opts) => {
       const { review } = await import('./commands/review.js');
       const globalOpts = program.opts();
       process.exitCode = await review({
-        targetDir: opts.dir ?? process.cwd(),
+        targetDir: opts.dir ?? directory ?? process.cwd(),
         reportPath: opts.report,
         autoOpen: opts.open !== false,
         skipHma: opts.skipHma,
