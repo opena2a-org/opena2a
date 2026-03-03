@@ -125,7 +125,7 @@ Learn more: https://opena2a.org/docs`);
   // Guard command (ConfigGuard)
   program
     .command('guard <subcommand>')
-    .description('Config file integrity signing and verification (sign|verify|status)')
+    .description('Config file integrity signing and verification (sign|verify|status|watch|diff)')
     .option('--files <files...>', 'Specific files to guard')
     .option('--dir <path>', 'Target directory')
     .option('--enforce', 'Quarantine on tampering (exit code 3)')
@@ -133,7 +133,7 @@ Learn more: https://opena2a.org/docs`);
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
       process.exitCode = await guard({
-        subcommand: subcommand as 'sign' | 'verify' | 'status',
+        subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff',
         files: opts.files,
         targetDir: opts.dir,
         ci: globalOpts.ci,

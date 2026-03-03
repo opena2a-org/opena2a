@@ -38,7 +38,7 @@ ${CSS}
 </style>
 </head>
 <body>
-<script id="report-data" type="application/json">${escapeHtml(jsonData)}</script>
+<script id="report-data" type="application/json">${jsonData.replace(/<\//g, '<\\/')}</script>
 <div id="app">
   <header class="header">
     <div class="header-left">

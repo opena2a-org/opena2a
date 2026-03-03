@@ -693,11 +693,16 @@ async function buildWeeklyReport(
       lowTrustPackages: [],
     },
 
-    configIntegrity: {
-      filesMonitored: 0,
-      tamperedFiles: [],
-      signatureStatus: 'unsigned',
-    },
+    configIntegrity: await (async () => {
+      try {
+        const mod: any = await import('./guard.js');
+        const fn = mod.verifyConfigIntegrity ?? mod.default?.verifyConfigIntegrity;
+        if (fn) return fn();
+        return { filesMonitored: 0, tamperedFiles: [] as string[], signatureStatus: 'unsigned' as const };
+      } catch {
+        return { filesMonitored: 0, tamperedFiles: [] as string[], signatureStatus: 'unsigned' as const };
+      }
+    })(),
 
     runtimeProtection: {
       arpActive: arpStats.totalEvents > 0,
