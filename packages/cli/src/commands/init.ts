@@ -76,7 +76,7 @@ export async function init(options: InitOptions): Promise<number> {
   }
 
   // 3. Security hygiene checks
-  const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
+  const checks = await runHygieneChecks(targetDir, project, credentialMatches.length);
 
   // 4. Check advisories (non-blocking)
   let advisoryCheck: AdvisoryCheck = { advisories: [], matchedPackages: [], total: 0, fromCache: false };
@@ -225,11 +225,11 @@ export async function init(options: InitOptions): Promise<number> {
 
 // --- Hygiene checks ---
 
-function runHygieneChecks(
+async function runHygieneChecks(
   dir: string,
   project: ReturnType<typeof detectProject>,
   credCount: number,
-): HygieneCheck[] {
+): Promise<HygieneCheck[]> {
   const checks: HygieneCheck[] = [];
 
   // Credential scan result
@@ -291,7 +291,53 @@ function runHygieneChecks(
     checks.push({ label: 'MCP config', status: 'info', detail: 'found' });
   }
 
+  // LLM server exposure (lightweight probe of common ports)
+  const llmCheck = await checkLLMServerExposure();
+  if (llmCheck) {
+    checks.push(llmCheck);
+  }
+
   return checks;
+}
+
+// --- LLM server exposure check ---
+
+const LLM_PROBE_PORTS = [
+  { name: 'Ollama', port: 11434, path: '/api/tags' },
+  { name: 'LM Studio', port: 1234, path: '/v1/models' },
+];
+
+async function checkLLMServerExposure(): Promise<HygieneCheck | null> {
+  for (const server of LLM_PROBE_PORTS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    try {
+      const resp = await fetch(`http://127.0.0.1:${server.port}${server.path}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (resp.ok || resp.status < 500) {
+        // Check if no auth required
+        const noAuth = resp.status !== 401 && resp.status !== 403;
+        if (noAuth) {
+          return {
+            label: 'LLM server exposure',
+            status: 'warn',
+            detail: `${server.name} on :${server.port} (no auth)`,
+          };
+        }
+        return {
+          label: 'LLM server exposure',
+          status: 'info',
+          detail: `${server.name} on :${server.port}`,
+        };
+      }
+    } catch {
+      clearTimeout(timer);
+      // Server not running on this port, continue
+    }
+  }
+  return null;
 }
 
 // --- Trust score ---
