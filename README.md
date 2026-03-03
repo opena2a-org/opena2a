@@ -89,6 +89,7 @@ Then fix what it finds:
 ```bash
 opena2a protect       # Migrate credentials to env vars + vault
 opena2a guard sign    # Sign config files for tamper detection
+opena2a guard hook install  # Block commits when configs are tampered
 opena2a init          # Re-assess -- watch your score improve
 ```
 
@@ -143,15 +144,61 @@ Migration flow:
 
 ### [`opena2a guard`](https://opena2a.org/docs/cli/commands/guard)
 
-Config file integrity protection. Sign your config files and detect unauthorized modifications.
+Config file integrity protection. Sign your config files, detect unauthorized modifications, enforce policies, and manage signature snapshots for rollback.
+
+**Subcommands:**
 
 ```bash
 opena2a guard sign              # Sign all detected config files (SHA-256)
 opena2a guard verify            # Check for tampering or unsigned files
-opena2a guard status            # Show signature summary
+opena2a guard status            # Show signature summary (signed/unsigned/tampered counts)
+opena2a guard watch             # Real-time file monitoring with tamper alerts
+opena2a guard diff              # Show changes since last signing (file-level diffs)
+opena2a guard policy init       # Initialize guard policy for this project
+opena2a guard policy show       # Display current guard policy
+opena2a guard hook install      # Install pre-commit hook (blocks commits when tampered)
+opena2a guard hook uninstall    # Remove pre-commit hook
+opena2a guard hook status       # Check if pre-commit hook is installed
+opena2a guard resign            # Re-sign files after intentional changes (creates safety snapshot first)
+opena2a guard snapshot create   # Create a timestamped signature snapshot
+opena2a guard snapshot list     # List available snapshots
+opena2a guard snapshot restore  # Restore signatures from a snapshot
 ```
 
-Default files: `mcp.json`, `package.json`, `tsconfig.json`, `arp.yaml`, `go.mod`, `Dockerfile`, and more.
+**Flags:**
+
+```bash
+--enforce                       # Quarantine mode: exit code 3 on tampering instead of 1
+--skills                        # Include SKILL.md files in signing/verification (HTML comment signature block)
+--heartbeats                    # Include HEARTBEAT.md files (includes expires_at)
+--files <files...>              # Sign/verify specific files only
+--dir <path>                    # Target directory (defaults to current working directory)
+--ci                            # CI mode: machine-readable output, non-interactive
+```
+
+**Behaviors:**
+
+- Signatures stored in `.opena2a/guard/signatures.json`
+- Exit codes: `0` = clean, `1` = tampered, `3` = quarantine (`--enforce`)
+- Default files: `mcp.json`, `package.json`, `tsconfig.json`, `arp.yaml`, `go.mod`, `Dockerfile`, and more
+- Policy can require specific files, block on unsigned, and auto-disable heartbeats when tampering is detected
+- Pre-commit hook runs `opena2a guard verify --ci` before each commit
+- Snapshots stored in `.opena2a/guard/snapshots/`, max 20 with auto-prune
+- `resign` creates a safety snapshot before re-signing so you can roll back
+- Shield integration: `opena2a shield status` includes ConfigGuard state
+
+**Example workflow:**
+
+```bash
+opena2a guard sign                       # Sign all config files
+opena2a guard policy init                # Set up integrity policy
+opena2a guard hook install               # Block commits on tampering
+# ... later, after intentional config changes ...
+opena2a guard diff                       # Review what changed
+opena2a guard resign                     # Re-sign (snapshot created automatically)
+opena2a guard snapshot list              # View available snapshots
+opena2a guard snapshot restore <id>      # Roll back if needed
+```
 
 ### [`opena2a runtime`](https://opena2a.org/docs/cli/commands/runtime)
 
@@ -240,7 +287,7 @@ All commands support `--format json` and `--ci` flags for pipeline integration:
     jq -e '.totalFound == 0' cred-report.json
 
 - name: Config integrity
-  run: npx opena2a-cli guard verify --ci
+  run: npx opena2a-cli guard verify --ci --enforce
 ```
 
 ## Output Formats
@@ -258,7 +305,7 @@ opena2a CLI
   |
   +-- init          Project assessment, trust scoring
   +-- protect       Credential detection + migration
-  +-- guard         Config file integrity (SHA-256 signing)
+  +-- guard         Config file integrity (sign, verify, watch, policy, hooks, snapshots)
   +-- runtime       ARP monitoring wrapper
   +-- verify        Binary integrity via Trust Registry
   +-- self-register Tool registration in Trust Registry
