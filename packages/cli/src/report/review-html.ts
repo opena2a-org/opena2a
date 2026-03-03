@@ -66,7 +66,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .stat-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;text-align:center;}
 .stat-value{font-size:24px;font-weight:700;}
 .stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
-.phase-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:16px;}
+.phase-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;}
 .phase-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;}
 .phase-name{font-size:13px;font-weight:600;margin-bottom:4px;}
 .phase-detail{font-size:12px;color:var(--muted);}
@@ -105,7 +105,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .cta-title{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:8px;}
 .cta-desc{font-size:13px;color:var(--muted);margin-bottom:12px;}
 .overview-top{display:grid;grid-template-columns:auto 1fr;gap:12px;margin-bottom:16px;}
-@media(max-width:768px){.overview-top{grid-template-columns:1fr;}.phase-grid{grid-template-columns:1fr;}.stats-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:768px){.overview-top{grid-template-columns:1fr;}.phase-grid{grid-template-columns:repeat(2,1fr);}.stats-grid{grid-template-columns:repeat(2,1fr);}}
 .hygiene-row{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(51,65,85,0.3);font-size:13px;}
 .hygiene-row:last-child{border-bottom:none;}
 .hygiene-label{color:var(--muted);}
@@ -267,13 +267,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+=statCard(sevCounts.medium,'Medium',sevCounts.medium>0?'var(--medium)':'var(--text)');
     h+='</div>';
 
-    // Gauge + phase cards
-    h+='<div class="overview-top">';
-    h+='<div class="gauge-card">'+gaugeCircle(report.compositeScore,report.grade)+'</div>';
-    h+='<div><h2 class="section-title">Phase Results</h2><div class="phase-grid">';
+    // Phase cards (full width, 5 columns)
+    h+='<h2 class="section-title">Phase Results</h2><div class="phase-grid">';
     var phases=report.phases||[];
     for(var i=0;i<phases.length;i++) h+=phaseCard(phases[i]);
-    h+='</div></div></div>';
+    h+='</div>';
 
     // Score explainer
     h+='<div class="score-explainer">Composite score is a weighted average of 5 security dimensions: <strong>project hygiene</strong> (35%), <strong>credential safety</strong> (22%), <strong>config integrity</strong> (18%), <strong>shield posture</strong> (25%). Grade scale: A (90+), B (80+), C (70+), D (60+), F (&lt;60).</div>';
