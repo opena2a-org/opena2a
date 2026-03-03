@@ -87,7 +87,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .data-table td{padding:8px 10px;border-bottom:1px solid rgba(51,65,85,0.4);vertical-align:top;}
 .data-table tr:last-child td{border-bottom:none;}
 .data-table tr:hover td{background:rgba(6,182,212,0.03);}
-.gauge-card{display:flex;flex-direction:column;align-items:center;padding:20px;}
+.gauge-card{display:flex;flex-direction:column;align-items:center;padding:10px;}
 .section-title{font-size:16px;font-weight:700;color:var(--text);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--card-border);}
 .copy-btn{background:none;border:1px solid var(--dim);color:var(--dim);font-family:var(--font);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:6px;transition:all 0.15s;}
 .copy-btn:hover{border-color:var(--primary);color:var(--primary);}
@@ -120,6 +120,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .check-desc{font-size:12px;color:var(--dim);margin-top:2px;}
 .phase-desc{font-size:12px;color:var(--dim);margin-top:4px;line-height:1.4;}
 .finding-desc{font-size:12px;color:var(--muted);padding:4px 10px 8px;line-height:1.4;}
+.cred-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:14px 16px;margin-bottom:8px;}
+.cred-card-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+.cred-card-title{font-size:14px;font-weight:600;color:var(--text);}
+.cred-card-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;margin-bottom:8px;}
+.cred-card-meta-label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:0.3px;}
+.cred-card-meta-value{color:var(--muted);}
+.cred-card-meta-value.env{color:var(--primary);font-weight:600;}
+.cred-card-detail{border-top:1px solid rgba(51,65,85,0.4);padding-top:8px;margin-top:4px;}
+.cred-card-detail-label{font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:2px;}
+.cred-card-detail-text{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:6px;}
 .badge-owasp{display:inline-block;background:rgba(245,158,11,0.15);color:#f59e0b;font-size:11px;font-weight:700;padding:2px 6px;border-radius:10px;margin-right:4px;}
 .badge-mitre{display:inline-block;background:rgba(139,92,246,0.15);color:#8b5cf6;font-size:11px;font-weight:700;padding:2px 6px;border-radius:10px;margin-right:4px;}
 .footer{border-top:1px solid var(--card-border);margin-top:32px;padding:16px 0;text-align:center;font-size:12px;color:var(--dim);}
@@ -257,14 +267,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+=statCard(sevCounts.medium,'Medium',sevCounts.medium>0?'var(--medium)':'var(--text)');
     h+='</div>';
 
-    // Gauge + score explainer + phase cards
+    // Gauge + phase cards
     h+='<div class="overview-top">';
-    h+='<div><div class="gauge-card">'+gaugeCircle(report.compositeScore,report.grade)+'</div>';
-    h+='<div class="score-explainer">Composite score is a weighted average of 5 security dimensions: <strong>project hygiene</strong> (35%), <strong>credential safety</strong> (22%), <strong>config integrity</strong> (18%), <strong>shield posture</strong> (25%). Grade scale: A (90+), B (80+), C (70+), D (60+), F (&lt;60).</div></div>';
+    h+='<div class="gauge-card">'+gaugeCircle(report.compositeScore,report.grade)+'</div>';
     h+='<div><h2 class="section-title">Phase Results</h2><div class="phase-grid">';
     var phases=report.phases||[];
     for(var i=0;i<phases.length;i++) h+=phaseCard(phases[i]);
     h+='</div></div></div>';
+
+    // Score explainer
+    h+='<div class="score-explainer">Composite score is a weighted average of 5 security dimensions: <strong>project hygiene</strong> (35%), <strong>credential safety</strong> (22%), <strong>config integrity</strong> (18%), <strong>shield posture</strong> (25%). Grade scale: A (90+), B (80+), C (70+), D (60+), F (&lt;60).</div>';
 
     // Action items
     var actions=report.actionItems||[];
@@ -312,21 +324,23 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+='</div>';
 
     h+='<h2 class="section-title">Credential Findings</h2>';
-    h+='<div class="card"><table class="data-table"><thead><tr><th>Severity</th><th>ID</th><th>Title</th><th>File</th><th>Line</th><th>Env Var</th></tr></thead><tbody>';
     var matches=data.matches||[];
     for(var i=0;i<matches.length;i++){
       var m=matches[i];
-      var relPath=m.filePath;
-      h+='<tr><td><span class="sev-badge sev-'+esc(m.severity)+'">'+esc(m.severity)+'</span></td><td>'+esc(m.findingId)+'</td><td>'+esc(m.title)+'</td><td style="font-size:11px;color:var(--muted)">'+esc(relPath)+'</td><td>'+m.line+'</td><td style="color:var(--primary)">'+esc(m.envVar)+'</td></tr>';
+      h+='<div class="cred-card">';
+      h+='<div class="cred-card-header"><span class="sev-badge sev-'+esc(m.severity)+'">'+esc(m.severity)+'</span><span class="cred-card-title">'+esc(m.title)+'</span><span style="color:var(--dim);font-size:12px">'+esc(m.findingId)+'</span></div>';
+      h+='<div class="cred-card-meta">';
+      h+='<div><div class="cred-card-meta-label">File</div><div class="cred-card-meta-value">'+esc(m.filePath)+':'+m.line+'</div></div>';
+      h+='<div><div class="cred-card-meta-label">Migrate to</div><div class="cred-card-meta-value env">'+esc(m.envVar)+'</div></div>';
+      h+='</div>';
       if(m.explanation||m.businessImpact){
-        h+='<tr><td colspan="6" class="finding-desc">';
-        if(m.explanation)h+=esc(m.explanation);
-        if(m.explanation&&m.businessImpact)h+=' ';
-        if(m.businessImpact)h+='<strong style="color:var(--dim)">Impact:</strong> '+esc(m.businessImpact);
-        h+='</td></tr>';
+        h+='<div class="cred-card-detail">';
+        if(m.explanation){h+='<div class="cred-card-detail-label">Why this matters</div><div class="cred-card-detail-text">'+esc(m.explanation)+'</div>';}
+        if(m.businessImpact){h+='<div class="cred-card-detail-label">Business impact</div><div class="cred-card-detail-text">'+esc(m.businessImpact)+'</div>';}
+        h+='</div>';
       }
+      h+='</div>';
     }
-    h+='</tbody></table></div>';
 
     // Drift
     if(data.driftFindings&&data.driftFindings.length>0){
@@ -375,8 +389,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+='</div>';
 
     h+='<div class="overview-top">';
-    h+='<div><div class="gauge-card">'+gaugeCircle(init.trustScore,init.grade)+'</div>';
-    h+='<div class="score-explainer">Trust score starts at 100 and deducts points for each risk: critical credentials (-25 each), high (-15), medium (-8), missing .gitignore (-15), unprotected .env (-10), no lock file (-5). A bonus (+5) for having security config.</div></div>';
+    h+='<div class="gauge-card">'+gaugeCircle(init.trustScore,init.grade)+'</div>';
     h+='<div>';
     h+='<h2 class="section-title">Hygiene Checks</h2>';
     h+='<div class="card">';
@@ -389,6 +402,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     }
     h+='</div>';
     h+='</div></div>';
+
+    h+='<div class="score-explainer">Trust score starts at 100 and deducts points for each risk: critical credentials (-25 each), high (-15), medium (-8), missing .gitignore (-15), unprotected .env (-10), no lock file (-5). A bonus (+5) for having security config.</div>';
 
     h+='<div class="stats-grid">';
     h+=statCard(init.activeProducts+'/'+init.totalProducts,'Active Products','var(--primary)');
