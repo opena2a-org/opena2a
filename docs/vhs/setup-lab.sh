@@ -71,5 +71,22 @@ const GH_TOKEN = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij1234";
 module.exports = { AWS_KEY, GH_TOKEN };
 EOF
 
+# Claude Code detection stub (for shield init demo)
+mkdir -p .claude
+cat > .claude/settings.json << 'EOF'
+{
+  "permissions": {
+    "allow": ["Read", "Write"],
+    "deny": []
+  }
+}
+EOF
+
+cat > CLAUDE.md << 'EOF'
+# ACME Agent
+
+This is the ACME Corp AI agent project.
+EOF
+
 git add -A && git commit -m "Initial commit" --no-verify -q
 echo "Lab ready: $LAB_DIR"

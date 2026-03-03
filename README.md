@@ -40,7 +40,13 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 
 ## What It Does
 
-Run `opena2a init` in any project directory to get an instant security assessment:
+Run `opena2a shield init` in any project directory. One command sets up credential protection, agent identity, config integrity, runtime monitoring, and AI tool configuration:
+
+<p align="center">
+  <img src="docs/vhs/shield-init.gif" alt="opena2a shield init demo" width="700" />
+</p>
+
+Or start with a quick assessment using `opena2a init`:
 
 <p align="center">
   <img src="docs/vhs/init.gif" alt="opena2a init demo" width="700" />
@@ -216,6 +222,25 @@ opena2a guard snapshot list              # View available snapshots
 opena2a guard snapshot restore <id>      # Roll back if needed
 ```
 
+### [`opena2a shield`](https://opena2a.org/docs/cli/commands/shield)
+
+Unified security orchestration. One command to set up everything -- credential protection, agent identity, config integrity, policy generation, shell hooks, runtime monitoring, and AI tool configuration.
+
+```bash
+opena2a shield init             # Full 11-step security setup
+opena2a shield status           # Unified view across all products
+opena2a shield log              # Query tamper-evident event log
+opena2a shield selfcheck        # Verify integrity
+opena2a shield report           # Generate weekly security report
+opena2a shield session          # Identify current AI assistant session
+```
+
+Shield orchestrates Secretless (credential protection), aim-core (agent identity), ConfigGuard (config integrity), ARP (runtime monitoring), and Browser Guard (browser session protection) into a single workflow. Optional products degrade gracefully when not installed.
+
+<p align="center">
+  <img src="docs/vhs/shield-status.gif" alt="opena2a shield status demo" width="700" />
+</p>
+
 ### [`opena2a runtime`](https://opena2a.org/docs/cli/commands/runtime)
 
 Agent Runtime Protection (ARP) wrapper. Monitor process, network, and filesystem activity.
@@ -368,15 +393,20 @@ All commands support `--format json` and `--ci` flags for pipeline integration:
 ```
 opena2a CLI
   |
-  +-- Built-in Commands
-  |    +-- init          Project assessment, trust scoring
-  |    +-- protect       Credential detection + migration (Secretless AI)
-  |    +-- guard         Config file integrity (ConfigGuard)
-  |    +-- runtime       Agent runtime protection (ARP)
-  |    +-- shield        Unified security orchestration
-  |    +-- verify        Binary integrity via Trust Registry
-  |    +-- self-register Tool registration in Trust Registry
-  |    +-- config        User preferences
+  +-- shield        Unified orchestration layer
+  |     +-- init        11-step setup (secretless + aim-core + guard + policy + arp + ai-tools)
+  |     +-- status      Unified product status view
+  |     +-- log         Tamper-evident event log (SHA-256 hash chain)
+  |     +-- report      Weekly security posture report
+  |     +-- selfcheck   Integrity verification + self-healing
+  |
+  +-- init          Project assessment, trust scoring
+  +-- protect       Credential detection + migration (Secretless AI)
+  +-- guard         Config file integrity (ConfigGuard)
+  +-- runtime       Agent runtime protection (ARP)
+  +-- verify        Binary integrity via Trust Registry
+  +-- self-register Tool registration in Trust Registry
+  +-- config        User preferences
   |
   +-- Adapters (install on first use)
        +-- scan      -> HackMyAgent
