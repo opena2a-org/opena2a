@@ -709,6 +709,17 @@ function generateActions(
     });
   }
 
+  // Shell environment findings (from HMA)
+  const hmaFindings = findings.filter(f => f.findingId.startsWith('HMA-'));
+  if (hmaFindings.length > 0) {
+    const totalHma = hmaFindings.reduce((n, f) => n + f.count, 0);
+    actions.push({
+      description: `Clean ${totalHma} shell environment finding${totalHma === 1 ? '' : 's'}`,
+      command: 'opena2a scan secure',
+      why: 'Shell config files and history can contain API keys in plaintext. Rotating exposed keys and clearing history entries removes persistent exposure.',
+    });
+  }
+
   // LLM server exposure
   const llmCheck = checks.find(c => c.label === 'LLM server exposure' && c.status === 'warn');
   if (llmCheck) {
@@ -749,12 +760,15 @@ function generateActions(
     });
   }
 
-  // Config signing
-  actions.push({
-    description: 'Sign config files for integrity monitoring',
-    command: 'opena2a guard sign',
-    why: 'Signed baselines let you detect unintended config changes before they affect runtime behavior.',
-  });
+  // Config signing (only suggest if fewer than 5 actions already -- lower priority)
+  const secConfig = checks.find(c => c.label === 'Security config');
+  if (actions.length < 5 && secConfig?.status !== 'pass') {
+    actions.push({
+      description: 'Sign config files for integrity monitoring',
+      command: 'opena2a guard sign',
+      why: 'Signed baselines let you detect unintended config changes before they affect runtime behavior.',
+    });
+  }
 
   // Cap at 5 actions
   return actions.slice(0, 5);
