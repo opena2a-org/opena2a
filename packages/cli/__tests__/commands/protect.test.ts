@@ -384,6 +384,74 @@ describe('protect command', () => {
     expect(driftResult.credential.severity).toBe('high');
   });
 
+  it('creates CLAUDE.md with secretless section after migration', async () => {
+    const fakeKey = 'AIza' + 'P'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'service.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+    });
+
+    const claudeMd = path.join(tempDir, 'CLAUDE.md');
+    expect(fs.existsSync(claudeMd)).toBe(true);
+
+    const content = fs.readFileSync(claudeMd, 'utf-8');
+    expect(content).toContain('<!-- secretless:managed -->');
+    expect(content).toContain('GOOGLE_API_KEY');
+    expect(content).toContain('Blocked file patterns');
+  });
+
+  it('includes aiToolsUpdated in JSON output after migration', async () => {
+    const fakeKey = 'AIza' + 'Q'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'app.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipVerify: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const output = chunks.join('');
+    const report = JSON.parse(output);
+    expect(report.aiToolsUpdated).toContain('CLAUDE.md');
+  });
+
+  it('does not create CLAUDE.md in dry-run mode', async () => {
+    const fakeKey = 'AIza' + 'R'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'config.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      dryRun: true,
+      ci: true,
+    });
+
+    expect(fs.existsSync(path.join(tempDir, 'CLAUDE.md'))).toBe(false);
+  });
+
   it('skips liveness verification with --skip-liveness', async () => {
     const fakeKey = 'AIza' + 'N'.repeat(35);
     fs.writeFileSync(

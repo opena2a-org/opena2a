@@ -52,6 +52,8 @@ interface ProtectReport {
   durationMs: number;
   /** Liveness verification results for DRIFT findings (key value -> result) */
   livenessResults?: Record<string, LivenessResult>;
+  /** AI tool config files updated with secretless instructions */
+  aiToolsUpdated?: string[];
 }
 
 export interface ProtectOptions {
@@ -262,6 +264,26 @@ export async function protect(options: ProtectOptions): Promise<number> {
   // Phase 3: Update .env.example
   updateEnvExample(targetDir, results.filter(r => r.stored), isJson);
 
+  // Phase 3.5: Update AI tool config files with secretless instructions
+  let aiToolsUpdated: string[] | undefined;
+  if (migrated > 0) {
+    try {
+      const { configureSecretlessForAiTools, buildConfigItem } = await import('../util/secretless-config.js');
+      const configItems = results
+        .filter(r => r.stored && r.replaced)
+        .map(r => buildConfigItem(r.credential.envVar));
+      if (configItems.length > 0) {
+        const configResult = configureSecretlessForAiTools(targetDir, configItems);
+        aiToolsUpdated = configResult.toolsUpdated;
+        if (!isJson && configResult.toolsUpdated.length > 0) {
+          process.stdout.write(dim(`Updated AI tool configs: ${configResult.toolsUpdated.join(', ')}\n`));
+        }
+      }
+    } catch {
+      // AI config injection is best-effort -- don't block migration
+    }
+  }
+
   // Phase 4: Verification re-scan
   let verificationPassed = true;
   if (!options.skipVerify && migrated > 0) {
@@ -312,6 +334,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     verificationPassed,
     durationMs,
     livenessResults: livenessRecord,
+    aiToolsUpdated,
   };
 
   if (options.format === 'json') {
