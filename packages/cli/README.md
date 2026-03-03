@@ -36,7 +36,7 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 Run `opena2a init` in any project directory to get an instant security assessment:
 
 ```
-  OpenA2A Security Initialization  v0.1.0
+  OpenA2A Security Initialization  v0.3.1
 
   Project      myapp v2.1.0
   Type         Node.js + MCP server
@@ -167,6 +167,17 @@ Register OpenA2A tools in the public Trust Registry with security scan results.
 ```bash
 opena2a self-register --dry-run   # Preview what would be registered
 opena2a self-register             # Register all 13 tools
+```
+
+### `opena2a review`
+
+Run all security checks and generate a unified HTML dashboard. Combines credential scanning, config integrity, Shield posture, advisory checks, and optional HMA deep scan into a single interactive report.
+
+```bash
+opena2a review                     # Scan + open HTML report in browser
+opena2a review --no-open           # Generate report without opening
+opena2a review --report out.html   # Save to custom path
+opena2a review --format json       # JSON output for CI
 ```
 
 ### `opena2a config`
@@ -374,7 +385,7 @@ See `examples/github-actions-shield.yml` for a minimal copy-paste-ready workflow
 
 ### Event Log Format
 
-Shield maintains a tamper-evident event log at `~/.opena2a/shield/events.jsonl`. Each event is SHA-256 hash-chained to the previous event, starting from a genesis hash. Any modification to a past event breaks the chain and is detected by `selfcheck`.
+Shield maintains a tamper-evident event log. Events are stored in the project-local `.opena2a/shield/events.jsonl` when available, falling back to `~/.opena2a/shield/events.jsonl`. Each event is SHA-256 hash-chained to the previous event, starting from a genesis hash. Any modification to a past event breaks the chain and is detected by `selfcheck`.
 
 ```
 [2026-03-02T12:00:00Z] [HIGH] process.anomaly -> curl evil.com (monitored)
@@ -410,7 +421,8 @@ opena2a                           # Interactive guided wizard
 opena2a ~drift                    # Semantic search (finds protect, init)
 opena2a ~api keys                 # Semantic search with domain expansion
 opena2a ?                         # Context-aware recommendations
-opena2a "find leaked credentials" # Natural language matching
+opena2a find leaked credentials   # Natural language matching
+opena2a detect hardcoded secrets  # Natural language matching
 ```
 
 Semantic search uses a weighted index of tags, synonyms, and domains -- no API calls required. Natural language mode falls back to Claude Haiku when static matching is insufficient (opt-in, costs ~$0.0002 per query).
@@ -425,6 +437,8 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
 | `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
+| `opena2a research` | [HMA Researcher](https://github.com/opena2a-org/hma-researcher) | Autonomous security research agent |
+| `opena2a hunt` | [HMA Hunter](https://github.com/opena2a-org/hma-hunter) | Autonomous vulnerability hunter |
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 | `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |
