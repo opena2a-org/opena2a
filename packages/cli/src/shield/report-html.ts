@@ -355,7 +355,10 @@ a:hover{text-decoration:underline}
 /* Compliance badges */
 .badge-owasp{background:#f59e0b;color:#000;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;margin:1px 2px}
 .badge-mitre{background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;margin:1px 2px}
-.finding-id{font-family:var(--font);font-size:11px;color:var(--primary);font-weight:600;cursor:help}
+.finding-id{font-family:var(--font);font-size:11px;color:var(--primary);font-weight:600;cursor:pointer}
+.finding-id:hover{text-decoration:underline}
+.finding-highlight td{animation:highlightPulse 1.5s ease-out}
+@keyframes highlightPulse{0%{background:rgba(6,182,212,0.2)}100%{background:transparent}}
 
 /* Remediation command */
 .remediation-cmd{display:flex;align-items:center;gap:6px}
@@ -509,7 +512,7 @@ const JS = `
     if(findings.length>0){
       h+='<h2 class="section-title">Top Findings</h2><div class="card"><table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th></tr></thead><tbody>';
       var top=findings.slice(0,5);
-      for(var i=0;i<top.length;i++){var f=top[i];h+='<tr><td><span class="finding-id">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td></tr>';}
+      for(var i=0;i<top.length;i++){var f=top[i];h+='<tr><td><span class="finding-id" onclick="navigateToFinding(\\''+esc(f.finding.id)+'\\')">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td></tr>';}
       h+='</tbody></table>';
       if(findings.length>5) h+='<div style="text-align:center;padding:8px;color:var(--dim);font-size:11px;cursor:pointer" onclick="document.querySelector(\\'.nav-tab[data-page=findings]\\').click()">View all '+findings.length+' findings --></div>';
       h+='</div>';
@@ -567,7 +570,7 @@ const JS = `
     h+='<table class="data-table" id="violations-table"><thead><tr><th>Finding</th><th>Action</th><th>Target</th><th>Agent</th><th>Count</th><th>Severity</th><th>Compliance</th><th>Remediation</th></tr></thead><tbody>';
     for(var i=0;i<violations.length;i++){var v=violations[i];
       h+='<tr class="violation-row" data-severity="'+esc(v.severity)+'" data-search="'+esc(((v.findingId||'')+' '+v.action+' '+v.target+' '+v.agent).toLowerCase())+'">';
-      h+='<td>'+(v.findingId?'<span class="finding-id" title="'+esc(v.recommendation)+'">'+esc(v.findingId)+'</span>':'<span style="color:var(--dim)">--</span>')+'</td>';
+      h+='<td>'+(v.findingId?'<span class="finding-id" onclick="event.stopPropagation();navigateToFinding(\\''+esc(v.findingId)+'\\')">'+esc(v.findingId)+'</span>':'<span style="color:var(--dim)">--</span>')+'</td>';
       h+='<td>'+esc(v.action)+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(v.target)+'">'+esc(v.target)+'</td><td>'+esc(v.agent)+'</td><td>'+v.count+'</td>';
       h+='<td><span class="sev-badge sev-'+esc(v.severity)+'">'+esc(v.severity)+'</span></td><td>';
       if(v.compliance&&v.compliance.length>0){for(var ci=0;ci<v.compliance.length;ci++){var tag=v.compliance[ci];if(tag.indexOf('ASI')===0)h+='<span class="badge-owasp">'+esc(tag)+'</span>';else if(tag.indexOf('AML')===0)h+='<span class="badge-mitre">'+esc(tag)+'</span>';}}else h+='--';
@@ -618,6 +621,31 @@ const JS = `
     if(narrative.recommendations&&narrative.recommendations.length>0){h+='<div class="narrative-block"><h4>Recommendations</h4><ul class="narrative-list narrative-rec">';for(var i=0;i<narrative.recommendations.length;i++)h+='<li>'+esc(narrative.recommendations[i])+'</li>';h+='</ul></div>';}
     h+='</div>';return h;
   }
+
+  // --- Cross-tab navigation ---
+  window.navigateToFinding=function(id){
+    var tabs=document.querySelectorAll('.nav-tab');
+    for(var i=0;i<tabs.length;i++) tabs[i].classList.toggle('active',tabs[i].dataset.page==='findings');
+    var pages=document.querySelectorAll('.page');
+    for(var i=0;i<pages.length;i++) pages[i].classList.toggle('active',pages[i].id==='page-findings');
+    currentPage='findings';renderPage('findings');
+    var search=document.getElementById('findings-search');
+    if(search){search.value='';window._filterFindings('');}
+    setTimeout(function(){
+      var rows=document.querySelectorAll('#findings-table .finding-row');
+      for(var ri=0;ri<rows.length;ri++){
+        var idCell=rows[ri].querySelector('.finding-id');
+        if(idCell&&idCell.textContent===id){
+          var det=document.getElementById('finding-detail-'+rows[ri].dataset.idx);
+          if(det&&!det.classList.contains('open')) det.classList.add('open');
+          rows[ri].scrollIntoView({behavior:'smooth',block:'center'});
+          rows[ri].classList.add('finding-highlight');
+          setTimeout(function(r){r.classList.remove('finding-highlight');}.bind(null,rows[ri]),1600);
+          break;
+        }
+      }
+    },50);
+  };
 
   // --- Copy command ---
   window.copyCmd=function(btn){var cmd=btn.getAttribute('data-cmd');if(!cmd)return;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmd).then(function(){btn.textContent='OK';btn.classList.add('copied');setTimeout(function(){btn.textContent='Copy';btn.classList.remove('copied');},1500);});}else{var ta=document.createElement('textarea');ta.value=cmd;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);btn.textContent='OK';btn.classList.add('copied');setTimeout(function(){btn.textContent='Copy';btn.classList.remove('copied');},1500);}};
