@@ -777,11 +777,22 @@ async function buildWeeklyReport(
   const highCount = threatSeverity['high'] ?? 0;
   const mediumCount = threatSeverity['medium'] ?? 0;
   const blockedCount = byOutcome['blocked'] ?? 0;
-  let score = 100;
-  score -= criticalCount * 15;
-  score -= highCount * 8;
-  score -= mediumCount * 3;
-  score += blockedCount * 2;
+  const agentCount = Object.keys(byAgent).length;
+
+  // Weighted factor scoring: severity (50%), enforcement (25%), coverage (25%).
+  // Severity uses capped penalties so a few events don't destroy the entire score.
+  const severityPenalty = Math.min(60, criticalCount * 12 + highCount * 5 + mediumCount * 2);
+  const severityScore = 100 - severityPenalty;
+
+  // Enforcement: actively blocking threats is a strong positive signal.
+  const enforcementScore = blockedCount > 0
+    ? Math.min(100, 60 + Math.min(40, blockedCount * 5))
+    : (threatEvents.length > 0 ? 30 : 50);
+
+  // Coverage: more agents monitored = better visibility.
+  const coverageScore = agentCount >= 3 ? 80 : agentCount > 0 ? 60 : 30;
+
+  let score = Math.round(severityScore * 0.5 + enforcementScore * 0.25 + coverageScore * 0.25);
   score = Math.max(0, Math.min(100, score));
   const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
 
@@ -843,9 +854,9 @@ async function buildWeeklyReport(
       score,
       grade,
       factors: [
-        { name: 'severity', score: Math.max(0, 100 - criticalCount * 15 - highCount * 8), weight: 0.4, detail: `${criticalCount} critical, ${highCount} high (threats only)` },
-        { name: 'enforcement', score: blockedCount > 0 ? 80 : 50, weight: 0.3, detail: `${blockedCount} blocked` },
-        { name: 'coverage', score: Object.keys(byAgent).length > 0 ? 70 : 30, weight: 0.3, detail: `${Object.keys(byAgent).length} agents monitored` },
+        { name: 'severity', score: severityScore, weight: 0.5, detail: `${criticalCount} critical, ${highCount} high, ${mediumCount} medium` },
+        { name: 'enforcement', score: enforcementScore, weight: 0.25, detail: `${blockedCount} blocked` },
+        { name: 'coverage', score: coverageScore, weight: 0.25, detail: `${agentCount} agents monitored` },
       ],
       trend: null,
       comparative: null,

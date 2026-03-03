@@ -115,6 +115,10 @@ export function generateShieldHtmlReport(
     executiveSummary,
   });
 
+  const findingsCount = findingsData.length;
+  const violationsCount = (report.policyEvaluation.topViolations || []).length;
+  const agentKeys = Object.keys(report.agentActivity.byAgent || {});
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -129,17 +133,34 @@ ${CSS}
 <script id="report-data" type="application/json">${jsonData.replace(/<\//g, '<\\/')}</script>
 <div id="app">
   <header class="header">
-    <div class="header-left">
-      <h1 class="logo">Shield</h1>
-      <span class="header-sep">|</span>
-      <span class="header-label">Security Posture Report</span>
+    <div class="header-top">
+      <div class="header-left">
+        <h1 class="logo">Shield</h1>
+        <span class="header-sep">|</span>
+        <span class="header-label">Security Posture Report</span>
+      </div>
+      <div class="header-right">
+        <span class="header-meta">${escapeHtml(report.hostname)} &middot; ${escapeHtml(formatDate(report.periodStart))} to ${escapeHtml(formatDate(report.periodEnd))}</span>
+      </div>
     </div>
-    <div class="header-right">
-      <span class="header-meta">${escapeHtml(report.hostname)} &middot; ${escapeHtml(formatDate(report.periodStart))} to ${escapeHtml(formatDate(report.periodEnd))}</span>
-    </div>
+    <nav class="nav-tabs" id="main-nav">
+      <button class="nav-tab active" data-page="overview">Overview</button>
+      <button class="nav-tab" data-page="findings">Findings${findingsCount > 0 ? ` <span class="nav-badge">${findingsCount}</span>` : ''}</button>
+      <button class="nav-tab" data-page="agents">Agents${agentKeys.length > 0 ? ` <span class="nav-badge">${agentKeys.length}</span>` : ''}</button>
+      <button class="nav-tab" data-page="violations">Violations${violationsCount > 0 ? ` <span class="nav-badge nav-badge-warn">${violationsCount}</span>` : ''}</button>
+      <button class="nav-tab" data-page="protection">Protection</button>
+      <button class="nav-tab" data-page="timeline">Timeline</button>
+    </nav>
   </header>
 
-  <main class="main" id="main-content"></main>
+  <main class="main">
+    <div class="page active" id="page-overview"></div>
+    <div class="page" id="page-findings"></div>
+    <div class="page" id="page-agents"></div>
+    <div class="page" id="page-violations"></div>
+    <div class="page" id="page-protection"></div>
+    <div class="page" id="page-timeline"></div>
+  </main>
 
   <footer class="footer">
     <span>Generated ${escapeHtml(formatDate(report.generatedAt))} by OpenA2A Shield</span>
@@ -190,7 +211,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:
 a{color:var(--primary);text-decoration:none}
 a:hover{text-decoration:underline}
 
-.header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--card-border);position:sticky;top:0;background:var(--bg);z-index:100}
+.header{position:sticky;top:0;background:var(--bg);z-index:100;border-bottom:1px solid var(--card-border)}
+.header-top{display:flex;justify-content:space-between;align-items:center;padding:12px 24px 0}
 .header-left{display:flex;align-items:center;gap:12px}
 .logo{font-size:20px;font-weight:700;color:var(--primary)}
 .header-sep{color:var(--card-border)}
@@ -198,7 +220,40 @@ a:hover{text-decoration:underline}
 .header-right{display:flex;align-items:center;gap:12px}
 .header-meta{color:var(--dim);font-size:12px}
 
-.main{max-width:1200px;margin:0 auto;padding:24px}
+.nav-tabs{display:flex;gap:2px;padding:12px 24px 0;overflow-x:auto}
+.nav-tab{background:transparent;border:none;border-bottom:2px solid transparent;padding:10px 16px;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:13px;font-weight:600;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.nav-tab:hover{color:var(--text);border-bottom-color:var(--card-border)}
+.nav-tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+.nav-badge{background:var(--card-border);color:var(--text);font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700}
+.nav-badge-warn{background:rgba(249,115,22,0.25);color:var(--high)}
+
+.page{display:none}
+.page.active{display:block}
+
+.main{max-width:1280px;margin:0 auto;padding:24px}
+
+.overview-top{display:grid;grid-template-columns:260px 1fr 1fr;gap:var(--gap);margin-bottom:24px}
+@media(max-width:900px){.overview-top{grid-template-columns:1fr}}
+
+.donut-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+.donut-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.donut-legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+
+.search-box{display:flex;margin-bottom:14px}
+.search-input{flex:1;background:var(--bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:8px 12px;color:var(--text);font-family:var(--font);font-size:12px;outline:none;transition:border-color .15s}
+.search-input:focus{border-color:var(--primary)}
+.search-input::placeholder{color:var(--dim)}
+
+.finding-row{cursor:pointer;transition:background .15s}
+.finding-row:hover td{background:rgba(6,182,212,0.04)}
+.finding-expand{display:none;background:rgba(0,0,0,0.15)}
+.finding-expand.open{display:table-row}
+.finding-detail{padding:12px 20px}
+.finding-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.finding-meta{font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.03em}
+.finding-val{font-size:12px;color:var(--text);margin-bottom:10px}
+.finding-examples{margin-top:8px}
+.finding-example{background:var(--bg);border:1px solid var(--card-border);border-radius:4px;padding:8px 12px;margin-bottom:6px;font-size:11px;overflow-x:auto}
 
 .footer{text-align:center;padding:24px;color:var(--dim);font-size:12px;border-top:1px solid var(--card-border);margin-top:48px}
 .footer-sep{color:var(--card-border);margin:0 4px}
@@ -324,9 +379,11 @@ a:hover{text-decoration:underline}
 @media(max-width:768px){
   .posture-section{grid-template-columns:1fr}
   .detail-grid{grid-template-columns:1fr}
-  .header{flex-direction:column;gap:12px}
+  .header-top{flex-direction:column;gap:8px}
   .header-right{width:100%}
   .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .finding-detail-grid{grid-template-columns:1fr}
+  .nav-tabs{gap:0}
 }
 `;
 
@@ -335,446 +392,235 @@ a:hover{text-decoration:underline}
 const JS = `
 (function() {
   'use strict';
-
   var raw = JSON.parse(document.getElementById('report-data').textContent);
   var report = raw.report;
   var narrative = raw.narrative;
   var findings = raw.findings || [];
   var trend = raw.trend || null;
   var executiveSummary = raw.executiveSummary || '';
-
+  var currentPage = 'overview';
   var activeViolationFilters = new Set(['critical','high','medium','low','info']);
+  var pagesRendered = {};
 
-  function init() {
-    render();
-    bindEvents();
-  }
+  function init() { renderPage('overview'); bindNav(); }
 
-  function esc(s) {
-    if (!s) return '';
-    var d = document.createElement('div');
-    d.textContent = String(s);
-    return d.innerHTML;
-  }
+  function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+  function formatTs(iso) { if (!iso) return '--'; try { var d = new Date(iso); if (isNaN(d.getTime())) return iso; return d.toISOString().replace('T',' ').replace(/\\.\\d+Z$/,' UTC'); } catch(e) { return iso; } }
+  function scoreColor(s) { return s >= 90 ? 'var(--green)' : s >= 70 ? 'var(--primary)' : s >= 50 ? 'var(--medium)' : 'var(--red)'; }
+  function statCard(v, l, c) { return '<div class="stat-card"><div class="stat-value" style="color:'+c+'">'+v+'</div><div class="stat-label">'+l+'</div></div>'; }
 
-  // --- Posture gauge SVG ---
-  function gaugeCircle(score) {
-    var size = 180;
-    var cx = size / 2, cy = size / 2;
-    var r = 70;
-    var sw = 12;
-    var circ = 2 * Math.PI * r;
-    var pct = Math.max(0, Math.min(100, score)) / 100;
-    var dash = pct * circ;
-    var gap = circ - dash;
-
-    var color;
-    if (score >= 90) color = '#22c55e';
-    else if (score >= 70) color = '#3b82f6';
-    else if (score >= 50) color = '#eab308';
-    else color = '#ef4444';
-
-    var grade = report.posture.grade || '';
-
-    var svg = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">';
-    // Background circle
-    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="' + sw + '"/>';
-    // Score arc
-    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + sw + '" ';
-    svg += 'stroke-dasharray="' + dash + ' ' + gap + '" stroke-dashoffset="' + (circ * 0.25) + '" ';
-    svg += 'stroke-linecap="round" transform="rotate(-90 ' + cx + ' ' + cy + ')"/>';
-    // Score text
-    svg += '<text x="' + cx + '" y="' + (cy - 8) + '" text-anchor="middle" dominant-baseline="middle" ';
-    svg += 'font-size="36" font-weight="700" fill="' + color + '" font-family="var(--font)">' + score + '</text>';
-    // Grade letter
-    svg += '<text x="' + cx + '" y="' + (cy + 24) + '" text-anchor="middle" dominant-baseline="middle" ';
-    svg += 'font-size="18" font-weight="600" fill="' + color + '" font-family="var(--font)">Grade ' + esc(grade) + '</text>';
-    svg += '</svg>';
-    return svg;
-  }
-
-  // --- Severity bar chart ---
-  function severityBars() {
-    var sev = report.policyEvaluation;
-    var violations = sev.topViolations || [];
-    var counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-    for (var i = 0; i < violations.length; i++) {
-      var v = violations[i];
-      counts[v.severity] = (counts[v.severity] || 0) + v.count;
-    }
-    var maxCount = Math.max(1, counts.critical, counts.high, counts.medium, counts.low, counts.info);
-
-    var colors = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#3b82f6', info: '#6b7280' };
-    var order = ['critical', 'high', 'medium', 'low', 'info'];
-
-    var html = '<div class="bar-chart">';
-    for (var j = 0; j < order.length; j++) {
-      var s = order[j];
-      var c = counts[s] || 0;
-      var pct = maxCount > 0 ? (c / maxCount) * 100 : 0;
-      html += '<div class="bar-row">';
-      html += '<span class="bar-label" style="color:' + colors[s] + '">' + s + '</span>';
-      html += '<div class="bar-track">';
-      if (c > 0) {
-        html += '<div class="bar-fill" style="width:' + Math.max(pct, 5) + '%;background:' + colors[s] + '"><span class="bar-count">' + c + '</span></div>';
-      }
-      html += '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
-    return html;
-  }
-
-  // --- Render ---
-  function render() {
-    var el = document.getElementById('main-content');
-    var html = '';
-
-    // Posture Score + Severity Breakdown
-    html += '<h2 class="section-title">Posture Score</h2>';
-    html += '<div class="posture-section">';
-    html += '<div class="gauge-card">' + gaugeCircle(report.posture.score);
-    if (trend) {
-      var trendClass = 'trend-' + trend.direction;
-      var arrow = trend.direction === 'improving' ? '&#9650;' : trend.direction === 'declining' ? '&#9660;' : '&#9654;';
-      var sign = trend.delta > 0 ? '+' : '';
-      html += '<div class="trend-indicator ' + trendClass + '">';
-      html += arrow + ' <span class="trend-delta">' + sign + trend.delta + '</span>';
-      html += ' from ' + trend.previousScore + '/' + esc(trend.previousGrade);
-      html += ' (' + trend.periodDays + 'd)';
-      html += '</div>';
-    }
-    html += '</div>';
-
-    // Right side: severity bars + factors
-    html += '<div>';
-    html += '<div class="card"><div class="card-title">Severity Breakdown</div>' + severityBars() + '</div>';
-
-    // Posture factors
-    if (report.posture.factors && report.posture.factors.length > 0) {
-      html += '<div class="card"><div class="card-title">Score Factors</div>';
-      for (var fi = 0; fi < report.posture.factors.length; fi++) {
-        var f = report.posture.factors[fi];
-        html += '<div class="factor-row">';
-        html += '<span class="factor-name">' + esc(f.name) + '</span>';
-        html += '<div class="factor-bar"><div class="factor-fill" style="width:' + f.score + '%"></div></div>';
-        html += '<span class="factor-score">' + f.score + '</span>';
-        html += '<span class="factor-detail">' + esc(f.detail) + '</span>';
-        html += '</div>';
-      }
-      html += '</div>';
-    }
-    html += '</div></div>';
-
-    // Executive Summary
-    if (executiveSummary) {
-      html += '<div class="exec-summary">';
-      html += '<div class="exec-summary-title">Executive Summary</div>';
-      html += '<div class="exec-summary-text">' + esc(executiveSummary) + '</div>';
-      html += '</div>';
-    }
-
-    // Summary stats
-    html += '<h2 class="section-title">Activity Summary</h2>';
-    html += '<div class="stats-grid">';
-    html += statCard(report.agentActivity.totalSessions, 'Sessions', 'var(--primary)');
-    html += statCard(report.agentActivity.totalActions, 'Actions', 'var(--text)');
-    html += statCard(report.policyEvaluation.monitored, 'Monitored', 'var(--muted)');
-    html += statCard(report.policyEvaluation.blocked, 'Blocked', 'var(--critical)');
-    html += '</div>';
-
-    // Agent Activity
-    html += '<h2 class="section-title">Agent Activity</h2>';
-    html += agentTable();
-
-    // Policy Violations
-    html += '<h2 class="section-title">Policy Violations</h2>';
-    html += violationsSection();
-
-    // Detail cards row
-    html += '<h2 class="section-title">Protection Details</h2>';
-    html += '<div class="detail-grid">';
-    html += runtimeCard();
-    html += credentialCard();
-    html += supplyChainCard();
-    html += '</div>';
-
-    // Event Timeline / Narrative
-    if (narrative) {
-      html += '<h2 class="section-title">Event Timeline</h2>';
-      html += narrativeSection();
-    }
-
-    el.innerHTML = html;
-  }
-
-  function statCard(value, label, color) {
-    return '<div class="stat-card"><div class="stat-value" style="color:' + color + '">' + value + '</div><div class="stat-label">' + label + '</div></div>';
-  }
-
-  // --- Agent Activity Table ---
-  function agentTable() {
-    var agents = report.agentActivity.byAgent;
-    var keys = Object.keys(agents);
-    if (keys.length === 0) {
-      return '<div class="card"><div class="empty-state">No agent activity recorded.</div></div>';
-    }
-
-    var html = '<div class="card"><table class="data-table">';
-    html += '<thead><tr><th>Agent</th><th>Sessions</th><th>Actions</th><th>First Seen</th><th>Last Seen</th><th>Top Actions</th></tr></thead>';
-    html += '<tbody>';
-    for (var i = 0; i < keys.length; i++) {
-      var name = keys[i];
-      var a = agents[name];
-      var topActs = (a.topActions || []).slice(0, 3).map(function(ta) { return esc(ta.action) + ' (' + ta.count + ')'; }).join(', ');
-      html += '<tr>';
-      html += '<td>' + esc(name) + '</td>';
-      html += '<td>' + a.sessions + '</td>';
-      html += '<td>' + a.actions + '</td>';
-      html += '<td>' + esc(formatTs(a.firstSeen)) + '</td>';
-      html += '<td>' + esc(formatTs(a.lastSeen)) + '</td>';
-      html += '<td>' + (topActs || '--') + '</td>';
-      html += '</tr>';
-    }
-    html += '</tbody></table></div>';
-    return html;
-  }
-
-  function formatTs(iso) {
-    if (!iso) return '--';
-    try {
-      var d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      return d.toISOString().replace('T', ' ').replace(/\\.\\d+Z$/, ' UTC');
-    } catch(e) { return iso; }
-  }
-
-  // --- Policy Violations ---
-  function violationsSection() {
-    var violations = report.policyEvaluation.topViolations || [];
-    if (violations.length === 0) {
-      return '<div class="card"><div class="empty-state">No policy violations recorded.</div></div>';
-    }
-
-    var html = '<div class="card">';
-
-    // Filter bar
-    html += '<div class="filter-bar" id="violation-filters">';
-    html += '<button class="filter-btn active" data-sev="all">All</button>';
-    html += '<button class="filter-btn active" data-sev="critical">Critical</button>';
-    html += '<button class="filter-btn active" data-sev="high">High</button>';
-    html += '<button class="filter-btn active" data-sev="medium">Medium</button>';
-    html += '<button class="filter-btn active" data-sev="low">Low</button>';
-    html += '<button class="filter-btn active" data-sev="info">Info</button>';
-    html += '<span class="violation-count" id="violation-count">' + violations.length + ' violations</span>';
-    html += '</div>';
-
-    html += '<table class="data-table" id="violations-table">';
-    html += '<thead><tr><th>Finding</th><th>Action</th><th>Target</th><th>Agent</th><th>Count</th><th>Severity</th><th>Compliance</th><th>Remediation</th></tr></thead>';
-    html += '<tbody>';
-    for (var i = 0; i < violations.length; i++) {
-      var v = violations[i];
-      html += '<tr class="violation-row" data-severity="' + esc(v.severity) + '">';
-      // Finding ID
-      html += '<td>';
-      if (v.findingId) {
-        html += '<span class="finding-id" title="' + esc(v.recommendation) + '">' + esc(v.findingId) + '</span>';
-      } else {
-        html += '<span class="finding-id" style="color:var(--dim)">--</span>';
-      }
-      html += '</td>';
-      html += '<td>' + esc(v.action) + '</td>';
-      html += '<td>' + esc(v.target) + '</td>';
-      html += '<td>' + esc(v.agent) + '</td>';
-      html += '<td>' + v.count + '</td>';
-      html += '<td><span class="sev-badge sev-' + esc(v.severity) + '">' + esc(v.severity) + '</span></td>';
-      // Compliance badges
-      html += '<td>';
-      if (v.compliance && v.compliance.length > 0) {
-        for (var ci = 0; ci < v.compliance.length; ci++) {
-          var tag = v.compliance[ci];
-          if (tag.indexOf('ASI') === 0) {
-            html += '<span class="badge-owasp">' + esc(tag) + '</span>';
-          } else if (tag.indexOf('AML') === 0) {
-            html += '<span class="badge-mitre">' + esc(tag) + '</span>';
-          }
-        }
-      } else {
-        html += '--';
-      }
-      html += '</td>';
-      // Remediation command
-      html += '<td>';
-      if (v.remediationCommand) {
-        html += '<div class="remediation-cmd">';
-        html += '<code class="remediation-code" title="' + esc(v.remediationCommand) + '">' + esc(v.remediationCommand) + '</code>';
-        html += '<button class="copy-btn" data-cmd="' + esc(v.remediationCommand) + '" onclick="copyCmd(this)">Copy</button>';
-        html += '</div>';
-      } else {
-        html += esc(v.recommendation);
-      }
-      html += '</td>';
-      html += '</tr>';
-    }
-    html += '</tbody></table></div>';
-    return html;
-  }
-
-  // --- Runtime Protection Card ---
-  function runtimeCard() {
-    var rt = report.runtimeProtection;
-    var html = '<div class="card">';
-    html += '<div class="card-title">Runtime Protection (ARP)</div>';
-    html += '<div class="detail-row"><span class="detail-key">ARP Status</span><span class="detail-val ' + (rt.arpActive ? 'status-active' : 'status-inactive') + '">' + (rt.arpActive ? 'Active' : 'Inactive') + '</span></div>';
-    html += '<div class="detail-row"><span class="detail-key">Processes Spawned</span><span class="detail-val">' + rt.processesSpawned + '</span></div>';
-    html += '<div class="detail-row"><span class="detail-key">Network Connections</span><span class="detail-val">' + rt.networkConnections + '</span></div>';
-    html += '<div class="detail-row"><span class="detail-key">Anomalies</span><span class="detail-val" style="color:' + (rt.anomalies > 0 ? 'var(--amber)' : 'var(--green)') + '">' + rt.anomalies + '</span></div>';
-    html += '</div>';
-    return html;
-  }
-
-  // --- Credential Exposure Card ---
-  function credentialCard() {
-    var cred = report.credentialExposure;
-    var html = '<div class="card">';
-    html += '<div class="card-title">Credential Exposure</div>';
-    html += '<div class="detail-row"><span class="detail-key">Access Attempts</span><span class="detail-val">' + cred.accessAttempts + '</span></div>';
-    html += '<div class="detail-row"><span class="detail-key">Unique Credentials</span><span class="detail-val">' + cred.uniqueCredentials + '</span></div>';
-
-    var providers = Object.keys(cred.byProvider || {});
-    if (providers.length > 0) {
-      html += '<div class="detail-row"><span class="detail-key">By Provider</span><span class="detail-val">&nbsp;</span></div>';
-      html += '<div class="provider-list">';
-      for (var p = 0; p < providers.length; p++) {
-        html += '<span class="provider-tag">' + esc(providers[p]) + ': ' + cred.byProvider[providers[p]] + '</span>';
-      }
-      html += '</div>';
-    }
-
-    html += '</div>';
-    return html;
-  }
-
-  // --- Supply Chain Card ---
-  function supplyChainCard() {
-    var sc = report.supplyChain;
-    var html = '<div class="card">';
-    html += '<div class="card-title">Supply Chain</div>';
-    html += '<div class="detail-row"><span class="detail-key">Packages Installed</span><span class="detail-val">' + sc.packagesInstalled + '</span></div>';
-    html += '<div class="detail-row"><span class="detail-key">Advisories Found</span><span class="detail-val" style="color:' + (sc.advisoriesFound > 0 ? 'var(--amber)' : 'var(--green)') + '">' + sc.advisoriesFound + '</span></div>';
-    html += '<div class="detail-row"><span class="detail-key">Blocked Installs</span><span class="detail-val" style="color:' + (sc.blockedInstalls > 0 ? 'var(--red)' : 'var(--text)') + '">' + sc.blockedInstalls + '</span></div>';
-    html += '</div>';
-    return html;
-  }
-
-  // --- Narrative Section ---
-  function narrativeSection() {
-    if (!narrative) return '';
-
-    var html = '<div class="card narrative-section">';
-
-    if (narrative.summary) {
-      html += '<div class="narrative-block">';
-      html += '<h4>Summary</h4>';
-      html += '<div class="narrative-text">' + esc(narrative.summary) + '</div>';
-      html += '</div>';
-    }
-
-    if (narrative.highlights && narrative.highlights.length > 0) {
-      html += '<div class="narrative-block">';
-      html += '<h4>Highlights</h4>';
-      html += '<ul class="narrative-list narrative-highlight">';
-      for (var h = 0; h < narrative.highlights.length; h++) {
-        html += '<li>' + esc(narrative.highlights[h]) + '</li>';
-      }
-      html += '</ul></div>';
-    }
-
-    if (narrative.concerns && narrative.concerns.length > 0) {
-      html += '<div class="narrative-block">';
-      html += '<h4>Concerns</h4>';
-      html += '<ul class="narrative-list narrative-concern">';
-      for (var c = 0; c < narrative.concerns.length; c++) {
-        html += '<li>' + esc(narrative.concerns[c]) + '</li>';
-      }
-      html += '</ul></div>';
-    }
-
-    if (narrative.recommendations && narrative.recommendations.length > 0) {
-      html += '<div class="narrative-block">';
-      html += '<h4>Recommendations</h4>';
-      html += '<ul class="narrative-list narrative-rec">';
-      for (var r = 0; r < narrative.recommendations.length; r++) {
-        html += '<li>' + esc(narrative.recommendations[r]) + '</li>';
-      }
-      html += '</ul></div>';
-    }
-
-    html += '</div>';
-    return html;
-  }
-
-  // --- Copy remediation command ---
-  window.copyCmd = function(btn) {
-    var cmd = btn.getAttribute('data-cmd');
-    if (!cmd) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(cmd).then(function() {
-        btn.textContent = 'OK';
-        btn.classList.add('copied');
-        setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
-      });
-    } else {
-      var ta = document.createElement('textarea');
-      ta.value = cmd;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      btn.textContent = 'OK';
-      btn.classList.add('copied');
-      setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
-    }
-  };
-
-  // --- Event binding ---
-  function bindEvents() {
-    document.addEventListener('click', function(e) {
-      if (e.target.classList.contains('filter-btn') && e.target.dataset.sev) {
-        var sev = e.target.dataset.sev;
-        if (sev === 'all') {
-          activeViolationFilters = new Set(['critical','high','medium','low','info']);
-          var btns = document.querySelectorAll('#violation-filters .filter-btn');
-          for (var b = 0; b < btns.length; b++) btns[b].classList.add('active');
-        } else {
-          if (activeViolationFilters.has(sev)) {
-            activeViolationFilters.delete(sev);
-          } else {
-            activeViolationFilters.add(sev);
-          }
-          e.target.classList.toggle('active');
-          var allBtn = document.querySelector('#violation-filters .filter-btn[data-sev="all"]');
-          if (allBtn) allBtn.classList.toggle('active', activeViolationFilters.size === 5);
-        }
-        applyViolationFilters();
-      }
+  function bindNav() {
+    document.getElementById('main-nav').addEventListener('click', function(e) {
+      var btn = e.target.closest('.nav-tab'); if (!btn) return;
+      var pg = btn.dataset.page; if (!pg || pg === currentPage) return;
+      var tabs = document.querySelectorAll('.nav-tab');
+      for (var i=0;i<tabs.length;i++) tabs[i].classList.toggle('active', tabs[i].dataset.page===pg);
+      var pages = document.querySelectorAll('.page');
+      for (var i=0;i<pages.length;i++) pages[i].classList.toggle('active', pages[i].id==='page-'+pg);
+      currentPage = pg; renderPage(pg);
     });
   }
 
-  function applyViolationFilters() {
-    var rows = document.querySelectorAll('.violation-row');
-    var visible = 0;
-    for (var i = 0; i < rows.length; i++) {
-      var sev = rows[i].dataset.severity;
-      var show = activeViolationFilters.has(sev);
-      rows[i].style.display = show ? '' : 'none';
-      if (show) visible++;
+  function renderPage(pg) {
+    if (pagesRendered[pg]) return; pagesRendered[pg] = true;
+    var el = document.getElementById('page-'+pg);
+    switch(pg) {
+      case 'overview': el.innerHTML = renderOverview(); break;
+      case 'findings': el.innerHTML = renderFindings(); bindFindingExpand(); break;
+      case 'agents': el.innerHTML = renderAgents(); break;
+      case 'violations': el.innerHTML = renderViolations(); bindViolationFilters(); break;
+      case 'protection': el.innerHTML = renderProtection(); break;
+      case 'timeline': el.innerHTML = renderTimeline(); break;
     }
-    var counter = document.getElementById('violation-count');
-    if (counter) counter.textContent = visible + ' of ' + rows.length + ' violations';
   }
+
+  // --- Gauge SVG ---
+  function gaugeCircle(score) {
+    var sz=170,cx=sz/2,cy=sz/2,r=65,sw=10,circ=2*Math.PI*r;
+    var pct=Math.max(0,Math.min(100,score))/100,dash=pct*circ,gap=circ-dash;
+    var clr = score>=90?'#22c55e':score>=70?'#06b6d4':score>=50?'#eab308':'#ef4444';
+    var g = report.posture.grade||'';
+    var s='<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'">';
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="'+sw+'"/>';
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+clr+'" stroke-width="'+sw+'" stroke-dasharray="'+dash+' '+gap+'" stroke-dashoffset="'+(circ*0.25)+'" stroke-linecap="round" transform="rotate(-90 '+cx+' '+cy+')"/>';
+    s+='<text x="'+cx+'" y="'+(cy-6)+'" text-anchor="middle" dominant-baseline="middle" font-size="32" font-weight="700" fill="'+clr+'" font-family="var(--font)">'+score+'</text>';
+    s+='<text x="'+cx+'" y="'+(cy+20)+'" text-anchor="middle" dominant-baseline="middle" font-size="14" font-weight="600" fill="'+clr+'" font-family="var(--font)">Grade '+esc(g)+'</text>';
+    s+='</svg>'; return s;
+  }
+
+  function trendHtml() {
+    if (!trend) return '';
+    var cls='trend-'+trend.direction;
+    var arrow=trend.direction==='improving'?'&#9650;':trend.direction==='declining'?'&#9660;':'&#9654;';
+    var sign=trend.delta>0?'+':'';
+    return '<div class="trend-indicator '+cls+'">'+arrow+' <span class="trend-delta">'+sign+trend.delta+'</span> from '+trend.previousScore+'/'+esc(trend.previousGrade)+' ('+trend.periodDays+'d)</div>';
+  }
+
+  // --- Donut chart ---
+  function donutChart() {
+    var counts={critical:0,high:0,medium:0,low:0,info:0};
+    var violations=report.policyEvaluation.topViolations||[];
+    for(var i=0;i<violations.length;i++) counts[violations[i].severity]=(counts[violations[i].severity]||0)+violations[i].count;
+    for(var i=0;i<findings.length;i++){var s=findings[i].finding.severity;counts[s]=(counts[s]||0)+findings[i].count;}
+    var total=counts.critical+counts.high+counts.medium+counts.low+counts.info;
+    if(total===0) return '<div class="empty-state">No findings in this period.</div>';
+    var sz=150,cx=sz/2,cy=sz/2,r=50,sw=18,circ=2*Math.PI*r;
+    var colors={critical:'#ef4444',high:'#f97316',medium:'#eab308',low:'#3b82f6',info:'#6b7280'};
+    var order=['critical','high','medium','low','info'];
+    var off=0,svg='<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'">';
+    for(var j=0;j<order.length;j++){var sv=order[j],c=counts[sv]||0;if(!c)continue;var p=c/total,d=p*circ,g=circ-d;
+      svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+colors[sv]+'" stroke-width="'+sw+'" stroke-dasharray="'+d+' '+g+'" stroke-dashoffset="'+(-off+circ*0.25)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';off+=d;}
+    svg+='<text x="'+cx+'" y="'+cy+'" text-anchor="middle" dominant-baseline="middle" font-size="18" font-weight="700" fill="var(--text)" font-family="var(--font)">'+total+'</text></svg>';
+    var leg='<div class="donut-legend" style="flex-direction:column">';
+    for(var k=0;k<order.length;k++){var sv=order[k];if(!counts[sv])continue;leg+='<div class="donut-legend-item"><div class="donut-legend-dot" style="background:'+colors[sv]+'"></div>'+sv.charAt(0).toUpperCase()+sv.slice(1)+': '+counts[sv]+'</div>';}
+    leg+='</div>';
+    return '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+svg+leg+'</div>';
+  }
+
+  function factorsHtml() {
+    var factors=report.posture.factors||[];if(!factors.length) return '';
+    var h='<div class="card"><div class="card-title">Score Factors</div>';
+    for(var i=0;i<factors.length;i++){var f=factors[i];var bc=f.score>=70?'var(--green)':f.score>=40?'var(--medium)':'var(--red)';
+      h+='<div class="factor-row"><span class="factor-name">'+esc(f.name)+(f.weight?' ('+Math.round(f.weight*100)+'%)':'')+'</span><div class="factor-bar"><div class="factor-fill" style="width:'+f.score+'%;background:'+bc+'"></div></div><span class="factor-score">'+f.score+'</span><span class="factor-detail">'+esc(f.detail)+'</span></div>';}
+    h+='</div>'; return h;
+  }
+
+  // ======================== OVERVIEW ========================
+  function renderOverview() {
+    var h='';
+    h+='<div class="stats-grid">';
+    h+=statCard(report.posture.score+'/100','Score',scoreColor(report.posture.score));
+    h+=statCard('Grade '+(report.posture.grade||'--'),'Posture',scoreColor(report.posture.score));
+    h+=statCard(report.agentActivity.totalSessions,'Sessions','var(--primary)');
+    h+=statCard(report.agentActivity.totalActions,'Events','var(--text)');
+    h+=statCard(report.policyEvaluation.monitored,'Monitored','var(--muted)');
+    h+=statCard(report.policyEvaluation.blocked,'Blocked',report.policyEvaluation.blocked>0?'var(--red)':'var(--text)');
+    h+='</div>';
+
+    h+='<h2 class="section-title">Posture Score</h2>';
+    h+='<div class="overview-top">';
+    h+='<div class="gauge-card">'+gaugeCircle(report.posture.score)+trendHtml()+'</div>';
+    h+='<div class="card"><div class="card-title">Severity Breakdown</div>'+donutChart()+'</div>';
+    h+=factorsHtml();
+    h+='</div>';
+
+    if(executiveSummary){h+='<div class="exec-summary"><div class="exec-summary-title">Executive Summary</div><div class="exec-summary-text">'+esc(executiveSummary)+'</div></div>';}
+
+    if(findings.length>0){
+      h+='<h2 class="section-title">Top Findings</h2><div class="card"><table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th></tr></thead><tbody>';
+      var top=findings.slice(0,5);
+      for(var i=0;i<top.length;i++){var f=top[i];h+='<tr><td><span class="finding-id">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td></tr>';}
+      h+='</tbody></table>';
+      if(findings.length>5) h+='<div style="text-align:center;padding:8px;color:var(--dim);font-size:11px;cursor:pointer" onclick="document.querySelector(\\'.nav-tab[data-page=findings]\\').click()">View all '+findings.length+' findings --></div>';
+      h+='</div>';
+    }
+    return h;
+  }
+
+  // ======================== FINDINGS ========================
+  function renderFindings() {
+    if(!findings.length) return '<h2 class="section-title">Classified Findings</h2><div class="card"><div class="empty-state">No security findings classified in this period.</div></div>';
+    var h='<h2 class="section-title">Classified Findings ('+findings.length+')</h2>';
+    h+='<div class="search-box"><input type="text" class="search-input" id="findings-search" placeholder="Search findings by ID, title, OWASP, MITRE..." oninput="window._filterFindings(this.value)"></div>';
+    h+='<div class="card"><table class="data-table" id="findings-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th><th>Remediation</th></tr></thead><tbody>';
+    for(var i=0;i<findings.length;i++){var f=findings[i];
+      h+='<tr class="finding-row" data-idx="'+i+'" data-search="'+esc((f.finding.id+' '+f.finding.title+' '+f.finding.owaspAgentic+' '+f.finding.mitreAtlas+' '+f.finding.category).toLowerCase())+'">';
+      h+='<td><span class="finding-id">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td>';
+      h+='<td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td>';
+      h+='<td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td>';
+      h+='<td><div class="remediation-cmd"><code class="remediation-code" title="'+esc(f.finding.remediation)+'">'+esc(f.finding.remediation)+'</code><button class="copy-btn" data-cmd="'+esc(f.finding.remediation)+'" onclick="event.stopPropagation();copyCmd(this)">Copy</button></div></td></tr>';
+      h+='<tr class="finding-expand" id="finding-detail-'+i+'"><td colspan="7"><div class="finding-detail"><div class="finding-detail-grid">';
+      h+='<div><div class="finding-meta">Description</div><div class="finding-val">'+esc(f.finding.description)+'</div></div>';
+      h+='<div><div class="finding-meta">Category</div><div class="finding-val">'+esc(f.finding.category)+'</div><div class="finding-meta" style="margin-top:8px">Time Range</div><div class="finding-val">'+esc(formatTs(f.firstSeen))+' to '+esc(formatTs(f.lastSeen))+'</div></div></div>';
+      if(f.examples&&f.examples.length>0){h+='<div class="finding-examples"><div class="finding-meta">Event Examples ('+f.examples.length+')</div>';
+        for(var ei=0;ei<f.examples.length;ei++){var ex=f.examples[ei];h+='<div class="finding-example"><span style="color:var(--dim)">'+esc(formatTs(ex.timestamp))+'</span> <span style="color:var(--primary)">'+esc(ex.source)+'</span>: '+esc(ex.action)+' -> '+esc(ex.target)+' [<span class="sev-badge sev-'+esc(ex.severity)+'" style="font-size:9px;padding:1px 4px">'+esc(ex.severity)+'</span>]</div>';}
+        h+='</div>';}
+      h+='</div></td></tr>';}
+    h+='</tbody></table></div>';return h;
+  }
+
+  function bindFindingExpand(){document.addEventListener('click',function(e){var row=e.target.closest('.finding-row');if(!row)return;var idx=row.dataset.idx;if(idx===undefined)return;var det=document.getElementById('finding-detail-'+idx);if(det)det.classList.toggle('open');});}
+  window._filterFindings=function(q){q=q.toLowerCase().trim();var rows=document.querySelectorAll('#findings-table .finding-row');var dets=document.querySelectorAll('#findings-table .finding-expand');for(var i=0;i<rows.length;i++){var m=!q||(rows[i].dataset.search||'').indexOf(q)>=0;rows[i].style.display=m?'':'none';if(dets[i]){dets[i].style.display='none';dets[i].classList.remove('open');}}};
+
+  // ======================== AGENTS ========================
+  function renderAgents() {
+    var agents=report.agentActivity.byAgent;var keys=Object.keys(agents);
+    if(!keys.length) return '<h2 class="section-title">Agent Activity</h2><div class="card"><div class="empty-state">No agent activity recorded.</div></div>';
+    var h='<h2 class="section-title">Agent Activity ('+keys.length+' agents)</h2>';
+    h+='<div class="stats-grid">'+statCard(keys.length,'Agents','var(--primary)')+statCard(report.agentActivity.totalSessions,'Sessions','var(--text)')+statCard(report.agentActivity.totalActions,'Total Actions','var(--text)')+'</div>';
+    h+='<div class="card"><table class="data-table"><thead><tr><th>Agent</th><th>Sessions</th><th>Actions</th><th>First Seen</th><th>Last Seen</th><th>Top Actions</th></tr></thead><tbody>';
+    for(var i=0;i<keys.length;i++){var name=keys[i],a=agents[name];
+      var topActs=(a.topActions||[]).slice(0,4).map(function(ta){return '<span style="color:var(--primary)">'+esc(ta.action)+'</span> <span style="color:var(--dim)">('+ta.count+')</span>';}).join(', ');
+      h+='<tr><td style="font-weight:600;color:var(--primary)">'+esc(name)+'</td><td>'+a.sessions+'</td><td>'+a.actions+'</td><td style="font-size:11px;color:var(--dim)">'+esc(formatTs(a.firstSeen))+'</td><td style="font-size:11px;color:var(--dim)">'+esc(formatTs(a.lastSeen))+'</td><td style="font-size:11px">'+(topActs||'--')+'</td></tr>';}
+    h+='</tbody></table></div>';return h;
+  }
+
+  // ======================== VIOLATIONS ========================
+  function renderViolations() {
+    var violations=report.policyEvaluation.topViolations||[];
+    if(!violations.length) return '<h2 class="section-title">Policy Violations</h2><div class="card"><div class="empty-state">No policy violations recorded.</div></div>';
+    var h='<h2 class="section-title">Policy Violations</h2>';
+    h+='<div class="stats-grid">'+statCard(violations.length,'Violations','var(--red)')+statCard(report.policyEvaluation.monitored,'Monitored','var(--muted)')+statCard(report.policyEvaluation.blocked,'Blocked',report.policyEvaluation.blocked>0?'var(--red)':'var(--text)')+'</div>';
+    h+='<div class="card">';
+    h+='<div class="filter-bar" id="violation-filters"><button class="filter-btn active" data-sev="all">All</button><button class="filter-btn active" data-sev="critical">Critical</button><button class="filter-btn active" data-sev="high">High</button><button class="filter-btn active" data-sev="medium">Medium</button><button class="filter-btn active" data-sev="low">Low</button><button class="filter-btn active" data-sev="info">Info</button><span class="violation-count" id="violation-count">'+violations.length+' violations</span></div>';
+    h+='<div class="search-box"><input type="text" class="search-input" id="violations-search" placeholder="Search violations..." oninput="window._applyVF()"></div>';
+    h+='<table class="data-table" id="violations-table"><thead><tr><th>Finding</th><th>Action</th><th>Target</th><th>Agent</th><th>Count</th><th>Severity</th><th>Compliance</th><th>Remediation</th></tr></thead><tbody>';
+    for(var i=0;i<violations.length;i++){var v=violations[i];
+      h+='<tr class="violation-row" data-severity="'+esc(v.severity)+'" data-search="'+esc(((v.findingId||'')+' '+v.action+' '+v.target+' '+v.agent).toLowerCase())+'">';
+      h+='<td>'+(v.findingId?'<span class="finding-id" title="'+esc(v.recommendation)+'">'+esc(v.findingId)+'</span>':'<span style="color:var(--dim)">--</span>')+'</td>';
+      h+='<td>'+esc(v.action)+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(v.target)+'">'+esc(v.target)+'</td><td>'+esc(v.agent)+'</td><td>'+v.count+'</td>';
+      h+='<td><span class="sev-badge sev-'+esc(v.severity)+'">'+esc(v.severity)+'</span></td><td>';
+      if(v.compliance&&v.compliance.length>0){for(var ci=0;ci<v.compliance.length;ci++){var tag=v.compliance[ci];if(tag.indexOf('ASI')===0)h+='<span class="badge-owasp">'+esc(tag)+'</span>';else if(tag.indexOf('AML')===0)h+='<span class="badge-mitre">'+esc(tag)+'</span>';}}else h+='--';
+      h+='</td><td>';
+      if(v.remediationCommand){h+='<div class="remediation-cmd"><code class="remediation-code" title="'+esc(v.remediationCommand)+'">'+esc(v.remediationCommand)+'</code><button class="copy-btn" data-cmd="'+esc(v.remediationCommand)+'" onclick="copyCmd(this)">Copy</button></div>';}else h+=esc(v.recommendation);
+      h+='</td></tr>';}
+    h+='</tbody></table></div>';return h;
+  }
+
+  function bindViolationFilters(){var bar=document.getElementById('violation-filters');if(!bar)return;bar.addEventListener('click',function(e){if(!e.target.classList.contains('filter-btn'))return;var sev=e.target.dataset.sev;if(sev==='all'){activeViolationFilters=new Set(['critical','high','medium','low','info']);var btns=bar.querySelectorAll('.filter-btn');for(var b=0;b<btns.length;b++)btns[b].classList.add('active');}else{if(activeViolationFilters.has(sev))activeViolationFilters.delete(sev);else activeViolationFilters.add(sev);e.target.classList.toggle('active');var ab=bar.querySelector('.filter-btn[data-sev="all"]');if(ab)ab.classList.toggle('active',activeViolationFilters.size===5);}window._applyVF();});}
+  window._applyVF=function(){var rows=document.querySelectorAll('.violation-row');var q=((document.getElementById('violations-search')||{}).value||'').toLowerCase().trim();var vis=0;for(var i=0;i<rows.length;i++){var sv=rows[i].dataset.severity;var sm=activeViolationFilters.has(sv);var qm=!q||(rows[i].dataset.search||'').indexOf(q)>=0;var show=sm&&qm;rows[i].style.display=show?'':'none';if(show)vis++;}var c=document.getElementById('violation-count');if(c)c.textContent=vis+' of '+rows.length+' violations';};
+
+  // ======================== PROTECTION ========================
+  function renderProtection() {
+    var h='<h2 class="section-title">Protection Details</h2><div class="detail-grid">';
+    var rt=report.runtimeProtection;
+    h+='<div class="card"><div class="card-title">Runtime Protection (ARP)</div>';
+    h+=dr('ARP Status',rt.arpActive?'<span class="status-active">Active</span>':'<span class="status-inactive">Inactive</span>');
+    h+=dr('Processes Spawned',rt.processesSpawned)+dr('Network Connections',rt.networkConnections);
+    h+=dr('Anomalies','<span style="color:'+(rt.anomalies>0?'var(--amber)':'var(--green)')+'">'+rt.anomalies+'</span>')+'</div>';
+    var cred=report.credentialExposure;
+    h+='<div class="card"><div class="card-title">Credential Exposure</div>';
+    h+=dr('Access Attempts',cred.accessAttempts)+dr('Unique Credentials',cred.uniqueCredentials);
+    var providers=Object.keys(cred.byProvider||{});
+    if(providers.length>0){h+='<div class="detail-row"><span class="detail-key">By Provider</span><span class="detail-val">&nbsp;</span></div><div class="provider-list">';for(var p=0;p<providers.length;p++)h+='<span class="provider-tag">'+esc(providers[p])+': '+cred.byProvider[providers[p]]+'</span>';h+='</div>';}
+    h+='</div>';
+    var sc=report.supplyChain;
+    h+='<div class="card"><div class="card-title">Supply Chain</div>';
+    h+=dr('Packages Installed',sc.packagesInstalled)+dr('Advisories Found','<span style="color:'+(sc.advisoriesFound>0?'var(--amber)':'var(--green)')+'">'+sc.advisoriesFound+'</span>');
+    h+=dr('Blocked Installs','<span style="color:'+(sc.blockedInstalls>0?'var(--red)':'var(--text)')+'">'+sc.blockedInstalls+'</span>')+'</div>';
+    var ci=report.configIntegrity;
+    h+='<div class="card"><div class="card-title">Config Integrity</div>';
+    h+=dr('Files Monitored',ci.filesMonitored);
+    h+=dr('Signature Status',ci.signatureStatus==='signed'||ci.signatureStatus==='valid'?'<span class="status-active">Valid</span>':ci.signatureStatus==='unsigned'?'<span style="color:var(--amber)">Unsigned</span>':'<span class="status-inactive">'+esc(ci.signatureStatus)+'</span>');
+    if(ci.tamperedFiles&&ci.tamperedFiles.length>0){h+=dr('Tampered Files','<span class="status-inactive">'+ci.tamperedFiles.length+'</span>');for(var t=0;t<ci.tamperedFiles.length;t++)h+='<div style="color:var(--red);font-size:12px;padding:2px 0">'+esc(ci.tamperedFiles[t])+'</div>';}
+    else if(ci.filesMonitored>0) h+=dr('Integrity','<span class="status-active">All files valid</span>');
+    h+='</div></div>';return h;
+  }
+  function dr(k,v){return '<div class="detail-row"><span class="detail-key">'+esc(k)+'</span><span class="detail-val">'+v+'</span></div>';}
+
+  // ======================== TIMELINE ========================
+  function renderTimeline() {
+    if(!narrative) return '<h2 class="section-title">Event Timeline</h2><div class="card"><div class="empty-state">No narrative analysis available. Use --analyze flag to generate AI-powered event analysis.</div></div>';
+    var h='<h2 class="section-title">Event Timeline</h2><div class="card">';
+    if(narrative.summary){h+='<div class="narrative-block"><h4>Summary</h4><div class="narrative-text">'+esc(narrative.summary)+'</div></div>';}
+    if(narrative.highlights&&narrative.highlights.length>0){h+='<div class="narrative-block"><h4>Highlights</h4><ul class="narrative-list narrative-highlight">';for(var i=0;i<narrative.highlights.length;i++)h+='<li>'+esc(narrative.highlights[i])+'</li>';h+='</ul></div>';}
+    if(narrative.concerns&&narrative.concerns.length>0){h+='<div class="narrative-block"><h4>Concerns</h4><ul class="narrative-list narrative-concern">';for(var i=0;i<narrative.concerns.length;i++)h+='<li>'+esc(narrative.concerns[i])+'</li>';h+='</ul></div>';}
+    if(narrative.recommendations&&narrative.recommendations.length>0){h+='<div class="narrative-block"><h4>Recommendations</h4><ul class="narrative-list narrative-rec">';for(var i=0;i<narrative.recommendations.length;i++)h+='<li>'+esc(narrative.recommendations[i])+'</li>';h+='</ul></div>';}
+    h+='</div>';return h;
+  }
+
+  // --- Copy command ---
+  window.copyCmd=function(btn){var cmd=btn.getAttribute('data-cmd');if(!cmd)return;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cmd).then(function(){btn.textContent='OK';btn.classList.add('copied');setTimeout(function(){btn.textContent='Copy';btn.classList.remove('copied');},1500);});}else{var ta=document.createElement('textarea');ta.value=cmd;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);btn.textContent='OK';btn.classList.add('copied');setTimeout(function(){btn.textContent='Copy';btn.classList.remove('copied');},1500);}};
 
   init();
 })();
