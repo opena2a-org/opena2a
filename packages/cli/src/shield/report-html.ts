@@ -19,13 +19,101 @@
  * No external dependencies. No emojis.
  */
 
-import type { WeeklyReport, ReportNarrative } from './types.js';
+import type { WeeklyReport, ReportNarrative, PostureTrend } from './types.js';
+import type { ClassifiedFinding } from './findings.js';
+
+/**
+ * Generate the executive summary text from report data.
+ * No LLM needed -- deterministic sentence generation.
+ */
+export function generateExecutiveSummary(
+  report: WeeklyReport,
+  findings: ClassifiedFinding[],
+  trend: PostureTrend | null,
+): string {
+  const sentences: string[] = [];
+
+  // Sentence 1: Score + grade + trend
+  if (trend) {
+    const dir = trend.direction === 'improving' ? 'improved'
+      : trend.direction === 'declining' ? 'declined' : 'remained stable';
+    sentences.push(
+      `Security posture score ${dir} from ${trend.previousScore}/${trend.previousGrade} to ${report.posture.score}/${report.posture.grade} over ${trend.periodDays} day${trend.periodDays !== 1 ? 's' : ''} (delta: ${trend.delta > 0 ? '+' : ''}${trend.delta}).`,
+    );
+  } else {
+    sentences.push(
+      `Security posture score: ${report.posture.score}/100 (Grade ${report.posture.grade}). No previous snapshot available for trend comparison.`,
+    );
+  }
+
+  // Sentence 2: Top finding category + count
+  const criticalFindings = findings.filter(f => f.finding.severity === 'critical');
+  const highFindings = findings.filter(f => f.finding.severity === 'high');
+  if (criticalFindings.length > 0) {
+    const totalCrit = criticalFindings.reduce((sum, f) => sum + f.count, 0);
+    sentences.push(
+      `${totalCrit} critical finding${totalCrit !== 1 ? 's' : ''} across ${criticalFindings.length} categor${criticalFindings.length !== 1 ? 'ies' : 'y'} require immediate attention.`,
+    );
+  } else if (highFindings.length > 0) {
+    const totalHigh = highFindings.reduce((sum, f) => sum + f.count, 0);
+    sentences.push(
+      `${totalHigh} high-severity finding${totalHigh !== 1 ? 's' : ''} detected. No critical findings.`,
+    );
+  } else if (findings.length > 0) {
+    sentences.push(
+      `${findings.length} finding${findings.length !== 1 ? 's' : ''} detected, none above medium severity.`,
+    );
+  } else {
+    sentences.push('No security findings detected in this reporting period.');
+  }
+
+  // Sentence 3: Policy posture
+  const pe = report.policyEvaluation;
+  if (pe.blocked > 0) {
+    sentences.push(
+      `Policy enforcement is active: ${pe.blocked} action${pe.blocked !== 1 ? 's' : ''} blocked, ${pe.monitored} monitored.`,
+    );
+  } else if (pe.monitored > 0) {
+    sentences.push(
+      `Policy is in monitor-only mode: ${pe.monitored} action${pe.monitored !== 1 ? 's' : ''} logged but not blocked.`,
+    );
+  } else {
+    sentences.push('No policy enforcement activity recorded.');
+  }
+
+  // Sentence 4: Config integrity
+  const ci = report.configIntegrity;
+  if (ci.filesMonitored > 0) {
+    if (ci.tamperedFiles.length > 0) {
+      sentences.push(
+        `WARNING: ${ci.tamperedFiles.length} of ${ci.filesMonitored} monitored config file${ci.filesMonitored !== 1 ? 's' : ''} show tampering.`,
+      );
+    } else {
+      sentences.push(
+        `All ${ci.filesMonitored} monitored config file${ci.filesMonitored !== 1 ? 's' : ''} have valid signatures.`,
+      );
+    }
+  }
+
+  return sentences.join(' ');
+}
 
 export function generateShieldHtmlReport(
   report: WeeklyReport,
   narrative?: ReportNarrative | null,
+  findings?: ClassifiedFinding[],
+  trend?: PostureTrend | null,
 ): string {
-  const jsonData = JSON.stringify({ report, narrative: narrative ?? null });
+  const findingsData = findings ?? [];
+  const trendData = trend ?? report.posture.trend ?? null;
+  const executiveSummary = generateExecutiveSummary(report, findingsData, trendData);
+  const jsonData = JSON.stringify({
+    report,
+    narrative: narrative ?? null,
+    findings: findingsData,
+    trend: trendData,
+    executiveSummary,
+  });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -209,6 +297,30 @@ a:hover{text-decoration:underline}
 .status-active{color:var(--green);font-weight:600}
 .status-inactive{color:var(--red);font-weight:600}
 
+/* Compliance badges */
+.badge-owasp{background:#f59e0b;color:#000;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;margin:1px 2px}
+.badge-mitre{background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;display:inline-block;margin:1px 2px}
+.finding-id{font-family:var(--font);font-size:11px;color:var(--primary);font-weight:600;cursor:help}
+
+/* Remediation command */
+.remediation-cmd{display:flex;align-items:center;gap:6px}
+.remediation-code{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:4px;padding:3px 8px;font-size:11px;font-family:var(--font);color:var(--text);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy-btn{background:transparent;border:1px solid var(--card-border);border-radius:4px;padding:3px 6px;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:10px;transition:all .2s}
+.copy-btn:hover{border-color:var(--primary);color:var(--primary)}
+.copy-btn.copied{border-color:var(--green);color:var(--green)}
+
+/* Executive summary */
+.exec-summary{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:20px;margin-bottom:24px}
+.exec-summary-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.exec-summary-text{color:var(--text);font-size:13px;line-height:1.8}
+
+/* Trend indicator */
+.trend-indicator{display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-top:8px}
+.trend-improving{color:var(--green)}
+.trend-declining{color:var(--red)}
+.trend-stable{color:var(--muted)}
+.trend-delta{font-weight:700}
+
 @media(max-width:768px){
   .posture-section{grid-template-columns:1fr}
   .detail-grid{grid-template-columns:1fr}
@@ -227,6 +339,9 @@ const JS = `
   var raw = JSON.parse(document.getElementById('report-data').textContent);
   var report = raw.report;
   var narrative = raw.narrative;
+  var findings = raw.findings || [];
+  var trend = raw.trend || null;
+  var executiveSummary = raw.executiveSummary || '';
 
   var activeViolationFilters = new Set(['critical','high','medium','low','info']);
 
@@ -319,8 +434,15 @@ const JS = `
     html += '<h2 class="section-title">Posture Score</h2>';
     html += '<div class="posture-section">';
     html += '<div class="gauge-card">' + gaugeCircle(report.posture.score);
-    if (report.posture.trend) {
-      html += '<div class="gauge-trend">Trend: ' + esc(report.posture.trend) + '</div>';
+    if (trend) {
+      var trendClass = 'trend-' + trend.direction;
+      var arrow = trend.direction === 'improving' ? '&#9650;' : trend.direction === 'declining' ? '&#9660;' : '&#9654;';
+      var sign = trend.delta > 0 ? '+' : '';
+      html += '<div class="trend-indicator ' + trendClass + '">';
+      html += arrow + ' <span class="trend-delta">' + sign + trend.delta + '</span>';
+      html += ' from ' + trend.previousScore + '/' + esc(trend.previousGrade);
+      html += ' (' + trend.periodDays + 'd)';
+      html += '</div>';
     }
     html += '</div>';
 
@@ -343,6 +465,14 @@ const JS = `
       html += '</div>';
     }
     html += '</div></div>';
+
+    // Executive Summary
+    if (executiveSummary) {
+      html += '<div class="exec-summary">';
+      html += '<div class="exec-summary-title">Executive Summary</div>';
+      html += '<div class="exec-summary-text">' + esc(executiveSummary) + '</div>';
+      html += '</div>';
+    }
 
     // Summary stats
     html += '<h2 class="section-title">Activity Summary</h2>';
@@ -440,17 +570,50 @@ const JS = `
     html += '</div>';
 
     html += '<table class="data-table" id="violations-table">';
-    html += '<thead><tr><th>Action</th><th>Target</th><th>Agent</th><th>Count</th><th>Severity</th><th>Recommendation</th></tr></thead>';
+    html += '<thead><tr><th>Finding</th><th>Action</th><th>Target</th><th>Agent</th><th>Count</th><th>Severity</th><th>Compliance</th><th>Remediation</th></tr></thead>';
     html += '<tbody>';
     for (var i = 0; i < violations.length; i++) {
       var v = violations[i];
       html += '<tr class="violation-row" data-severity="' + esc(v.severity) + '">';
+      // Finding ID
+      html += '<td>';
+      if (v.findingId) {
+        html += '<span class="finding-id" title="' + esc(v.recommendation) + '">' + esc(v.findingId) + '</span>';
+      } else {
+        html += '<span class="finding-id" style="color:var(--dim)">--</span>';
+      }
+      html += '</td>';
       html += '<td>' + esc(v.action) + '</td>';
       html += '<td>' + esc(v.target) + '</td>';
       html += '<td>' + esc(v.agent) + '</td>';
       html += '<td>' + v.count + '</td>';
       html += '<td><span class="sev-badge sev-' + esc(v.severity) + '">' + esc(v.severity) + '</span></td>';
-      html += '<td>' + esc(v.recommendation) + '</td>';
+      // Compliance badges
+      html += '<td>';
+      if (v.compliance && v.compliance.length > 0) {
+        for (var ci = 0; ci < v.compliance.length; ci++) {
+          var tag = v.compliance[ci];
+          if (tag.indexOf('ASI') === 0) {
+            html += '<span class="badge-owasp">' + esc(tag) + '</span>';
+          } else if (tag.indexOf('AML') === 0) {
+            html += '<span class="badge-mitre">' + esc(tag) + '</span>';
+          }
+        }
+      } else {
+        html += '--';
+      }
+      html += '</td>';
+      // Remediation command
+      html += '<td>';
+      if (v.remediationCommand) {
+        html += '<div class="remediation-cmd">';
+        html += '<code class="remediation-code" title="' + esc(v.remediationCommand) + '">' + esc(v.remediationCommand) + '</code>';
+        html += '<button class="copy-btn" data-cmd="' + esc(v.remediationCommand) + '" onclick="copyCmd(this)">Copy</button>';
+        html += '</div>';
+      } else {
+        html += esc(v.recommendation);
+      }
+      html += '</td>';
       html += '</tr>';
     }
     html += '</tbody></table></div>';
@@ -550,6 +713,31 @@ const JS = `
     html += '</div>';
     return html;
   }
+
+  // --- Copy remediation command ---
+  window.copyCmd = function(btn) {
+    var cmd = btn.getAttribute('data-cmd');
+    if (!cmd) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(function() {
+        btn.textContent = 'OK';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = cmd;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = 'OK';
+      btn.classList.add('copied');
+      setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+    }
+  };
 
   // --- Event binding ---
   function bindEvents() {

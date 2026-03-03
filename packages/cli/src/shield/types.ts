@@ -214,6 +214,9 @@ export interface PolicyViolation {
   count: number;
   severity: EventSeverity;
   recommendation: string;
+  findingId?: string;
+  remediationCommand?: string;
+  compliance?: string[];
 }
 
 export interface PostureFactor {
@@ -229,12 +232,28 @@ export interface ComparativeMetric {
   optInDate: string;
 }
 
+export interface PostureTrend {
+  previousScore: number;
+  previousGrade: string;
+  delta: number;
+  direction: 'improving' | 'declining' | 'stable';
+  periodDays: number;
+}
+
 export interface PostureScore {
   score: number;
   grade: string;
   factors: PostureFactor[];
-  trend: 'improving' | 'stable' | 'declining' | null;
+  trend: PostureTrend | null;
   comparative: ComparativeMetric | null;
+}
+
+export interface ReportSnapshot {
+  timestamp: string;
+  score: number;
+  grade: string;
+  findingCounts: Record<string, number>;
+  totalFindings: number;
 }
 
 export interface WeeklyReport {
@@ -474,6 +493,7 @@ export const SHIELD_SCAN_FILE = 'scan.json';
 export const SHIELD_CONFIG_FILE = 'config.json';
 export const SHIELD_BASELINES_DIR = 'baselines';
 export const SHIELD_REPORTS_DIR = 'reports';
+export const SHIELD_SNAPSHOTS_FILE = 'snapshots.jsonl';
 export const SHIELD_LLM_CACHE_FILE = 'llm-cache.json';
 
 // LLM cache TTLs (milliseconds)

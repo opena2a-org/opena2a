@@ -399,16 +399,56 @@ async function handleReport(options: ShieldOptions): Promise<number> {
   const topAgents = topN(byAgent, 10);
   const topActions = topN(byAction, 10);
 
+  // --- Classify events into findings ---
+  const { classifyEvents, classifyViolation } = await import('../shield/findings.js');
+  const classifiedFindings = classifyEvents(events);
+
+  // --- SARIF output ---
+  if (options.format === 'sarif') {
+    const { toSarif } = await import('../shield/sarif.js');
+    const { getVersion } = await import('../util/version.js');
+    const sarif = toSarif(classifiedFindings, getVersion());
+    const sarifJson = JSON.stringify(sarif, null, 2);
+    if (options.report) {
+      const reportPath = path.resolve(options.report);
+      fs.writeFileSync(reportPath, sarifJson, 'utf-8');
+      process.stdout.write(`SARIF report written to ${reportPath}\n`);
+    } else {
+      process.stdout.write(sarifJson + '\n');
+    }
+    return 0;
+  }
+
   // --- HTML report output ---
   if (options.report) {
     const weeklyReport = await buildWeeklyReport(events, since, bySeverity, byOutcome, byAgent, topActions);
+
+    // Enrich violations with finding data
+    for (const v of weeklyReport.policyEvaluation.topViolations) {
+      const finding = classifyViolation(v);
+      if (finding) {
+        v.findingId = finding.id;
+        v.remediationCommand = finding.remediation;
+        v.compliance = [finding.owaspAgentic, finding.mitreAtlas];
+      }
+    }
+
+    // Compute trend from snapshot history
+    const trendData = await computeTrend(weeklyReport);
+    if (trendData) {
+      weeklyReport.posture.trend = trendData;
+    }
+
+    // Save snapshot for future trend comparisons
+    await saveReportSnapshot(weeklyReport, classifiedFindings);
+
     let narrative: import('../shield/types.js').ReportNarrative | null = null;
     if (options.analyze) {
       const { generateNarrative } = await import('../shield/llm.js');
       narrative = await generateNarrative(weeklyReport);
     }
     const { generateShieldHtmlReport } = await import('../shield/report-html.js');
-    const html = generateShieldHtmlReport(weeklyReport, narrative);
+    const html = generateShieldHtmlReport(weeklyReport, narrative, classifiedFindings, trendData);
     const reportPath = path.resolve(options.report);
     fs.writeFileSync(reportPath, html, 'utf-8');
     process.stdout.write(`Report written to ${reportPath}\n`);
@@ -522,6 +562,87 @@ async function handleReport(options: ShieldOptions): Promise<number> {
 
   process.stdout.write(gray('-'.repeat(50)) + '\n');
   return 0;
+}
+
+// --- Snapshot Persistence for Trend Analysis ---
+
+async function saveReportSnapshot(
+  report: import('../shield/types.js').WeeklyReport,
+  findings: import('../shield/findings.js').ClassifiedFinding[],
+): Promise<void> {
+  const { getShieldDir } = await import('../shield/events.js');
+  const { SHIELD_SNAPSHOTS_FILE } = await import('../shield/types.js');
+
+  const findingCounts: Record<string, number> = {};
+  for (const f of findings) {
+    const sev = f.finding.severity;
+    findingCounts[sev] = (findingCounts[sev] ?? 0) + f.count;
+  }
+
+  const snapshot: import('../shield/types.js').ReportSnapshot = {
+    timestamp: report.generatedAt,
+    score: report.posture.score,
+    grade: report.posture.grade,
+    findingCounts,
+    totalFindings: findings.reduce((sum, f) => sum + f.count, 0),
+  };
+
+  const dir = getShieldDir();
+  const filePath = path.join(dir, SHIELD_SNAPSHOTS_FILE);
+  fs.appendFileSync(filePath, JSON.stringify(snapshot) + '\n', 'utf-8');
+}
+
+async function loadPreviousSnapshot(): Promise<import('../shield/types.js').ReportSnapshot | null> {
+  const { getShieldDir } = await import('../shield/events.js');
+  const { SHIELD_SNAPSHOTS_FILE } = await import('../shield/types.js');
+
+  const dir = getShieldDir();
+  const filePath = path.join(dir, SHIELD_SNAPSHOTS_FILE);
+
+  if (!fs.existsSync(filePath)) return null;
+
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+
+  const lines = content.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length === 0) return null;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i]) as import('../shield/types.js').ReportSnapshot;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+async function computeTrend(
+  report: import('../shield/types.js').WeeklyReport,
+): Promise<import('../shield/types.js').PostureTrend | null> {
+  const previous = await loadPreviousSnapshot();
+  if (!previous) return null;
+
+  const delta = report.posture.score - previous.score;
+  const periodMs = new Date(report.generatedAt).getTime() - new Date(previous.timestamp).getTime();
+  const periodDays = Math.max(1, Math.round(periodMs / (24 * 60 * 60 * 1000)));
+
+  let direction: 'improving' | 'declining' | 'stable';
+  if (delta > 3) direction = 'improving';
+  else if (delta < -3) direction = 'declining';
+  else direction = 'stable';
+
+  return {
+    previousScore: previous.score,
+    previousGrade: previous.grade,
+    delta,
+    direction,
+    periodDays,
+  };
 }
 
 /**
