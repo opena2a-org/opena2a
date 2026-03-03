@@ -42,8 +42,7 @@ export interface ResolvedPackage {
 // --- Constants ---
 
 const VERIFIABLE_PACKAGES = [
-  'hackmyagent', 'secretless-ai', 'hma-researcher', 'hma-hunter',
-  'aibrowserguard', 'ai-trust',
+  'hackmyagent', 'secretless-ai', 'aibrowserguard', 'ai-trust',
 ];
 
 // --- Testable internals ---

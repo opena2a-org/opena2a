@@ -55,7 +55,7 @@ describe('adapter registry', () => {
   it('has all expected adapters', () => {
     // guard and runtime are now handled directly (not adapter-based)
     const expected = ['scan', 'secrets', 'benchmark', 'registry',
-      'research', 'hunt', 'train', 'crypto', 'identity', 'broker', 'dlp'];
+      'train', 'crypto', 'identity', 'broker', 'dlp'];
     for (const name of expected) {
       expect(ADAPTER_REGISTRY[name]).toBeDefined();
     }
@@ -63,7 +63,6 @@ describe('adapter registry', () => {
 
   it('creates correct adapter types', () => {
     expect(createAdapter('scan')).not.toBeNull();
-    expect(createAdapter('research')).not.toBeNull();
     expect(createAdapter('train')).not.toBeNull();
     expect(createAdapter('crypto')).not.toBeNull();
     expect(createAdapter('nonexistent')).toBeNull();

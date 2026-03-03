@@ -44,11 +44,9 @@ const CATEGORIES: WizardCategory[] = [
     ],
   },
   {
-    label: 'Research & Train',
-    description: 'Autonomous security research and training',
+    label: 'Training',
+    description: 'Security training environments',
     commands: [
-      { label: 'Autonomous research', command: 'opena2a research', description: 'Launch security research agent' },
-      { label: 'Vulnerability hunter', command: 'opena2a hunt', description: 'Multi-turn attack decomposition' },
       { label: 'Training lab', command: 'opena2a train', description: 'Launch DVAA vulnerable agent' },
     ],
   },

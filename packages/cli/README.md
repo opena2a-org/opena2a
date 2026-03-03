@@ -437,8 +437,6 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
 | `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
-| `opena2a research` | [HMA Researcher](https://github.com/opena2a-org/hma-researcher) | Autonomous security research agent |
-| `opena2a hunt` | [HMA Hunter](https://github.com/opena2a-org/hma-hunter) | Autonomous vulnerability hunter |
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 | `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |

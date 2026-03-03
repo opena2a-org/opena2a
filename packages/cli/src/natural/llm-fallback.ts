@@ -11,8 +11,6 @@ Available commands:
 - opena2a runtime start -- Runtime monitoring (process/network/filesystem)
 - opena2a benchmark -- OASB security benchmark (222 scenarios)
 - opena2a registry check <pkg> -- Trust registry lookup
-- opena2a research <target> -- Autonomous security research
-- opena2a hunt <target> -- Autonomous vulnerability hunter
 - opena2a train -- Launch DVAA training environment
 - opena2a crypto scan -- Cryptographic inventory / PQC readiness
 - opena2a identity -- Agent identity management

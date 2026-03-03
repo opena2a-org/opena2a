@@ -15,11 +15,11 @@ afterEach(() => {
 });
 
 describe('TOOL_MANIFEST', () => {
-  it('contains all 13 tools with required fields', () => {
-    expect(TOOL_MANIFEST).toHaveLength(13);
+  it('contains all 11 tools with required fields', () => {
+    expect(TOOL_MANIFEST).toHaveLength(11);
 
     const names = TOOL_MANIFEST.map(t => t.name);
-    expect(new Set(names).size).toBe(13); // no duplicates
+    expect(new Set(names).size).toBe(11); // no duplicates
 
     for (const tool of TOOL_MANIFEST) {
       expect(tool.name).toBeTruthy();
@@ -35,11 +35,11 @@ describe('TOOL_MANIFEST', () => {
     }
   });
 
-  it('has 8 scannable and 5 non-scannable tools', () => {
+  it('has 6 scannable and 5 non-scannable tools', () => {
     const scannable = TOOL_MANIFEST.filter(t => t.scannable);
     const nonScannable = TOOL_MANIFEST.filter(t => !t.scannable);
 
-    expect(scannable).toHaveLength(8);
+    expect(scannable).toHaveLength(6);
     expect(nonScannable).toHaveLength(5);
   });
 
@@ -117,8 +117,8 @@ describe('selfRegister', () => {
     expect(mockFetch).not.toHaveBeenCalled();
 
     const report = JSON.parse(output);
-    expect(report.total).toBe(13);
-    expect(report.tools).toHaveLength(13);
+    expect(report.total).toBe(11);
+    expect(report.tools).toHaveLength(11);
   });
 
   it('--only filters to specified tools', async () => {

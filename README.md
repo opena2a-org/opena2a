@@ -360,8 +360,6 @@ The CLI orchestrates specialized tools through a unified interface. Each command
 |---------|---------|------|-------------|
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Credential management for AI coding tools |
-| `opena2a hunt` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | Autonomous vulnerability hunter |
-| `opena2a research` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | Autonomous security research agent |
 | `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Identity-aware credential broker daemon |
 | `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Data loss prevention for AI tool transcripts |
 | `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity and access management |
@@ -376,7 +374,7 @@ Adapters install tools on first use. Each tool works standalone or through the C
 
 | Product | CLI Commands |
 |---------|-------------|
-| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `scan`, `hunt`, `research`, `benchmark` |
+| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `scan`, `benchmark` |
 | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `secrets`, `broker`, `dlp` |
 | [AIM](https://github.com/opena2a-org/agent-identity-management) | `identity` |
 | [Trust Registry](https://registry.opena2a.org) | `registry`, `verify` |
@@ -440,8 +438,6 @@ opena2a CLI
   +-- Adapters (install on first use)
        +-- scan      -> HackMyAgent
        +-- secrets   -> Secretless AI
-       +-- hunt      -> HackMyAgent
-       +-- research  -> HackMyAgent
        +-- broker    -> Secretless AI
        +-- dlp       -> Secretless AI
        +-- identity  -> AIM

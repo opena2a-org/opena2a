@@ -26,18 +26,6 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'ai-trust',
     description: 'Query OpenA2A Trust Registry for package security data',
   },
-  research: {
-    name: 'research',
-    method: 'spawn',
-    command: 'hma-researcher',
-    description: 'Autonomous security research agent (HMA Researcher)',
-  },
-  hunt: {
-    name: 'hunt',
-    method: 'spawn',
-    command: 'hma-hunter',
-    description: 'Autonomous vulnerability hunter (HMA Hunter)',
-  },
   train: {
     name: 'train',
     method: 'docker',

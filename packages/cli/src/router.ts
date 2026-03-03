@@ -51,7 +51,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
   const KNOWN_COMMANDS = [
     'init', 'check', 'protect', 'status', 'publish',
     'scan', 'runtime', 'benchmark', 'crypto', 'secrets',
-    'identity', 'registry', 'research', 'hunt', 'train',
+    'identity', 'registry', 'train',
     'guard', 'dlp', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
   ];

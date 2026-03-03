@@ -81,24 +81,6 @@
     "examples": ["check if package is safe", "trust score lookup", "verify dependency"]
   },
   {
-    "id": "research",
-    "path": "opena2a research",
-    "description": "Launch autonomous security research agent",
-    "tags": ["research", "autonomous", "bounty", "discover", "investigate"],
-    "synonyms": ["investigate", "discover", "analyze-deep"],
-    "domains": ["vulnerability", "security-research"],
-    "examples": ["research this target", "find zero-days", "autonomous security scan"]
-  },
-  {
-    "id": "hunt",
-    "path": "opena2a hunt",
-    "description": "Launch autonomous vulnerability hunter with multi-turn attack decomposition",
-    "tags": ["hunt", "attack", "autonomous", "decompose", "exploit"],
-    "synonyms": ["exploit", "break", "multi-turn-attack"],
-    "domains": ["agent", "api", "llm"],
-    "examples": ["hunt for vulnerabilities", "multi-turn attack", "autonomous exploit"]
-  },
-  {
     "id": "train",
     "path": "opena2a train",
     "description": "Launch Damn Vulnerable AI Agent for security training",
