@@ -52,7 +52,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'scan', 'runtime', 'benchmark', 'crypto', 'secrets',
     'identity', 'registry', 'research', 'hunt', 'train',
     'guard', 'dlp', 'broker', 'config', 'self-register',
-    'verify', 'baselines',
+    'verify', 'baselines', 'review',
   ];
 
   if (KNOWN_COMMANDS.includes(first)) {

@@ -200,6 +200,28 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
+  // Review command (unified security review)
+  program
+    .command('review')
+    .description('Run all security checks and open unified HTML dashboard')
+    .option('--dir <path>', 'Target directory')
+    .option('--report <path>', 'Output path for HTML report')
+    .option('--no-open', 'Do not auto-open report in browser')
+    .option('--skip-hma', 'Skip HMA scan even if available')
+    .action(async (opts) => {
+      const { review } = await import('./commands/review.js');
+      const globalOpts = program.opts();
+      process.exitCode = await review({
+        targetDir: opts.dir ?? process.cwd(),
+        reportPath: opts.report,
+        autoOpen: opts.open !== false,
+        skipHma: opts.skipHma,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Self-register command
   program
     .command('self-register')
