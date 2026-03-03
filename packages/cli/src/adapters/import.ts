@@ -57,12 +57,16 @@ export class ImportAdapter implements Adapter {
       // Package not installed -- try npx fallback
       if (message.includes('Cannot find module') || message.includes('ERR_MODULE_NOT_FOUND')) {
         const { SpawnAdapter } = await import('./spawn.js');
+        // Use npx as bin with package name as first arg (avoid shell injection)
         const fallback = new SpawnAdapter({
           ...this.config,
           method: 'spawn',
-          command: `npx ${pkgName}`,
+          command: 'npx',
         });
-        return fallback.run(options);
+        return fallback.run({
+          ...options,
+          args: [pkgName!, ...options.args],
+        });
       }
 
       return { exitCode: 1, stdout: '', stderr: `Failed to load ${pkgName}: ${message}` };

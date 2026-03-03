@@ -277,7 +277,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   const grade = scoreToGrade(compositeScore);
 
   // Aggregate findings
-  const findings = aggregateFindings(credentialData, shieldData);
+  const findings = aggregateFindings(credentialData, shieldData, targetDir);
 
   // Action items
   const actionItems = generateActionItems(credentialData, guardData, shieldData, initData);
@@ -557,6 +557,7 @@ function scoreToGrade(score: number): string {
 function aggregateFindings(
   credData: CredentialPhaseData,
   shieldData: ShieldPhaseData,
+  targetDir: string,
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
@@ -567,7 +568,7 @@ function aggregateFindings(
       title: m.title,
       severity: m.severity,
       source: 'credential-scan',
-      detail: `${path.relative(process.cwd(), m.filePath)}:${m.line}`,
+      detail: `${path.relative(targetDir, m.filePath)}:${m.line}`,
       remediation: 'opena2a protect',
     });
   }
@@ -652,6 +653,11 @@ function generateActionItems(
       tab: 'hygiene',
     });
   }
+
+  // Sort by severity (critical > high > medium > low) then re-assign priority numbers
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  items.sort((a, b) => (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4));
+  items.forEach((item, i) => { item.priority = i + 1; });
 
   return items.slice(0, 5);
 }

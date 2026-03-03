@@ -104,7 +104,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
   }
 
   if (options.dryRun) {
-    process.stdout.write(yellow('[DRY RUN] No files will be modified.\n\n'));
+    process.stderr.write(yellow('[DRY RUN] No files will be modified.\n\n'));
   }
 
   // Phase 1: Scan for credentials
@@ -203,7 +203,25 @@ export async function protect(options: ProtectOptions): Promise<number> {
   }
 
   if (options.dryRun) {
-    if (!isJson) {
+    if (isJson) {
+      const report: ProtectReport = {
+        targetDir,
+        totalFound: matches.length,
+        migrated: 0,
+        failed: 0,
+        skipped: matches.length,
+        results: matches.map(m => ({
+          credential: m,
+          stored: false,
+          replaced: false,
+          policyCreated: false,
+        })),
+        verificationPassed: false,
+        durationMs: Date.now() - startTime,
+        ...(livenessResults ? { livenessResults: Object.fromEntries(livenessResults) } : {}),
+      };
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    } else {
       process.stdout.write(yellow('[DRY RUN] Would migrate the above credentials.\n'));
       process.stdout.write(dim('Run without --dry-run to apply changes.\n'));
     }

@@ -186,9 +186,13 @@ async function queryOracleVerdict(registryUrl: string, component: string): Promi
     if (!response.ok) return null;
 
     const data = await response.json() as any;
+    // Handle both string and nested object forms of verdict
+    const rawVerdict = data.verdict;
+    const verdictStr = typeof rawVerdict === 'string' ? rawVerdict
+      : rawVerdict?.verdict ?? rawVerdict?.trustLevel ?? 'unknown';
     return {
-      verdict: data.verdict ?? 'unknown',
-      signatureValid: data.signatureValid ?? data.signature?.valid ?? false,
+      verdict: String(verdictStr),
+      signatureValid: data.signatureValid ?? data.signature?.valid ?? data.verified ?? false,
     };
   } catch {
     return null;
@@ -322,8 +326,10 @@ function printResults(results: VerifyResult[], registryUrl: string): void {
     process.stdout.write(`  ${dim('Hash Check')}       ${statusLabel} ${dim('(SHA-256 ' + hashDisplay + ')')}\n`);
 
     if (r.trustScore !== null) {
-      const scoreColor = r.trustScore >= 80 ? green : r.trustScore >= 60 ? yellow : red;
-      process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${r.trustScore} / 100`)}\n`);
+      // API returns 0-1 scale; display as 0-100
+      const displayScore = r.trustScore <= 1 ? Math.round(r.trustScore * 100) : Math.round(r.trustScore);
+      const scoreColor = displayScore >= 80 ? green : displayScore >= 60 ? yellow : red;
+      process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${displayScore} / 100`)}\n`);
     }
     if (r.trustVerdict !== null) {
       const verdictColor = r.trustVerdict === 'trusted' ? green

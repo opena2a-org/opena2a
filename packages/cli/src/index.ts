@@ -44,10 +44,10 @@ Learn more: https://opena2a.org/docs`);
   for (const [name, config] of Object.entries(ADAPTER_REGISTRY)) {
     program
       .command(name)
+      .argument('[args...]', 'Subcommand and arguments')
       .description(config.description)
       .allowUnknownOption(true)
-      .action(async (_opts, cmd) => {
-        const args = cmd.args ?? [];
+      .action(async (args: string[], _opts, cmd) => {
         const globalOpts = program.opts();
         const exitCode = await dispatchCommand(name, args, {
           verbose: globalOpts.verbose,
@@ -175,6 +175,7 @@ Learn more: https://opena2a.org/docs`);
   program
     .command('shield <subcommand> [args...]')
     .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report|monitor|session|baseline|suggest|explain|triage)')
+    .allowUnknownOption(true)
     .option('--dir <path>', 'Target directory')
     .option('--agent <name>', 'Agent name filter')
     .option('--count <n>', 'Event count (log)')

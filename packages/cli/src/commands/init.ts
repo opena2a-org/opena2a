@@ -90,7 +90,7 @@ export async function init(options: InitOptions): Promise<number> {
   const { score, grade } = calculateTrustScore(credsBySeverity, checks, targetDir);
 
   // 6. Generate next steps
-  const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks);
+  const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks, project.type);
 
   // 6.5. Compute posture score from Shield product detection
   const shieldStatus = getShieldStatus(targetDir);
@@ -339,6 +339,7 @@ function generateNextSteps(
   credCount: number,
   credsBySeverity: Record<string, number>,
   checks: HygieneCheck[],
+  projectType?: string,
 ): NextStep[] {
   const steps: NextStep[] = [];
 
@@ -364,10 +365,13 @@ function generateNextSteps(
   // No .gitignore
   const gitignoreCheck = checks.find(c => c.label === '.gitignore');
   if (gitignoreCheck?.status !== 'pass') {
+    const gitignoreTemplate = projectType === 'python' ? 'python'
+      : projectType === 'go' ? 'go'
+      : 'node';
     steps.push({
       severity: 'high',
       description: 'Create .gitignore',
-      command: 'npx gitignore node',
+      command: `npx gitignore ${gitignoreTemplate}`,
     });
   }
 

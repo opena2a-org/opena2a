@@ -38,6 +38,8 @@ const INTENT_MAPPINGS: IntentMapping[] = [
       /\bstop\s+ai\s+(from\s+)?(reading|seeing|accessing)\s+(my\s+)?(secrets?|keys?)\b/i,
       /\bhardcoded\s+(secrets?|credentials?|keys?)\b/i,
       /\b(move|migrate)\s+(secrets?|credentials?)\s+to\s+vault\b/i,
+      /\b(scan|search|look|check)\s+(for\s+)?(secrets?|credentials?|api\s*keys?|tokens?|hardcoded)\b/i,
+      /\b(detect|find)\s+(hardcoded\s+)?(secrets?|credentials?|api\s*keys?)\b/i,
     ],
     command: 'opena2a protect',
     description: 'Migrate credentials to encrypted vault',
@@ -119,6 +121,18 @@ const INTENT_MAPPINGS: IntentMapping[] = [
     ],
     command: 'opena2a identity',
     description: 'Manage agent identity via AIM',
+  },
+
+  // Config integrity / guard intents
+  {
+    patterns: [
+      /\b(check|verify|validate)\s+(config|configuration)\s+(integrity|tamper|signatures?)\b/i,
+      /\b(sign|protect)\s+(my\s+)?(config|configuration)\s+files?\b/i,
+      /\bconfig\s+(guard|signing|integrity|tamper)\b/i,
+      /\btamper\s+(detection|proof|evident)\b/i,
+    ],
+    command: 'opena2a guard verify',
+    description: 'Verify config file integrity signatures',
   },
 
   // Status/overview intents

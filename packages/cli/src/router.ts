@@ -1,5 +1,5 @@
 import { createAdapter } from './adapters/index.js';
-import type { RunOptions } from './adapters/types.js';
+import type { AdapterConfig, RunOptions } from './adapters/types.js';
 import { protect } from './commands/protect.js';
 
 export type InputType = 'subcommand' | 'search' | 'context' | 'natural' | 'guided';
@@ -150,7 +150,8 @@ export async function dispatchCommand(
   const available = await adapter.isAvailable();
   if (!available) {
     process.stderr.write(`${adapter.config.name} is not installed.\n`);
-    process.stderr.write(`Install: npm install -g ${adapter.config.packageName ?? adapter.config.command ?? adapter.config.name}\n`);
+    const installHint = getInstallHint(adapter.config);
+    process.stderr.write(`Install: ${installHint}\n`);
     return 1;
   }
 
@@ -161,4 +162,18 @@ export async function dispatchCommand(
   });
 
   return result.exitCode;
+}
+
+function getInstallHint(config: AdapterConfig): string {
+  switch (config.method) {
+    case 'docker':
+      return `docker pull ${config.image ?? config.name}`;
+    case 'python':
+      return `pip install ${config.pythonModule ?? config.name}`;
+    case 'spawn':
+      return `npm install -g ${config.command ?? config.name}`;
+    case 'import':
+    default:
+      return `npm install -g ${config.packageName ?? config.name}`;
+  }
 }
