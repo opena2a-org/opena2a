@@ -235,14 +235,14 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
     }
   }
 
-  // Shield integrity findings
+  // Shield diagnostic events: only integrity failures are real findings.
+  // All other shield-source events (posture-assessment, credential-finding,
+  // shield.init, shield.posture, shield.credential) are internal scans.
   if (event.source === 'shield') {
     if (event.category === 'integrity' && event.severity === 'critical') {
       return FINDING_CATALOG['SHIELD-INT-002'];
     }
-    if (event.category === 'posture-assessment' || event.category === 'shield.init') {
-      return null; // Diagnostic events, not findings
-    }
+    return null; // All other shield events are diagnostic, not findings
   }
 
   // ARP runtime findings

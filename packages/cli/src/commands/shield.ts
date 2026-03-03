@@ -648,6 +648,17 @@ async function computeTrend(
 /**
  * Build a WeeklyReport from aggregated event data.
  */
+function extractCredProvider(event: import('../shield/types.js').ShieldEvent): string {
+  const t = (event.target ?? '').toLowerCase();
+  if (t.includes('anthropic')) return 'Anthropic';
+  if (t.includes('openai')) return 'OpenAI';
+  if (t.includes('github')) return 'GitHub';
+  if (t.includes('aws') || t.includes('amazon')) return 'AWS';
+  if (t.includes('azure')) return 'Azure';
+  if (t.includes('gcp') || t.includes('google')) return 'Google Cloud';
+  return event.source === 'secretless' ? 'Secretless' : 'Other';
+}
+
 async function buildWeeklyReport(
   events: import('../shield/types.js').ShieldEvent[],
   since: string,
@@ -748,10 +759,11 @@ async function buildWeeklyReport(
   const credProviders: Record<string, number> = {};
   const credNames = new Set<string>();
   for (const event of events) {
-    if (event.source === 'secretless' || event.category.includes('credential')) {
+    if (event.source === 'secretless' || (event.source !== 'shield' && event.category.includes('credential'))) {
       credAccessAttempts += 1;
       credNames.add(event.target);
-      credProviders[event.source] = (credProviders[event.source] ?? 0) + 1;
+      const provider = extractCredProvider(event);
+      credProviders[provider] = (credProviders[provider] ?? 0) + 1;
     }
   }
 
@@ -776,8 +788,16 @@ async function buildWeeklyReport(
   const criticalCount = threatSeverity['critical'] ?? 0;
   const highCount = threatSeverity['high'] ?? 0;
   const mediumCount = threatSeverity['medium'] ?? 0;
-  const blockedCount = byOutcome['blocked'] ?? 0;
-  const agentCount = Object.keys(byAgent).length;
+  const blockedCount = events.filter(e => e.source !== 'shield' && e.outcome === 'blocked').length;
+
+  const arpStats = getARPStats(since);
+  const hasRealActivity = threatEvents.length > 0;
+  const arpIsActive = arpStats.totalEvents > 0;
+
+  // Only count agents from non-shield events for coverage scoring
+  const realAgentCount = new Set(
+    events.filter(e => e.source !== 'shield' && e.agent).map(e => e.agent),
+  ).size;
 
   // Weighted factor scoring: severity (50%), enforcement (25%), coverage (25%).
   // Severity uses capped penalties so a few events don't destroy the entire score.
@@ -785,18 +805,22 @@ async function buildWeeklyReport(
   const severityScore = 100 - severityPenalty;
 
   // Enforcement: actively blocking threats is a strong positive signal.
+  // Honest about gaps: no monitoring running = low score.
   const enforcementScore = blockedCount > 0
     ? Math.min(100, 60 + Math.min(40, blockedCount * 5))
-    : (threatEvents.length > 0 ? 30 : 50);
+    : hasRealActivity ? 30
+    : arpIsActive ? 50
+    : 20; // nothing running
 
-  // Coverage: more agents monitored = better visibility.
-  const coverageScore = agentCount >= 3 ? 80 : agentCount > 0 ? 60 : 30;
+  // Coverage: only real monitored agents count, not shield diagnostics.
+  const coverageScore = realAgentCount >= 3 ? 80
+    : realAgentCount >= 1 ? 60
+    : arpIsActive ? 40
+    : 20; // no runtime monitoring
 
   let score = Math.round(severityScore * 0.5 + enforcementScore * 0.25 + coverageScore * 0.25);
   score = Math.max(0, Math.min(100, score));
   const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
-
-  const arpStats = getARPStats(since);
 
   const report: import('../shield/types.js').WeeklyReport = {
     version: 1,
@@ -812,7 +836,7 @@ async function buildWeeklyReport(
     },
 
     policyEvaluation: {
-      monitored: byOutcome['monitored'] ?? 0,
+      monitored: events.filter(e => e.source !== 'shield' && e.outcome === 'monitored').length,
       wouldBlock: 0,
       blocked: blockedCount,
       topViolations: violations.slice(0, 5),
@@ -854,9 +878,9 @@ async function buildWeeklyReport(
       score,
       grade,
       factors: [
-        { name: 'severity', score: severityScore, weight: 0.5, detail: `${criticalCount} critical, ${highCount} high, ${mediumCount} medium` },
-        { name: 'enforcement', score: enforcementScore, weight: 0.25, detail: `${blockedCount} blocked` },
-        { name: 'coverage', score: coverageScore, weight: 0.25, detail: `${agentCount} agents monitored` },
+        { name: 'severity', score: severityScore, weight: 0.5, detail: threatEvents.length > 0 ? `${criticalCount} critical, ${highCount} high, ${mediumCount} medium` : 'no threat events' },
+        { name: 'enforcement', score: enforcementScore, weight: 0.25, detail: blockedCount > 0 ? `${blockedCount} blocked` : hasRealActivity ? 'monitor-only mode' : arpIsActive ? 'ARP active, no threats' : 'no runtime monitoring' },
+        { name: 'coverage', score: coverageScore, weight: 0.25, detail: realAgentCount > 0 ? `${realAgentCount} agent${realAgentCount !== 1 ? 's' : ''} monitored` : arpIsActive ? 'ARP active' : 'no runtime monitoring' },
       ],
       trend: null,
       comparative: null,

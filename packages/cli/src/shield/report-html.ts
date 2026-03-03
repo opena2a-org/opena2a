@@ -363,9 +363,24 @@ a:hover{text-decoration:underline}
 /* Remediation command */
 .remediation-cmd{display:flex;align-items:center;gap:6px}
 .remediation-code{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:4px;padding:3px 8px;font-size:11px;font-family:var(--font);color:var(--text);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.copy-btn{background:transparent;border:1px solid var(--card-border);border-radius:4px;padding:3px 6px;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:10px;transition:all .2s}
+.copy-btn{background:transparent;border:1px solid var(--card-border);border-radius:4px;padding:3px 6px;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:10px;transition:all .2s;flex-shrink:0}
 .copy-btn:hover{border-color:var(--primary);color:var(--primary)}
 .copy-btn.copied{border-color:var(--green);color:var(--green)}
+
+/* Posture checklist */
+.checklist{display:grid;gap:var(--gap);margin-bottom:24px}
+.check-item{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:20px;display:flex;gap:16px;align-items:flex-start}
+.check-status{flex-shrink:0;width:100px;text-align:center}
+.check-badge{display:inline-block;padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em}
+.check-badge-active{background:rgba(34,197,94,0.15);color:var(--green)}
+.check-badge-inactive{background:rgba(239,68,68,0.15);color:var(--red)}
+.check-badge-monitor{background:rgba(245,158,11,0.15);color:var(--amber)}
+.check-body{flex:1;min-width:0}
+.check-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
+.check-desc{font-size:12px;color:var(--muted);margin-bottom:8px}
+.check-metric{font-size:12px;color:var(--primary);font-weight:600}
+.check-remediation{display:flex;align-items:center;gap:8px;margin-top:8px}
+.check-cmd{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:4px;padding:6px 12px;font-size:12px;font-family:var(--font);color:var(--text)}
 
 /* Executive summary */
 .exec-summary{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:20px;margin-bottom:24px}
@@ -510,7 +525,7 @@ const JS = `
     if(executiveSummary){h+='<div class="exec-summary"><div class="exec-summary-title">Executive Summary</div><div class="exec-summary-text">'+esc(executiveSummary)+'</div></div>';}
 
     if(findings.length>0){
-      h+='<h2 class="section-title">Top Findings</h2><div class="card"><table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th></tr></thead><tbody>';
+      h+='<h2 class="section-title">'+(findings.length>5?'Top Findings':'Findings')+'</h2><div class="card"><table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th></tr></thead><tbody>';
       var top=findings.slice(0,5);
       for(var i=0;i<top.length;i++){var f=top[i];h+='<tr><td><span class="finding-id" onclick="navigateToFinding(\\''+esc(f.finding.id)+'\\')">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td></tr>';}
       h+='</tbody></table>';
@@ -585,13 +600,52 @@ const JS = `
 
   // ======================== PROTECTION ========================
   function renderProtection() {
-    var h='<h2 class="section-title">Protection Details</h2><div class="detail-grid">';
+    var h='<h2 class="section-title">Posture Checklist</h2>';
     var rt=report.runtimeProtection;
+    var ci=report.configIntegrity;
+    var cred=report.credentialExposure;
+    var pe=report.policyEvaluation;
+
+    h+='<div class="checklist">';
+
+    // Runtime Guard (ARP)
+    h+='<div class="check-item"><div class="check-status"><span class="check-badge '+(rt.arpActive?'check-badge-active':'check-badge-inactive')+'">'+(rt.arpActive?'Active':'Not Configured')+'</span></div><div class="check-body"><div class="check-title">Runtime Guard (ARP)</div><div class="check-desc">Monitors process spawns, network connections, and anomalous agent behavior in real time.</div>';
+    if(rt.arpActive){h+='<div class="check-metric">'+rt.processesSpawned+' processes, '+rt.networkConnections+' connections, '+rt.anomalies+' anomalies</div>';}
+    else{h+='<div class="check-remediation"><code class="check-cmd">opena2a shield init</code><button class="copy-btn" data-cmd="opena2a shield init" onclick="copyCmd(this)">Copy</button></div>';}
+    h+='</div></div>';
+
+    // Config Integrity
+    var ciActive=ci.filesMonitored>0;
+    var ciTampered=ci.tamperedFiles&&ci.tamperedFiles.length>0;
+    h+='<div class="check-item"><div class="check-status"><span class="check-badge '+(ciActive?(ciTampered?'check-badge-monitor':'check-badge-active'):'check-badge-inactive')+'">'+(ciActive?(ciTampered?'Tampered':'Active'):'Not Configured')+'</span></div><div class="check-body"><div class="check-title">Config Integrity</div><div class="check-desc">Cryptographically signs configuration files and detects unauthorized modifications.</div>';
+    if(ciActive){h+='<div class="check-metric">'+ci.filesMonitored+' file'+(ci.filesMonitored!==1?'s':'')+' signed'+(ciTampered?', <span style="color:var(--red)">'+ci.tamperedFiles.length+' tampered</span>':'')+'</div>';}
+    else{h+='<div class="check-remediation"><code class="check-cmd">opena2a guard sign</code><button class="copy-btn" data-cmd="opena2a guard sign" onclick="copyCmd(this)">Copy</button></div>';}
+    h+='</div></div>';
+
+    // Credential Protection
+    var credActive=cred.accessAttempts>0;
+    h+='<div class="check-item"><div class="check-status"><span class="check-badge '+(credActive?'check-badge-active':'check-badge-inactive')+'">'+(credActive?'Active':'Not Configured')+'</span></div><div class="check-body"><div class="check-title">Credential Protection</div><div class="check-desc">Scans source code for hardcoded API keys, tokens, and secrets before they reach version control.</div>';
+    if(credActive){h+='<div class="check-metric">'+cred.accessAttempts+' scan'+(cred.accessAttempts!==1?'s':'')+', '+cred.uniqueCredentials+' unique credential'+(cred.uniqueCredentials!==1?'s':'')+'</div>';}
+    else{h+='<div class="check-remediation"><code class="check-cmd">opena2a protect --dir .</code><button class="copy-btn" data-cmd="opena2a protect --dir ." onclick="copyCmd(this)">Copy</button></div>';}
+    h+='</div></div>';
+
+    // Policy Enforcement
+    var polActive=pe.blocked>0;
+    var polMonitor=pe.monitored>0&&pe.blocked===0;
+    h+='<div class="check-item"><div class="check-status"><span class="check-badge '+(polActive?'check-badge-active':polMonitor?'check-badge-monitor':'check-badge-inactive')+'">'+(polActive?'Active':polMonitor?'Monitor Only':'Not Configured')+'</span></div><div class="check-body"><div class="check-title">Policy Enforcement</div><div class="check-desc">Evaluates agent actions against security policies and blocks unauthorized operations.</div>';
+    if(polActive){h+='<div class="check-metric">'+pe.blocked+' action'+(pe.blocked!==1?'s':'')+' blocked</div>';}
+    else if(polMonitor){h+='<div class="check-metric">'+pe.monitored+' action'+(pe.monitored!==1?'s':'')+' monitored (not blocking)</div><div class="check-remediation"><code class="check-cmd">opena2a shield policy --enforce</code><button class="copy-btn" data-cmd="opena2a shield policy --enforce" onclick="copyCmd(this)">Copy</button></div>';}
+    else{h+='<div class="check-remediation"><code class="check-cmd">opena2a shield policy --enforce</code><button class="copy-btn" data-cmd="opena2a shield policy --enforce" onclick="copyCmd(this)">Copy</button></div>';}
+    h+='</div></div>';
+
+    h+='</div>';
+
+    // Detail cards below the checklist
+    h+='<h2 class="section-title">Protection Details</h2><div class="detail-grid">';
     h+='<div class="card"><div class="card-title">Runtime Protection (ARP)</div>';
     h+=dr('ARP Status',rt.arpActive?'<span class="status-active">Active</span>':'<span class="status-inactive">Inactive</span>');
     h+=dr('Processes Spawned',rt.processesSpawned)+dr('Network Connections',rt.networkConnections);
     h+=dr('Anomalies','<span style="color:'+(rt.anomalies>0?'var(--amber)':'var(--green)')+'">'+rt.anomalies+'</span>')+'</div>';
-    var cred=report.credentialExposure;
     h+='<div class="card"><div class="card-title">Credential Exposure</div>';
     h+=dr('Access Attempts',cred.accessAttempts)+dr('Unique Credentials',cred.uniqueCredentials);
     var providers=Object.keys(cred.byProvider||{});
@@ -601,7 +655,6 @@ const JS = `
     h+='<div class="card"><div class="card-title">Supply Chain</div>';
     h+=dr('Packages Installed',sc.packagesInstalled)+dr('Advisories Found','<span style="color:'+(sc.advisoriesFound>0?'var(--amber)':'var(--green)')+'">'+sc.advisoriesFound+'</span>');
     h+=dr('Blocked Installs','<span style="color:'+(sc.blockedInstalls>0?'var(--red)':'var(--text)')+'">'+sc.blockedInstalls+'</span>')+'</div>';
-    var ci=report.configIntegrity;
     h+='<div class="card"><div class="card-title">Config Integrity</div>';
     h+=dr('Files Monitored',ci.filesMonitored);
     h+=dr('Signature Status',ci.signatureStatus==='signed'||ci.signatureStatus==='valid'?'<span class="status-active">Valid</span>':ci.signatureStatus==='unsigned'?'<span style="color:var(--amber)">Unsigned</span>':'<span class="status-inactive">'+esc(ci.signatureStatus)+'</span>');
@@ -613,7 +666,19 @@ const JS = `
 
   // ======================== TIMELINE ========================
   function renderTimeline() {
-    if(!narrative) return '<h2 class="section-title">Event Timeline</h2><div class="card"><div class="empty-state">No narrative analysis available. Use --analyze flag to generate AI-powered event analysis.</div></div>';
+    if(!narrative) {
+      var agents=report.agentActivity.byAgent;var akeys=Object.keys(agents);
+      if(akeys.length>0){
+        var h='<h2 class="section-title">Recent Agent Activity</h2>';
+        h+='<div class="card"><table class="data-table"><thead><tr><th>Agent</th><th>Sessions</th><th>Actions</th><th>First Seen</th><th>Last Seen</th></tr></thead><tbody>';
+        for(var i=0;i<akeys.length;i++){var name=akeys[i],a=agents[name];
+          h+='<tr><td style="font-weight:600;color:var(--primary)">'+esc(name)+'</td><td>'+a.sessions+'</td><td>'+a.actions+'</td><td style="font-size:11px;color:var(--dim)">'+esc(formatTs(a.firstSeen))+'</td><td style="font-size:11px;color:var(--dim)">'+esc(formatTs(a.lastSeen))+'</td></tr>';}
+        h+='</tbody></table></div>';
+        h+='<div class="card" style="margin-top:16px"><div class="empty-state">For AI-powered event analysis and narrative, run with the --analyze flag.</div></div>';
+        return h;
+      }
+      return '<h2 class="section-title">Event Timeline</h2><div class="card"><div class="empty-state">No agent activity recorded. Use --analyze flag to generate AI-powered event analysis after events are logged.</div></div>';
+    }
     var h='<h2 class="section-title">Event Timeline</h2><div class="card">';
     if(narrative.summary){h+='<div class="narrative-block"><h4>Summary</h4><div class="narrative-text">'+esc(narrative.summary)+'</div></div>';}
     if(narrative.highlights&&narrative.highlights.length>0){h+='<div class="narrative-block"><h4>Highlights</h4><ul class="narrative-list narrative-highlight">';for(var i=0;i<narrative.highlights.length;i++)h+='<li>'+esc(narrative.highlights[i])+'</li>';h+='</ul></div>';}

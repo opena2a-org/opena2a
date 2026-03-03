@@ -110,8 +110,9 @@ describe('classifyEvent', () => {
   });
 
   it('classifies credential-finding category as CRED', () => {
+    // Real credential findings come from secretless, not shield
     const event = makeEvent({
-      source: 'shield',
+      source: 'secretless',
       category: 'credential-finding',
       target: 'openai-key',
     });
@@ -189,6 +190,8 @@ describe('classifyEvent', () => {
 
   it('classifies blocked outcome as SHIELD-POL-002', () => {
     const event = makeEvent({
+      source: 'arp',
+      category: 'policy',
       outcome: 'blocked',
       severity: 'high',
     });
@@ -198,6 +201,8 @@ describe('classifyEvent', () => {
 
   it('classifies monitored high-severity as SHIELD-POL-003', () => {
     const event = makeEvent({
+      source: 'arp',
+      category: 'policy',
       outcome: 'monitored',
       severity: 'high',
     });
@@ -220,6 +225,46 @@ describe('classifyEvent', () => {
       severity: 'info',
     });
     expect(classifyEvent(event)).toBeNull();
+  });
+
+  it('returns null for shield.posture diagnostic events', () => {
+    const event = makeEvent({
+      source: 'shield',
+      category: 'shield.posture',
+      severity: 'info',
+      outcome: 'monitored',
+    });
+    expect(classifyEvent(event)).toBeNull();
+  });
+
+  it('returns null for shield.credential diagnostic events', () => {
+    const event = makeEvent({
+      source: 'shield',
+      category: 'shield.credential',
+      severity: 'medium',
+      outcome: 'monitored',
+    });
+    expect(classifyEvent(event)).toBeNull();
+  });
+
+  it('returns null for shield enforcement events', () => {
+    const event = makeEvent({
+      source: 'shield',
+      category: 'policy-evaluation',
+      severity: 'high',
+      outcome: 'blocked',
+    });
+    expect(classifyEvent(event)).toBeNull();
+  });
+
+  it('still classifies shield integrity failures as SHIELD-INT-002', () => {
+    const event = makeEvent({
+      source: 'shield',
+      category: 'integrity',
+      severity: 'critical',
+    });
+    const finding = classifyEvent(event);
+    expect(finding?.id).toBe('SHIELD-INT-002');
   });
 });
 
