@@ -434,11 +434,11 @@ function runGuardPhase(targetDir: string): GuardPhaseData {
 }
 
 function runShieldPhase(targetDir: string): ShieldPhaseData {
-  let events;
+  let events: ReturnType<typeof readEvents>;
   try {
     events = readEvents({ since: '7d' });
   } catch {
-    events = [];
+    events = [] as ReturnType<typeof readEvents>;
   }
 
   const classifiedFindings = classifyEvents(events);

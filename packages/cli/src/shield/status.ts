@@ -41,6 +41,19 @@ function detectProduct(name: string): ProductStatus {
       };
     }
 
+    case 'AIM Core': {
+      const dataDir = join(homedir(), '.opena2a', 'aim-core');
+      const hasIdentity = existsSync(join(dataDir, 'identity.json')) ||
+        existsSync(join(dataDir, 'keypair.json'));
+      return {
+        name: 'AIM Core (Identity)',
+        installed: hasIdentity,
+        active: hasIdentity,
+        version: null,
+        keyMetric: hasIdentity ? 'Ed25519 identity active' : 'no local identity',
+      };
+    }
+
     case 'ARP': {
       const configExists = existsSync(join(process.cwd(), '.arp.yaml')) ||
         existsSync(join(process.cwd(), 'arp.yaml'));
@@ -120,6 +133,7 @@ export function getShieldStatus(targetDir?: string): ShieldStatus {
   const shieldDir = getShieldDir();
   const products: ProductStatus[] = [
     detectProduct('Secretless'),
+    detectProduct('AIM Core'),
     detectProduct('ARP'),
     detectProduct('Browser Guard'),
     detectProduct('HMA'),

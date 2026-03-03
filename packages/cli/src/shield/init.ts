@@ -15,6 +15,8 @@ import { generatePolicyFromScan, savePolicy } from './policy.js';
 import { writeEvent, getShieldDir } from './events.js';
 import { recordPolicyHash, getExpectedHookContent } from './integrity.js';
 import { signAllArtifacts } from './signing.js';
+import { configureAiTools } from './ai-tool-config.js';
+import type { AiToolConfigResult } from './ai-tool-config.js';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 
@@ -23,6 +25,9 @@ interface InitResult {
   policy: ShieldPolicy;
   shellHookInstalled: boolean;
   policyPath: string;
+  secretlessConfigured: boolean;
+  identityCreated: boolean;
+  aiToolsConfigured: boolean;
   steps: { name: string; status: 'done' | 'skipped' | 'warn' }[];
 }
 
@@ -103,8 +108,92 @@ export async function shieldInit(options: {
   steps.push({ name: 'Credential audit', status: credentialFindings > 0 ? 'warn' : 'done' });
   if (isText) process.stdout.write('\n');
 
-  // --- Step 3: Config Integrity Baseline ---
-  if (isText) process.stdout.write(bold('Step 3: Config Integrity Baseline\n'));
+  // --- Step 3: Credential Protection (Secretless) ---
+  if (isText) process.stdout.write(bold('Step 3: Credential Protection\n'));
+  let secretlessConfigured = false;
+  try {
+    const secretless = await import('secretless-ai');
+    if (typeof secretless.init === 'function') {
+      const result = secretless.init(targetDir);
+      secretlessConfigured = true;
+      if (isText) {
+        process.stdout.write(green('  Secretless configured\n'));
+        if (result && typeof result === 'object') {
+          if ('toolsConfigured' in result && Array.isArray(result.toolsConfigured)) {
+            process.stdout.write(`  Tools: ${result.toolsConfigured.join(', ')}\n`);
+          }
+          if ('secretsFound' in result && typeof result.secretsFound === 'number' && result.secretsFound > 0) {
+            process.stdout.write(`  Secrets protected: ${result.secretsFound}\n`);
+          }
+        }
+      }
+    } else {
+      // Secretless module found but no init function -- try CLI fallback
+      secretlessConfigured = false;
+      if (isText) process.stdout.write(dim('  Secretless module found but init not available\n'));
+    }
+  } catch {
+    if (isText) {
+      process.stdout.write(dim('  Secretless not installed (optional)\n'));
+      process.stdout.write(dim('  Install: npm install -g secretless-ai\n'));
+    }
+  }
+  steps.push({ name: 'Credential protection', status: secretlessConfigured ? 'done' : 'skipped' });
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 4: Agent Identity (aim-core) ---
+  if (isText) process.stdout.write(bold('Step 4: Agent Identity\n'));
+  let identityCreated = false;
+  let identityPublicKey: string | null = null;
+  try {
+    const aimCore = await import('@opena2a/aim-core');
+    if (typeof aimCore.getOrCreateIdentity === 'function') {
+      const identity = aimCore.getOrCreateIdentity({
+        agentName: 'shield',
+        dataDir: join(homedir(), '.opena2a', 'aim-core'),
+      });
+      identityCreated = true;
+      if (identity && typeof identity === 'object' && 'publicKey' in identity) {
+        const pk = String(identity.publicKey);
+        identityPublicKey = pk.length > 16 ? pk.slice(0, 8) + '...' + pk.slice(-8) : pk;
+      }
+      if (isText) {
+        process.stdout.write(green('  Local Ed25519 identity ready\n'));
+        if (identityPublicKey) {
+          process.stdout.write(`  Public key: ${identityPublicKey}\n`);
+        }
+        process.stdout.write(`  Storage: ~/.opena2a/aim-core/\n`);
+      }
+      // Log identity event
+      if (typeof aimCore.logEvent === 'function') {
+        aimCore.logEvent({
+          type: 'shield.init',
+          agent: 'shield',
+          detail: { targetDir },
+        });
+      }
+    } else if (typeof aimCore.createIdentity === 'function') {
+      // Alternative API shape
+      const identity = aimCore.createIdentity('shield');
+      identityCreated = true;
+      if (isText) {
+        process.stdout.write(green('  Local Ed25519 identity created\n'));
+        process.stdout.write(`  Storage: ~/.opena2a/aim-core/\n`);
+      }
+    } else {
+      if (isText) process.stdout.write(dim('  aim-core module found but identity API not available\n'));
+    }
+  } catch {
+    if (isText) {
+      process.stdout.write(dim('  aim-core not installed (optional)\n'));
+      process.stdout.write(dim('  Install: npm install @opena2a/aim-core\n'));
+    }
+  }
+  steps.push({ name: 'Agent identity', status: identityCreated ? 'done' : 'skipped' });
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 5: Config Integrity Baseline ---
+  if (isText) process.stdout.write(bold('Step 5: Config Integrity Baseline\n'));
   try {
     const { guard } = await import('../commands/guard.js');
     await guard({
@@ -122,8 +211,8 @@ export async function shieldInit(options: {
   }
   if (isText) process.stdout.write('\n');
 
-  // --- Step 4: Generate Policy ---
-  if (isText) process.stdout.write(bold('Step 4: Generate Policy\n'));
+  // --- Step 6: Generate Policy ---
+  if (isText) process.stdout.write(bold('Step 6: Generate Policy\n'));
 
   const policy = generatePolicyFromScan(scan);
   const shieldDir = getShieldDir();
@@ -149,8 +238,8 @@ export async function shieldInit(options: {
   steps.push({ name: 'Policy generation', status: 'done' });
   if (isText) process.stdout.write('\n');
 
-  // --- Step 5: Shell Integration ---
-  if (isText) process.stdout.write(bold('Step 5: Shell Integration\n'));
+  // --- Step 7: Shell Integration ---
+  if (isText) process.stdout.write(bold('Step 7: Shell Integration\n'));
   let shellHookInstalled = false;
 
   const shell = process.env.SHELL?.includes('zsh') ? 'zsh' as const
@@ -190,8 +279,8 @@ export async function shieldInit(options: {
   steps.push({ name: 'Shell integration', status: shellHookInstalled ? 'done' : 'skipped' });
   if (isText) process.stdout.write('\n');
 
-  // --- Step 6: ARP Initialization ---
-  if (isText) process.stdout.write(bold('Step 6: Runtime Protection\n'));
+  // --- Step 8: ARP Initialization ---
+  if (isText) process.stdout.write(bold('Step 8: Runtime Protection\n'));
   try {
     const { runtime } = await import('../commands/runtime.js');
     await runtime({
@@ -209,8 +298,38 @@ export async function shieldInit(options: {
   }
   if (isText) process.stdout.write('\n');
 
-  // --- Step 7: Browser Guard ---
-  if (isText) process.stdout.write(bold('Step 7: Browser Guard\n'));
+  // --- Step 9: AI Tool Configuration ---
+  if (isText) process.stdout.write(bold('Step 9: AI Tool Configuration\n'));
+  let aiToolsConfigured = false;
+  let aiToolResult: AiToolConfigResult | null = null;
+
+  if (!ci) {
+    const detectedAssistants = scan.assistants
+      .filter((a: DetectedAssistant) => a.detected)
+      .map((a: DetectedAssistant) => a.name);
+
+    aiToolResult = configureAiTools(targetDir, detectedAssistants);
+    aiToolsConfigured = aiToolResult.toolsConfigured.length > 0;
+
+    if (isText) {
+      if (aiToolResult.toolsConfigured.length > 0) {
+        process.stdout.write(green(`  Configured: ${aiToolResult.toolsConfigured.join(', ')}\n`));
+      }
+      if (aiToolResult.toolsSkipped.length > 0) {
+        process.stdout.write(dim(`  Skipped: ${aiToolResult.toolsSkipped.join(', ')}\n`));
+      }
+      if (aiToolResult.toolsConfigured.length === 0 && aiToolResult.toolsSkipped.length === 0) {
+        process.stdout.write(dim('  No AI tools detected\n'));
+      }
+    }
+  } else {
+    if (isText) process.stdout.write(dim('  AI tool configuration skipped (CI mode)\n'));
+  }
+  steps.push({ name: 'AI tool config', status: aiToolsConfigured ? 'done' : 'skipped' });
+  if (isText) process.stdout.write('\n');
+
+  // --- Step 10: Browser Guard ---
+  if (isText) process.stdout.write(bold('Step 10: Browser Guard\n'));
   const hasBrowserGuard = existsSync(join(homedir(), '.config', 'opena2a', 'browser-guard.json')) ||
     existsSync(join(homedir(), '.opena2a', 'browser-guard.json'));
   if (hasBrowserGuard) {
@@ -225,7 +344,7 @@ export async function shieldInit(options: {
   }
   if (isText) process.stdout.write('\n');
 
-  // --- Step 8: Summary ---
+  // --- Step 11: Summary ---
   // Save scan results
   const scanPath = join(shieldDir, SHIELD_SCAN_FILE);
   writeFileSync(scanPath, JSON.stringify(scan, null, 2) + '\n', { mode: 0o600 });
@@ -250,6 +369,9 @@ export async function shieldInit(options: {
       oauthSessions: scan.oauthSessions.filter((s: DetectedOAuthSession) => s.hasActiveSession).length,
       credentialFindings,
       shellHookInstalled,
+      secretlessConfigured,
+      identityCreated,
+      aiToolsConfigured,
     },
     orgId: null,
     managed: false,
@@ -259,11 +381,13 @@ export async function shieldInit(options: {
   steps.push({ name: 'Summary', status: 'done' });
 
   if (isText) {
-    process.stdout.write(bold('Step 8: Summary\n'));
+    process.stdout.write(bold('Step 11: Summary\n'));
     const doneCount = steps.filter(s => s.status === 'done').length;
     const warnCount = steps.filter(s => s.status === 'warn').length;
+    const skippedCount = steps.filter(s => s.status === 'skipped').length;
     process.stdout.write(`  ${green(`${doneCount} steps completed`)}`);
     if (warnCount > 0) process.stdout.write(`, ${yellow(`${warnCount} warnings`)}`);
+    if (skippedCount > 0) process.stdout.write(`, ${dim(`${skippedCount} skipped`)}`);
     process.stdout.write('\n');
     process.stdout.write(`  Policy: ${policyPath}\n`);
     process.stdout.write(`  Events: ${join(shieldDir, 'events.jsonl')}\n`);
@@ -282,6 +406,9 @@ export async function shieldInit(options: {
     policy,
     shellHookInstalled,
     policyPath,
+    secretlessConfigured,
+    identityCreated,
+    aiToolsConfigured,
     steps,
   };
 

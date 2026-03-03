@@ -20,6 +20,10 @@
     "commander": "^13.1.0",
     "@inquirer/prompts": "^7.0.0"
   },
+  "optionalDependencies": {
+    "secretless-ai": "*",
+    "@opena2a/aim-core": "*"
+  },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
