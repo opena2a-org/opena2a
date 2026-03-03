@@ -64,6 +64,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .card-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px;}
 .stat-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;text-align:center;}
+.stat-card.stat-hero{border-left:3px solid;padding:16px 14px;}
+.stat-card.stat-hero .stat-value{font-size:30px;}
+.stat-card.stat-hero .stat-label{font-size:12px;}
 .stat-value{font-size:24px;font-weight:700;}
 .stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
 .phase-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;}
@@ -233,8 +236,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     return '<div class="cmd-block"><span class="cmd-text">'+esc(cmd)+'</span><button class="copy-btn" data-cmd="'+esc(cmd)+'" onclick="copyCmd(this)">Copy</button></div>';
   }
 
-  function statCard(value,label,color){
-    return '<div class="stat-card"><div class="stat-value" style="color:'+color+'">'+esc(String(value))+'</div><div class="stat-label">'+esc(label)+'</div></div>';
+  function statCard(value,label,color,hero){
+    var cls=hero?'stat-card stat-hero':'stat-card';
+    var borderStyle=hero?' style="border-left-color:'+color+'"':'';
+    return '<div class="'+cls+'"'+borderStyle+'><div class="stat-value" style="color:'+color+'">'+esc(String(value))+'</div><div class="stat-label">'+esc(label)+'</div></div>';
   }
 
   var phaseDescriptions={
@@ -259,8 +264,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     var findings=report.findings||[];
     for(var i=0;i<findings.length;i++){var s=findings[i].severity;if(s in sevCounts)sevCounts[s]++;}
     h+='<div class="stats-grid">';
-    h+=statCard(report.compositeScore+'/100','Score',scoreColor(report.compositeScore));
-    h+=statCard('Grade '+report.grade,'Posture',scoreColor(report.compositeScore));
+    h+=statCard(report.compositeScore+'/100','Score',scoreColor(report.compositeScore),true);
+    h+=statCard('Grade '+report.grade,'Posture',scoreColor(report.compositeScore),true);
     h+=statCard(findings.length,'Findings',findings.length>0?'var(--amber)':'var(--green)');
     h+=statCard(sevCounts.critical,'Critical',sevCounts.critical>0?'var(--critical)':'var(--text)');
     h+=statCard(sevCounts.high,'High',sevCounts.high>0?'var(--high)':'var(--text)');
