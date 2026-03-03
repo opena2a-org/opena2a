@@ -105,11 +105,12 @@ export async function dispatchCommand(
     const { guard } = await import('./commands/guard.js');
     const subcommand = args[0] ?? 'status';
     return guard({
-      subcommand: subcommand as 'sign' | 'verify' | 'status',
+      subcommand: subcommand as 'sign' | 'verify' | 'status' | 'policy',
       targetDir: process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
       verbose: globalOptions.verbose ?? false,
+      args: args.slice(1),
     });
   }
 

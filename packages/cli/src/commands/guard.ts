@@ -6,7 +6,11 @@
  * - verify:  Check all signed files for tampering (hash mismatch)
  * - status:  Summary of signed, unsigned, and tampered files
  * - watch:   Monitor signed files for changes in real-time
- * - diff:    Show detailed changes between current files and signed baseline
+ * - diff:     Show detailed changes between current files and signed baseline
+ * - policy:   Manage guard policy (signing requirements, heartbeat disable)
+ * - hook:     Install/uninstall git pre-commit hook for automatic verification
+ * - resign:   Re-sign modified files after confirming changes are intentional
+ * - snapshot: Create, list, or restore timestamped signature snapshots
  */
 
 import * as fs from 'node:fs';
@@ -19,13 +23,16 @@ import { Spinner } from '../util/spinner.js';
 // --- Types ---
 
 export interface GuardOptions {
-  subcommand: 'sign' | 'verify' | 'status' | 'watch' | 'diff';
+  subcommand: 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot';
   files?: string[];
   targetDir?: string;
   ci?: boolean;
   format?: 'text' | 'json';
   verbose?: boolean;
   enforce?: boolean;
+  skills?: boolean;
+  heartbeats?: boolean;
+  args?: string[];
 }
 
 interface ConfigSignature {
@@ -127,9 +134,27 @@ export async function guard(options: GuardOptions): Promise<number> {
     case 'status': return guardStatus(targetDir, options);
     case 'watch': return guardWatch(targetDir, options);
     case 'diff': return guardDiff(targetDir, options);
+    case 'policy': {
+      const { guardPolicy } = await import('./guard-policy.js');
+      const action = options.args?.[0] ?? 'show';
+      return guardPolicy(targetDir, action, { format: options.format });
+    }
+    case 'hook': {
+      const { guardHook } = await import('./guard-hooks.js');
+      const action = options.args?.[0] ?? '';
+      return guardHook(action, targetDir);
+    }
+    case 'resign': {
+      const { guardResign: resign } = await import('./guard-snapshots.js');
+      return resign(targetDir, options);
+    }
+    case 'snapshot': {
+      const { guardSnapshot: snapshot } = await import('./guard-snapshots.js');
+      return snapshot(targetDir, options);
+    }
     default:
       process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n`));
-      process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff>\n');
+      process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot>\n');
       return 1;
   }
 }
@@ -155,27 +180,52 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
 
   if (!isJson) spinner.stop();
 
-  if (signatures.length === 0) {
+  if (signatures.length === 0 && !options.skills && !options.heartbeats) {
     if (isJson) { process.stdout.write(JSON.stringify({ signed: 0, files: [] }, null, 2) + '\n'); }
     else { process.stdout.write(yellow('No config files found to sign.\n')); }
     return 0;
   }
 
-  const store: SignatureStore = { version: 1, signatures, updatedAt: new Date().toISOString() };
-  const storeDir = path.join(targetDir, STORE_DIR);
-  fs.mkdirSync(storeDir, { recursive: true });
-  fs.writeFileSync(path.join(storeDir, STORE_FILE), JSON.stringify(store, null, 2) + '\n', 'utf-8');
+  if (signatures.length > 0) {
+    const store: SignatureStore = { version: 1, signatures, updatedAt: new Date().toISOString() };
+    const storeDir = path.join(targetDir, STORE_DIR);
+    fs.mkdirSync(storeDir, { recursive: true });
+    fs.writeFileSync(path.join(storeDir, STORE_FILE), JSON.stringify(store, null, 2) + '\n', 'utf-8');
 
-  await emitEvent('config.signed', 'guard.sign', targetDir, 'info', 'allowed', {
-    fileCount: signatures.length, files: signatures.map(s => s.filePath),
-  });
+    await emitEvent('config.signed', 'guard.sign', targetDir, 'info', 'allowed', {
+      fileCount: signatures.length, files: signatures.map(s => s.filePath),
+    });
+  }
+
+  // Skill and heartbeat signing (delegated to guard-signing bridge)
+  type SignResult = Awaited<ReturnType<typeof import('./guard-signing.js').signSkillFiles>>;
+  let skillResults: SignResult = [];
+  let heartbeatResults: SignResult = [];
+  if (options.skills || options.heartbeats) {
+    const { signSkillFiles, signHeartbeatFiles } = await import('./guard-signing.js');
+    if (options.skills) skillResults = await signSkillFiles(targetDir);
+    if (options.heartbeats) heartbeatResults = await signHeartbeatFiles(targetDir);
+  }
 
   if (isJson) {
-    process.stdout.write(JSON.stringify({ signed: signatures.length, files: signatures.map(s => s.filePath) }, null, 2) + '\n');
+    const result: Record<string, unknown> = { signed: signatures.length, files: signatures.map(s => s.filePath) };
+    if (skillResults.length > 0) result.skills = skillResults.map(s => s.filePath);
+    if (heartbeatResults.length > 0) result.heartbeats = heartbeatResults.map(s => s.filePath);
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } else {
-    process.stdout.write(green(`Signed ${signatures.length} config file${signatures.length === 1 ? '' : 's'}.\n`));
-    for (const sig of signatures) { process.stdout.write(dim(`  ${sig.filePath}  ${sig.hash.slice(0, 23)}...\n`)); }
-    process.stdout.write(dim(`\nStore: ${STORE_DIR}/${STORE_FILE}\n`));
+    if (signatures.length > 0) {
+      process.stdout.write(green(`Signed ${signatures.length} config file${signatures.length === 1 ? '' : 's'}.\n`));
+      for (const sig of signatures) { process.stdout.write(dim(`  ${sig.filePath}  ${sig.hash.slice(0, 23)}...\n`)); }
+    }
+    if (skillResults.length > 0) {
+      process.stdout.write(green(`Signed ${skillResults.length} skill file${skillResults.length === 1 ? '' : 's'}.\n`));
+      for (const sr of skillResults) { process.stdout.write(dim(`  ${sr.filePath}  ${sr.hash.slice(0, 23)}...\n`)); }
+    }
+    if (heartbeatResults.length > 0) {
+      process.stdout.write(green(`Signed ${heartbeatResults.length} heartbeat file${heartbeatResults.length === 1 ? '' : 's'}.\n`));
+      for (const hr of heartbeatResults) { process.stdout.write(dim(`  ${hr.filePath}  ${hr.hash.slice(0, 23)}...\n`)); }
+    }
+    if (signatures.length > 0) process.stdout.write(dim(`\nStore: ${STORE_DIR}/${STORE_FILE}\n`));
   }
   return 0;
 }
@@ -225,10 +275,64 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     });
   }
 
-  if (isJson) { process.stdout.write(JSON.stringify(report, null, 2) + '\n'); }
-  else { printVerifyReport(report, enforce); }
+  // Policy-aware enforcement: heartbeat disable on tamper, blockOnUnsigned
+  let policyViolations = 0;
+  try {
+    const { loadGuardPolicy, checkPolicyCompliance, disableHeartbeat } = await import('./guard-policy.js');
+    const policy = loadGuardPolicy(targetDir);
+    if (policy) {
+      const compliance = checkPolicyCompliance(targetDir, policy);
+      // Disable heartbeat on tamper if policy requires it
+      if (policy.disableHeartbeatOnTamper && (compliance.requiredTampered.length > 0 || compliance.requiredMissing.length > 0)) {
+        const reason = `Tamper detected: ${[...compliance.requiredTampered, ...compliance.requiredMissing].join(', ')}`;
+        disableHeartbeat(targetDir, reason);
+        await emitEvent('heartbeat.disabled', 'guard.verify', targetDir, 'high', 'blocked', { reason, tampered: compliance.requiredTampered, missing: compliance.requiredMissing });
+      }
+      // Block on unsigned required files
+      if (policy.blockOnUnsigned && compliance.requiredUnsigned.length > 0) {
+        policyViolations += compliance.requiredUnsigned.length;
+        for (const f of compliance.requiredUnsigned) {
+          // Add unsigned required files as failures if not already in results
+          if (!results.find(r => r.filePath === f)) { results.push({ filePath: f, status: 'unsigned' }); }
+        }
+        await emitEvent('policy.violation', 'guard.verify', targetDir, 'medium', enforce ? 'blocked' : 'monitored', { unsignedRequired: compliance.requiredUnsigned });
+      }
+    }
+  } catch {
+    // guard-policy module not available
+  }
 
-  return (report.tampered > 0 || report.missing > 0) ? (enforce ? EXIT_QUARANTINE : 1) : 0;
+  // Verify skill and heartbeat signatures
+  type VResult = Awaited<ReturnType<typeof import('./guard-signing.js').verifySkillSignatures>>;
+  let skillVerify: VResult = [];
+  let heartbeatVerify: VResult = [];
+  if (options.skills || options.heartbeats) {
+    const { verifySkillSignatures, verifyHeartbeatSignatures } = await import('./guard-signing.js');
+    if (options.skills) skillVerify = await verifySkillSignatures(targetDir);
+    if (options.heartbeats) heartbeatVerify = await verifyHeartbeatSignatures(targetDir);
+  }
+
+  if (isJson) {
+    const output: Record<string, unknown> = { ...report };
+    if (skillVerify.length > 0) output.skills = skillVerify;
+    if (heartbeatVerify.length > 0) output.heartbeats = heartbeatVerify;
+    process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+  } else {
+    printVerifyReport(report, enforce);
+    if (skillVerify.length > 0) {
+      process.stdout.write(bold('  Skill Signatures') + '\n');
+      for (const sv of skillVerify) { process.stdout.write(`  ${sv.filePath.padEnd(28)} ${sv.status === 'pass' ? green('PASS') : sv.status === 'tampered' ? red('TAMPERED') : yellow(sv.status.toUpperCase())}\n`); }
+      process.stdout.write('\n');
+    }
+    if (heartbeatVerify.length > 0) {
+      process.stdout.write(bold('  Heartbeat Signatures') + '\n');
+      for (const hv of heartbeatVerify) { process.stdout.write(`  ${hv.filePath.padEnd(28)} ${hv.status === 'pass' ? green('PASS') : hv.status === 'expired' ? yellow('EXPIRED') : hv.status === 'tampered' ? red('TAMPERED') : yellow(hv.status.toUpperCase())}\n`); }
+      process.stdout.write('\n');
+    }
+  }
+
+  const sigFailed = [...skillVerify, ...heartbeatVerify].some(v => v.status !== 'pass');
+  return (report.tampered > 0 || report.missing > 0 || sigFailed || policyViolations > 0) ? (enforce ? EXIT_QUARANTINE : 1) : 0;
 }
 
 // --- Status ---
@@ -252,15 +356,28 @@ async function guardStatus(targetDir: string, options: GuardOptions): Promise<nu
     }
   }
 
-  const statusReport = { signed: signedCount, unsigned: unsignedCount, tampered: tamperedCount, lastUpdated: store?.updatedAt ?? null };
+  // Skill and heartbeat counts for status
+  let skillCount = 0;
+  let heartbeatCount = 0;
+  if (options.skills || options.heartbeats) {
+    const { _internals: sigInternals } = await import('./guard-signing.js');
+    if (options.skills) skillCount = sigInternals.findFiles(targetDir, sigInternals.SKILL_PATTERNS).length;
+    if (options.heartbeats) heartbeatCount = sigInternals.findFiles(targetDir, sigInternals.HEARTBEAT_PATTERNS).length;
+  }
+
+  const statusReport: Record<string, unknown> = { signed: signedCount, unsigned: unsignedCount, tampered: tamperedCount, lastUpdated: store?.updatedAt ?? null };
+  if (skillCount > 0) statusReport.skills = skillCount;
+  if (heartbeatCount > 0) statusReport.heartbeats = heartbeatCount;
 
   if (isJson) { process.stdout.write(JSON.stringify(statusReport, null, 2) + '\n'); }
   else {
     process.stdout.write(bold('ConfigGuard Status') + '\n');
     process.stdout.write(gray('-'.repeat(40)) + '\n');
-    process.stdout.write(`  Signed:    ${green(String(signedCount))}\n`);
-    process.stdout.write(`  Unsigned:  ${unsignedCount > 0 ? yellow(String(unsignedCount)) : dim('0')}\n`);
-    process.stdout.write(`  Tampered:  ${tamperedCount > 0 ? red(String(tamperedCount)) : dim('0')}\n`);
+    process.stdout.write(`  Signed:      ${green(String(signedCount))}\n`);
+    process.stdout.write(`  Unsigned:    ${unsignedCount > 0 ? yellow(String(unsignedCount)) : dim('0')}\n`);
+    process.stdout.write(`  Tampered:    ${tamperedCount > 0 ? red(String(tamperedCount)) : dim('0')}\n`);
+    if (skillCount > 0) process.stdout.write(`  Skills:      ${green(String(skillCount))}\n`);
+    if (heartbeatCount > 0) process.stdout.write(`  Heartbeats:  ${green(String(heartbeatCount))}\n`);
     if (store?.updatedAt) { process.stdout.write(dim(`  Last signed: ${store.updatedAt}\n`)); }
     process.stdout.write(gray('-'.repeat(40)) + '\n');
   }
