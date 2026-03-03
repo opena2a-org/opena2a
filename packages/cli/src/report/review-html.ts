@@ -302,12 +302,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">22%</div><div style="font-size:11px;color:var(--muted)">Credentials</div></div>';
     h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">18%</div><div style="font-size:11px;color:var(--muted)">Integrity</div></div>';
     h+='</div>';
-    h+='<div style="display:flex;gap:8px;justify-content:center;font-size:11px;color:var(--dim);border-top:1px solid rgba(51,65,85,0.4);padding-top:8px">';
-    h+='<span><strong style="color:var(--green)">A</strong> 90+</span>';
-    h+='<span><strong style="color:var(--primary)">B</strong> 80+</span>';
-    h+='<span><strong style="color:var(--medium)">C</strong> 70+</span>';
-    h+='<span><strong style="color:var(--amber)">D</strong> 60+</span>';
-    h+='<span><strong style="color:var(--red)">F</strong> &lt;60</span>';
+    h+='<div style="display:flex;gap:12px;justify-content:center;font-size:13px;color:var(--dim);border-top:1px solid rgba(51,65,85,0.4);padding-top:8px">';
+    h+='<span><strong style="color:var(--green);font-size:15px">A</strong> 90+</span>';
+    h+='<span><strong style="color:var(--primary);font-size:15px">B</strong> 80+</span>';
+    h+='<span><strong style="color:var(--medium);font-size:15px">C</strong> 70+</span>';
+    h+='<span><strong style="color:var(--amber);font-size:15px">D</strong> 60+</span>';
+    h+='<span><strong style="color:var(--red);font-size:15px">F</strong> &lt;60</span>';
     h+='</div>';
     h+='</div>';
 
@@ -440,9 +440,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+='<div style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Trust Score Formula</div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px">';
     h+='<div style="color:var(--muted)">Start</div><div style="color:var(--text);font-weight:600">100</div>';
-    h+='<div style="color:var(--muted)">Critical credential</div><div style="color:var(--critical)">-25 each</div>';
-    h+='<div style="color:var(--muted)">High credential</div><div style="color:var(--high)">-15 each</div>';
-    h+='<div style="color:var(--muted)">Medium credential</div><div style="color:var(--medium)">-8 each</div>';
     h+='<div style="color:var(--muted)">Missing .gitignore</div><div style="color:var(--red)">-15</div>';
     h+='<div style="color:var(--muted)">Unprotected .env</div><div style="color:var(--red)">-10</div>';
     h+='<div style="color:var(--muted)">No lock file</div><div style="color:var(--amber)">-5</div>';

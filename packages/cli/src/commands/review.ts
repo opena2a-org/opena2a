@@ -365,8 +365,8 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   const activeProducts = shieldStatus.products.filter(p => p.active).length;
   const totalProducts = shieldStatus.products.length;
 
-  let postureScore = 0;
-  postureScore += Math.min(activeProducts * 10, 60);
+  let postureScore = 25;
+  postureScore += Math.min(activeProducts * 10, 50);
   if (shieldStatus.policyLoaded) postureScore += 10;
   if (shieldStatus.shellIntegration) postureScore += 5;
   if (credentialMatches.length === 0) postureScore += 15;
@@ -457,9 +457,9 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
   const shieldStatus = getShieldStatus(targetDir);
   const activeProducts = shieldStatus.products.filter(p => p.active).length;
 
-  // Compute shield posture score
-  let postureScore = 0;
-  postureScore += Math.min(activeProducts * 10, 60);
+  // Compute shield posture score (baseline 25 for CLI users)
+  let postureScore = 25;
+  postureScore += Math.min(activeProducts * 10, 50);
   if (shieldStatus.policyLoaded) postureScore += 10;
   if (shieldStatus.shellIntegration) postureScore += 5;
   // Penalize for findings
@@ -752,10 +752,8 @@ function calculateTrustScore(
 ): { score: number; grade: string } {
   let score = 100;
 
-  score -= (credsBySeverity['critical'] || 0) * 25;
-  score -= (credsBySeverity['high'] || 0) * 15;
-  score -= (credsBySeverity['medium'] || 0) * 8;
-  score -= (credsBySeverity['low'] || 0) * 3;
+  // Credential penalties removed -- credentials have their own 22% dimension.
+  // Trust score is purely hygiene-based to avoid double-counting.
 
   const gitignoreCheck = checks.find(c => c.label === '.gitignore');
   if (gitignoreCheck?.status !== 'pass') score -= 15;
