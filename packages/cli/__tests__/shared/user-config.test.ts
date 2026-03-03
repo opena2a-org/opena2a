@@ -18,30 +18,24 @@ import {
 } from '@opena2a/shared';
 
 describe('UserConfig extensions', () => {
-  let configBackup: string | null = null;
+  let origHome: string | undefined;
+  let tmpHome: string;
 
   beforeEach(() => {
-    // Backup existing config if present
-    const configPath = path.join(getUserConfigDir(), 'config.json');
-    if (fs.existsSync(configPath)) {
-      configBackup = fs.readFileSync(configPath, 'utf-8');
-    }
-    // Remove config to get clean defaults
-    if (fs.existsSync(getUserConfigDir())) {
-      fs.rmSync(getUserConfigDir(), { recursive: true, force: true });
-    }
+    // Redirect HOME to a temp directory so tests never touch the real ~/.opena2a
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-config-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpHome;
   });
 
   afterEach(() => {
-    // Restore original config
-    const dir = getUserConfigDir();
-    if (fs.existsSync(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true });
+    // Restore original HOME
+    if (origHome !== undefined) {
+      process.env.HOME = origHome;
+    } else {
+      delete process.env.HOME;
     }
-    if (configBackup !== null) {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'config.json'), configBackup, 'utf-8');
-    }
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
   it('loadUserConfig returns default llm config when no config file exists', () => {
@@ -136,41 +130,43 @@ describe('UserConfig extensions', () => {
   });
 
   it('shouldPromptContribute returns false before threshold (3 scans required)', () => {
-    // Verify clean state
-    const config = loadUserConfig();
-    const startCount = config.telemetry?.scanCount ?? 0;
-    // Increment to 2 from wherever we start (should be 0 after cleanup)
-    const finalCount = startCount + 2;
+    const startCount = getScanCount();
     incrementScanCount();
     incrementScanCount();
-    expect(getScanCount()).toBe(finalCount);
-    // With fewer than 3 scans, should not prompt
-    if (finalCount < 3) {
+    expect(getScanCount()).toBe(startCount + 2);
+    // With fewer than 3 total scans from clean state, should not prompt
+    if (startCount + 2 < 3) {
       expect(shouldPromptContribute()).toBe(false);
     }
   });
 
   it('shouldPromptContribute returns true at threshold', () => {
-    // Explicitly reach threshold of 3
-    incrementScanCount();
-    incrementScanCount();
-    incrementScanCount();
+    // Ensure we're at or above the threshold (3 scans)
+    while (getScanCount() < 3) {
+      incrementScanCount();
+    }
     expect(getScanCount()).toBeGreaterThanOrEqual(3);
     expect(shouldPromptContribute()).toBe(true);
   });
 
   it('shouldPromptContribute returns false when already opted in', () => {
-    incrementScanCount();
-    incrementScanCount();
-    incrementScanCount();
+    while (getScanCount() < 3) {
+      incrementScanCount();
+    }
     setContributeEnabled(true);
     expect(shouldPromptContribute()).toBe(false);
   });
 
   it('dismissContributePrompt prevents re-prompt', () => {
-    incrementScanCount();
-    incrementScanCount();
-    incrementScanCount();
+    while (getScanCount() < 3) {
+      incrementScanCount();
+    }
+    // Reset contribute to false so shouldPrompt can return true
+    const config = loadUserConfig();
+    config.contribute.enabled = false;
+    config.contribute.consentedAt = null;
+    config.telemetry.contributePromptDismissedAt = null;
+    saveUserConfig(config);
     expect(shouldPromptContribute()).toBe(true);
     dismissContributePrompt();
     expect(shouldPromptContribute()).toBe(false);
