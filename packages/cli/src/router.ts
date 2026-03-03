@@ -1,6 +1,7 @@
 import { createAdapter } from './adapters/index.js';
 import type { AdapterConfig, RunOptions } from './adapters/types.js';
 import { protect } from './commands/protect.js';
+import { isContributeEnabled, getRegistryUrl, submitScanReport, recordScanAndMaybePrompt } from './util/report-submission.js';
 
 export type InputType = 'subcommand' | 'search' | 'context' | 'natural' | 'guided';
 
@@ -138,13 +139,18 @@ export async function dispatchCommand(
 
   const intent = INTENT_MAP[command];
   const adapterName = intent?.adapter ?? command;
-  const adapterArgs = intent ? [...intent.defaultArgs, ...args] : args;
+  let adapterArgs = intent ? [...intent.defaultArgs, ...args] : args;
 
   const adapter = createAdapter(adapterName);
   if (!adapter) {
     process.stderr.write(`Unknown command: ${command}\n`);
     process.stderr.write(`Run 'opena2a --help' for available commands.\n`);
     return 1;
+  }
+
+  // Prepend subcommand if the adapter config specifies one (e.g. broker, dlp)
+  if (adapter.config.subcommand) {
+    adapterArgs = [adapter.config.subcommand, ...adapterArgs];
   }
 
   const available = await adapter.isAvailable();
@@ -160,6 +166,28 @@ export async function dispatchCommand(
     ...globalOptions,
     cwd: globalOptions.cwd ?? process.cwd(),
   });
+
+  // Community contribution: submit scan reports when contribute is enabled
+  // This is best-effort and non-blocking -- failures are silently ignored.
+  if (globalOptions.contribute || await isContributeEnabled()) {
+    try {
+      const registryUrl = await getRegistryUrl();
+      // Parse stdout for scan report JSON (adapters that produce scan results)
+      if (result.stdout && (adapterName === 'scan' || adapterName === 'benchmark')) {
+        try {
+          const report = JSON.parse(result.stdout);
+          if (report.overallScore !== undefined || report.findings) {
+            await submitScanReport(registryUrl, report, globalOptions.verbose);
+          }
+        } catch {
+          // stdout wasn't valid scan report JSON -- that's fine
+        }
+      }
+      await recordScanAndMaybePrompt();
+    } catch {
+      // Non-critical -- never block on contribution failures
+    }
+  }
 
   return result.exitCode;
 }

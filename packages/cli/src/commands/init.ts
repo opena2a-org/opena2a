@@ -111,8 +111,10 @@ export async function init(options: InitOptions): Promise<number> {
     : 'SECURE';
 
   // 6.6. Write shield events for posture and credential findings
+  // Events are written to the project-local .opena2a/shield/ when available,
+  // falling back to the global ~/.opena2a/shield/.
   try {
-    getShieldDir();
+    getShieldDir(targetDir);
     writeEvent({
       source: 'shield',
       category: 'shield.posture',
@@ -126,7 +128,7 @@ export async function init(options: InitOptions): Promise<number> {
       orgId: null,
       managed: false,
       agentId: null,
-    });
+    }, targetDir);
     for (const cred of credentialMatches) {
       writeEvent({
         source: 'shield',
@@ -141,7 +143,7 @@ export async function init(options: InitOptions): Promise<number> {
         orgId: null,
         managed: false,
         agentId: null,
-      });
+      }, targetDir);
     }
   } catch {
     // Shield event writing is best-effort

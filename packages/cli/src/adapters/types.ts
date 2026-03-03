@@ -11,6 +11,8 @@ export interface AdapterConfig {
   image?: string;
   /** Python module for python() adapters */
   pythonModule?: string;
+  /** Subcommand to prepend to args (e.g. broker/dlp share secretless-ai but differ by subcommand) */
+  subcommand?: string;
   /** Description shown in help text */
   description: string;
 }

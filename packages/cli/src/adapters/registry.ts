@@ -61,12 +61,14 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     name: 'broker',
     method: 'import',
     packageName: 'secretless-ai',
+    subcommand: 'broker',
     description: 'Identity-aware credential broker daemon',
   },
   dlp: {
     name: 'dlp',
     method: 'import',
     packageName: 'secretless-ai',
+    subcommand: 'dlp',
     description: 'Data loss prevention for AI tool transcripts',
   },
 };

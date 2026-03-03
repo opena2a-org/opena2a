@@ -5,7 +5,7 @@ import { printBanner, printCompact } from './branding.js';
 import { classifyInput, dispatchCommand } from './router.js';
 import { handleSearch } from './semantic/index.js';
 import { handleContext } from './contextual/index.js';
-import { handleNaturalLanguage } from './natural/index.js';
+import { handleNaturalLanguage, matchIntent } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY } from './adapters/registry.js';
 import { getVersion } from './util/version.js';
@@ -36,7 +36,8 @@ Smart Features:
   $ opena2a                      Interactive guided mode (no args)
   $ opena2a ~<query>             Search commands (e.g. opena2a ~drift)
   $ opena2a ?                    Get smart recommendations for your project
-  $ opena2a "scan for secrets"   Natural language command matching
+  $ opena2a find secrets         Natural language command matching
+  $ opena2a detect credentials   Natural language command matching
 
 Learn more: https://opena2a.org/docs`);
 
@@ -383,6 +384,31 @@ Valid actions:
       process.exitCode = exitCode;
     }
     return;
+  }
+
+  // NL fallback: multi-word input where the first word is NOT a known command.
+  // This handles "scan for secrets" when the shell strips quotes from
+  // `opena2a "scan for secrets"`, yielding argv ['scan', 'for', 'secrets'].
+  // We only try this when the first word is NOT a registered command, so
+  // valid commands like `opena2a scan secure` always reach Commander.
+  const KNOWN_COMMANDS = [
+    ...Object.keys(ADAPTER_REGISTRY),
+    'init', 'protect', 'guard', 'runtime', 'shield', 'review',
+    'config', 'self-register', 'verify', 'baselines',
+    'check', 'status', 'publish',
+  ];
+  if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
+    const fullPhrase = rawArgs.join(' ');
+    const nlMatch = matchIntent(fullPhrase);
+    if (nlMatch) {
+      const command = await handleNaturalLanguage(fullPhrase);
+      if (command) {
+        const parts = command.replace('opena2a ', '').split(' ');
+        const exitCode = await dispatchCommand(parts[0], parts.slice(1), program.opts());
+        process.exitCode = exitCode;
+      }
+      return;
+    }
   }
 
   // Let Commander parse known subcommands and flags
