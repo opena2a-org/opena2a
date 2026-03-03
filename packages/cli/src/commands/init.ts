@@ -1,17 +1,19 @@
 /**
  * opena2a init -- Initialize security posture assessment for a project.
  *
- * Detects project type, scans for credentials, checks hygiene,
- * calculates trust score, and generates prioritized next steps.
+ * Findings-first design: shows what was found, explains why it matters,
+ * calculates a unified security score, and generates prioritized actions.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
-import { detectProject } from '../util/detect.js';
-import { quickCredentialScan } from '../util/credential-patterns.js';
+import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
+import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
+import { wordWrap } from '../util/format.js';
 import { getVersion } from '../util/version.js';
+import { Spinner } from '../util/spinner.js';
 import { writeEvent, getShieldDir } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -31,6 +33,29 @@ interface HygieneCheck {
   detail: string;
 }
 
+interface ScoreBreakdown {
+  credentials: { deduction: number; detail: string };
+  environment: { deduction: number; detail: string };
+  configuration: { deduction: number; detail: string };
+}
+
+interface GroupedFinding {
+  findingId: string;
+  title: string;
+  severity: string;
+  count: number;
+  explanation: string;
+  businessImpact: string;
+  locations: { file: string; line: number }[];
+}
+
+interface ActionItem {
+  description: string;
+  command: string;
+  why: string;
+  detail?: string;
+}
+
 interface NextStep {
   severity: 'critical' | 'high' | 'medium' | 'low';
   description: string;
@@ -38,6 +63,7 @@ interface NextStep {
 }
 
 interface InitReport {
+  version: 2;
   projectName: string | null;
   projectVersion: string | null;
   projectType: string;
@@ -45,10 +71,17 @@ interface InitReport {
   credentialFindings: number;
   credentialsBySeverity: Record<string, number>;
   hygieneChecks: HygieneCheck[];
-  trustScore: number;
-  grade: string;
+  securityScore: number;
+  securityGrade: string;
+  scoreBreakdown: ScoreBreakdown;
+  findings: GroupedFinding[];
+  actions: ActionItem[];
   nextSteps: NextStep[];
   advisories: { count: number; matchedPackages: string[] };
+  hmaAvailable: boolean;
+  // Backward compat aliases (v1 consumers)
+  trustScore: number;
+  grade: string;
   postureScore: number;
   riskLevel: RiskLevel;
   activeTools: number;
@@ -65,10 +98,16 @@ export async function init(options: InitOptions): Promise<number> {
     return 1;
   }
 
+  const startTime = Date.now();
+  const isTTY = process.stderr.isTTY && options.format !== 'json';
+  const spinner = new Spinner('Scanning project...');
+  if (isTTY) spinner.start();
+
   // 1. Detect project type
   const project = detectProject(targetDir);
 
   // 2. Quick credential scan
+  if (isTTY) spinner.update('Scanning for credentials...');
   const credentialMatches = quickCredentialScan(targetDir);
   const credsBySeverity: Record<string, number> = {};
   for (const m of credentialMatches) {
@@ -76,6 +115,7 @@ export async function init(options: InitOptions): Promise<number> {
   }
 
   // 3. Security hygiene checks
+  if (isTTY) spinner.update('Checking environment...');
   const checks = await runHygieneChecks(targetDir, project, credentialMatches.length);
 
   // 4. Check advisories (non-blocking)
@@ -83,38 +123,54 @@ export async function init(options: InitOptions): Promise<number> {
   try {
     advisoryCheck = await checkAdvisories(targetDir);
   } catch {
-    // Advisory check is best-effort, don't fail init
+    // Advisory check is best-effort
   }
 
-  // 5. Calculate trust score
-  const { score, grade } = calculateTrustScore(credsBySeverity, checks, targetDir);
+  // 5. HMA integration (optional dynamic import)
+  if (isTTY) spinner.update('Scanning shell environment...');
+  let hmaAvailable = false;
+  const hmaFindings: { severity: string; checkId: string; message: string }[] = [];
+  try {
+    const hma = await import('hackmyagent');
+    hmaAvailable = true;
+    if (typeof hma.checkShellEnvironment === 'function') {
+      const shellEnv = await hma.checkShellEnvironment();
+      if (Array.isArray(shellEnv)) hmaFindings.push(...shellEnv);
+    }
+    if (typeof hma.checkShellHistory === 'function') {
+      const shellHistory = await hma.checkShellHistory();
+      if (Array.isArray(shellHistory)) hmaFindings.push(...shellHistory);
+    }
+  } catch {
+    // HMA not installed -- skip silently
+  }
 
-  // 6. Generate next steps
+  // 6. Group findings
+  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings);
+
+  // 7. Calculate unified security score
+  if (isTTY) spinner.update('Assessing security posture...');
+  const hmaBySeverity: Record<string, number> = {};
+  for (const f of hmaFindings) {
+    hmaBySeverity[f.severity] = (hmaBySeverity[f.severity] || 0) + 1;
+  }
+  const { score, grade, breakdown } = calculateSecurityScore(credsBySeverity, checks, hmaBySeverity);
+
+  // 8. Generate actions
+  const actions = generateActions(credentialMatches, credsBySeverity, checks, groupedFindings);
+
+  // 9. Generate legacy next steps (backward compat)
   const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks, project.type);
 
-  // 6.5. Compute posture score from Shield tool detection
+  // 10. Shield tool status (for backward compat and tip line)
   const shieldStatus = getShieldStatus(targetDir);
   const activeTools = shieldStatus.tools.filter(p => p.active).length;
   const totalTools = shieldStatus.tools.length;
-  let postureScore = 0;
-  postureScore += Math.min(activeTools * 10, 60);
-  if (shieldStatus.policyLoaded) postureScore += 10;
-  if (shieldStatus.shellIntegration) postureScore += 5;
-  if (credentialMatches.length === 0) postureScore += 15;
-  const sigDir = path.join(targetDir, '.opena2a', 'signatures');
-  if (fs.existsSync(sigDir)) postureScore += 10;
-  postureScore = Math.max(0, Math.min(100, postureScore));
-  const riskLevel: RiskLevel = postureScore < 30 ? 'CRITICAL'
-    : postureScore < 50 ? 'HIGH'
-    : postureScore < 70 ? 'MEDIUM'
-    : postureScore < 90 ? 'LOW'
-    : 'SECURE';
 
-  // 6.6. Write shield events for posture and credential findings
-  // Events are written to the project-local .opena2a/shield/ when available,
-  // falling back to the global ~/.opena2a/shield/.
+  // 11. Write shield events
   try {
     getShieldDir(targetDir);
+    const riskLevel = scoreToRiskLevel(score);
     writeEvent({
       source: 'shield',
       category: 'shield.posture',
@@ -124,7 +180,7 @@ export async function init(options: InitOptions): Promise<number> {
       action: 'posture-assessment',
       target: targetDir,
       outcome: 'monitored',
-      detail: { score: postureScore, riskLevel, activeTools, totalTools, trustScore: score, grade },
+      detail: { score, grade, breakdown, activeTools, totalTools },
       orgId: null,
       managed: false,
       agentId: null,
@@ -149,8 +205,14 @@ export async function init(options: InitOptions): Promise<number> {
     // Shield event writing is best-effort
   }
 
-  // 7. Build report
+  if (isTTY) spinner.stop();
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  // 12. Build report
+  const riskLevel = scoreToRiskLevel(score);
   const report: InitReport = {
+    version: 2,
     projectName: project.name,
     projectVersion: project.version,
     projectType: formatProjectType(project),
@@ -158,42 +220,31 @@ export async function init(options: InitOptions): Promise<number> {
     credentialFindings: credentialMatches.length,
     credentialsBySeverity: credsBySeverity,
     hygieneChecks: checks,
-    trustScore: score,
-    grade,
+    securityScore: score,
+    securityGrade: grade,
+    scoreBreakdown: breakdown,
+    findings: groupedFindings,
+    actions,
     nextSteps,
     advisories: {
       count: advisoryCheck.advisories.length,
       matchedPackages: advisoryCheck.matchedPackages,
     },
-    postureScore,
+    hmaAvailable,
+    // Backward compat aliases
+    trustScore: score,
+    grade,
+    postureScore: score,
     riskLevel,
     activeTools,
     totalTools,
   };
 
-  // 8. Output
+  // 13. Output
   if (options.format === 'json') {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
-    printReport(report, options.verbose);
-
-    // Verbose: show individual credential findings
-    if (options.verbose && credentialMatches.length > 0) {
-      process.stdout.write(bold('  Credential Details') + '\n');
-      process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
-      for (const m of credentialMatches) {
-        const sev = m.severity === 'critical' ? red('[CRITICAL]')
-          : m.severity === 'high' ? yellow('[HIGH]')
-          : cyan('[MEDIUM]');
-        const relPath = path.relative(targetDir, m.filePath);
-        process.stdout.write(`  ${sev} ${bold(m.findingId)}: ${m.title}\n`);
-        process.stdout.write(`  ${dim('  File:')} ${relPath}:${m.line}\n`);
-        if (m.explanation) {
-          process.stdout.write(`  ${dim('  Why:')} ${m.explanation}\n`);
-        }
-        process.stdout.write('\n');
-      }
-    }
+    printReport(report, elapsed, options.verbose);
 
     // Drift detection callout (always shown when drift findings exist)
     const driftFindings = credentialMatches.filter(m => m.findingId.startsWith('DRIFT'));
@@ -340,36 +391,171 @@ async function checkLLMServerExposure(): Promise<HygieneCheck | null> {
   return null;
 }
 
-// --- Trust score ---
+// --- Finding grouping ---
 
-function calculateTrustScore(
+function groupFindings(
+  creds: CredentialMatch[],
+  checks: HygieneCheck[],
+  hmaFindings: { severity: string; checkId: string; message: string }[],
+): GroupedFinding[] {
+  const groups = new Map<string, GroupedFinding>();
+
+  // Group credential findings by findingId
+  for (const cred of creds) {
+    const existing = groups.get(cred.findingId);
+    if (existing) {
+      existing.count++;
+      existing.locations.push({
+        file: cred.filePath,
+        line: cred.line,
+      });
+    } else {
+      groups.set(cred.findingId, {
+        findingId: cred.findingId,
+        title: cred.title,
+        severity: cred.severity,
+        count: 1,
+        explanation: cred.explanation ?? '',
+        businessImpact: cred.businessImpact ?? '',
+        locations: [{ file: cred.filePath, line: cred.line }],
+      });
+    }
+  }
+
+  // Add hygiene findings as grouped findings
+  const llmCheck = checks.find(c => c.label === 'LLM server exposure' && c.status === 'warn');
+  if (llmCheck) {
+    groups.set('ENV-LLM', {
+      findingId: 'ENV-LLM',
+      title: llmCheck.detail,
+      severity: 'high',
+      count: 1,
+      explanation: 'Local LLM server accepts unauthenticated requests. Anyone on your network can query your models.',
+      businessImpact: 'Unauthorized model access, potential data exfiltration through prompts.',
+      locations: [],
+    });
+  }
+
+  const envCheck = checks.find(c => c.label === '.env protection' && c.status === 'warn');
+  if (envCheck) {
+    groups.set('ENV-DOTENV', {
+      findingId: 'ENV-DOTENV',
+      title: '.env not in .gitignore',
+      severity: 'medium',
+      count: 1,
+      explanation: 'Environment files may be committed to version control.',
+      businessImpact: 'Secrets in .env files could be pushed to a repository and exposed.',
+      locations: [],
+    });
+  }
+
+  // Add HMA findings
+  for (const f of hmaFindings) {
+    const key = `HMA-${f.checkId}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      groups.set(key, {
+        findingId: key,
+        title: f.message,
+        severity: f.severity,
+        count: 1,
+        explanation: '',
+        businessImpact: '',
+        locations: [],
+      });
+    }
+  }
+
+  // Sort by severity order: critical > high > medium > low
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  return Array.from(groups.values()).sort((a, b) => {
+    const sa = severityOrder[a.severity] ?? 4;
+    const sb = severityOrder[b.severity] ?? 4;
+    if (sa !== sb) return sa - sb;
+    return b.count - a.count;
+  });
+}
+
+// --- Unified Security Score ---
+
+export function calculateSecurityScore(
   credsBySeverity: Record<string, number>,
   checks: HygieneCheck[],
-  dir: string,
-): { score: number; grade: string } {
-  let score = 100;
+  hmaBySeverity?: Record<string, number>,
+): { score: number; grade: string; breakdown: ScoreBreakdown } {
+  // --- Credentials category (cap at -60) ---
+  let credDeduction = 0;
+  const critCount = (credsBySeverity['critical'] || 0);
+  const highCount = (credsBySeverity['high'] || 0);
+  const medCount = (credsBySeverity['medium'] || 0);
+  const lowCount = (credsBySeverity['low'] || 0);
 
-  // Credential penalties
-  score -= (credsBySeverity['critical'] || 0) * 25;
-  score -= (credsBySeverity['high'] || 0) * 15;
-  score -= (credsBySeverity['medium'] || 0) * 8;
-  score -= (credsBySeverity['low'] || 0) * 3;
+  // Diminishing returns: first finding costs more, subsequent cost less
+  if (critCount > 0) {
+    credDeduction += 20; // first critical
+    credDeduction += Math.min((critCount - 1) * 8, 24); // subsequent critical, cap additional at 24
+  }
+  if (highCount > 0) {
+    credDeduction += 12; // first high
+    credDeduction += Math.min((highCount - 1) * 5, 15); // subsequent high, cap additional at 15
+  }
+  credDeduction += Math.min(medCount * 4, 20); // medium, cap at 20
+  credDeduction += Math.min(lowCount * 2, 8); // low, cap at 8
 
-  // Hygiene penalties
+  credDeduction = Math.min(credDeduction, 60); // category cap
+
+  const credDetail = credCount(critCount, highCount, medCount, lowCount);
+
+  // --- Environment category (cap at -25) ---
+  let envDeduction = 0;
+  const llmCheck = checks.find(c => c.label === 'LLM server exposure');
+  if (llmCheck?.status === 'warn') envDeduction += 10;
+
+  const envProtection = checks.find(c => c.label === '.env protection');
+  if (envProtection?.status === 'warn') envDeduction += 8;
+
+  // HMA shell findings
+  if (hmaBySeverity) {
+    envDeduction += Math.min((hmaBySeverity['critical'] || 0) * 10, 10);
+    envDeduction += Math.min((hmaBySeverity['high'] || 0) * 6, 12);
+    envDeduction += Math.min((hmaBySeverity['medium'] || 0) * 3, 9);
+  }
+
+  envDeduction = Math.min(envDeduction, 25); // category cap
+
+  const envDetails: string[] = [];
+  if (llmCheck?.status === 'warn') envDetails.push('LLM server exposed');
+  if (envProtection?.status === 'warn') envDetails.push('.env unprotected');
+  if (hmaBySeverity && Object.keys(hmaBySeverity).length > 0) envDetails.push('shell findings');
+  const envDetail = envDetails.length > 0 ? envDetails.join(', ') : 'clean';
+
+  // --- Configuration category (cap at -15, bonus up to +5) ---
+  let configDeduction = 0;
   const gitignoreCheck = checks.find(c => c.label === '.gitignore');
-  if (gitignoreCheck?.status !== 'pass') score -= 15;
-
-  const envCheck = checks.find(c => c.label === '.env protection');
-  if (envCheck?.status === 'warn') score -= 10;
+  if (gitignoreCheck?.status !== 'pass') configDeduction += 8;
 
   const lockCheck = checks.find(c => c.label === 'Lock file');
-  if (lockCheck?.status !== 'pass') score -= 5;
+  if (lockCheck?.status !== 'pass') configDeduction += 4;
 
-  // Bonus for security config
   const secConfig = checks.find(c => c.label === 'Security config');
-  if (secConfig?.status === 'pass') score += 5;
+  if (secConfig?.status !== 'pass') configDeduction += 3;
 
-  score = Math.max(0, Math.min(100, score));
+  // Bonus for having security config
+  let configBonus = 0;
+  if (secConfig?.status === 'pass') configBonus = 5;
+
+  configDeduction = Math.min(configDeduction, 15); // category cap
+
+  const configDetails: string[] = [];
+  if (gitignoreCheck?.status !== 'pass') configDetails.push('no .gitignore');
+  if (lockCheck?.status !== 'pass') configDetails.push('no lock file');
+  if (secConfig?.status !== 'pass') configDetails.push('no security config');
+  if (configBonus > 0) configDetails.push('security config present');
+  const configDetail = configDetails.length > 0 ? configDetails.join(', ') : 'clean';
+
+  const score = Math.max(0, Math.min(100, 100 - credDeduction - envDeduction - configDeduction + configBonus));
 
   let grade: string;
   if (score >= 90) grade = 'A';
@@ -378,20 +564,118 @@ function calculateTrustScore(
   else if (score >= 60) grade = 'D';
   else grade = 'F';
 
-  return { score, grade };
+  return {
+    score,
+    grade,
+    breakdown: {
+      credentials: { deduction: credDeduction, detail: credDetail },
+      environment: { deduction: envDeduction, detail: envDetail },
+      configuration: { deduction: configDeduction - configBonus, detail: configDetail },
+    },
+  };
 }
 
-// --- Next steps ---
+function credCount(crit: number, high: number, med: number, low: number): string {
+  const parts: string[] = [];
+  if (crit > 0) parts.push(`${crit} critical`);
+  if (high > 0) parts.push(`${high} high`);
+  if (med > 0) parts.push(`${med} medium`);
+  if (low > 0) parts.push(`${low} low`);
+  return parts.length > 0 ? parts.join(', ') : 'none';
+}
+
+function scoreToRiskLevel(score: number): RiskLevel {
+  if (score >= 90) return 'SECURE';
+  if (score >= 70) return 'LOW';
+  if (score >= 50) return 'MEDIUM';
+  if (score >= 30) return 'HIGH';
+  return 'CRITICAL';
+}
+
+// --- Actions ---
+
+function generateActions(
+  creds: CredentialMatch[],
+  credsBySeverity: Record<string, number>,
+  checks: HygieneCheck[],
+  findings: GroupedFinding[],
+): ActionItem[] {
+  const actions: ActionItem[] = [];
+
+  // Credential migration action
+  if (creds.length > 0) {
+    // Build breakdown string
+    const byTitle = new Map<string, number>();
+    for (const c of creds) {
+      byTitle.set(c.title, (byTitle.get(c.title) || 0) + 1);
+    }
+    const breakdownParts = Array.from(byTitle.entries())
+      .map(([title, count]) => `${count} ${title.replace(/ \(.*\)/, '')}`)
+      .join(', ');
+
+    // Get the most impactful businessImpact
+    const topFinding = findings.find(f => f.severity === 'critical') ?? findings[0];
+    const why = topFinding?.businessImpact || 'Exposed keys are exploited within minutes of reaching a public repo.';
+
+    actions.push({
+      description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'}`,
+      command: 'opena2a protect',
+      why,
+      detail: `Keys found: ${breakdownParts}`,
+    });
+  }
+
+  // .env protection
+  const envCheck = checks.find(c => c.label === '.env protection');
+  if (envCheck?.status === 'warn') {
+    actions.push({
+      description: 'Add .env to .gitignore',
+      command: "echo '.env' >> .gitignore",
+      why: 'Prevents accidentally committing secrets to version control.',
+    });
+  }
+
+  // .gitignore
+  const gitignoreCheck = checks.find(c => c.label === '.gitignore');
+  if (gitignoreCheck?.status !== 'pass') {
+    actions.push({
+      description: 'Create .gitignore',
+      command: 'npx gitignore node',
+      why: 'Keeps build artifacts and sensitive files out of version control.',
+    });
+  }
+
+  // LLM server exposure
+  const llmCheck = checks.find(c => c.label === 'LLM server exposure' && c.status === 'warn');
+  if (llmCheck) {
+    actions.push({
+      description: 'Secure LLM server',
+      command: 'opena2a shield status',
+      why: 'Unauthenticated LLM servers can be exploited by anyone on your network.',
+    });
+  }
+
+  // Config signing
+  actions.push({
+    description: 'Sign config files for integrity',
+    command: 'opena2a guard sign',
+    why: 'Detects unauthorized changes to configuration files.',
+  });
+
+  // Cap at 5 actions
+  return actions.slice(0, 5);
+}
+
+// --- Legacy next steps (backward compat) ---
 
 function generateNextSteps(
   credCount: number,
   credsBySeverity: Record<string, number>,
   checks: HygieneCheck[],
-  projectType?: string,
+  projectType?: ProjectType | string,
 ): NextStep[] {
   const steps: NextStep[] = [];
 
-  // Credentials -> protect
   if (credCount > 0) {
     steps.push({
       severity: 'critical',
@@ -400,7 +684,6 @@ function generateNextSteps(
     });
   }
 
-  // .env protection
   const envCheck = checks.find(c => c.label === '.env protection');
   if (envCheck?.status === 'warn') {
     steps.push({
@@ -410,7 +693,6 @@ function generateNextSteps(
     });
   }
 
-  // No .gitignore
   const gitignoreCheck = checks.find(c => c.label === '.gitignore');
   if (gitignoreCheck?.status !== 'pass') {
     const gitignoreTemplate = projectType === 'python' ? 'python'
@@ -423,14 +705,12 @@ function generateNextSteps(
     });
   }
 
-  // Sign config files
   steps.push({
     severity: 'medium',
     description: 'Sign config files for integrity',
     command: 'opena2a guard sign',
   });
 
-  // Runtime protection
   steps.push({
     severity: 'low',
     description: 'Start runtime protection',
@@ -442,23 +722,29 @@ function generateNextSteps(
 
 // --- Output ---
 
-function formatProjectType(project: ReturnType<typeof detectProject>): string {
-  const parts: string[] = [];
-  switch (project.type) {
-    case 'node': parts.push('Node.js'); break;
-    case 'go': parts.push('Go'); break;
-    case 'python': parts.push('Python'); break;
-    default: parts.push('Unknown');
+function formatProjectType(project: ProjectInfo): string {
+  const primary: Record<ProjectType, string> = {
+    node: 'Node.js',
+    go: 'Go',
+    python: 'Python',
+    rust: 'Rust',
+    java: 'Java',
+    ruby: 'Ruby',
+    docker: 'Docker',
+    generic: 'Project',
+  };
+  const parts = [primary[project.type]];
+  for (const hint of project.frameworkHints) {
+    parts.push(`+ ${hint}`);
   }
-  if (project.hasMcp) parts.push('+ MCP server');
   return parts.join(' ');
 }
 
-function printReport(report: InitReport, _verbose?: boolean): void {
+function printReport(report: InitReport, elapsed: string, verbose?: boolean): void {
   const VERSION = getVersion();
 
   process.stdout.write('\n');
-  process.stdout.write(bold('  OpenA2A Security Initialization') + dim(`  v${VERSION}`) + '\n\n');
+  process.stdout.write(bold('  OpenA2A Security Assessment') + dim(`  v${VERSION}`) + dim(`         ${elapsed}s`) + '\n\n');
 
   // Project info
   const projectDisplay = report.projectName
@@ -466,56 +752,95 @@ function printReport(report: InitReport, _verbose?: boolean): void {
     : path.basename(report.directory);
 
   process.stdout.write(`  ${dim('Project')}      ${projectDisplay}\n`);
-  process.stdout.write(`  ${dim('Type')}         ${report.projectType}\n`);
+  process.stdout.write(`  ${dim('Stack')}        ${report.projectType}\n`);
   process.stdout.write(`  ${dim('Directory')}    ${report.directory}\n`);
   process.stdout.write('\n');
 
-  // Security posture
-  process.stdout.write(bold('  Security Posture') + '\n');
-  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
-
-  for (const check of report.hygieneChecks) {
-    const statusDisplay = check.status === 'pass' ? green(check.detail)
-      : check.status === 'fail' ? red(check.detail)
-      : check.status === 'warn' ? yellow(check.detail)
-      : dim(check.detail);
-
-    process.stdout.write(`  ${dim(check.label.padEnd(20))} ${statusDisplay}\n`);
-  }
-
-  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
-
-  // Trust score
-  const scoreColor = report.trustScore >= 80 ? green
-    : report.trustScore >= 60 ? yellow
-    : red;
-
-  process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${report.trustScore} / 100`)}  ${dim('[Grade:')} ${scoreColor(report.grade)}${dim(']')}\n`);
-
-  // Shield posture
-  const postureColor = report.postureScore >= 70 ? green
-    : report.postureScore >= 40 ? yellow
-    : red;
-  const riskColor = report.riskLevel === 'SECURE' || report.riskLevel === 'LOW' ? green
-    : report.riskLevel === 'MEDIUM' ? yellow
-    : red;
-  process.stdout.write(`  ${dim('Shield Posture')}   ${postureColor(`${report.postureScore} / 100`)}  ${dim('[Risk:')} ${riskColor(report.riskLevel)}${dim(']')}\n`);
-  process.stdout.write(`  ${dim('Tools')}            ${report.activeTools} / ${report.totalTools} active\n`);
-  process.stdout.write('\n');
-
-  // Next steps
-  if (report.nextSteps.length > 0) {
-    process.stdout.write(bold('  Next Steps') + '\n');
+  // --- Findings section ---
+  if (report.findings.length > 0) {
+    process.stdout.write(bold('  Findings') + '\n');
     process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
 
-    for (const step of report.nextSteps) {
-      const severityTag = step.severity === 'critical' ? red(`[CRITICAL]`)
-        : step.severity === 'high' ? yellow(`[HIGH]`)
-        : step.severity === 'medium' ? cyan(`[MEDIUM]`)
-        : dim(`[LOW]`);
+    const maxFindings = verbose ? report.findings.length : 5;
+    const displayFindings = report.findings.slice(0, maxFindings);
 
-      process.stdout.write(`  ${severityTag.padEnd(22)} ${step.description}\n`);
-      process.stdout.write(`  ${' '.repeat(12)} ${dim(step.command)}\n\n`);
+    for (const finding of displayFindings) {
+      const sevTag = finding.severity === 'critical' ? red('CRITICAL')
+        : finding.severity === 'high' ? yellow('HIGH    ')
+        : finding.severity === 'medium' ? cyan('MEDIUM  ')
+        : dim('LOW     ');
+
+      const countPrefix = finding.count > 1 ? `${finding.count} ` : '';
+      process.stdout.write(`  ${sevTag}  ${countPrefix}${bold(finding.title)}\n`);
+
+      if (finding.explanation) {
+        const wrapped = wordWrap(finding.explanation, 70, 12);
+        process.stdout.write(dim(wrapped) + '\n');
+      }
+
+      // Show file locations (max 3 unless verbose)
+      if (finding.locations.length > 0) {
+        const maxLocs = verbose ? finding.locations.length : 3;
+        const locs = finding.locations.slice(0, maxLocs);
+        const locStrings = locs.map(l => {
+          const rel = path.relative(report.directory, l.file);
+          return `${rel}:${l.line}`;
+        });
+        process.stdout.write(dim('            ' + locStrings.join('  ')) + '\n');
+        if (finding.locations.length > maxLocs) {
+          process.stdout.write(dim(`            +${finding.locations.length - maxLocs} more`) + '\n');
+        }
+      }
+      process.stdout.write('\n');
+    }
+
+    if (!verbose && report.findings.length > maxFindings) {
+      const remaining = report.findings.length - maxFindings;
+      process.stdout.write(dim(`  [+${remaining} more finding${remaining === 1 ? '' : 's'} -- run with --verbose to see all]`) + '\n');
+      process.stdout.write('\n');
+    }
+  } else {
+    process.stdout.write(green('  No security findings detected.') + '\n\n');
+  }
+
+  // --- Security Score ---
+  const scoreColor = report.securityScore >= 80 ? green
+    : report.securityScore >= 60 ? yellow
+    : red;
+
+  process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore} / 100`)}  ${dim('[')}${scoreColor(report.securityGrade)}${dim(']')}\n`);
+  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+
+  // Breakdown
+  const breakdown = report.scoreBreakdown;
+  if (breakdown.credentials.deduction > 0) {
+    process.stdout.write(`  ${dim('Credentials')}   ${red(`-${breakdown.credentials.deduction}`)}  ${dim(`(${breakdown.credentials.detail})`)}\n`);
+  }
+  if (breakdown.environment.deduction > 0) {
+    process.stdout.write(`  ${dim('Environment')}   ${yellow(`-${breakdown.environment.deduction}`)}  ${dim(`(${breakdown.environment.detail})`)}\n`);
+  }
+  if (breakdown.configuration.deduction > 0) {
+    process.stdout.write(`  ${dim('Configuration')} ${cyan(`-${breakdown.configuration.deduction}`)}  ${dim(`(${breakdown.configuration.detail})`)}\n`);
+  } else if (breakdown.configuration.deduction < 0) {
+    process.stdout.write(`  ${dim('Configuration')} ${green(`+${Math.abs(breakdown.configuration.deduction)}`)}  ${dim(`(${breakdown.configuration.detail})`)}\n`);
+  }
+  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+  process.stdout.write('\n');
+
+  // --- Actions section ---
+  if (report.actions.length > 0) {
+    process.stdout.write(bold('  Actions (by impact)') + '\n');
+    process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+
+    for (let i = 0; i < report.actions.length; i++) {
+      const action = report.actions[i];
+      process.stdout.write(`  ${bold(`${i + 1}.`)} ${action.description}\n`);
+      process.stdout.write(dim(`     ${action.command}`) + '\n');
+      process.stdout.write(dim(`     WHY: ${action.why}`) + '\n');
+      if (action.detail) {
+        process.stdout.write(dim(`     ${action.detail}`) + '\n');
+      }
+      process.stdout.write('\n');
     }
 
     process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
@@ -523,11 +848,7 @@ function printReport(report: InitReport, _verbose?: boolean): void {
 
   process.stdout.write('\n');
 
-  // Quick start hints for new users
-  process.stdout.write(dim('  Tip: Try these commands to explore further:') + '\n');
-  process.stdout.write(dim('    opena2a shield status   View Shield tool status') + '\n');
-  process.stdout.write(dim('    opena2a shield report   Generate security posture report') + '\n');
-  process.stdout.write(dim('    opena2a shield monitor  Start ARP runtime monitoring') + '\n');
-  process.stdout.write(dim('    opena2a ~<query>        Search commands (e.g. opena2a ~drift)') + '\n');
+  // Tip line
+  process.stdout.write(dim('  Tip: opena2a shield status -- view all security tools') + '\n');
   process.stdout.write('\n');
 }

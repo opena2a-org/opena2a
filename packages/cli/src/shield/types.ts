@@ -3,7 +3,7 @@
 
 // --- Environment Detection ---
 
-export type ProjectType = 'node' | 'go' | 'python' | 'unknown';
+export type ProjectType = 'node' | 'go' | 'python' | 'rust' | 'java' | 'ruby' | 'docker' | 'generic';
 
 export interface DetectedCli {
   name: string;
