@@ -272,4 +272,159 @@ describe('init', () => {
     // Missing .gitignore should cause configuration deduction
     expect(report.scoreBreakdown.configuration.deduction).toBeGreaterThan(0);
   });
+
+  // --- AI-specific scan integration tests ---
+
+  it('detects MCP high-risk tools in hygiene checks', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs-server': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'] },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const mcpCheck = report.hygieneChecks.find((c: any) => c.label === 'MCP high-risk tools');
+    expect(mcpCheck).toBeDefined();
+    expect(mcpCheck.status).toBe('warn');
+    // Should also appear as a grouped finding
+    const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
+    expect(mcpFinding).toBeDefined();
+    expect(mcpFinding.severity).toBe('high');
+  });
+
+  it('detects MCP hardcoded credentials', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'api': { command: 'node', args: ['server.js'], env: { KEY: 'sk-ant-abc123def' } },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const mcpCred = report.findings.find((f: any) => f.findingId === 'MCP-CRED');
+    expect(mcpCred).toBeDefined();
+    expect(mcpCred.severity).toBe('high');
+  });
+
+  it('detects AI config files not excluded from git', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.mkdirSync(path.join(tempDir, '.git'));
+    fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), '# AI instructions');
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const aiConfig = report.hygieneChecks.find((c: any) => c.label === 'AI config exposure');
+    expect(aiConfig).toBeDefined();
+    expect(aiConfig.status).toBe('warn');
+    const aiFinding = report.findings.find((f: any) => f.findingId === 'AI-CONFIG');
+    expect(aiFinding).toBeDefined();
+    expect(aiFinding.severity).toBe('medium');
+  });
+
+  it('does not flag AI config files when properly excluded', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nCLAUDE.md\n');
+    fs.mkdirSync(path.join(tempDir, '.git'));
+    fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), '# AI instructions');
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const aiConfig = report.hygieneChecks.find((c: any) => c.label === 'AI config exposure');
+    expect(aiConfig).toBeUndefined();
+  });
+
+  it('includes MCP findings in environment score deduction', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '{}');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs': { command: 'filesystem-server', args: [] },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    // MCP-TOOLS adds 5 to environment deduction
+    expect(report.scoreBreakdown.environment.deduction).toBeGreaterThanOrEqual(5);
+    expect(report.scoreBreakdown.environment.detail).toContain('MCP');
+  });
+
+  it('uses consulting-style prose in actions (no "recover N points")', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    const fakeKey = 'sk-ant-api03-' + 'Z'.repeat(85);
+    fs.writeFileSync(path.join(tempDir, 'config.ts'), `const k = "${fakeKey}";`);
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    for (const action of report.actions) {
+      expect(action.why).not.toContain('Recover');
+      expect(action.why).not.toContain('recover');
+      expect(action.why).not.toContain('points');
+    }
+  });
+
+  it('generates MCP-related actions when MCP findings exist', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs': { command: 'filesystem-server', args: [], env: { KEY: 'sk-test123' } },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const mcpToolAction = report.actions.find((a: any) => a.description.includes('MCP server permissions'));
+    const mcpCredAction = report.actions.find((a: any) => a.description.includes('MCP config credentials'));
+    expect(mcpToolAction).toBeDefined();
+    expect(mcpCredAction).toBeDefined();
+  });
+
+  it('text output uses -N deduction format (not +N recoverable)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    // No .gitignore -- triggers configuration deduction
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+    }));
+
+    expect(output).not.toContain('recoverable');
+    // Should contain deduction indicators
+    expect(output).toContain('Recommendations');
+  });
 });

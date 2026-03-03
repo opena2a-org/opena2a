@@ -17,6 +17,7 @@ import { Spinner } from '../util/spinner.js';
 import { writeEvent, getShieldDir } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
+import { scanMcpConfig, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
 
 // --- Types ---
 
@@ -349,6 +350,17 @@ async function runHygieneChecks(
     checks.push(llmCheck);
   }
 
+  // AI-specific configuration scans
+  for (const f of scanMcpConfig(dir)) {
+    checks.push({ label: f.label, status: f.status, detail: f.detail });
+  }
+  const aiCfg = scanAiConfigFiles(dir);
+  if (aiCfg) checks.push({ label: aiCfg.label, status: aiCfg.status, detail: aiCfg.detail });
+  const skills = scanSkillFiles(dir);
+  if (skills) checks.push({ label: skills.label, status: skills.status, detail: skills.detail });
+  const soul = scanSoulFile(dir);
+  if (soul) checks.push({ label: soul.label, status: soul.status, detail: soul.detail });
+
   return checks;
 }
 
@@ -450,6 +462,46 @@ function groupFindings(
     });
   }
 
+  // Add AI config findings
+  const mcpToolsCheck = checks.find(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
+  if (mcpToolsCheck) {
+    groups.set('MCP-TOOLS', {
+      findingId: 'MCP-TOOLS',
+      title: mcpToolsCheck.detail,
+      severity: 'high',
+      count: 1,
+      explanation: 'MCP servers with filesystem or shell access can read, modify, or delete files on your system when invoked by an AI assistant.',
+      businessImpact: 'Review server permissions to ensure each server has only the access it needs.',
+      locations: [],
+    });
+  }
+
+  const mcpCredCheck = checks.find(c => c.label === 'MCP credentials' && c.status === 'warn');
+  if (mcpCredCheck) {
+    groups.set('MCP-CRED', {
+      findingId: 'MCP-CRED',
+      title: mcpCredCheck.detail,
+      severity: 'high',
+      count: 1,
+      explanation: 'API keys hardcoded in MCP config files are readable by anyone with access to the project directory.',
+      businessImpact: 'Move credentials to environment variables so they are not stored in plaintext.',
+      locations: [],
+    });
+  }
+
+  const aiConfigCheck = checks.find(c => c.label === 'AI config exposure' && c.status === 'warn');
+  if (aiConfigCheck) {
+    groups.set('AI-CONFIG', {
+      findingId: 'AI-CONFIG',
+      title: aiConfigCheck.detail,
+      severity: 'medium',
+      count: 1,
+      explanation: 'AI instruction files (CLAUDE.md, .cursorrules, etc.) reveal tooling choices and system prompts when committed to a public repository.',
+      businessImpact: 'Add these files to .git/info/exclude to keep them local without modifying .gitignore.',
+      locations: [],
+    });
+  }
+
   // Add HMA findings
   for (const f of hmaFindings) {
     const key = `HMA-${f.checkId}`;
@@ -517,6 +569,17 @@ export function calculateSecurityScore(
   const envProtection = checks.find(c => c.label === '.env protection');
   if (envProtection?.status === 'warn') envDeduction += 8;
 
+  // MCP config findings
+  const mcpToolsCheck = checks.find(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
+  if (mcpToolsCheck) envDeduction += 5;
+
+  const mcpCredCheck = checks.find(c => c.label === 'MCP credentials' && c.status === 'warn');
+  if (mcpCredCheck) envDeduction += 5;
+
+  // AI config exposure
+  const aiConfigCheck = checks.find(c => c.label === 'AI config exposure' && c.status === 'warn');
+  if (aiConfigCheck) envDeduction += 3;
+
   // HMA shell findings
   if (hmaBySeverity) {
     envDeduction += Math.min((hmaBySeverity['critical'] || 0) * 10, 10);
@@ -529,6 +592,9 @@ export function calculateSecurityScore(
   const envDetails: string[] = [];
   if (llmCheck?.status === 'warn') envDetails.push('LLM server exposed');
   if (envProtection?.status === 'warn') envDetails.push('.env unprotected');
+  if (mcpToolsCheck) envDetails.push('MCP high-risk tools');
+  if (mcpCredCheck) envDetails.push('MCP credentials');
+  if (aiConfigCheck) envDetails.push('AI config exposed');
   if (hmaBySeverity && Object.keys(hmaBySeverity).length > 0) envDetails.push('shell findings');
   const envDetail = envDetails.length > 0 ? envDetails.join(', ') : 'clean';
 
@@ -614,19 +680,10 @@ function generateActions(
       .map(([title, count]) => `${count} ${title.replace(/ \(.*\)/, '')}`)
       .join(', ');
 
-    // Recovery framing: show how many points this action recovers
-    const credRecovery = Math.min(
-      (credsBySeverity['critical'] || 0) * 20 + (credsBySeverity['high'] || 0) * 12 + (credsBySeverity['medium'] || 0) * 4 + (credsBySeverity['low'] || 0) * 2,
-      60,
-    );
-    const why = credRecovery > 0
-      ? `Recover up to ${credRecovery} points. Credentials move to environment variables where they are not committed to source.`
-      : 'Moves credentials out of source files into environment variables.';
-
     actions.push({
-      description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'}`,
+      description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'} to a vault`,
       command: 'opena2a protect',
-      why,
+      why: 'Credentials in source files are readable by anyone with repo access. A vault stores them encrypted, rotates them automatically, and provides an audit trail.',
       approach: 'Moves keys to environment variables backed by an encrypted vault. Keys rotate without code changes, and access is auditable.',
       detail: `Keys found: ${breakdownParts}`,
     });
@@ -638,8 +695,7 @@ function generateActions(
     actions.push({
       description: 'Add .env to .gitignore',
       command: "echo '.env' >> .gitignore",
-      why: 'Recover 8 points. Ensures secrets stay local and never enter version control.',
-      approach: 'Adds .env to .gitignore so git never tracks secrets. Existing tracked .env files need git rm --cached .env.',
+      why: 'Adding .env to .gitignore prevents secrets from entering version control. Existing tracked .env files also need `git rm --cached .env`.',
     });
   }
 
@@ -649,8 +705,7 @@ function generateActions(
     actions.push({
       description: 'Create .gitignore',
       command: 'npx gitignore node',
-      why: 'Recover 8 points. Keeps build artifacts and sensitive files out of version control.',
-      approach: 'Generates a language-specific .gitignore that excludes build artifacts, dependencies, and secret files from commits.',
+      why: 'Without a .gitignore, build artifacts and sensitive files can be committed accidentally. A language-specific template covers standard exclusions.',
     });
   }
 
@@ -660,17 +715,45 @@ function generateActions(
     actions.push({
       description: 'Secure LLM server',
       command: 'opena2a shield status',
-      why: 'Recover 10 points. Adds authentication so only authorized users can access your models.',
-      approach: 'Bind LLM servers to localhost only, or add authentication via a reverse proxy before exposing to the network.',
+      why: 'A local LLM server without authentication accepts requests from any process on the network. Binding to localhost or adding auth limits access.',
+    });
+  }
+
+  // MCP high-risk tools
+  const mcpToolsFinding = findings.find(f => f.findingId === 'MCP-TOOLS');
+  if (mcpToolsFinding) {
+    actions.push({
+      description: 'Review MCP server permissions',
+      command: 'opena2a shield status',
+      why: 'MCP servers with filesystem or shell access can read, modify, or delete files when invoked by an AI assistant. Review each server to confirm it has only the access it needs.',
+    });
+  }
+
+  // MCP credentials
+  const mcpCredFinding = findings.find(f => f.findingId === 'MCP-CRED');
+  if (mcpCredFinding) {
+    actions.push({
+      description: 'Move MCP config credentials to environment variables',
+      command: 'opena2a protect',
+      why: 'API keys hardcoded in MCP config files are stored in plaintext. Environment variables keep credentials out of the project directory and version control.',
+    });
+  }
+
+  // AI config exposure
+  const aiConfigFinding = findings.find(f => f.findingId === 'AI-CONFIG');
+  if (aiConfigFinding) {
+    actions.push({
+      description: 'Exclude AI instruction files from git',
+      command: "echo 'CLAUDE.md' >> .git/info/exclude",
+      why: 'AI instruction files reveal tooling choices and system prompts when committed to a public repository. Adding them to .git/info/exclude keeps them local without modifying .gitignore.',
     });
   }
 
   // Config signing
   actions.push({
-    description: 'Sign config files for integrity',
+    description: 'Sign config files for integrity monitoring',
     command: 'opena2a guard sign',
-    why: 'Recover 3 points. Establishes a signed baseline so config changes are always intentional.',
-    approach: 'Creates cryptographic signatures of config files. Any unauthorized change is detected before code runs.',
+    why: 'Signed baselines let you detect unintended config changes before they affect runtime behavior.',
   });
 
   // Cap at 5 actions
@@ -761,6 +844,32 @@ function getVerificationCommand(
   if (finding.findingId === 'ENV-DOTENV') {
     return "cat .gitignore | grep -c '.env'";
   }
+  if (finding.findingId === 'MCP-TOOLS') {
+    // Show the first MCP config file found
+    for (const f of ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json']) {
+      if (fs.existsSync(path.join(reportDir, f))) {
+        return `cat ${f}`;
+      }
+    }
+    return 'cat mcp.json';
+  }
+  if (finding.findingId === 'MCP-CRED') {
+    for (const f of ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json']) {
+      if (fs.existsSync(path.join(reportDir, f))) {
+        return `cat ${f}`;
+      }
+    }
+    return 'cat mcp.json';
+  }
+  if (finding.findingId === 'AI-CONFIG') {
+    return 'cat .gitignore';
+  }
+  if (finding.findingId === 'AI-SKILLS') {
+    return 'ls *.skill.md SKILL.md 2>/dev/null';
+  }
+  if (finding.findingId === 'AI-SOUL') {
+    return 'head -20 soul.md';
+  }
   return null;
 }
 
@@ -779,6 +888,21 @@ function getToolRecommendation(
   if (findingId.startsWith('HMA-')) {
     return { command: 'opena2a scan secure', label: 'opena2a scan secure' };
   }
+  if (findingId === 'MCP-TOOLS') {
+    return { command: 'opena2a shield status', label: 'opena2a shield status' };
+  }
+  if (findingId === 'MCP-CRED') {
+    return { command: 'opena2a protect', label: 'opena2a protect' };
+  }
+  if (findingId === 'AI-CONFIG') {
+    return { command: "echo 'CLAUDE.md' >> .git/info/exclude", label: "echo 'CLAUDE.md' >> .git/info/exclude" };
+  }
+  if (findingId === 'AI-SKILLS') {
+    return { command: 'opena2a guard sign --skills', label: 'opena2a guard sign --skills' };
+  }
+  if (findingId === 'AI-SOUL') {
+    return { command: 'opena2a guard sign', label: 'opena2a guard sign' };
+  }
   return null;
 }
 
@@ -789,17 +913,32 @@ function getContextualTip(
     f => f.findingId.startsWith('CRED-') || f.findingId.startsWith('DRIFT-'),
   );
   if (hasAnyCreds) {
-    const credRecovery = report.scoreBreakdown.credentials.deduction;
     return {
-      text: `Migrate credentials to recover ${credRecovery} points`,
+      text: 'Migrate credentials out of source files',
       command: 'opena2a protect',
+    };
+  }
+
+  const hasMcpCred = report.findings.some(f => f.findingId === 'MCP-CRED');
+  if (hasMcpCred) {
+    return {
+      text: 'Move credentials out of MCP config files',
+      command: 'opena2a protect',
+    };
+  }
+
+  const hasAiConfig = report.findings.some(f => f.findingId === 'AI-CONFIG');
+  if (hasAiConfig) {
+    return {
+      text: 'Add AI instruction files to .git/info/exclude',
+      command: "echo 'CLAUDE.md' >> .git/info/exclude",
     };
   }
 
   const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
   if (hasLLM) {
     return {
-      text: 'Add authentication to your LLM server to recover 10 points',
+      text: 'Add authentication to your LLM server',
       command: 'opena2a shield status',
     };
   }
@@ -807,14 +946,14 @@ function getContextualTip(
   const hasEnv = report.findings.some(f => f.findingId === 'ENV-DOTENV');
   if (hasEnv) {
     return {
-      text: 'Add .env to .gitignore to recover 8 points',
+      text: 'Add .env to .gitignore',
       command: "echo '.env' >> .gitignore",
     };
   }
 
   if (report.securityScore >= 90) {
     return {
-      text: 'Strong baseline. Run a full 150+ check scan for deeper coverage',
+      text: 'Strong baseline. Run a full scan for deeper coverage',
       command: 'opena2a scan secure',
     };
   }
@@ -932,53 +1071,49 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
     : report.securityScore >= 60 ? yellow
     : red;
 
-  // Calculate potential score after fixes
   const breakdown = report.scoreBreakdown;
+
+  process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore}`)} ${dim('/ 100')}\n`);
+  process.stdout.write('\n');
+
+  // Breakdown as factual deductions
+  if (breakdown.credentials.deduction > 0) {
+    process.stdout.write(`  ${dim('Credentials')}    ${red(`-${breakdown.credentials.deduction}`)}  ${dim(breakdown.credentials.detail)}\n`);
+  }
+  if (breakdown.environment.deduction > 0) {
+    process.stdout.write(`  ${dim('Environment')}    ${red(`-${breakdown.environment.deduction}`)}  ${dim(breakdown.environment.detail)}\n`);
+  }
+  if (breakdown.configuration.deduction > 0) {
+    process.stdout.write(`  ${dim('Configuration')}  ${red(`-${breakdown.configuration.deduction}`)}  ${dim(breakdown.configuration.detail)}\n`);
+  } else if (breakdown.configuration.deduction < 0) {
+    process.stdout.write(`  ${dim('Configuration')}  ${green(`+${Math.abs(breakdown.configuration.deduction)}`)}  ${dim(breakdown.configuration.detail)}\n`);
+  }
+
+  // "After fixes" line when improvements are possible
   const totalRecoverable = breakdown.credentials.deduction
     + breakdown.environment.deduction
     + Math.max(0, breakdown.configuration.deduction);
   const potentialScore = Math.min(100, report.securityScore + totalRecoverable);
 
-  // Show current score with path forward
   if (totalRecoverable > 0 && potentialScore > report.securityScore) {
-    process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore}`)} ${dim('->')} ${green(`${potentialScore}`)} ${dim('/ 100  (after fixes)')}\n`);
-  } else {
-    process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore} / 100`)}\n`);
+    process.stdout.write('\n');
+    process.stdout.write(`  ${dim('After fixes:')}   ${report.securityScore} ${dim('->')} ${green(String(potentialScore))}\n`);
   }
-  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
-
-  // Breakdown framed as recovery opportunities
-  if (breakdown.credentials.deduction > 0) {
-    process.stdout.write(`  ${dim('Credentials')}   ${green(`+${breakdown.credentials.deduction}`)} recoverable  ${dim(`(${breakdown.credentials.detail})`)}\n`);
-  }
-  if (breakdown.environment.deduction > 0) {
-    process.stdout.write(`  ${dim('Environment')}   ${green(`+${breakdown.environment.deduction}`)} recoverable  ${dim(`(${breakdown.environment.detail})`)}\n`);
-  }
-  if (breakdown.configuration.deduction > 0) {
-    process.stdout.write(`  ${dim('Configuration')} ${green(`+${breakdown.configuration.deduction}`)} recoverable  ${dim(`(${breakdown.configuration.detail})`)}\n`);
-  } else if (breakdown.configuration.deduction < 0) {
-    process.stdout.write(`  ${dim('Configuration')} ${green(`+${Math.abs(breakdown.configuration.deduction)}`)} bonus         ${dim(`(${breakdown.configuration.detail})`)}\n`);
-  }
-  process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
   process.stdout.write('\n');
 
-  // --- Actions section ---
+  // --- Recommendations section ---
   if (report.actions.length > 0) {
-    process.stdout.write(bold('  Actions (by impact)') + '\n');
+    process.stdout.write(bold('  Recommendations') + '\n');
     process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
 
     for (let i = 0; i < report.actions.length; i++) {
       const action = report.actions[i];
       process.stdout.write(`  ${bold(`${i + 1}.`)} ${action.description}\n`);
-      process.stdout.write(dim(`     ${action.command}`) + '\n');
-      process.stdout.write(dim(`     WHY: ${action.why}`) + '\n');
-      if (action.approach && i < 2) {
-        const wrapped = wordWrap(action.approach, 70, 10);
-        process.stdout.write(dim(`     HOW: ${wrapped.trimStart()}`) + '\n');
-      }
-      if (action.detail) {
-        process.stdout.write(dim(`     ${action.detail}`) + '\n');
-      }
+      // Prose explanation as a paragraph (word-wrapped)
+      const wrapped = wordWrap(action.why, 70, 5);
+      process.stdout.write(dim(wrapped) + '\n');
+      // Command at bottom with $ prefix
+      process.stdout.write(`     ${cyan('$ ' + action.command)}\n`);
       process.stdout.write('\n');
     }
 

@@ -104,4 +104,50 @@ describe('calculateSecurityScore', () => {
     expect(breakdown.environment.detail).toContain('.env unprotected');
     expect(breakdown.configuration.detail).toContain('no .gitignore');
   });
+
+  it('includes MCP high-risk tools in environment deduction (+5)', () => {
+    const checksWithMcp = [
+      ...cleanChecks,
+      { label: 'MCP high-risk tools', status: 'warn' as const, detail: '1 server with filesystem access' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checksWithMcp);
+    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(5);
+    expect(breakdown.environment.detail).toContain('MCP high-risk tools');
+  });
+
+  it('includes MCP credentials in environment deduction (+5)', () => {
+    const checksWithMcpCred = [
+      ...cleanChecks,
+      { label: 'MCP credentials', status: 'warn' as const, detail: 'hardcoded credentials in mcp.json' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checksWithMcpCred);
+    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(5);
+    expect(breakdown.environment.detail).toContain('MCP credentials');
+  });
+
+  it('includes AI config exposure in environment deduction (+3)', () => {
+    const checksWithAiConfig = [
+      ...cleanChecks,
+      { label: 'AI config exposure', status: 'warn' as const, detail: '2 AI config files not excluded' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checksWithAiConfig);
+    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(3);
+    expect(breakdown.environment.detail).toContain('AI config exposed');
+  });
+
+  it('caps environment at 25 even with MCP + AI + LLM + env issues', () => {
+    const heavyChecks = [
+      { label: 'Credential scan', status: 'pass' as const, detail: 'no findings' },
+      { label: '.gitignore', status: 'pass' as const, detail: 'present' },
+      { label: '.env protection', status: 'warn' as const, detail: 'NOT in .gitignore' },
+      { label: 'Lock file', status: 'pass' as const, detail: 'package-lock.json' },
+      { label: 'Security config', status: 'pass' as const, detail: '.opena2a.yaml' },
+      { label: 'LLM server exposure', status: 'warn' as const, detail: 'Ollama on :11434' },
+      { label: 'MCP high-risk tools', status: 'warn' as const, detail: '1 server' },
+      { label: 'MCP credentials', status: 'warn' as const, detail: 'hardcoded' },
+      { label: 'AI config exposure', status: 'warn' as const, detail: '3 files' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, heavyChecks);
+    expect(breakdown.environment.deduction).toBeLessThanOrEqual(25);
+  });
 });
