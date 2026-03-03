@@ -53,6 +53,7 @@ interface ActionItem {
   description: string;
   command: string;
   why: string;
+  approach?: string;
   detail?: string;
 }
 
@@ -621,6 +622,7 @@ function generateActions(
       description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'}`,
       command: 'opena2a protect',
       why,
+      approach: 'Moves keys to environment variables backed by an encrypted vault. Keys rotate without code changes, and access is auditable.',
       detail: `Keys found: ${breakdownParts}`,
     });
   }
@@ -632,6 +634,7 @@ function generateActions(
       description: 'Add .env to .gitignore',
       command: "echo '.env' >> .gitignore",
       why: 'Prevents accidentally committing secrets to version control.',
+      approach: 'Adds .env to .gitignore so git never tracks secrets. Existing tracked .env files need git rm --cached .env.',
     });
   }
 
@@ -642,6 +645,7 @@ function generateActions(
       description: 'Create .gitignore',
       command: 'npx gitignore node',
       why: 'Keeps build artifacts and sensitive files out of version control.',
+      approach: 'Generates a language-specific .gitignore that excludes build artifacts, dependencies, and secret files from commits.',
     });
   }
 
@@ -652,6 +656,7 @@ function generateActions(
       description: 'Secure LLM server',
       command: 'opena2a shield status',
       why: 'Unauthenticated LLM servers can be exploited by anyone on your network.',
+      approach: 'Bind LLM servers to localhost only, or add authentication via a reverse proxy before exposing to the network.',
     });
   }
 
@@ -660,6 +665,7 @@ function generateActions(
     description: 'Sign config files for integrity',
     command: 'opena2a guard sign',
     why: 'Detects unauthorized changes to configuration files.',
+    approach: 'Creates cryptographic signatures of config files. Any unauthorized change is detected before code runs.',
   });
 
   // Cap at 5 actions
@@ -718,6 +724,105 @@ function generateNextSteps(
   });
 
   return steps;
+}
+
+// --- Verification & Recommendation helpers ---
+
+function getVerificationCommand(
+  finding: GroupedFinding,
+  reportDir: string,
+): string | null {
+  if (
+    (finding.findingId.startsWith('CRED-') || finding.findingId.startsWith('DRIFT-')) &&
+    finding.locations.length > 0
+  ) {
+    const loc = finding.locations[0];
+    const rel = path.relative(reportDir, loc.file);
+    return `sed -n '${loc.line}p' ${rel}`;
+  }
+  if (finding.findingId === 'ENV-LLM') {
+    return 'curl -s http://127.0.0.1:11434/api/tags | head -c 200';
+  }
+  if (finding.findingId === 'ENV-DOTENV') {
+    return "cat .gitignore | grep -c '.env'";
+  }
+  return null;
+}
+
+function getToolRecommendation(
+  findingId: string,
+): { command: string; label: string } | null {
+  if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
+    return { command: 'opena2a protect', label: 'opena2a protect' };
+  }
+  if (findingId === 'ENV-LLM') {
+    return { command: 'opena2a shield status', label: 'opena2a shield status' };
+  }
+  if (findingId === 'ENV-DOTENV') {
+    return { command: "echo '.env' >> .gitignore", label: "echo '.env' >> .gitignore" };
+  }
+  if (findingId.startsWith('HMA-')) {
+    return { command: 'opena2a scan secure', label: 'opena2a scan secure' };
+  }
+  return null;
+}
+
+function getContextualTip(
+  report: InitReport,
+): { text: string; command: string } {
+  const hasCritCreds = report.findings.some(
+    f => f.severity === 'critical' && (f.findingId.startsWith('CRED-') || f.findingId.startsWith('DRIFT-')),
+  );
+  if (hasCritCreds) {
+    return {
+      text: 'Critical credentials detected. Fix them now before they reach a public repo',
+      command: 'opena2a protect',
+    };
+  }
+
+  const hasAnyCreds = report.findings.some(
+    f => f.findingId.startsWith('CRED-') || f.findingId.startsWith('DRIFT-'),
+  );
+  if (hasAnyCreds) {
+    return {
+      text: 'Hardcoded credentials found. Migrate to environment variables',
+      command: 'opena2a protect',
+    };
+  }
+
+  const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
+  if (hasLLM) {
+    return {
+      text: 'LLM server is accepting unauthenticated requests on your network',
+      command: 'opena2a shield status',
+    };
+  }
+
+  const hasEnv = report.findings.some(f => f.findingId === 'ENV-DOTENV');
+  if (hasEnv) {
+    return {
+      text: 'Your .env file is not gitignored. Add it before your next commit',
+      command: "echo '.env' >> .gitignore",
+    };
+  }
+
+  if (report.securityScore >= 90) {
+    return {
+      text: 'Clean baseline. Run a full 150+ check scan to verify in depth',
+      command: 'opena2a scan secure',
+    };
+  }
+  if (report.securityScore >= 70) {
+    return {
+      text: 'Good posture. Lock it in with config file integrity signing',
+      command: 'opena2a guard sign',
+    };
+  }
+
+  return {
+    text: 'View all available security tools',
+    command: 'opena2a shield status',
+  };
 }
 
 // --- Output ---
@@ -791,6 +896,19 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
           process.stdout.write(dim(`            +${finding.locations.length - maxLocs} more`) + '\n');
         }
       }
+
+      // Verification command
+      const verifyCmd = getVerificationCommand(finding, report.directory);
+      if (verifyCmd) {
+        process.stdout.write(dim(`            Verify: ${verifyCmd}`) + '\n');
+      }
+
+      // Tool recommendation
+      const toolRec = getToolRecommendation(finding.findingId);
+      if (toolRec) {
+        process.stdout.write(dim('            Fix: ') + cyan(toolRec.command) + '\n');
+      }
+
       process.stdout.write('\n');
     }
 
@@ -837,6 +955,10 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
       process.stdout.write(`  ${bold(`${i + 1}.`)} ${action.description}\n`);
       process.stdout.write(dim(`     ${action.command}`) + '\n');
       process.stdout.write(dim(`     WHY: ${action.why}`) + '\n');
+      if (action.approach && i < 2) {
+        const wrapped = wordWrap(action.approach, 70, 10);
+        process.stdout.write(dim(`     HOW: ${wrapped.trimStart()}`) + '\n');
+      }
       if (action.detail) {
         process.stdout.write(dim(`     ${action.detail}`) + '\n');
       }
@@ -848,7 +970,8 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
 
   process.stdout.write('\n');
 
-  // Tip line
-  process.stdout.write(dim('  Tip: opena2a shield status -- view all security tools') + '\n');
+  // Contextual tip
+  const tip = getContextualTip(report);
+  process.stdout.write(dim(`  Tip: ${tip.command} -- ${tip.text}`) + '\n');
   process.stdout.write('\n');
 }
