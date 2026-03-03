@@ -51,8 +51,8 @@ interface InitReport {
   advisories: { count: number; matchedPackages: string[] };
   postureScore: number;
   riskLevel: RiskLevel;
-  activeProducts: number;
-  totalProducts: number;
+  activeTools: number;
+  totalTools: number;
 }
 
 // --- Core ---
@@ -92,12 +92,12 @@ export async function init(options: InitOptions): Promise<number> {
   // 6. Generate next steps
   const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks, project.type);
 
-  // 6.5. Compute posture score from Shield product detection
+  // 6.5. Compute posture score from Shield tool detection
   const shieldStatus = getShieldStatus(targetDir);
-  const activeProducts = shieldStatus.products.filter(p => p.active).length;
-  const totalProducts = shieldStatus.products.length;
+  const activeTools = shieldStatus.tools.filter(p => p.active).length;
+  const totalTools = shieldStatus.tools.length;
   let postureScore = 0;
-  postureScore += Math.min(activeProducts * 10, 60);
+  postureScore += Math.min(activeTools * 10, 60);
   if (shieldStatus.policyLoaded) postureScore += 10;
   if (shieldStatus.shellIntegration) postureScore += 5;
   if (credentialMatches.length === 0) postureScore += 15;
@@ -124,7 +124,7 @@ export async function init(options: InitOptions): Promise<number> {
       action: 'posture-assessment',
       target: targetDir,
       outcome: 'monitored',
-      detail: { score: postureScore, riskLevel, activeProducts, totalProducts, trustScore: score, grade },
+      detail: { score: postureScore, riskLevel, activeTools, totalTools, trustScore: score, grade },
       orgId: null,
       managed: false,
       agentId: null,
@@ -167,8 +167,8 @@ export async function init(options: InitOptions): Promise<number> {
     },
     postureScore,
     riskLevel,
-    activeProducts,
-    totalProducts,
+    activeTools,
+    totalTools,
   };
 
   // 8. Output
@@ -500,7 +500,7 @@ function printReport(report: InitReport, _verbose?: boolean): void {
     : report.riskLevel === 'MEDIUM' ? yellow
     : red;
   process.stdout.write(`  ${dim('Shield Posture')}   ${postureColor(`${report.postureScore} / 100`)}  ${dim('[Risk:')} ${riskColor(report.riskLevel)}${dim(']')}\n`);
-  process.stdout.write(`  ${dim('Products')}        ${report.activeProducts} / ${report.totalProducts} active\n`);
+  process.stdout.write(`  ${dim('Tools')}            ${report.activeTools} / ${report.totalTools} active\n`);
   process.stdout.write('\n');
 
   // Next steps
@@ -525,7 +525,7 @@ function printReport(report: InitReport, _verbose?: boolean): void {
 
   // Quick start hints for new users
   process.stdout.write(dim('  Tip: Try these commands to explore further:') + '\n');
-  process.stdout.write(dim('    opena2a shield status   View Shield product status') + '\n');
+  process.stdout.write(dim('    opena2a shield status   View Shield tool status') + '\n');
   process.stdout.write(dim('    opena2a shield report   Generate security posture report') + '\n');
   process.stdout.write(dim('    opena2a shield monitor  Start ARP runtime monitoring') + '\n');
   process.stdout.write(dim('    opena2a ~<query>        Search commands (e.g. opena2a ~drift)') + '\n');

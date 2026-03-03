@@ -93,8 +93,8 @@ export interface InitPhaseData {
   grade: string;
   postureScore: number;
   riskLevel: RiskLevel;
-  activeProducts: number;
-  totalProducts: number;
+  activeTools: number;
+  totalTools: number;
   hygieneChecks: HygieneCheck[];
   advisoryCount: number;
   matchedPackages: string[];
@@ -362,11 +362,11 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   }
 
   const shieldStatus = getShieldStatus(targetDir);
-  const activeProducts = shieldStatus.products.filter(p => p.active).length;
-  const totalProducts = shieldStatus.products.length;
+  const activeTools = shieldStatus.tools.filter(p => p.active).length;
+  const totalTools = shieldStatus.tools.length;
 
   let postureScore = 25;
-  postureScore += Math.min(activeProducts * 10, 50);
+  postureScore += Math.min(activeTools * 10, 50);
   if (shieldStatus.policyLoaded) postureScore += 10;
   if (shieldStatus.shellIntegration) postureScore += 5;
   if (credentialMatches.length === 0) postureScore += 15;
@@ -390,8 +390,8 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
     grade,
     postureScore,
     riskLevel,
-    activeProducts,
-    totalProducts,
+    activeTools,
+    totalTools,
     hygieneChecks: checks,
     advisoryCount: advisoryCheck.advisories.length,
     matchedPackages: advisoryCheck.matchedPackages,
@@ -455,11 +455,11 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
   }
 
   const shieldStatus = getShieldStatus(targetDir);
-  const activeProducts = shieldStatus.products.filter(p => p.active).length;
+  const activeTools = shieldStatus.tools.filter(p => p.active).length;
 
   // Compute shield posture score (baseline 25 for CLI users)
   let postureScore = 25;
-  postureScore += Math.min(activeProducts * 10, 50);
+  postureScore += Math.min(activeTools * 10, 50);
   if (shieldStatus.policyLoaded) postureScore += 10;
   if (shieldStatus.shellIntegration) postureScore += 5;
   // Penalize for findings

@@ -3,7 +3,7 @@
  *
  * Subcommands:
  * - init:      Full environment scan, policy generation, shell hooks
- * - status:    Product availability, policy mode, integrity state
+ * - status:    Tool availability, policy mode, integrity state
  * - log:       Query the tamper-evident event log
  * - selfcheck: Run integrity checks (alias: check)
  * - policy:    Show loaded policy summary
