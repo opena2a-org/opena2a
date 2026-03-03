@@ -52,13 +52,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     subcommand: 'broker',
     description: 'Identity-aware credential broker daemon',
   },
-  dlp: {
-    name: 'dlp',
-    method: 'import',
-    packageName: 'secretless-ai',
-    subcommand: 'dlp',
-    description: 'Data loss prevention for AI tool transcripts',
-  },
+  // dlp is not yet implemented in secretless-ai; removed to avoid confusing errors
 };
 
 export function getAdapter(name: string): AdapterConfig | undefined {

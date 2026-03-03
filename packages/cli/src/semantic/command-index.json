@@ -127,7 +127,7 @@
   },
   {
     "id": "dlp",
-    "path": "opena2a dlp",
+    "path": "opena2a secrets clean",
     "description": "Data loss prevention -- scan and clean AI tool transcripts",
     "tags": ["dlp", "transcript", "clean", "redact", "data-loss"],
     "synonyms": ["clean-transcripts", "redact", "data-protection"],

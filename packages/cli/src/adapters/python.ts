@@ -54,11 +54,15 @@ export class PythonAdapter implements Adapter {
   }
 
   async isAvailable(): Promise<boolean> {
-    const python = await this.findPython();
-    if (python) return true;
+    const module = this.config.pythonModule;
+    if (!module) return false;
 
-    return new Promise((resolve) => {
-      const child = spawn('pipx', ['--version'], { stdio: 'ignore' });
+    // Check if the actual Python module is importable, not just if Python exists
+    const python = await this.findPython();
+    if (!python) return false;
+
+    return new Promise<boolean>((resolve) => {
+      const child = spawn(python, ['-c', `import ${module}`], { stdio: 'ignore' });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
     });

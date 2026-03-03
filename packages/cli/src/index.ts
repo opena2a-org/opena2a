@@ -125,14 +125,19 @@ Learn more: https://opena2a.org/docs`);
 
   // Guard command (ConfigGuard)
   program
-    .command('guard <subcommand> [args...]')
+    .command('guard [subcommand] [args...]')
     .description('Config file integrity signing and verification (sign|verify|status|watch|diff|policy|hook|resign|snapshot)')
     .option('--files <files...>', 'Specific files to guard')
     .option('--dir <path>', 'Target directory')
     .option('--enforce', 'Quarantine on tampering (exit code 3)')
     .option('--skills', 'Include SKILL.md files in signing/verification')
     .option('--heartbeats', 'Include HEARTBEAT.md files in signing/verification')
-    .action(async (subcommand: string, args: string[], opts) => {
+    .action(async (subcommand: string | undefined, args: string[], opts) => {
+      if (!subcommand) {
+        process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot>\n');
+        process.exitCode = 1;
+        return;
+      }
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
       process.exitCode = await guard({
