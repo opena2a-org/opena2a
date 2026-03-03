@@ -431,8 +431,8 @@ function groupFindings(
       title: llmCheck.detail,
       severity: 'high',
       count: 1,
-      explanation: 'Local LLM server accepts unauthenticated requests. Anyone on your network can query your models.',
-      businessImpact: 'Unauthorized model access, potential data exfiltration through prompts.',
+      explanation: 'Local LLM server is responding without authentication. Adding auth limits access to authorized users.',
+      businessImpact: 'Unauthenticated model access. Adding auth ensures only intended users can query.',
       locations: [],
     });
   }
@@ -445,7 +445,7 @@ function groupFindings(
       severity: 'medium',
       count: 1,
       explanation: 'Environment files may be committed to version control.',
-      businessImpact: 'Secrets in .env files could be pushed to a repository and exposed.',
+      businessImpact: 'Adding .env to .gitignore keeps secrets out of version control.',
       locations: [],
     });
   }
@@ -614,9 +614,14 @@ function generateActions(
       .map(([title, count]) => `${count} ${title.replace(/ \(.*\)/, '')}`)
       .join(', ');
 
-    // Get the most impactful businessImpact
-    const topFinding = findings.find(f => f.severity === 'critical') ?? findings[0];
-    const why = topFinding?.businessImpact || 'Exposed keys are exploited within minutes of reaching a public repo.';
+    // Recovery framing: show how many points this action recovers
+    const credRecovery = Math.min(
+      (credsBySeverity['critical'] || 0) * 20 + (credsBySeverity['high'] || 0) * 12 + (credsBySeverity['medium'] || 0) * 4 + (credsBySeverity['low'] || 0) * 2,
+      60,
+    );
+    const why = credRecovery > 0
+      ? `Recover up to ${credRecovery} points. Credentials move to environment variables where they are not committed to source.`
+      : 'Moves credentials out of source files into environment variables.';
 
     actions.push({
       description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'}`,
@@ -633,7 +638,7 @@ function generateActions(
     actions.push({
       description: 'Add .env to .gitignore',
       command: "echo '.env' >> .gitignore",
-      why: 'Prevents accidentally committing secrets to version control.',
+      why: 'Recover 8 points. Ensures secrets stay local and never enter version control.',
       approach: 'Adds .env to .gitignore so git never tracks secrets. Existing tracked .env files need git rm --cached .env.',
     });
   }
@@ -644,7 +649,7 @@ function generateActions(
     actions.push({
       description: 'Create .gitignore',
       command: 'npx gitignore node',
-      why: 'Keeps build artifacts and sensitive files out of version control.',
+      why: 'Recover 8 points. Keeps build artifacts and sensitive files out of version control.',
       approach: 'Generates a language-specific .gitignore that excludes build artifacts, dependencies, and secret files from commits.',
     });
   }
@@ -655,7 +660,7 @@ function generateActions(
     actions.push({
       description: 'Secure LLM server',
       command: 'opena2a shield status',
-      why: 'Unauthenticated LLM servers can be exploited by anyone on your network.',
+      why: 'Recover 10 points. Adds authentication so only authorized users can access your models.',
       approach: 'Bind LLM servers to localhost only, or add authentication via a reverse proxy before exposing to the network.',
     });
   }
@@ -664,7 +669,7 @@ function generateActions(
   actions.push({
     description: 'Sign config files for integrity',
     command: 'opena2a guard sign',
-    why: 'Detects unauthorized changes to configuration files.',
+    why: 'Recover 3 points. Establishes a signed baseline so config changes are always intentional.',
     approach: 'Creates cryptographic signatures of config files. Any unauthorized change is detected before code runs.',
   });
 
@@ -732,6 +737,7 @@ function getVerificationCommand(
   finding: GroupedFinding,
   reportDir: string,
 ): string | null {
+  // Credential/drift findings with file locations
   if (
     (finding.findingId.startsWith('CRED-') || finding.findingId.startsWith('DRIFT-')) &&
     finding.locations.length > 0
@@ -740,6 +746,15 @@ function getVerificationCommand(
     const rel = path.relative(reportDir, loc.file);
     return `sed -n '${loc.line}p' ${rel}`;
   }
+
+  // HMA findings -- title contains "~/.zshrc:132 contains ..." pattern
+  if (finding.findingId.startsWith('HMA-')) {
+    const match = finding.title.match(/^(.+?):(\d+)\s+contains\s+/);
+    if (match) {
+      return `sed -n '${match[2]}p' ${match[1]}`;
+    }
+  }
+
   if (finding.findingId === 'ENV-LLM') {
     return 'curl -s http://127.0.0.1:11434/api/tags | head -c 200';
   }
@@ -770,22 +785,13 @@ function getToolRecommendation(
 function getContextualTip(
   report: InitReport,
 ): { text: string; command: string } {
-  const hasCritCreds = report.findings.some(
-    f => f.severity === 'critical' && (f.findingId.startsWith('CRED-') || f.findingId.startsWith('DRIFT-')),
-  );
-  if (hasCritCreds) {
-    return {
-      text: 'Critical credentials detected. Fix them now before they reach a public repo',
-      command: 'opena2a protect',
-    };
-  }
-
   const hasAnyCreds = report.findings.some(
     f => f.findingId.startsWith('CRED-') || f.findingId.startsWith('DRIFT-'),
   );
   if (hasAnyCreds) {
+    const credRecovery = report.scoreBreakdown.credentials.deduction;
     return {
-      text: 'Hardcoded credentials found. Migrate to environment variables',
+      text: `Migrate credentials to recover ${credRecovery} points`,
       command: 'opena2a protect',
     };
   }
@@ -793,7 +799,7 @@ function getContextualTip(
   const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
   if (hasLLM) {
     return {
-      text: 'LLM server is accepting unauthenticated requests on your network',
+      text: 'Add authentication to your LLM server to recover 10 points',
       command: 'opena2a shield status',
     };
   }
@@ -801,14 +807,14 @@ function getContextualTip(
   const hasEnv = report.findings.some(f => f.findingId === 'ENV-DOTENV');
   if (hasEnv) {
     return {
-      text: 'Your .env file is not gitignored. Add it before your next commit',
+      text: 'Add .env to .gitignore to recover 8 points',
       command: "echo '.env' >> .gitignore",
     };
   }
 
   if (report.securityScore >= 90) {
     return {
-      text: 'Clean baseline. Run a full 150+ check scan to verify in depth',
+      text: 'Strong baseline. Run a full 150+ check scan for deeper coverage',
       command: 'opena2a scan secure',
     };
   }
@@ -820,7 +826,7 @@ function getContextualTip(
   }
 
   return {
-    text: 'View all available security tools',
+    text: 'See all available security tools',
     command: 'opena2a shield status',
   };
 }
@@ -900,13 +906,13 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
       // Verification command
       const verifyCmd = getVerificationCommand(finding, report.directory);
       if (verifyCmd) {
-        process.stdout.write(dim(`            Verify: ${verifyCmd}`) + '\n');
+        process.stdout.write(`            ${dim('Verify:')} ${cyan(verifyCmd)}\n`);
       }
 
       // Tool recommendation
       const toolRec = getToolRecommendation(finding.findingId);
       if (toolRec) {
-        process.stdout.write(dim('            Fix: ') + cyan(toolRec.command) + '\n');
+        process.stdout.write(`            ${dim('Fix:')}    ${cyan(toolRec.command)}\n`);
       }
 
       process.stdout.write('\n');
@@ -926,21 +932,32 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
     : report.securityScore >= 60 ? yellow
     : red;
 
-  process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore} / 100`)}  ${dim('[')}${scoreColor(report.securityGrade)}${dim(']')}\n`);
+  // Calculate potential score after fixes
+  const breakdown = report.scoreBreakdown;
+  const totalRecoverable = breakdown.credentials.deduction
+    + breakdown.environment.deduction
+    + Math.max(0, breakdown.configuration.deduction);
+  const potentialScore = Math.min(100, report.securityScore + totalRecoverable);
+
+  // Show current score with path forward
+  if (totalRecoverable > 0 && potentialScore > report.securityScore) {
+    process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore}`)} ${dim('->')} ${green(`${potentialScore}`)} ${dim('/ 100  (after fixes)')}\n`);
+  } else {
+    process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore} / 100`)}\n`);
+  }
   process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
 
-  // Breakdown
-  const breakdown = report.scoreBreakdown;
+  // Breakdown framed as recovery opportunities
   if (breakdown.credentials.deduction > 0) {
-    process.stdout.write(`  ${dim('Credentials')}   ${red(`-${breakdown.credentials.deduction}`)}  ${dim(`(${breakdown.credentials.detail})`)}\n`);
+    process.stdout.write(`  ${dim('Credentials')}   ${green(`+${breakdown.credentials.deduction}`)} recoverable  ${dim(`(${breakdown.credentials.detail})`)}\n`);
   }
   if (breakdown.environment.deduction > 0) {
-    process.stdout.write(`  ${dim('Environment')}   ${yellow(`-${breakdown.environment.deduction}`)}  ${dim(`(${breakdown.environment.detail})`)}\n`);
+    process.stdout.write(`  ${dim('Environment')}   ${green(`+${breakdown.environment.deduction}`)} recoverable  ${dim(`(${breakdown.environment.detail})`)}\n`);
   }
   if (breakdown.configuration.deduction > 0) {
-    process.stdout.write(`  ${dim('Configuration')} ${cyan(`-${breakdown.configuration.deduction}`)}  ${dim(`(${breakdown.configuration.detail})`)}\n`);
+    process.stdout.write(`  ${dim('Configuration')} ${green(`+${breakdown.configuration.deduction}`)} recoverable  ${dim(`(${breakdown.configuration.detail})`)}\n`);
   } else if (breakdown.configuration.deduction < 0) {
-    process.stdout.write(`  ${dim('Configuration')} ${green(`+${Math.abs(breakdown.configuration.deduction)}`)}  ${dim(`(${breakdown.configuration.detail})`)}\n`);
+    process.stdout.write(`  ${dim('Configuration')} ${green(`+${Math.abs(breakdown.configuration.deduction)}`)} bonus         ${dim(`(${breakdown.configuration.detail})`)}\n`);
   }
   process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
   process.stdout.write('\n');
