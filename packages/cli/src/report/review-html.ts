@@ -49,77 +49,92 @@ export function generateReviewHtml(report: ReviewReport): string {
   --font: 'JetBrains Mono','Fira Code','SF Mono',Menlo,Consolas,monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.6;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6;}
 .container{max-width:1200px;margin:0 auto;padding:16px 20px;}
 .header{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--card-border);margin-bottom:16px;}
-.header-title{font-size:16px;font-weight:700;color:var(--primary);}
-.header-meta{font-size:11px;color:var(--dim);}
+.header-title{font-size:20px;font-weight:700;color:var(--primary);}
+.header-meta{font-size:12px;color:var(--dim);}
 .nav{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--card-border);padding-bottom:0;}
-.nav-tab{background:none;border:none;color:var(--dim);font-family:var(--font);font-size:12px;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;}
+.nav-tab{background:none;border:none;color:var(--dim);font-family:var(--font);font-size:13px;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;}
 .nav-tab:hover{color:var(--text);}
 .nav-tab.active{color:var(--primary);border-bottom-color:var(--primary);}
 .page{display:none;}
 .page.active{display:block;}
 .card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:16px;margin-bottom:12px;}
-.card-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;}
+.card-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px;}
 .stat-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;text-align:center;}
-.stat-value{font-size:22px;font-weight:700;}
-.stat-label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
+.stat-value{font-size:24px;font-weight:700;}
+.stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
 .phase-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:16px;}
 .phase-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;}
-.phase-name{font-size:12px;font-weight:600;margin-bottom:4px;}
-.phase-detail{font-size:11px;color:var(--muted);}
-.phase-time{font-size:10px;color:var(--dim);margin-top:4px;}
-.status-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.3px;}
+.phase-name{font-size:13px;font-weight:600;margin-bottom:4px;}
+.phase-detail{font-size:12px;color:var(--muted);}
+.phase-time{font-size:11px;color:var(--dim);margin-top:4px;}
+.status-badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.3px;}
 .status-pass{background:rgba(34,197,94,0.15);color:var(--green);}
 .status-warn{background:rgba(234,179,8,0.15);color:var(--medium);}
 .status-fail{background:rgba(239,68,68,0.15);color:var(--red);}
 .status-skip{background:rgba(107,114,128,0.15);color:var(--info);}
-.sev-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;}
+.sev-badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;}
 .sev-critical{background:rgba(239,68,68,0.15);color:var(--critical);}
 .sev-high{background:rgba(249,115,22,0.15);color:var(--high);}
 .sev-medium{background:rgba(234,179,8,0.15);color:var(--medium);}
 .sev-low{background:rgba(59,130,246,0.15);color:var(--low);}
 .sev-info{background:rgba(107,114,128,0.15);color:var(--info);}
-.data-table{width:100%;border-collapse:collapse;font-size:12px;}
-.data-table th{text-align:left;padding:8px 10px;color:var(--dim);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--card-border);}
+.data-table{width:100%;border-collapse:collapse;font-size:13px;}
+.data-table th{text-align:left;padding:8px 10px;color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--card-border);}
 .data-table td{padding:8px 10px;border-bottom:1px solid rgba(51,65,85,0.4);vertical-align:top;}
 .data-table tr:last-child td{border-bottom:none;}
 .data-table tr:hover td{background:rgba(6,182,212,0.03);}
 .gauge-card{display:flex;flex-direction:column;align-items:center;padding:20px;}
-.section-title{font-size:14px;font-weight:700;color:var(--text);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--card-border);}
-.copy-btn{background:none;border:1px solid var(--dim);color:var(--dim);font-family:var(--font);font-size:10px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:6px;transition:all 0.15s;}
+.section-title{font-size:16px;font-weight:700;color:var(--text);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--card-border);}
+.copy-btn{background:none;border:1px solid var(--dim);color:var(--dim);font-family:var(--font);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:6px;transition:all 0.15s;}
 .copy-btn:hover{border-color:var(--primary);color:var(--primary);}
 .copy-btn.copied{border-color:var(--green);color:var(--green);}
-.cmd-block{display:flex;align-items:center;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:4px;margin:4px 0;font-size:12px;color:var(--primary);}
+.cmd-block{display:flex;align-items:center;background:rgba(0,0,0,0.3);padding:6px 10px;border-radius:4px;margin:4px 0;font-size:13px;color:var(--primary);}
 .cmd-text{flex:1;}
 .action-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(51,65,85,0.3);}
 .action-item:last-child{border-bottom:none;}
 .action-priority{font-size:10px;font-weight:700;color:var(--dim);min-width:20px;}
 .action-content{flex:1;}
-.action-desc{font-size:12px;margin-bottom:4px;}
-.action-link{font-size:11px;color:var(--primary);cursor:pointer;text-decoration:underline;}
-.empty-state{color:var(--dim);font-size:12px;padding:20px;text-align:center;}
+.action-desc{font-size:13px;margin-bottom:4px;}
+.action-link{font-size:12px;color:var(--primary);cursor:pointer;text-decoration:underline;}
+.empty-state{color:var(--dim);font-size:13px;padding:20px;text-align:center;}
 .cta-card{background:var(--card);border:1px dashed var(--primary);border-radius:6px;padding:20px;text-align:center;}
-.cta-title{font-size:14px;font-weight:700;color:var(--primary);margin-bottom:8px;}
-.cta-desc{font-size:12px;color:var(--muted);margin-bottom:12px;}
+.cta-title{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:8px;}
+.cta-desc{font-size:13px;color:var(--muted);margin-bottom:12px;}
 .overview-top{display:grid;grid-template-columns:auto 1fr;gap:12px;margin-bottom:16px;}
 @media(max-width:768px){.overview-top{grid-template-columns:1fr;}.phase-grid{grid-template-columns:1fr;}.stats-grid{grid-template-columns:repeat(2,1fr);}}
-.hygiene-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(51,65,85,0.3);font-size:12px;}
+.hygiene-row{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(51,65,85,0.3);font-size:13px;}
 .hygiene-row:last-child{border-bottom:none;}
 .hygiene-label{color:var(--muted);}
 .arp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:8px;}
 .arp-stat{text-align:center;padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;}
 .arp-stat-value{font-size:18px;font-weight:700;color:var(--primary);}
-.arp-stat-label{font-size:10px;color:var(--dim);text-transform:uppercase;}
+.arp-stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;}
+.header-subtitle{font-size:13px;color:var(--dim);margin-top:4px;}
+.section-intro{font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.5;}
+.score-explainer{background:var(--card);border:1px dashed var(--card-border);border-radius:6px;padding:14px 16px;margin-bottom:12px;font-size:13px;color:var(--muted);line-height:1.6;}
+.score-explainer strong{color:var(--text);}
+.check-desc{font-size:12px;color:var(--dim);margin-top:2px;}
+.phase-desc{font-size:12px;color:var(--dim);margin-top:4px;line-height:1.4;}
+.finding-desc{font-size:12px;color:var(--muted);padding:4px 10px 8px;line-height:1.4;}
+.badge-owasp{display:inline-block;background:rgba(245,158,11,0.15);color:#f59e0b;font-size:11px;font-weight:700;padding:2px 6px;border-radius:10px;margin-right:4px;}
+.badge-mitre{display:inline-block;background:rgba(139,92,246,0.15);color:#8b5cf6;font-size:11px;font-weight:700;padding:2px 6px;border-radius:10px;margin-right:4px;}
+.footer{border-top:1px solid var(--card-border);margin-top:32px;padding:16px 0;text-align:center;font-size:12px;color:var(--dim);}
+.footer a{color:var(--primary);text-decoration:none;}
+.footer a:hover{text-decoration:underline;}
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <div class="header-title">OpenA2A Security Review</div>
-    <div class="header-meta">${esc(report.projectName ?? report.directory)} | ${esc(report.timestamp)}</div>
+    <div>
+      <div class="header-title">OpenA2A Security Review</div>
+      <div class="header-subtitle">Security review of <strong style="color:var(--text)">${esc(report.projectName ?? report.directory)}</strong> -- composite score from 5 automated checks. Higher is better.</div>
+    </div>
+    <div class="header-meta">${esc(report.timestamp)}</div>
   </div>
   <nav class="nav" id="main-nav">
     <button class="nav-tab active" data-page="overview">Overview</button>
@@ -135,6 +150,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
   <div class="page" id="page-integrity"></div>
   <div class="page" id="page-shield"></div>
   <div class="page" id="page-hma"></div>
+  <div class="footer">Generated by <a href="https://opena2a.org" target="_blank" rel="noopener">OpenA2A</a> -- Open Agent-to-Agent Security Platform</div>
 </div>
 
 <script id="report-data" type="application/json">${jsonData}</script>
@@ -211,10 +227,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
     return '<div class="stat-card"><div class="stat-value" style="color:'+color+'">'+esc(String(value))+'</div><div class="stat-label">'+esc(label)+'</div></div>';
   }
 
+  var phaseDescriptions={
+    'Project Scan':'Checks .gitignore, lock files, security config, and dependency advisories',
+    'Credentials':'Scans source files for hardcoded API keys, tokens, and secrets',
+    'Config Integrity':'Verifies cryptographic signatures on monitored config files',
+    'Shield Analysis':'Analyzes 7 days of security events, policy violations, and ARP detections',
+    'HMA Scan':'Runs HackMyAgent security checks against your AI agent endpoints'
+  };
   function phaseCard(phase){
     var statusCls='status-'+phase.status;
     var time=phase.status==='skip'?'--':(phase.durationMs/1000).toFixed(1)+'s';
-    return '<div class="phase-card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="phase-name">'+esc(phase.name)+'</div><span class="status-badge '+statusCls+'">'+esc(phase.status)+'</span></div><div class="phase-detail">'+esc(phase.detail)+'</div><div class="phase-time">'+esc(time)+'</div></div>';
+    var desc=phaseDescriptions[phase.name]||'';
+    return '<div class="phase-card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="phase-name">'+esc(phase.name)+'</div><span class="status-badge '+statusCls+'">'+esc(phase.status)+'</span></div><div class="phase-detail">'+esc(phase.detail)+'</div>'+(desc?'<div class="phase-desc">'+esc(desc)+'</div>':'')+'<div class="phase-time">'+esc(time)+'</div></div>';
   }
 
   // ======================== OVERVIEW ========================
@@ -233,9 +257,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
     h+=statCard(sevCounts.medium,'Medium',sevCounts.medium>0?'var(--medium)':'var(--text)');
     h+='</div>';
 
-    // Gauge + phase cards
+    // Gauge + score explainer + phase cards
     h+='<div class="overview-top">';
-    h+='<div class="gauge-card">'+gaugeCircle(report.compositeScore,report.grade)+'</div>';
+    h+='<div><div class="gauge-card">'+gaugeCircle(report.compositeScore,report.grade)+'</div>';
+    h+='<div class="score-explainer">Composite score is a weighted average of 5 security dimensions: <strong>project hygiene</strong> (35%), <strong>credential safety</strong> (22%), <strong>config integrity</strong> (18%), <strong>shield posture</strong> (25%). Grade scale: A (90+), B (80+), C (70+), D (60+), F (&lt;60).</div></div>';
     h+='<div><h2 class="section-title">Phase Results</h2><div class="phase-grid">';
     var phases=report.phases||[];
     for(var i=0;i<phases.length;i++) h+=phaseCard(phases[i]);
@@ -243,11 +268,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
 
     // Action items
     var actions=report.actionItems||[];
+    var actionImpact={
+      'critical':'Immediate risk of credential compromise or data breach',
+      'high':'Significant security gap that attackers can exploit',
+      'medium':'Moderate risk that weakens your security posture',
+      'low':'Minor improvement to harden your defenses',
+      'info':'Recommended best practice'
+    };
     if(actions.length>0){
       h+='<h2 class="section-title">Action Items</h2><div class="card">';
       for(var i=0;i<actions.length;i++){
         var a=actions[i];
-        h+='<div class="action-item"><div class="action-priority">#'+a.priority+'</div><div class="action-content"><div class="action-desc"><span class="sev-badge sev-'+esc(a.severity)+'">'+esc(a.severity)+'</span> '+esc(a.description)+'</div>'+cmdBlock(a.command)+'<span class="action-link" onclick="goToTab(&quot;'+esc(a.tab)+'&quot;)">View details</span></div></div>';
+        var impact=actionImpact[a.severity]||'';
+        h+='<div class="action-item"><div class="action-priority">#'+a.priority+'</div><div class="action-content"><div class="action-desc"><span class="sev-badge sev-'+esc(a.severity)+'">'+esc(a.severity)+'</span> '+esc(a.description)+'</div>'+(impact?'<div class="check-desc">'+esc(impact)+'</div>':'')+cmdBlock(a.command)+'<span class="action-link" onclick="goToTab(&quot;'+esc(a.tab)+'&quot;)">View details</span></div></div>';
       }
       h+='</div>';
     }
@@ -270,7 +303,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
     if(!data||data.totalFindings===0){
       return '<div class="card"><div class="empty-state">No hardcoded credentials found. Your project is clean.</div></div>';
     }
-    var h='<div class="stats-grid">';
+    var h='<div class="section-intro">Hardcoded credentials in source code are the #1 cause of security breaches in AI projects. Keys pushed to git are scraped by bots within minutes. Each finding below is a credential that should be moved to environment variables.</div>';
+    h+='<div class="stats-grid">';
     h+=statCard(data.totalFindings,'Total Findings',data.totalFindings>0?'var(--red)':'var(--green)');
     h+=statCard(data.bySeverity.critical||0,'Critical',(data.bySeverity.critical||0)>0?'var(--critical)':'var(--text)');
     h+=statCard(data.bySeverity.high||0,'High',(data.bySeverity.high||0)>0?'var(--high)':'var(--text)');
@@ -284,13 +318,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
       var m=matches[i];
       var relPath=m.filePath;
       h+='<tr><td><span class="sev-badge sev-'+esc(m.severity)+'">'+esc(m.severity)+'</span></td><td>'+esc(m.findingId)+'</td><td>'+esc(m.title)+'</td><td style="font-size:11px;color:var(--muted)">'+esc(relPath)+'</td><td>'+m.line+'</td><td style="color:var(--primary)">'+esc(m.envVar)+'</td></tr>';
+      if(m.explanation||m.businessImpact){
+        h+='<tr><td colspan="6" class="finding-desc">';
+        if(m.explanation)h+=esc(m.explanation);
+        if(m.explanation&&m.businessImpact)h+=' ';
+        if(m.businessImpact)h+='<strong style="color:var(--dim)">Impact:</strong> '+esc(m.businessImpact);
+        h+='</td></tr>';
+      }
     }
     h+='</tbody></table></div>';
 
     // Drift
     if(data.driftFindings&&data.driftFindings.length>0){
       h+='<h2 class="section-title">Scope Drift</h2>';
-      h+='<div class="card"><p style="color:var(--muted);font-size:12px;margin-bottom:8px">Keys provisioned for one service may silently gain access to AI services, expanding attack surface.</p>';
+      h+='<div class="card"><p style="color:var(--muted);font-size:12px;margin-bottom:8px;line-height:1.5">Scope drift occurs when a key provisioned for one service (e.g., Google Maps) silently grants access to AI services (e.g., Gemini). The key\\\'s permissions are wider than intended, expanding your attack surface without any code change.</p>';
       h+='<table class="data-table"><thead><tr><th>ID</th><th>File</th><th>Line</th></tr></thead><tbody>';
       for(var i=0;i<data.driftFindings.length;i++){
         var d=data.driftFindings[i];
@@ -305,9 +346,27 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
   }
 
   // ======================== HYGIENE ========================
+  var hygieneDescriptions={
+    'Credential scan':'Detects API keys and secrets hardcoded in source files',
+    'credentials':'Detects API keys and secrets hardcoded in source files',
+    '.gitignore':'Prevents sensitive files from being committed to version control',
+    'gitignore':'Prevents sensitive files from being committed to version control',
+    '.env protection':'Ensures .env files (which store secrets) are excluded from git',
+    'env protection':'Ensures .env files (which store secrets) are excluded from git',
+    'Lock file':'Pins exact dependency versions to prevent supply chain attacks',
+    'lock file':'Pins exact dependency versions to prevent supply chain attacks',
+    'Security config':'OpenA2A configuration enables automated security monitoring',
+    'security config':'OpenA2A configuration enables automated security monitoring'
+  };
+  function findHygieneDesc(label){
+    if(!label)return '';
+    var lc=label.toLowerCase();
+    for(var key in hygieneDescriptions){if(lc.indexOf(key.toLowerCase())>=0)return hygieneDescriptions[key];}
+    return '';
+  }
   function renderHygiene(){
     var init=report.initData;
-    var h='';
+    var h='<div class="section-intro">Project hygiene measures foundational security practices. These checks do not require any OpenA2A tools -- they are standard development practices that prevent accidental exposure.</div>';
     h+='<div class="stats-grid">';
     h+=statCard(init.trustScore+'/100','Trust Score',scoreColor(init.trustScore));
     h+=statCard('Grade '+init.grade,'Trust Grade',scoreColor(init.trustScore));
@@ -316,7 +375,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
     h+='</div>';
 
     h+='<div class="overview-top">';
-    h+='<div class="gauge-card">'+gaugeCircle(init.trustScore,init.grade)+'</div>';
+    h+='<div><div class="gauge-card">'+gaugeCircle(init.trustScore,init.grade)+'</div>';
+    h+='<div class="score-explainer">Trust score starts at 100 and deducts points for each risk: critical credentials (-25 each), high (-15), medium (-8), missing .gitignore (-15), unprotected .env (-10), no lock file (-5). A bonus (+5) for having security config.</div></div>';
     h+='<div>';
     h+='<h2 class="section-title">Hygiene Checks</h2>';
     h+='<div class="card">';
@@ -324,7 +384,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
     for(var i=0;i<checks.length;i++){
       var c=checks[i];
       var statusClr=c.status==='pass'?'var(--green)':c.status==='fail'?'var(--red)':c.status==='warn'?'var(--medium)':'var(--dim)';
-      h+='<div class="hygiene-row"><span class="hygiene-label">'+esc(c.label)+'</span><span style="color:'+statusClr+'">'+esc(c.detail)+'</span></div>';
+      var desc=findHygieneDesc(c.label);
+      h+='<div class="hygiene-row"><div><span class="hygiene-label">'+esc(c.label)+'</span>'+(desc?'<div class="check-desc">'+esc(desc)+'</div>':'')+'</div><span style="color:'+statusClr+'">'+esc(c.detail)+'</span></div>';
     }
     h+='</div>';
     h+='</div></div>';
@@ -346,7 +407,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
   // ======================== INTEGRITY ========================
   function renderIntegrity(){
     var guard=report.guardData;
-    var h='';
+    var h='<div class="section-intro">ConfigGuard signs your configuration files with SHA-256 hashes. If anyone (or any agent) modifies a signed file, the tampering is immediately detectable. This is your first line of defense against configuration drift.</div>';
     var statusClr=guard.signatureStatus==='valid'?'var(--green)':guard.signatureStatus==='tampered'?'var(--red)':'var(--dim)';
     var statusLabel=guard.signatureStatus==='valid'?'Active':guard.signatureStatus==='tampered'?'Tampered':'Unsigned';
 
@@ -376,7 +437,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
   // ======================== SHIELD ========================
   function renderShield(){
     var shield=report.shieldData;
-    var h='';
+    var h='<div class="section-intro">Shield is the unified security orchestration layer. It collects events from all OpenA2A products (ARP, ConfigGuard, Secretless, HMA) into a tamper-evident log and classifies them into actionable findings.</div>';
     h+='<div class="stats-grid">';
     h+=statCard(shield.postureScore+'/100','Posture Score',scoreColor(shield.postureScore));
     h+=statCard(shield.eventCount,'Events (7d)','var(--primary)');
@@ -393,7 +454,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
       h+='<div class="card"><table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>Remediation</th></tr></thead><tbody>';
       for(var i=0;i<cf.length;i++){
         var f=cf[i];
-        h+='<tr><td>'+esc(f.finding.id)+'</td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td>'+cmdBlock(f.finding.remediation)+'</td></tr>';
+        var badges='';
+        if(f.finding.owaspAgentic)badges+='<span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span>';
+        if(f.finding.mitreAtlas)badges+='<span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span>';
+        h+='<tr><td>'+esc(f.finding.id)+'</td><td>'+esc(f.finding.title)+(badges?' '+badges:'')+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td>'+cmdBlock(f.finding.remediation)+'</td></tr>';
+        if(f.finding.description){
+          h+='<tr><td colspan="5" class="finding-desc">'+esc(f.finding.description)+'</td></tr>';
+        }
       }
       h+='</tbody></table></div>';
     }
@@ -412,6 +479,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
       h+='</div></div>';
     }else{
       h+='<h2 class="section-title">Runtime Protection (ARP)</h2>';
+      h+='<div class="section-intro">ARP (Agent Runtime Protection) monitors process spawns, network connections, and file access in real time. It detects anomalous agent behavior before damage occurs.</div>';
       h+='<div class="card"><div class="empty-state">No ARP events in the last 7 days. Start runtime monitoring:</div>'+cmdBlock('opena2a runtime start')+'</div>';
     }
 
@@ -426,10 +494,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
   function renderHma(){
     var hma=report.hmaData;
     if(!hma||!hma.available){
-      var h='<div class="cta-card"><div class="cta-title">HackMyAgent Not Installed</div>';
+      var h='<div class="section-intro">HackMyAgent runs 150+ security checks against AI agent endpoints, testing for prompt injection, tool misuse, excessive agency, and OWASP Top 10 for LLM vulnerabilities.</div>';
+      h+='<div class="cta-card"><div class="cta-title">HackMyAgent Not Installed</div>';
       h+='<div class="cta-desc">Install HMA to run comprehensive security scans against your AI agent.</div>';
       h+=cmdBlock('npm install -g hackmyagent');
-      h+='<p style="color:var(--muted);font-size:12px;margin-top:12px;text-align:center">Then re-run: <code style="color:var(--primary)">opena2a review</code></p>';
+      h+='<p style="color:var(--muted);font-size:13px;margin-top:12px;text-align:center">Then re-run: <code style="color:var(--primary)">opena2a review</code></p>';
       h+='</div>';
       return h;
     }
