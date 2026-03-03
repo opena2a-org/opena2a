@@ -64,11 +64,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .card-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px;}
 .stat-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;text-align:center;}
-.stat-card.stat-hero{border-left:3px solid;padding:16px 14px;}
-.stat-card.stat-hero .stat-value{font-size:30px;}
-.stat-card.stat-hero .stat-label{font-size:12px;}
 .stat-value{font-size:24px;font-weight:700;}
 .stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
+.score-banner{display:flex;align-items:center;gap:24px;background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:20px 24px;margin-bottom:16px;}
+.score-banner-num{font-size:48px;font-weight:700;line-height:1;letter-spacing:-1px;}
+.score-banner-grade{font-size:20px;font-weight:700;line-height:1;padding:6px 14px;border-radius:4px;letter-spacing:0.5px;}
+.score-banner-bar{flex:1;display:flex;flex-direction:column;gap:6px;}
+.score-banner-track{height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;}
+.score-banner-fill{height:100%;border-radius:3px;transition:width 0.3s;}
+.score-banner-label{font-size:12px;color:var(--dim);display:flex;justify-content:space-between;}
 .phase-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;}
 .phase-card{background:var(--card);border:1px solid var(--card-border);border-radius:6px;padding:12px 14px;}
 .phase-name{font-size:13px;font-weight:600;margin-bottom:4px;}
@@ -236,10 +240,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     return '<div class="cmd-block"><span class="cmd-text">'+esc(cmd)+'</span><button class="copy-btn" data-cmd="'+esc(cmd)+'" onclick="copyCmd(this)">Copy</button></div>';
   }
 
-  function statCard(value,label,color,hero){
-    var cls=hero?'stat-card stat-hero':'stat-card';
-    var borderStyle=hero?' style="border-left-color:'+color+'"':'';
-    return '<div class="'+cls+'"'+borderStyle+'><div class="stat-value" style="color:'+color+'">'+esc(String(value))+'</div><div class="stat-label">'+esc(label)+'</div></div>';
+  function statCard(value,label,color){
+    return '<div class="stat-card"><div class="stat-value" style="color:'+color+'">'+esc(String(value))+'</div><div class="stat-label">'+esc(label)+'</div></div>';
+  }
+
+  function scoreBanner(score,grade){
+    var clr=scoreColor(score);
+    var gradeBg=score>=90?'rgba(34,197,94,0.15)':score>=70?'rgba(6,182,212,0.15)':score>=50?'rgba(234,179,8,0.15)':'rgba(239,68,68,0.15)';
+    var h='<div class="score-banner">';
+    h+='<div class="score-banner-num" style="color:'+clr+'">'+score+'</div>';
+    h+='<div class="score-banner-bar">';
+    h+='<div class="score-banner-label"><span>Composite Score</span><span>'+score+'/100</span></div>';
+    h+='<div class="score-banner-track"><div class="score-banner-fill" style="width:'+score+'%;background:'+clr+'"></div></div>';
+    h+='</div>';
+    h+='<div class="score-banner-grade" style="color:'+clr+';background:'+gradeBg+'">'+esc(grade)+'</div>';
+    h+='</div>';
+    return h;
   }
 
   var phaseDescriptions={
@@ -259,13 +275,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   // ======================== OVERVIEW ========================
   function renderOverview(){
     var h='';
-    // Stats row
+    // Score banner
     var sevCounts={critical:0,high:0,medium:0,low:0};
     var findings=report.findings||[];
     for(var i=0;i<findings.length;i++){var s=findings[i].severity;if(s in sevCounts)sevCounts[s]++;}
+    h+=scoreBanner(report.compositeScore,report.grade);
     h+='<div class="stats-grid">';
-    h+=statCard(report.compositeScore+'/100','Score',scoreColor(report.compositeScore),true);
-    h+=statCard('Grade '+report.grade,'Posture',scoreColor(report.compositeScore),true);
     h+=statCard(findings.length,'Findings',findings.length>0?'var(--amber)':'var(--green)');
     h+=statCard(sevCounts.critical,'Critical',sevCounts.critical>0?'var(--critical)':'var(--text)');
     h+=statCard(sevCounts.high,'High',sevCounts.high>0?'var(--high)':'var(--text)');
@@ -278,8 +293,23 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     for(var i=0;i<phases.length;i++) h+=phaseCard(phases[i]);
     h+='</div>';
 
-    // Score explainer
-    h+='<div class="score-explainer">Composite score is a weighted average of 5 security dimensions: <strong>project hygiene</strong> (35%), <strong>credential safety</strong> (22%), <strong>config integrity</strong> (18%), <strong>shield posture</strong> (25%). Grade scale: A (90+), B (80+), C (70+), D (60+), F (&lt;60).</div>';
+    // Score explainer -- structured as two mini-grids
+    h+='<div class="score-explainer">';
+    h+='<div style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Score Breakdown</div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px">';
+    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">35%</div><div style="font-size:11px;color:var(--muted)">Hygiene</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">25%</div><div style="font-size:11px;color:var(--muted)">Shield</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">22%</div><div style="font-size:11px;color:var(--muted)">Credentials</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:16px;font-weight:700;color:var(--text)">18%</div><div style="font-size:11px;color:var(--muted)">Integrity</div></div>';
+    h+='</div>';
+    h+='<div style="display:flex;gap:8px;justify-content:center;font-size:11px;color:var(--dim);border-top:1px solid rgba(51,65,85,0.4);padding-top:8px">';
+    h+='<span><strong style="color:var(--green)">A</strong> 90+</span>';
+    h+='<span><strong style="color:var(--primary)">B</strong> 80+</span>';
+    h+='<span><strong style="color:var(--medium)">C</strong> 70+</span>';
+    h+='<span><strong style="color:var(--amber)">D</strong> 60+</span>';
+    h+='<span><strong style="color:var(--red)">F</strong> &lt;60</span>';
+    h+='</div>';
+    h+='</div>';
 
     // Action items
     var actions=report.actionItems||[];
@@ -406,7 +436,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+='</div>';
     h+='</div></div>';
 
-    h+='<div class="score-explainer">Trust score starts at 100 and deducts points for each risk: critical credentials (-25 each), high (-15), medium (-8), missing .gitignore (-15), unprotected .env (-10), no lock file (-5). A bonus (+5) for having security config.</div>';
+    h+='<div class="score-explainer">';
+    h+='<div style="font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Trust Score Formula</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px">';
+    h+='<div style="color:var(--muted)">Start</div><div style="color:var(--text);font-weight:600">100</div>';
+    h+='<div style="color:var(--muted)">Critical credential</div><div style="color:var(--critical)">-25 each</div>';
+    h+='<div style="color:var(--muted)">High credential</div><div style="color:var(--high)">-15 each</div>';
+    h+='<div style="color:var(--muted)">Medium credential</div><div style="color:var(--medium)">-8 each</div>';
+    h+='<div style="color:var(--muted)">Missing .gitignore</div><div style="color:var(--red)">-15</div>';
+    h+='<div style="color:var(--muted)">Unprotected .env</div><div style="color:var(--red)">-10</div>';
+    h+='<div style="color:var(--muted)">No lock file</div><div style="color:var(--amber)">-5</div>';
+    h+='<div style="color:var(--muted)">Security config</div><div style="color:var(--green)">+5 bonus</div>';
+    h+='</div>';
+    h+='</div>';
 
     h+='<div class="stats-grid">';
     h+=statCard(init.activeProducts+'/'+init.totalProducts,'Active Products','var(--primary)');
