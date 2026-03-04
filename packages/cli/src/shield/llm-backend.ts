@@ -8,7 +8,7 @@
 // Nesting prevention: if $CLAUDECODE is set, we're already inside a Claude
 // Code session and spawning `claude --print` would nest. Fall back to API.
 
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { LlmBackend, LlmResponse } from './types.js';
 
 const CLAUDE_CODE_TIMEOUT_MS = 30_000;
@@ -34,7 +34,7 @@ export function isClaudeCodeAvailable(): boolean {
   }
 
   try {
-    const result = execSync('which claude', {
+    const result = execFileSync('which', ['claude'], {
       encoding: 'utf-8',
       timeout: 5_000,
       stdio: ['pipe', 'pipe', 'pipe'],

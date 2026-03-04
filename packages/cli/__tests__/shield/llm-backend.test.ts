@@ -33,16 +33,18 @@ vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
-    execSync: (cmd: string, _opts?: unknown) => {
-      if (cmd === 'which claude') {
+    execFileSync: (cmd: string, args?: string[], _opts?: unknown) => {
+      // Handle 'which' calls (used by isClaudeCodeAvailable)
+      if (cmd === 'which') {
         if (_whichResult === null) throw new Error('not found');
         return _whichResult;
       }
-      return actual.execSync(cmd, _opts as Parameters<typeof actual.execSync>[1]);
-    },
-    execFileSync: (_cmd: string, _args?: string[], _opts?: unknown) => {
-      if (_execFileResult === null) throw new Error('command failed');
-      return _execFileResult;
+      // Handle 'claude' CLI calls (used by callClaudeCode)
+      if (cmd === 'claude') {
+        if (_execFileResult === null) throw new Error('command failed');
+        return _execFileResult;
+      }
+      return actual.execFileSync(cmd, args, _opts as Parameters<typeof actual.execFileSync>[2]);
     },
   };
 });

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { ShieldStatus, ToolStatus, PolicyMode, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 
@@ -9,9 +9,10 @@ function getShieldDir(): string {
   return join(homedir(), '.opena2a', 'shield');
 }
 
-function tryExec(cmd: string): string | null {
+/** Run a binary with args without shell interpretation (safe from injection). */
+function tryExecFile(binary: string, args: string[]): string | null {
   try {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
     return null;
   }
@@ -29,7 +30,7 @@ function whichBinary(name: string): string | null {
 function detectTool(name: string): ToolStatus {
   switch (name) {
     case 'Secretless': {
-      const version = whichBinary('secretless-ai') ? tryExec('secretless-ai --version 2>/dev/null') : null;
+      const version = whichBinary('secretless-ai') ? tryExecFile('secretless-ai', ['--version']) : null;
       const configExists = existsSync(join(process.cwd(), '.secretless.json')) ||
         existsSync(join(homedir(), '.secretless', 'config.json'));
       return {
@@ -84,7 +85,7 @@ function detectTool(name: string): ToolStatus {
     }
 
     case 'HMA': {
-      const version = whichBinary('hackmyagent') ? tryExec('hackmyagent --version 2>/dev/null') : null;
+      const version = whichBinary('hackmyagent') ? tryExecFile('hackmyagent', ['--version']) : null;
       return {
         name: 'HackMyAgent',
         installed: version !== null,

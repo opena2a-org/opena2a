@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { homedir, hostname, platform } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -26,15 +26,6 @@ import { detectProject } from '../util/detect.js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Run a command silently and return trimmed stdout, or null on failure. */
-function tryExec(cmd: string): string | null {
-  try {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-  } catch {
-    return null;
-  }
-}
 
 /** Run a binary with args without shell interpretation (safe from injection). */
 function tryExecFile(binary: string, args: string[]): string | null {
