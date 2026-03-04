@@ -316,8 +316,8 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write('\n');
 
     // OpenA2A footer
-    process.stdout.write(dim('  OpenA2A -- open-source security for AI agents') + '\n');
-    process.stdout.write(dim('  opena2a.org  |  github.com/opena2a-org') + '\n');
+    process.stdout.write(cyan('  OpenA2A -- open-source security for AI agents') + '\n');
+    process.stdout.write(cyan('  opena2a.org  |  github.com/opena2a-org') + '\n');
     process.stdout.write('\n');
   }
 
@@ -861,13 +861,13 @@ function getContextualTip(
   if (credCount > 0) {
     if (hasDrift && hasAwsDrift) {
       return {
-        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including AWS keys with potential Bedrock access. opena2a protect migrates them to a vault and runs a live STS + Bedrock check to confirm actual exposure.`,
+        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including AWS keys with potential Bedrock access. opena2a protect moves them to Secretless AI (encrypted local vault) and runs a live STS + Bedrock check to confirm actual exposure.`,
         command: 'opena2a protect',
       };
     }
     if (hasDrift && hasGcpDrift) {
       return {
-        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including Google keys with potential Gemini access. opena2a protect migrates them and verifies live Generative Language API access.`,
+        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including Google keys with potential Gemini access. opena2a protect moves them to Secretless AI (encrypted local vault) and verifies live Generative Language API access.`,
         command: 'opena2a protect',
       };
     }
@@ -878,7 +878,7 @@ function getContextualTip(
       };
     }
     return {
-      text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files. opena2a protect rewrites them as env var references, updates .gitignore, and signs config files for integrity monitoring.`,
+      text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files. opena2a protect moves them to Secretless AI, rewrites the source to use env var references, and updates .gitignore.`,
       command: 'opena2a protect',
     };
   }
