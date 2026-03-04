@@ -79,7 +79,7 @@ export async function shield(options: ShieldOptions): Promise<number> {
       return handleMonitor(options);
     default:
       process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n`));
-      process.stderr.write('Usage: opena2a shield <init|status|log|selfcheck|policy|evaluate|recover|report|monitor|session|baseline|suggest|explain|triage>\n');
+      process.stderr.write('Usage: opena2a shield <init|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage>\n');
       return 1;
   }
 }

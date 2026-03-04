@@ -38,12 +38,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     pythonModule: 'cryptoserve',
     description: 'Cryptographic inventory and PQC readiness (CryptoServe)',
   },
-  identity: {
-    name: 'identity',
-    method: 'spawn',
-    command: 'aim',
-    description: 'Agent identity management (AIM SDK)',
-  },
+  // identity is now handled directly by packages/cli/src/commands/identity.ts
   // guard is now handled directly by packages/cli/src/commands/guard.ts (ConfigGuard)
   broker: {
     name: 'broker',

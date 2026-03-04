@@ -117,6 +117,22 @@ export async function dispatchCommand(
     });
   }
 
+  // Handle 'identity' directly (aim-core native)
+  if (command === 'identity') {
+    const { identity } = await import('./commands/identity.js');
+    const subcommand = args[0] ?? 'list';
+    const nameIdx = args.indexOf('--name');
+    const limitIdx = args.indexOf('--limit');
+    return identity({
+      subcommand,
+      name: nameIdx >= 0 ? args[nameIdx + 1] : undefined,
+      limit: limitIdx >= 0 ? parseInt(args[limitIdx + 1], 10) : undefined,
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
   // Handle 'runtime' directly (ARP wrapper)
   if (command === 'runtime') {
     const { runtime } = await import('./commands/runtime.js');

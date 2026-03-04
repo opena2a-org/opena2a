@@ -181,10 +181,34 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
+  // Identity command (native, uses @opena2a/aim-core)
+  program
+    .command('identity [subcommand]')
+    .description('Agent identity management (list|create|trust|audit)')
+    .option('--name <name>', 'Agent name (for create)')
+    .option('--limit <n>', 'Number of audit events to show')
+    .option('--dir <path>', 'Target directory')
+    .action(async (subcommand: string | undefined, opts) => {
+      if (!subcommand) {
+        subcommand = 'list';
+      }
+      const { identity } = await import('./commands/identity.js');
+      const globalOpts = program.opts();
+      process.exitCode = await identity({
+        subcommand,
+        name: opts.name,
+        limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+        dir: opts.dir,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Shield command (unified security orchestration)
   program
     .command('shield <subcommand> [args...]')
-    .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report|monitor|session|baseline|suggest|explain|triage)')
+    .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage)')
     .allowUnknownOption(true)
     .option('--dir <path>', 'Target directory')
     .option('--agent <name>', 'Agent name filter')
@@ -402,7 +426,7 @@ Valid actions:
   // valid commands like `opena2a scan secure` always reach Commander.
   const KNOWN_COMMANDS = [
     ...Object.keys(ADAPTER_REGISTRY),
-    'init', 'protect', 'guard', 'runtime', 'shield', 'review',
+    'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines',
     'check', 'status', 'publish',
   ];
