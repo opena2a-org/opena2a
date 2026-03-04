@@ -595,9 +595,9 @@ function generateActions(
   const gitignoreCheck = checks.find(c => c.label === '.gitignore');
   if (gitignoreCheck?.status !== 'pass') {
     actions.push({
-      description: 'Create .gitignore',
-      command: 'npx gitignore node',
-      why: 'Without a .gitignore, build artifacts and sensitive files can be committed accidentally. A language-specific template covers standard exclusions.',
+      description: 'Create .gitignore with .env exclusion',
+      command: 'opena2a protect',
+      why: 'Without a .gitignore, build artifacts and sensitive files can be committed accidentally. Protect creates one with .env exclusion to prevent secret leaks.',
     });
   }
 

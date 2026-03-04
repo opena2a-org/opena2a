@@ -149,6 +149,20 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
   const isJson = options.format === 'json';
 
+  // Snapshot the "before" score now, before any filesystem changes.
+  // This ensures the score reflects the state init would have seen.
+  let scoreBefore: number | undefined;
+  try {
+    const credsBySeverityBefore: Record<string, number> = {};
+    for (const m of matches) {
+      credsBySeverityBefore[m.severity] = (credsBySeverityBefore[m.severity] || 0) + 1;
+    }
+    const checksBefore = runScoringChecks(targetDir, matches.length);
+    scoreBefore = calculateSecurityScore(credsBySeverityBefore, checksBefore).score;
+  } catch {
+    // best-effort
+  }
+
   if (matches.length === 0) {
     if (!isJson) {
       process.stdout.write(green('No hardcoded credentials detected.\n'));
@@ -382,18 +396,9 @@ export async function protect(options: ProtectOptions): Promise<number> {
     }
   }
 
-  // Phase 7: Before/after security score
-  let scoreBefore: number | undefined;
+  // Phase 7: After security score (before score was captured pre-migration)
   let scoreAfter: number | undefined;
   try {
-    const credsBySeverityBefore: Record<string, number> = {};
-    for (const m of matches) {
-      credsBySeverityBefore[m.severity] = (credsBySeverityBefore[m.severity] || 0) + 1;
-    }
-    const checksBefore = runScoringChecks(targetDir, matches.length);
-    const beforeResult = calculateSecurityScore(credsBySeverityBefore, checksBefore);
-    scoreBefore = beforeResult.score;
-
     // After: credentials migrated (count = failed only), re-check hygiene
     const afterCredCount = failed;
     const afterCredsBySeverity: Record<string, number> = {};
@@ -404,8 +409,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
       }
     }
     const checksAfter = runScoringChecks(targetDir, afterCredCount);
-    const afterResult = calculateSecurityScore(afterCredsBySeverity, checksAfter);
-    scoreAfter = afterResult.score;
+    scoreAfter = calculateSecurityScore(afterCredsBySeverity, checksAfter).score;
   } catch {
     // Score calculation is best-effort
   }
