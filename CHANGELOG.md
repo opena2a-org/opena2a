@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-03-04
+
+### Fixed
+- Fix scan-soul/harden-soul dispatch: moved from broken ImportAdapter fallback to direct SoulScanner programmatic API
+- Fix registry command: changed from import to spawn method (ai-trust parses process.argv on import)
+- Fix SpawnAdapter.isAvailable(): missing await on Promise || Promise caused false negatives
+- Fix guard verify/status/diff ignoring positional directory argument
+- Fix runtime status/tail rejecting positional directory argument
+- Fix CRED-002 misclassifying sk-ant-* Anthropic keys as OpenAI (broadened negative lookahead)
+- Fix CRITICAL/HIGH severity label visibility in terminal output
+- Fix drift detection tip text inaccuracy
+- Exclude CLI own source files from credential scanning
+
+### Added
+- Bundle hackmyagent, secretless-ai, ai-trust as dependencies (npx opena2a-cli scan-soul works out of the box)
+- Direct scan-soul command with --profile, --tier, --deep options
+- Direct harden-soul command with --dry-run, --profile, --tier options
+- Progress-oriented scan-soul output with path-forward guidance
+
+### Changed
+- Remove "product" language throughout CLI (replaced with tool/platform/library)
+- scan-soul and harden-soul are now direct commands, not adapter-backed
+
 ## [0.3.1] - 2026-03-02
 
 ### Fixed
