@@ -185,7 +185,7 @@ export async function guardPolicy(targetDir: string, action: string, options: { 
       const policy = loadGuardPolicy(targetDir);
       if (!policy) {
         if (isJson) { process.stdout.write(JSON.stringify({ error: 'No guard policy found. Run: opena2a guard policy init' }, null, 2) + '\n'); }
-        else { process.stdout.write(yellow('No guard policy found. Run: opena2a guard policy init\n')); }
+        else { process.stdout.write(yellow('No guard policy found. Define signing requirements: opena2a guard policy init\n')); }
         return 1;
       }
 

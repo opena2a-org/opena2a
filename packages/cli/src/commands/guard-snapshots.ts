@@ -100,7 +100,7 @@ function restoreSnapshot(targetDir: string, snapshotId: string): RestoreResult {
   const snapshotPath = path.join(snapshotsDir, `${snapshotId}.json`);
 
   if (!fs.existsSync(snapshotPath)) {
-    throw new Error(`Snapshot not found: ${snapshotId}`);
+    throw new Error(`Snapshot not found: ${snapshotId}. List available: opena2a guard snapshot list`);
   }
 
   const storePath = path.join(targetDir, STORE_DIR, STORE_FILE);
@@ -298,7 +298,7 @@ export async function guardSnapshot(targetDir: string, options: SnapshotOptions)
   if (action === 'list') {
     const snapshots = listSnapshots(targetDir);
     if (isJson) { process.stdout.write(JSON.stringify({ snapshots }, null, 2) + '\n'); }
-    else if (snapshots.length === 0) { process.stdout.write('No snapshots found.\n'); }
+    else if (snapshots.length === 0) { process.stdout.write('No snapshots found. Create one: opena2a guard snapshot create\n'); }
     else {
       for (const s of snapshots) { process.stdout.write(`  ${s.id}  (${s.fileCount} files)\n`); }
       process.stdout.write(`Total: ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'}\n`);
@@ -310,7 +310,7 @@ export async function guardSnapshot(targetDir: string, options: SnapshotOptions)
     const id = options.args?.[1];
     if (!id) {
       if (isJson) { process.stdout.write(JSON.stringify({ error: 'Snapshot ID required. Usage: opena2a guard snapshot restore <id>' }, null, 2) + '\n'); }
-      else { process.stderr.write('Snapshot ID required. Usage: opena2a guard snapshot restore <id>\n'); }
+      else { process.stderr.write('Snapshot ID required. List available: opena2a guard snapshot list\n'); }
       return 1;
     }
     try {

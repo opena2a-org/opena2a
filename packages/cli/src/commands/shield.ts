@@ -128,7 +128,7 @@ async function handleLog(options: ShieldOptions): Promise<number> {
   }
 
   if (events.length === 0) {
-    process.stdout.write(dim('No events found.\n'));
+    process.stdout.write(yellow('No events found.') + ' ' + dim('Generate events: opena2a shield init') + '\n');
     return 0;
   }
 
@@ -492,7 +492,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
     process.stdout.write(`    ${colorSeverity(sev).padEnd(20)} ${String(count)}\n`);
   }
   if (Object.keys(bySeverity).length === 0) {
-    process.stdout.write(dim('    (none)\n'));
+    process.stdout.write(yellow('    (no events)\n'));
   }
   process.stdout.write('\n');
 
@@ -501,7 +501,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
     process.stdout.write(`    ${name.padEnd(20)} ${String(count)}\n`);
   }
   if (Object.keys(bySource).length === 0) {
-    process.stdout.write(dim('    (none)\n'));
+    process.stdout.write(yellow('    (no events)\n'));
   }
   process.stdout.write('\n');
 
@@ -510,7 +510,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
     process.stdout.write(`    ${name.padEnd(20)} ${String(count)} events\n`);
   }
   if (topAgents.length === 0) {
-    process.stdout.write(dim('    (none)\n'));
+    process.stdout.write(yellow('    (no events)\n'));
   }
   process.stdout.write('\n');
 
@@ -519,7 +519,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
     process.stdout.write(`    ${name.padEnd(30)} ${String(count)}\n`);
   }
   if (topActions.length === 0) {
-    process.stdout.write(dim('    (none)\n'));
+    process.stdout.write(yellow('    (no events)\n'));
   }
 
   if (options.analyze) {
@@ -1190,7 +1190,7 @@ async function handleSuggest(options: ShieldOptions): Promise<number> {
   const events = readEvents({ count: 100, agent: options.agent });
 
   if (events.length === 0) {
-    process.stdout.write(dim('No events found. Run shield init and use your tools to generate events.\n'));
+    process.stdout.write(yellow('No events found.') + ' ' + dim('Run shield init and use your tools to generate events.') + '\n');
     return 0;
   }
 
@@ -1312,7 +1312,7 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
   });
 
   if (events.length === 0) {
-    process.stdout.write(dim('No events found matching the filters.\n'));
+    process.stdout.write(yellow('No events found matching the filters.') + ' ' + dim('Try: opena2a shield log --count 50') + '\n');
     return 0;
   }
 
@@ -1405,7 +1405,7 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   });
 
   if (events.length === 0) {
-    process.stdout.write(dim(`No ${severity}+ severity events found.\n`));
+    process.stdout.write(yellow(`No ${severity}+ severity events found.`) + ' ' + dim('Lower the threshold: opena2a shield triage --severity low') + '\n');
     return 0;
   }
 

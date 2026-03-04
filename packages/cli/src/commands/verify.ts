@@ -308,7 +308,7 @@ function printResults(results: VerifyResult[], registryUrl: string): void {
   // Detailed per-package output
   for (const r of results) {
     if (r.registryStatus === 'not_installed') {
-      process.stdout.write(dim(`  ${r.packageName}: not installed\n`));
+      process.stdout.write(yellow(`  ${r.packageName}: not installed`) + dim(` -- Install: npm install -g ${r.packageName}`) + '\n');
       continue;
     }
 

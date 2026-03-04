@@ -196,7 +196,7 @@ export async function selfRegister(options: SelfRegisterOptions): Promise<number
       process.stdout.write(JSON.stringify({ error: 'No matching tools found', tools: [] }) + '\n');
     } else {
       process.stderr.write(red('No matching tools found.\n'));
-      process.stderr.write(dim(`Available: ${TOOL_MANIFEST.map(t => t.name).join(', ')}\n`));
+      process.stderr.write(`Available: ${TOOL_MANIFEST.map(t => t.name).join(', ')}\n`);
     }
     return 1;
   }

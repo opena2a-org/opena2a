@@ -182,7 +182,10 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
 
   if (signatures.length === 0 && !options.skills && !options.heartbeats) {
     if (isJson) { process.stdout.write(JSON.stringify({ signed: 0, files: [] }, null, 2) + '\n'); }
-    else { process.stdout.write(yellow('No config files found to sign.\n')); }
+    else {
+      process.stdout.write(yellow('No config files found to sign.\n'));
+      process.stdout.write(dim('Guard signs: package.json, mcp.json, arp.yaml, tsconfig.json, Dockerfile, etc.\n'));
+    }
     return 0;
   }
 
@@ -240,7 +243,7 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
 
   if (!store) {
     if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
-    else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign\n')); }
+    else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign to detect tampering.\n')); }
     return 1;
   }
 
@@ -394,7 +397,7 @@ async function guardWatch(targetDir: string, options: GuardOptions): Promise<num
 
   if (!store) {
     if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
-    else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign\n')); }
+    else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign to detect tampering.\n')); }
     return 1;
   }
 
@@ -489,7 +492,7 @@ async function guardDiff(targetDir: string, options: GuardOptions): Promise<numb
 
   if (!store) {
     if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
-    else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign\n')); }
+    else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign to detect tampering.\n')); }
     return 1;
   }
 

@@ -182,8 +182,7 @@ async function runtimeTail(targetDir: string, options: RuntimeOptions): Promise<
     if (isJson) {
       process.stdout.write(JSON.stringify({ events: [], error: 'No events file found' }, null, 2) + '\n');
     } else {
-      process.stdout.write(yellow('No events found.\n'));
-      process.stdout.write(dim(`Expected: ${eventsPath}\n`));
+      process.stdout.write(yellow('No events found.') + ' ' + dim('Start monitoring: opena2a runtime start') + '\n');
     }
     return 0;
   }

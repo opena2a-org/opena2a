@@ -59,7 +59,7 @@ function installPreCommitHook(targetDir: string): InstallResult {
       installed: false,
       path: '',
       appended: false,
-      message: 'No .git directory found. Is this a git repository?',
+      message: 'No .git directory found. Initialize one: git init',
     };
   }
 
@@ -180,7 +180,8 @@ export async function guardHook(
       if (installed) {
         process.stdout.write(bold('ConfigGuard pre-commit hook: ') + green('installed') + '\n');
       } else {
-        process.stdout.write(bold('ConfigGuard pre-commit hook: ') + dim('not installed') + '\n');
+        process.stdout.write(bold('ConfigGuard pre-commit hook: ') + yellow('not installed') + '\n');
+        process.stdout.write(dim('Install: opena2a guard hook install\n'));
       }
       return 0;
     }

@@ -166,6 +166,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
   if (matches.length === 0) {
     if (!isJson) {
       process.stdout.write(green('No hardcoded credentials detected.\n'));
+      process.stdout.write(dim('protect also applies git hygiene and config signing.\n'));
     }
 
     // Even without credentials, apply git hygiene and config signing fixes
