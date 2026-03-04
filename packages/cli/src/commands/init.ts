@@ -10,7 +10,6 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
-import { verifyDriftFindings, type LivenessResult } from '../util/drift-verification.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { wordWrap } from '../util/format.js';
 import { getVersion } from '../util/version.js';
@@ -259,15 +258,9 @@ export async function init(options: InitOptions): Promise<number> {
   } else {
     printReport(report, elapsed, options.verbose);
 
-    // Drift detection callout with live verification
+    // Drift detection callout (always shown when drift findings exist)
     const driftFindings = credentialMatches.filter(m => m.findingId.startsWith('DRIFT'));
     if (driftFindings.length > 0) {
-      // Run live liveness checks (STS + Bedrock for AWS, Gemini API for GCP)
-      const driftSpinner = new Spinner('  Verifying scope drift (live check)...');
-      driftSpinner.start();
-      const livenessResults = await verifyDriftFindings(driftFindings);
-      driftSpinner.stop();
-
       process.stdout.write(yellow(bold('  Scope Drift Detected')) + '\n');
       process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
 
@@ -279,49 +272,32 @@ export async function init(options: InitOptions): Promise<number> {
         driftByType.set(d.findingId, existing);
       }
 
-      // Aggregate liveness by finding ID (use worst-case: any confirmed live = live)
-      const livenessByType = new Map<string, LivenessResult | undefined>();
-      for (const [credValue, result] of livenessResults) {
-        const match = driftFindings.find(m => m.value === credValue);
-        if (!match) continue;
-        const existing = livenessByType.get(match.findingId);
-        // Prefer confirmed live result over inconclusive
-        if (!existing || (!existing.live && result.live)) {
-          livenessByType.set(match.findingId, result);
-        }
-      }
-
       for (const [findingId, items] of driftByType) {
         const first = items[0];
         const relPath = path.relative(targetDir, first.filePath);
         const extra = items.length > 1 ? ` (+${items.length - 1} more)` : '';
-        const liveness = livenessByType.get(findingId);
-
-        let liveLabel: string;
-        if (!liveness || !liveness.checked) {
-          liveLabel = dim('  Live check:  could not verify (secret key not found alongside access key)');
-        } else if (liveness.live) {
-          liveLabel = red('  Live check:  CONFIRMED -- ' + liveness.detail);
-        } else if (liveness.error === 'timeout') {
-          liveLabel = dim('  Live check:  inconclusive (timeout after 5s)');
-        } else {
-          liveLabel = dim('  Live check:  not confirmed -- ' + liveness.detail);
-        }
 
         if (findingId === 'DRIFT-001') {
-          process.stdout.write(`  ${liveness?.live ? red(findingId) : yellow(findingId)}  Google Maps key may access Gemini AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
+          process.stdout.write(`  ${yellow(findingId)}  Google Maps key may access Gemini AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
-          process.stdout.write(`  ${liveLabel}\n`);
-          process.stdout.write(`  ${dim('  Fix:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Keys provisioned for Maps silently authenticate to Gemini if the')}\n`);
+          process.stdout.write(`  ${dim('  Generative Language API is enabled in the same GCP project.')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (runs live Gemini API access check, no changes made)')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
         } else if (findingId === 'DRIFT-002') {
-          process.stdout.write(`  ${liveness?.live ? red(findingId) : yellow(findingId)}  AWS key may access Bedrock AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
+          process.stdout.write(`  ${yellow(findingId)}  AWS key may access Bedrock AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
-          process.stdout.write(`  ${liveLabel}\n`);
-          process.stdout.write(`  ${dim('  Fix:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  IAM policies frequently over-provision. A key scoped for S3/EC2')}\n`);
+          process.stdout.write(`  ${dim('  may also pass STS auth and call Bedrock LLM endpoints.')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (runs live STS + Bedrock access check, no changes made)')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
         } else {
           process.stdout.write(`  ${yellow(findingId)}  Credential scope drift  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
-          process.stdout.write(`  ${dim('  Fix: opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
         }
         process.stdout.write('\n');
       }
