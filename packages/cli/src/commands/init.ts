@@ -873,7 +873,7 @@ function getContextualTip(
     }
     if (criticalCount > 0) {
       return {
-        text: `${criticalCount} critical credential${criticalCount === 1 ? '' : 's'} in source files — anyone with repo access can use them now. opena2a protect rewrites the files to use environment variables and removes the raw values.`,
+        text: `${criticalCount} critical credential${criticalCount === 1 ? '' : 's'} in source files — anyone with repo access can use them now. opena2a protect moves them to Secretless AI (encrypted local vault) and rewrites the source files to reference env vars.`,
         command: 'opena2a protect',
       };
     }
@@ -886,7 +886,7 @@ function getContextualTip(
   const hasMcpCred = report.findings.some(f => f.findingId === 'MCP-CRED');
   if (hasMcpCred) {
     return {
-      text: 'Credentials in MCP config files are read by every tool that loads the config. opena2a protect moves them to environment variables.',
+      text: 'Credentials in MCP config files are read by every AI tool that loads the config. opena2a protect moves them to Secretless AI and injects them as env vars at runtime — no more plaintext in config files.',
       command: 'opena2a protect',
     };
   }
@@ -894,7 +894,7 @@ function getContextualTip(
   const hasAiConfig = report.findings.some(f => f.findingId === 'AI-CONFIG');
   if (hasAiConfig) {
     return {
-      text: 'AI tool config files have fixable issues. opena2a protect applies all auto-fixable changes in one pass.',
+      text: 'AI tool config files (Claude, Cursor, Copilot) have fixable issues. opena2a protect applies all auto-fixable changes in one pass and signs the files so Guard can detect future unauthorized changes.',
       command: 'opena2a protect',
     };
   }
@@ -902,26 +902,26 @@ function getContextualTip(
   const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
   if (hasLLM) {
     return {
-      text: 'An unauthenticated LLM server is running. opena2a shield shows live protection status and recommended controls.',
+      text: 'An unauthenticated LLM server is running locally. opena2a shield status shows which Shield modules are active and what ARP is monitoring at the process and network level.',
       command: 'opena2a shield status',
     };
   }
 
   if (report.securityScore >= 90) {
     return {
-      text: 'Strong baseline. Run a deeper scan to check runtime behavior and agent-layer threats.',
-      command: 'opena2a scan secure',
+      text: 'Strong baseline. HackMyAgent runs 147 checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.',
+      command: 'npx hackmyagent secure',
     };
   }
   if (report.securityScore >= 70) {
     return {
-      text: 'Good posture. Sign config files to detect unauthorized changes at runtime.',
+      text: 'Good posture. opena2a guard sign creates signed baselines for your config files — Guard will alert if anything changes without a new signature.',
       command: 'opena2a guard sign',
     };
   }
 
   return {
-    text: 'See all available security tools',
+    text: 'opena2a shield status shows all active protections: ARP runtime monitoring, Guard config integrity, Secretless credential management, and HackMyAgent scan coverage.',
     command: 'opena2a shield status',
   };
 }
