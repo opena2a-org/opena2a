@@ -184,7 +184,7 @@ describe('ai-config', () => {
     it('detects Google API key (drift) in MCP env', () => {
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
-          'maps': { command: 'node', args: [], env: { GMAP_KEY: 'AIzaSyB1tLCTD6VAkDQgvpMuJMRU8ksKYLEB_m8' } },
+          'maps': { command: 'node', args: [], env: { GMAP_KEY: 'AIzaSyC8x4iFaKe_Key12345678901234567890abc' } },
         },
       }));
 
