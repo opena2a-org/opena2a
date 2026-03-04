@@ -45,3 +45,23 @@ export function table(rows: string[][], headers?: string[]): string {
 
   return lines.join('\n');
 }
+
+export function wordWrap(text: string, width: number, indent: number): string {
+  const prefix = ' '.repeat(indent);
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = prefix;
+
+  for (const word of words) {
+    if (current.length + word.length + 1 > width && current.trim().length > 0) {
+      lines.push(current);
+      current = prefix + word;
+    } else {
+      current += (current.trim().length === 0 ? '' : ' ') + word;
+    }
+  }
+  if (current.trim().length > 0) {
+    lines.push(current);
+  }
+  return lines.join('\n');
+}

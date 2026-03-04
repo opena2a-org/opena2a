@@ -69,6 +69,8 @@ Learn more: https://opena2a.org/docs`);
     .option('--report <path>', 'Write interactive HTML report')
     .option('--skip-verify', 'Skip verification re-scan')
     .option('--skip-liveness', 'Skip drift liveness verification (offline/CI)')
+    .option('--skip-sign', 'Skip config signing phase')
+    .option('--skip-git', 'Skip git hygiene fixes (.gitignore, .git/info/exclude)')
     .option('--dir <path>', 'Target directory')
     .action(async (directory: string | undefined, opts) => {
       const { protect: runProtect } = await import('./commands/protect.js');
@@ -81,6 +83,8 @@ Learn more: https://opena2a.org/docs`);
         format: globalOpts.format as 'text' | 'json',
         skipVerify: opts.skipVerify,
         skipLiveness: opts.skipLiveness,
+        skipSign: opts.skipSign,
+        skipGit: opts.skipGit,
         report: opts.report,
       });
     });

@@ -3,7 +3,7 @@
 
 // --- Environment Detection ---
 
-export type ProjectType = 'node' | 'go' | 'python' | 'unknown';
+export type ProjectType = 'node' | 'go' | 'python' | 'rust' | 'java' | 'ruby' | 'docker' | 'generic';
 
 export interface DetectedCli {
   name: string;
@@ -306,9 +306,9 @@ export interface WeeklyReport {
   posture: PostureScore;
 }
 
-// --- Product Status ---
+// --- Tool Status ---
 
-export interface ProductStatus {
+export interface ToolStatus {
   name: string;
   installed: boolean;
   active: boolean;
@@ -318,7 +318,7 @@ export interface ProductStatus {
 
 export interface ShieldStatus {
   timestamp: string;
-  products: ProductStatus[];
+  tools: ToolStatus[];
   policyLoaded: boolean;
   policyMode: PolicyMode | null;
   shellIntegration: boolean;

@@ -464,7 +464,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+='</div>';
 
     h+='<div class="stats-grid">';
-    h+=statCard(init.activeProducts+'/'+init.totalProducts,'Active Products','var(--primary)');
+    h+=statCard(init.activeTools+'/'+init.totalTools,'Active Tools','var(--primary)');
     h+=statCard(init.advisoryCount,'Advisories',init.advisoryCount>0?'var(--amber)':'var(--green)');
     h+='</div>';
 
@@ -510,7 +510,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   // ======================== SHIELD ========================
   function renderShield(){
     var shield=report.shieldData;
-    var h='<div class="section-intro">Shield is the unified security orchestration layer. It collects events from all OpenA2A products (ARP, ConfigGuard, Secretless, HMA) into a tamper-evident log and classifies them into actionable findings.</div>';
+    var h='<div class="section-intro">Shield is the unified security orchestration layer. It collects events from all OpenA2A tools (ARP, ConfigGuard, Secretless, HMA) into a tamper-evident log and classifies them into actionable findings.</div>';
     h+='<div class="stats-grid">';
     h+=statCard(shield.postureScore+'/100','Posture Score',scoreColor(shield.postureScore));
     h+=statCard(shield.eventCount,'Events (7d)','var(--primary)');

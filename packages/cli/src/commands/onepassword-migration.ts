@@ -91,6 +91,9 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
   process.stdout.write('     1Password > Settings > Developer > "Integrate with 1Password CLI"\n\n');
   process.stdout.write('  3. ' + bold('1Password CLI') + '\n');
   process.stdout.write('     Install: ' + cyan('brew install 1password-cli') + '\n\n');
+  process.stdout.write('  ' + dim('Tip: If you use 1Password as your SSH agent, set key approval to') + '\n');
+  process.stdout.write('  ' + dim('"Until 1Password is locked" to avoid repeated Touch ID prompts') + '\n');
+  process.stdout.write('  ' + dim('during AI-assisted development (each git operation triggers approval).') + '\n\n');
 
   let ready = false;
   try {
@@ -177,6 +180,10 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
       await mod.setBackend('1password');
       process.stdout.write(green('Default backend set to 1Password.') + '\n');
     }
+
+    // Remind about SSH agent approval if applicable
+    process.stdout.write('\n' + dim('If Touch ID prompts are frequent: 1Password > Settings > Developer >') + '\n');
+    process.stdout.write(dim('SSH keys > set approval to "Until 1Password is locked"') + '\n');
 
     return true;
   } catch (err) {

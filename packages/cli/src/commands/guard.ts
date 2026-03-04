@@ -620,6 +620,41 @@ function printVerifyReport(report: GuardReport, enforce?: boolean): void {
   process.stdout.write('\n\n');
 }
 
+// --- Silent signing (for protect command integration) ---
+
+/**
+ * Sign config files without any stdout output. Returns what was signed.
+ * Used by `protect` to silently sign configs as part of the fix-all flow.
+ */
+export async function signConfigFilesSilent(targetDir: string): Promise<{ signed: number; files: string[] }> {
+  const filesToSign = resolveFiles(targetDir);
+  const signatures: ConfigSignature[] = [];
+
+  for (const relPath of filesToSign) {
+    const fullPath = path.join(targetDir, relPath);
+    if (!fs.existsSync(fullPath)) continue;
+    const content = fs.readFileSync(fullPath);
+    const hash = 'sha256:' + createHash('sha256').update(content).digest('hex');
+    const stat = fs.statSync(fullPath);
+    signatures.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: os.userInfo().username + '@opena2a-cli', fileSize: stat.size });
+  }
+
+  if (signatures.length === 0) {
+    return { signed: 0, files: [] };
+  }
+
+  const store: SignatureStore = { version: 1, signatures, updatedAt: new Date().toISOString() };
+  const storeDir = path.join(targetDir, STORE_DIR);
+  fs.mkdirSync(storeDir, { recursive: true });
+  fs.writeFileSync(path.join(storeDir, STORE_FILE), JSON.stringify(store, null, 2) + '\n', 'utf-8');
+
+  await emitEvent('config.signed', 'guard.sign', targetDir, 'info', 'allowed', {
+    fileCount: signatures.length, files: signatures.map(s => s.filePath),
+  });
+
+  return { signed: signatures.length, files: signatures.map(s => s.filePath) };
+}
+
 // --- Testable internals ---
 
 export const _internals = {

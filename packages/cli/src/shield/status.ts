@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync, execSync } from 'node:child_process';
-import type { ShieldStatus, ProductStatus, PolicyMode, IntegrityStatus } from './types.js';
+import type { ShieldStatus, ToolStatus, PolicyMode, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 
 function getShieldDir(): string {
@@ -26,7 +26,7 @@ function whichBinary(name: string): string | null {
   }
 }
 
-function detectProduct(name: string): ProductStatus {
+function detectTool(name: string): ToolStatus {
   switch (name) {
     case 'Secretless': {
       const version = whichBinary('secretless-ai') ? tryExec('secretless-ai --version 2>/dev/null') : null;
@@ -131,14 +131,14 @@ function detectProduct(name: string): ProductStatus {
 
 export function getShieldStatus(targetDir?: string): ShieldStatus {
   const shieldDir = getShieldDir();
-  const products: ProductStatus[] = [
-    detectProduct('Secretless'),
-    detectProduct('AIM Core'),
-    detectProduct('ARP'),
-    detectProduct('Browser Guard'),
-    detectProduct('HMA'),
-    detectProduct('Registry'),
-    detectProduct('ConfigGuard'),
+  const tools: ToolStatus[] = [
+    detectTool('Secretless'),
+    detectTool('AIM Core'),
+    detectTool('ARP'),
+    detectTool('Browser Guard'),
+    detectTool('HMA'),
+    detectTool('Registry'),
+    detectTool('ConfigGuard'),
   ];
 
   // Policy status
@@ -201,7 +201,7 @@ export function getShieldStatus(targetDir?: string): ShieldStatus {
 
   return {
     timestamp: new Date().toISOString(),
-    products,
+    tools,
     policyLoaded,
     policyMode,
     shellIntegration,
@@ -219,9 +219,9 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
   const lines: string[] = [];
   lines.push('Shield Status\n');
 
-  // Products table
-  lines.push('Products:');
-  for (const p of status.products) {
+  // Tools table
+  lines.push('Tools:');
+  for (const p of status.tools) {
     const state = p.active ? 'ACTIVE' : p.installed ? 'INSTALLED' : '  --  ';
     lines.push(`  ${state.padEnd(10)} ${p.name.padEnd(22)} ${p.keyMetric}`);
   }
@@ -252,9 +252,9 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
   if (status.integrityStatus === 'lockdown') recs.push('LOCKDOWN active. Run: opena2a shield recover --verify');
   if (status.integrityStatus === 'compromised') recs.push('Integrity issues detected. Run: opena2a shield selfcheck');
 
-  const inactiveProducts = status.products.filter(p => !p.active && p.name !== 'Registry');
-  if (inactiveProducts.length > 0) {
-    recs.push(`Inactive products: ${inactiveProducts.map(p => p.name).join(', ')}`);
+  const inactiveTools = status.tools.filter(p => !p.active && p.name !== 'Registry');
+  if (inactiveTools.length > 0) {
+    recs.push(`Inactive tools: ${inactiveTools.map(p => p.name).join(', ')}`);
   }
 
   if (recs.length > 0) {

@@ -36,7 +36,7 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 Run `opena2a init` in any project directory to get an instant security assessment:
 
 ```
-  OpenA2A Security Initialization  v0.3.1
+  OpenA2A Security Report  v0.3.3
 
   Project      myapp v2.1.0
   Type         Node.js + MCP server
@@ -50,21 +50,20 @@ Run `opena2a init` in any project directory to get an instant security assessmen
   Lock file            package-lock.json
   Security config      none
   MCP config           found
+  LLM server           Ollama on :11434 (no auth)
   -----------------------------------------------
-  Trust Score      30 / 100  [Grade: F]
-  Shield Posture   25 / 100  (CRITICAL)
-  Products         1/7 active
+  Security Score   30 / 100  -> 85 by running opena2a protect
 
-  Next Steps
+  Recommended Actions
   -----------------------------------------------
-  [CRITICAL]     Migrate 3 hardcoded credentials
-                 opena2a protect
+  [CRITICAL]  Migrate 3 hardcoded credentials
+              opena2a protect
 
-  [HIGH]         Add .env to .gitignore
-                 echo '.env' >> .gitignore
+  [HIGH]      Add .env to .gitignore
+              opena2a protect
 
-  [MEDIUM]       Sign config files for integrity
-                 opena2a guard sign
+  [MEDIUM]    Sign config files for integrity
+              opena2a protect
   -----------------------------------------------
 
   Scope Drift Detected
@@ -77,11 +76,10 @@ Run `opena2a init` in any project directory to get an instant security assessmen
   Run: opena2a protect
 ```
 
-Then fix what it finds:
+Then fix everything in one command:
 
 ```bash
-opena2a protect       # Migrate credentials to env vars + vault
-opena2a guard sign    # Sign config files for tamper detection
+opena2a protect       # Fix all findings: credentials, .gitignore, config signing
 opena2a init          # Re-assess -- watch your score improve
 ```
 
@@ -113,20 +111,23 @@ opena2a init --format json      # Machine-readable output for CI
 
 ### `opena2a protect`
 
-Detect hardcoded credentials and migrate them to environment variables. Supports Anthropic, OpenAI, Google, AWS, GitHub, and generic API key patterns. Language-aware replacements for JS/TS, Python, Go, Ruby, Java, and Rust.
+Single command to fix all auto-fixable findings. Migrates credentials, fixes `.gitignore`, excludes AI config files from git, signs config files, and shows before/after security score.
 
 ```bash
-opena2a protect                 # Scan and migrate credentials
+opena2a protect                 # Fix everything fixable
 opena2a protect --dry-run       # Preview changes without modifying files
+opena2a protect --skip-sign     # Skip config signing phase
+opena2a protect --skip-git      # Skip git hygiene fixes
 opena2a protect --report out.html  # Generate interactive HTML report
 opena2a protect --format json   # JSON output for CI pipelines
 ```
 
-Migration flow:
-1. **Detect** -- Regex-based pattern matching across all source files
-2. **Store** -- Save credential values in Secretless vault (or `.env` fallback with 0600 permissions)
-3. **Replace** -- Swap hardcoded values with language-appropriate env var references
-4. **Verify** -- Re-scan to confirm all credentials are removed from source
+What protect fixes:
+1. **Credentials** -- Detect, vault, and replace hardcoded secrets with env var references
+2. **`.gitignore`** -- Create or update to exclude `.env` files
+3. **AI config exclusion** -- Add `CLAUDE.md`, `.cursorrules`, etc. to `.git/info/exclude`
+4. **Config signing** -- Sign config files for tamper detection
+5. **Verification** -- Re-scan and show before/after security score
 
 ### `opena2a guard`
 
