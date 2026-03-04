@@ -116,6 +116,18 @@ export const SKIP_DIRS = new Set([
   'e2e',
 ]);
 
+/**
+ * Path segments that identify the CLI's own source files.
+ * These are excluded from credential scanning to prevent false positives
+ * caused by the scanner's own code containing credential pattern examples
+ * in comments, docstrings, and replacement logic.
+ */
+const SELF_SOURCE_MARKERS = [
+  // Matches the CLI source tree (both src/ and compiled dist/)
+  path.join('packages', 'cli', 'src'),
+  path.join('packages', 'cli', 'dist'),
+];
+
 export const SKIP_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp',
   '.woff', '.woff2', '.ttf', '.eot', '.otf',
@@ -134,6 +146,13 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
     return;
+  }
+
+  // Skip the CLI's own source/dist directories to prevent false positives.
+  // The scanner's source code contains credential pattern examples in comments,
+  // docstrings, and replacement templates that would otherwise trigger findings.
+  for (const marker of SELF_SOURCE_MARKERS) {
+    if (dir.includes(marker)) return;
   }
 
   // Dot-files to scan (credential sources)
