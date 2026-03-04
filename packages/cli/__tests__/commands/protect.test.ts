@@ -469,4 +469,200 @@ describe('protect command', () => {
     // fetch should not have been called
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  // --- Phase 4: .gitignore fix ---
+
+  it('creates .gitignore with .env exclusion when missing', async () => {
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      format: 'text',
+      skipSign: true,
+    });
+
+    const gitignorePath = path.join(tempDir, '.gitignore');
+    expect(fs.existsSync(gitignorePath)).toBe(true);
+    const content = fs.readFileSync(gitignorePath, 'utf-8');
+    expect(content).toContain('.env');
+    expect(content).toContain('.env.*');
+  });
+
+  it('appends .env to existing .gitignore if missing', async () => {
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      format: 'text',
+      skipSign: true,
+    });
+
+    const content = fs.readFileSync(path.join(tempDir, '.gitignore'), 'utf-8');
+    expect(content).toContain('node_modules');
+    expect(content).toContain('.env');
+  });
+
+  it('skips .gitignore fix if .env already in .gitignore', async () => {
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n.env\n');
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipSign: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const report = JSON.parse(chunks.join(''));
+    expect(report.additionalFixes?.gitignoreFixed).toBeUndefined();
+  });
+
+  it('skips git fixes with --skip-git', async () => {
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipGit: true,
+      skipSign: true,
+    });
+
+    expect(fs.existsSync(path.join(tempDir, '.gitignore'))).toBe(false);
+  });
+
+  // --- Phase 5: AI config exclusion ---
+
+  it('adds AI config files to .git/info/exclude', async () => {
+    // Create a .git directory and a CLAUDE.md
+    fs.mkdirSync(path.join(tempDir, '.git', 'info'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), '# Instructions\n');
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipSign: true,
+    });
+
+    const excludePath = path.join(tempDir, '.git', 'info', 'exclude');
+    expect(fs.existsSync(excludePath)).toBe(true);
+    const content = fs.readFileSync(excludePath, 'utf-8');
+    expect(content).toContain('CLAUDE.md');
+  });
+
+  it('skips AI config exclusion when no .git directory', async () => {
+    fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), '# Instructions\n');
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipSign: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const report = JSON.parse(chunks.join(''));
+    expect(report.additionalFixes?.gitExclusionsAdded).toBeUndefined();
+  });
+
+  // --- Phase 6: Config signing ---
+
+  it('signs config files and includes in report', async () => {
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipGit: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const report = JSON.parse(chunks.join(''));
+    // package.json exists so at least 1 config file should be signed
+    expect(report.additionalFixes?.configsSigned).toBeGreaterThanOrEqual(1);
+    expect(fs.existsSync(path.join(tempDir, '.opena2a', 'guard', 'signatures.json'))).toBe(true);
+  });
+
+  it('skips signing with --skip-sign', async () => {
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    expect(fs.existsSync(path.join(tempDir, '.opena2a', 'guard', 'signatures.json'))).toBe(false);
+  });
+
+  // --- Phase 7: Before/after score ---
+
+  it('includes scoreBefore and scoreAfter in JSON output', async () => {
+    const fakeKey = 'AIza' + 'S'.repeat(35);
+    fs.writeFileSync(
+      path.join(tempDir, 'config.ts'),
+      `const key = "${fakeKey}";\n`
+    );
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as any;
+
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipVerify: true,
+        skipSign: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const report = JSON.parse(chunks.join(''));
+    expect(report.scoreBefore).toBeDefined();
+    expect(report.scoreAfter).toBeDefined();
+    expect(report.scoreAfter).toBeGreaterThanOrEqual(report.scoreBefore);
+  });
 });

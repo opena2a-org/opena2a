@@ -54,6 +54,19 @@ interface ProtectReport {
   livenessResults?: Record<string, LivenessResult>;
   /** AI tool config files updated with secretless instructions */
   aiToolsUpdated?: string[];
+  /** Additional fixes applied beyond credential migration */
+  additionalFixes?: AdditionalFixes;
+  /** Security score before fixes */
+  scoreBefore?: number;
+  /** Security score after fixes */
+  scoreAfter?: number;
+}
+
+interface AdditionalFixes {
+  gitignoreFixed?: boolean;
+  gitExclusionsAdded?: string[];
+  configsSigned?: number;
+  configsSignedFiles?: string[];
 }
 
 export interface ProtectOptions {
@@ -73,6 +86,10 @@ export interface ProtectOptions {
   skipLiveness?: boolean;
   /** Path to write interactive HTML report */
   report?: string;
+  /** Skip config signing phase */
+  skipSign?: boolean;
+  /** Skip git hygiene fixes (.gitignore, .git/info/exclude) */
+  skipGit?: boolean;
 }
 
 // --- Credential patterns (shared module) ---
@@ -90,7 +107,9 @@ import {
   applyLivenessResults,
   type LivenessResult,
 } from '../util/drift-verification.js';
-import { scanMcpCredentials } from '../util/ai-config.js';
+import { scanMcpCredentials, scanAiConfigFiles } from '../util/ai-config.js';
+import { calculateSecurityScore } from '../util/scoring.js';
+import { runScoringChecks } from '../util/hygiene.js';
 
 // --- Core logic ---
 
@@ -131,6 +150,44 @@ export async function protect(options: ProtectOptions): Promise<number> {
   const isJson = options.format === 'json';
 
   if (matches.length === 0) {
+    if (!isJson) {
+      process.stdout.write(green('No hardcoded credentials detected.\n'));
+    }
+
+    // Even without credentials, apply git hygiene and config signing fixes
+    const noCredFixes: AdditionalFixes = {};
+    let anyFix = false;
+
+    if (!options.skipGit && !options.dryRun) {
+      const gitignoreFixed = fixGitignore(targetDir, false);
+      if (gitignoreFixed) {
+        noCredFixes.gitignoreFixed = true;
+        anyFix = true;
+        if (!isJson) process.stdout.write(dim('Added .env exclusion to .gitignore\n'));
+      }
+      const exclusionsAdded = fixAiConfigExclusion(targetDir, false);
+      if (exclusionsAdded.length > 0) {
+        noCredFixes.gitExclusionsAdded = exclusionsAdded;
+        anyFix = true;
+        if (!isJson) process.stdout.write(dim(`Added ${exclusionsAdded.length} AI config file${exclusionsAdded.length === 1 ? '' : 's'} to .git/info/exclude\n`));
+      }
+    }
+
+    if (!options.skipSign && !options.dryRun) {
+      try {
+        const { signConfigFilesSilent } = await import('./guard.js');
+        const signResult = await signConfigFilesSilent(targetDir);
+        if (signResult.signed > 0) {
+          noCredFixes.configsSigned = signResult.signed;
+          noCredFixes.configsSignedFiles = signResult.files;
+          anyFix = true;
+          if (!isJson) process.stdout.write(dim(`Signed ${signResult.signed} config file${signResult.signed === 1 ? '' : 's'}\n`));
+        }
+      } catch {
+        // best-effort
+      }
+    }
+
     if (isJson) {
       const report: ProtectReport = {
         targetDir,
@@ -141,10 +198,11 @@ export async function protect(options: ProtectOptions): Promise<number> {
         results: [],
         verificationPassed: true,
         durationMs: Date.now() - startTime,
+        ...(anyFix ? { additionalFixes: noCredFixes } : {}),
       };
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
-    } else {
-      process.stdout.write(green('No hardcoded credentials detected.\n'));
+    } else if (anyFix) {
+      process.stdout.write(dim(`Completed in ${formatDuration(Date.now() - startTime)}\n`));
     }
     return 0;
   }
@@ -284,7 +342,75 @@ export async function protect(options: ProtectOptions): Promise<number> {
     }
   }
 
-  // Phase 4: Verification re-scan
+  // Phase 4: Fix .gitignore (ENV-DOTENV finding)
+  const additionalFixes: AdditionalFixes = {};
+  if (!options.skipGit) {
+    const gitignoreFixed = fixGitignore(targetDir, options.dryRun);
+    if (gitignoreFixed) {
+      additionalFixes.gitignoreFixed = true;
+      if (!isJson) {
+        process.stdout.write(dim('Added .env exclusion to .gitignore\n'));
+      }
+    }
+  }
+
+  // Phase 5: Fix AI config git exclusion (AI-CONFIG finding)
+  if (!options.skipGit) {
+    const exclusionsAdded = fixAiConfigExclusion(targetDir, options.dryRun);
+    if (exclusionsAdded.length > 0) {
+      additionalFixes.gitExclusionsAdded = exclusionsAdded;
+      if (!isJson) {
+        process.stdout.write(dim(`Added ${exclusionsAdded.length} AI config file${exclusionsAdded.length === 1 ? '' : 's'} to .git/info/exclude\n`));
+      }
+    }
+  }
+
+  // Phase 6: Config signing
+  if (!options.skipSign && !options.dryRun) {
+    try {
+      const { signConfigFilesSilent } = await import('./guard.js');
+      const signResult = await signConfigFilesSilent(targetDir);
+      if (signResult.signed > 0) {
+        additionalFixes.configsSigned = signResult.signed;
+        additionalFixes.configsSignedFiles = signResult.files;
+        if (!isJson) {
+          process.stdout.write(dim(`Signed ${signResult.signed} config file${signResult.signed === 1 ? '' : 's'}\n`));
+        }
+      }
+    } catch {
+      // Config signing is best-effort
+    }
+  }
+
+  // Phase 7: Before/after security score
+  let scoreBefore: number | undefined;
+  let scoreAfter: number | undefined;
+  try {
+    const credsBySeverityBefore: Record<string, number> = {};
+    for (const m of matches) {
+      credsBySeverityBefore[m.severity] = (credsBySeverityBefore[m.severity] || 0) + 1;
+    }
+    const checksBefore = runScoringChecks(targetDir, matches.length);
+    const beforeResult = calculateSecurityScore(credsBySeverityBefore, checksBefore);
+    scoreBefore = beforeResult.score;
+
+    // After: credentials migrated (count = failed only), re-check hygiene
+    const afterCredCount = failed;
+    const afterCredsBySeverity: Record<string, number> = {};
+    for (const r of results) {
+      if (r.error) {
+        const sev = r.credential.severity;
+        afterCredsBySeverity[sev] = (afterCredsBySeverity[sev] || 0) + 1;
+      }
+    }
+    const checksAfter = runScoringChecks(targetDir, afterCredCount);
+    const afterResult = calculateSecurityScore(afterCredsBySeverity, checksAfter);
+    scoreAfter = afterResult.score;
+  } catch {
+    // Score calculation is best-effort
+  }
+
+  // Verification re-scan
   let verificationPassed = true;
   if (!options.skipVerify && migrated > 0) {
     if (!isJson) {
@@ -294,7 +420,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
     const remainingMatches = scanForCredentials(targetDir)
       .filter(m => {
-        // Exclude .env files from verification — credentials are supposed to be there
+        // Exclude .env files from verification -- credentials are supposed to be there
         const basename = path.basename(m.filePath);
         return !basename.startsWith('.env');
       });
@@ -313,7 +439,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     }
   }
 
-  // Phase 5: Report
+  // Report
   const durationMs = Date.now() - startTime;
   // Convert liveness results map to plain object for JSON serialization
   let livenessRecord: Record<string, LivenessResult> | undefined;
@@ -323,6 +449,10 @@ export async function protect(options: ProtectOptions): Promise<number> {
       livenessRecord[key] = val;
     }
   }
+
+  const hasAdditionalFixes = additionalFixes.gitignoreFixed ||
+    (additionalFixes.gitExclusionsAdded && additionalFixes.gitExclusionsAdded.length > 0) ||
+    (additionalFixes.configsSigned && additionalFixes.configsSigned > 0);
 
   const report: ProtectReport = {
     targetDir,
@@ -335,6 +465,9 @@ export async function protect(options: ProtectOptions): Promise<number> {
     durationMs,
     livenessResults: livenessRecord,
     aiToolsUpdated,
+    ...(hasAdditionalFixes ? { additionalFixes } : {}),
+    ...(scoreBefore !== undefined ? { scoreBefore } : {}),
+    ...(scoreAfter !== undefined ? { scoreAfter } : {}),
   };
 
   if (options.format === 'json') {
@@ -750,6 +883,75 @@ function updateEnvExample(
   }
 }
 
+// --- Git hygiene fixes ---
+
+/**
+ * Ensure .gitignore contains .env exclusion.
+ * Creates .gitignore if missing, appends if .env not already excluded.
+ * Returns true if a change was made.
+ */
+function fixGitignore(targetDir: string, dryRun?: boolean): boolean {
+  const gitignorePath = path.join(targetDir, '.gitignore');
+
+  if (fs.existsSync(gitignorePath)) {
+    const content = fs.readFileSync(gitignorePath, 'utf-8');
+    if (content.includes('.env')) return false; // already present
+
+    if (!dryRun) {
+      const suffix = content.endsWith('\n') ? '' : '\n';
+      fs.appendFileSync(gitignorePath, `${suffix}.env\n.env.*\n`);
+    }
+    return true;
+  }
+
+  // No .gitignore -- create one
+  if (!dryRun) {
+    fs.writeFileSync(gitignorePath, '.env\n.env.*\n', 'utf-8');
+  }
+  return true;
+}
+
+/**
+ * Add unexcluded AI config files to .git/info/exclude.
+ * Returns list of files added.
+ */
+function fixAiConfigExclusion(targetDir: string, dryRun?: boolean): string[] {
+  const gitDir = path.join(targetDir, '.git');
+  if (!fs.existsSync(gitDir)) return [];
+
+  const finding = scanAiConfigFiles(targetDir);
+  if (!finding || !finding.items || finding.items.length === 0) return [];
+
+  if (dryRun) return finding.items;
+
+  const excludeDir = path.join(gitDir, 'info');
+  const excludePath = path.join(excludeDir, 'exclude');
+
+  // Read existing content
+  let content = '';
+  if (fs.existsSync(excludePath)) {
+    content = fs.readFileSync(excludePath, 'utf-8');
+    if (!content.endsWith('\n')) content += '\n';
+  } else {
+    fs.mkdirSync(excludeDir, { recursive: true });
+  }
+
+  // Append missing entries
+  const added: string[] = [];
+  for (const file of finding.items) {
+    if (!content.includes(file)) {
+      content += `${file}\n`;
+      added.push(file);
+    }
+  }
+
+  if (added.length > 0) {
+    fs.writeFileSync(excludePath, content, 'utf-8');
+  }
+
+  return added;
+}
+
 // --- Reporting ---
 
 function printReport(report: ProtectReport): void {
@@ -789,16 +991,45 @@ function printReport(report: ProtectReport): void {
 
   process.stdout.write(dim(`Completed in ${formatDuration(report.durationMs)}\n`));
 
-  if (report.migrated > 0) {
+  // Additional fixes
+  const af = report.additionalFixes;
+  if (af && (af.gitignoreFixed || af.gitExclusionsAdded?.length || af.configsSigned)) {
+    process.stdout.write('\n' + bold('Additional fixes applied:') + '\n');
+    if (af.gitignoreFixed) {
+      process.stdout.write(`  ${dim('.gitignore')}       Added .env exclusion\n`);
+    }
+    if (af.gitExclusionsAdded && af.gitExclusionsAdded.length > 0) {
+      process.stdout.write(`  ${dim('Git exclusions')}   Added ${af.gitExclusionsAdded.join(', ')} to .git/info/exclude\n`);
+    }
+    if (report.aiToolsUpdated && report.aiToolsUpdated.length > 0) {
+      process.stdout.write(`  ${dim('AI tool configs')}  Updated ${report.aiToolsUpdated.join(', ')}\n`);
+    }
+    if (af.configsSigned && af.configsSigned > 0) {
+      process.stdout.write(`  ${dim('Config signing')}   Signed ${af.configsSigned} config file${af.configsSigned === 1 ? '' : 's'}\n`);
+    }
+  }
+
+  // Before/after score
+  if (report.scoreBefore !== undefined && report.scoreAfter !== undefined && report.scoreAfter !== report.scoreBefore) {
+    const delta = report.scoreAfter - report.scoreBefore;
+    const scoreColor = report.scoreAfter >= 80 ? green
+      : report.scoreAfter >= 60 ? yellow
+      : red;
+    process.stdout.write('\n' + bold('Security Score: ') + `${report.scoreBefore} ${dim('->')} ${scoreColor(String(report.scoreAfter))}  ${green(`(+${delta})`)}\n`);
+  } else if (report.scoreAfter !== undefined) {
+    const scoreColor = report.scoreAfter >= 80 ? green
+      : report.scoreAfter >= 60 ? yellow
+      : red;
+    process.stdout.write('\n' + bold('Security Score: ') + scoreColor(String(report.scoreAfter)) + dim(' / 100') + '\n');
+  }
+
+  if (report.migrated > 0 || (af && (af.gitignoreFixed || af.gitExclusionsAdded?.length || af.configsSigned))) {
     process.stdout.write('\n' + cyan('Next steps:') + '\n');
     process.stdout.write('  1. Review changes: ' + dim('git diff') + '\n');
-    process.stdout.write('  2. Add .env to .gitignore if not already present\n');
-    process.stdout.write('  3. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
-    process.stdout.write('  4. Re-scan to confirm: ' + dim('opena2a scan .') + '\n');
+    process.stdout.write('  2. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
+    process.stdout.write('  3. Re-assess posture: ' + dim('opena2a init') + '\n');
     process.stdout.write('\n' + dim('Continue hardening:') + '\n');
-    process.stdout.write(dim('  opena2a guard sign        Sign config files for tamper detection') + '\n');
     process.stdout.write(dim('  opena2a runtime start     Enable runtime monitoring') + '\n');
-    process.stdout.write(dim('  opena2a init              Re-assess trust score after migration') + '\n');
   }
 }
 

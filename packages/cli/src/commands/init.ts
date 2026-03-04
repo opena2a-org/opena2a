@@ -18,6 +18,13 @@ import { writeEvent, getShieldDir } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
 import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
+import {
+  calculateSecurityScore as calculateSecurityScoreShared,
+  scoreToRiskLevel as scoreToRiskLevelShared,
+  formatCredCount,
+  type HygieneCheck as HygieneCheckShared,
+  type ScoreBreakdown as ScoreBreakdownShared,
+} from '../util/scoring.js';
 
 // --- Types ---
 
@@ -28,17 +35,9 @@ export interface InitOptions {
   verbose?: boolean;
 }
 
-interface HygieneCheck {
-  label: string;
-  status: 'pass' | 'warn' | 'fail' | 'info';
-  detail: string;
-}
-
-interface ScoreBreakdown {
-  credentials: { deduction: number; detail: string };
-  environment: { deduction: number; detail: string };
-  configuration: { deduction: number; detail: string };
-}
+// HygieneCheck and ScoreBreakdown imported from util/scoring.ts
+type HygieneCheck = HygieneCheckShared;
+type ScoreBreakdown = ScoreBreakdownShared;
 
 interface GroupedFinding {
   findingId: string;
@@ -544,131 +543,13 @@ function groupFindings(
 
 // --- Unified Security Score ---
 
-export function calculateSecurityScore(
-  credsBySeverity: Record<string, number>,
-  checks: HygieneCheck[],
-  hmaBySeverity?: Record<string, number>,
-): { score: number; grade: string; breakdown: ScoreBreakdown } {
-  // --- Credentials category (cap at -60) ---
-  let credDeduction = 0;
-  const critCount = (credsBySeverity['critical'] || 0);
-  const highCount = (credsBySeverity['high'] || 0);
-  const medCount = (credsBySeverity['medium'] || 0);
-  const lowCount = (credsBySeverity['low'] || 0);
+/**
+ * Re-export from shared module for backward compatibility.
+ * Tests (security-score.test.ts) import this from init.ts.
+ */
+export const calculateSecurityScore = calculateSecurityScoreShared;
 
-  // Diminishing returns: first finding costs more, subsequent cost less
-  if (critCount > 0) {
-    credDeduction += 20; // first critical
-    credDeduction += Math.min((critCount - 1) * 8, 24); // subsequent critical, cap additional at 24
-  }
-  if (highCount > 0) {
-    credDeduction += 12; // first high
-    credDeduction += Math.min((highCount - 1) * 5, 15); // subsequent high, cap additional at 15
-  }
-  credDeduction += Math.min(medCount * 4, 20); // medium, cap at 20
-  credDeduction += Math.min(lowCount * 2, 8); // low, cap at 8
-
-  credDeduction = Math.min(credDeduction, 60); // category cap
-
-  const credDetail = credCount(critCount, highCount, medCount, lowCount);
-
-  // --- Environment category (cap at -25) ---
-  let envDeduction = 0;
-  const llmCheck = checks.find(c => c.label === 'LLM server exposure');
-  if (llmCheck?.status === 'warn') envDeduction += 10;
-
-  const envProtection = checks.find(c => c.label === '.env protection');
-  if (envProtection?.status === 'warn') envDeduction += 8;
-
-  // MCP config findings
-  const mcpToolsCheck = checks.find(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
-  if (mcpToolsCheck) envDeduction += 5;
-
-  const mcpCredCheck = checks.find(c => c.label === 'MCP credentials' && c.status === 'warn');
-  if (mcpCredCheck) envDeduction += 5;
-
-  // AI config exposure
-  const aiConfigCheck = checks.find(c => c.label === 'AI config exposure' && c.status === 'warn');
-  if (aiConfigCheck) envDeduction += 3;
-
-  // HMA shell findings
-  if (hmaBySeverity) {
-    envDeduction += Math.min((hmaBySeverity['critical'] || 0) * 10, 10);
-    envDeduction += Math.min((hmaBySeverity['high'] || 0) * 6, 12);
-    envDeduction += Math.min((hmaBySeverity['medium'] || 0) * 3, 9);
-  }
-
-  envDeduction = Math.min(envDeduction, 25); // category cap
-
-  const envDetails: string[] = [];
-  if (llmCheck?.status === 'warn') envDetails.push('LLM server exposed');
-  if (envProtection?.status === 'warn') envDetails.push('.env unprotected');
-  if (mcpToolsCheck) envDetails.push('MCP high-risk tools');
-  if (mcpCredCheck) envDetails.push('MCP credentials');
-  if (aiConfigCheck) envDetails.push('AI config exposed');
-  if (hmaBySeverity && Object.keys(hmaBySeverity).length > 0) envDetails.push('shell findings');
-  const envDetail = envDetails.length > 0 ? envDetails.join(', ') : 'clean';
-
-  // --- Configuration category (cap at -15, bonus up to +5) ---
-  let configDeduction = 0;
-  const gitignoreCheck = checks.find(c => c.label === '.gitignore');
-  if (gitignoreCheck?.status !== 'pass') configDeduction += 8;
-
-  const lockCheck = checks.find(c => c.label === 'Lock file');
-  if (lockCheck?.status !== 'pass') configDeduction += 4;
-
-  const secConfig = checks.find(c => c.label === 'Security config');
-  if (secConfig?.status !== 'pass') configDeduction += 3;
-
-  // Bonus for having security config
-  let configBonus = 0;
-  if (secConfig?.status === 'pass') configBonus = 5;
-
-  configDeduction = Math.min(configDeduction, 15); // category cap
-
-  const configDetails: string[] = [];
-  if (gitignoreCheck?.status !== 'pass') configDetails.push('no .gitignore');
-  if (lockCheck?.status !== 'pass') configDetails.push('no lock file');
-  if (secConfig?.status !== 'pass') configDetails.push('no security config');
-  if (configBonus > 0) configDetails.push('security config present');
-  const configDetail = configDetails.length > 0 ? configDetails.join(', ') : 'clean';
-
-  const score = Math.max(0, Math.min(100, 100 - credDeduction - envDeduction - configDeduction + configBonus));
-
-  let grade: string;
-  if (score >= 90) grade = 'A';
-  else if (score >= 80) grade = 'B';
-  else if (score >= 70) grade = 'C';
-  else if (score >= 60) grade = 'D';
-  else grade = 'F';
-
-  return {
-    score,
-    grade,
-    breakdown: {
-      credentials: { deduction: credDeduction, detail: credDetail },
-      environment: { deduction: envDeduction, detail: envDetail },
-      configuration: { deduction: configDeduction - configBonus, detail: configDetail },
-    },
-  };
-}
-
-function credCount(crit: number, high: number, med: number, low: number): string {
-  const parts: string[] = [];
-  if (crit > 0) parts.push(`${crit} critical`);
-  if (high > 0) parts.push(`${high} high`);
-  if (med > 0) parts.push(`${med} medium`);
-  if (low > 0) parts.push(`${low} low`);
-  return parts.length > 0 ? parts.join(', ') : 'none';
-}
-
-function scoreToRiskLevel(score: number): RiskLevel {
-  if (score >= 90) return 'SECURE';
-  if (score >= 70) return 'LOW';
-  if (score >= 50) return 'MEDIUM';
-  if (score >= 30) return 'HIGH';
-  return 'CRITICAL';
-}
+const scoreToRiskLevel = scoreToRiskLevelShared;
 
 // --- Actions ---
 
@@ -705,7 +586,7 @@ function generateActions(
   if (envCheck?.status === 'warn') {
     actions.push({
       description: 'Add .env to .gitignore',
-      command: "echo '.env' >> .gitignore",
+      command: 'opena2a protect',
       why: 'Adding .env to .gitignore prevents secrets from entering version control. Existing tracked .env files also need `git rm --cached .env`.',
     });
   }
@@ -766,7 +647,7 @@ function generateActions(
   if (aiConfigFinding) {
     actions.push({
       description: 'Exclude AI instruction files from git',
-      command: "echo 'CLAUDE.md' >> .git/info/exclude",
+      command: 'opena2a protect',
       why: 'AI instruction files reveal tooling choices and system prompts when committed to a public repository. Adding them to .git/info/exclude keeps them local without modifying .gitignore.',
     });
   }
@@ -776,7 +657,7 @@ function generateActions(
   if (actions.length < 5 && secConfig?.status !== 'pass') {
     actions.push({
       description: 'Sign config files for integrity monitoring',
-      command: 'opena2a guard sign',
+      command: 'opena2a protect',
       why: 'Signed baselines let you detect unintended config changes before they affect runtime behavior.',
     });
   }
@@ -808,26 +689,23 @@ function generateNextSteps(
     steps.push({
       severity: 'high',
       description: 'Add .env to .gitignore',
-      command: "echo '.env' >> .gitignore",
+      command: 'opena2a protect',
     });
   }
 
   const gitignoreCheck = checks.find(c => c.label === '.gitignore');
   if (gitignoreCheck?.status !== 'pass') {
-    const gitignoreTemplate = projectType === 'python' ? 'python'
-      : projectType === 'go' ? 'go'
-      : 'node';
     steps.push({
       severity: 'high',
-      description: 'Create .gitignore',
-      command: `npx gitignore ${gitignoreTemplate}`,
+      description: 'Create .gitignore with .env exclusion',
+      command: 'opena2a protect',
     });
   }
 
   steps.push({
     severity: 'medium',
     description: 'Sign config files for integrity',
-    command: 'opena2a guard sign',
+    command: 'opena2a protect',
   });
 
   steps.push({
@@ -908,7 +786,7 @@ function getToolRecommendation(
     return { command: 'opena2a shield status', label: 'opena2a shield status' };
   }
   if (findingId === 'ENV-DOTENV') {
-    return { command: "echo '.env' >> .gitignore", label: "echo '.env' >> .gitignore" };
+    return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId.startsWith('HMA-')) {
     return { command: 'opena2a scan secure', label: 'opena2a scan secure' };
@@ -920,7 +798,7 @@ function getToolRecommendation(
     return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId === 'AI-CONFIG') {
-    return { command: "echo 'CLAUDE.md' >> .git/info/exclude", label: "echo 'CLAUDE.md' >> .git/info/exclude" };
+    return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId === 'AI-SKILLS') {
     return { command: 'opena2a guard sign --skills', label: 'opena2a guard sign --skills' };
@@ -955,8 +833,8 @@ function getContextualTip(
   const hasAiConfig = report.findings.some(f => f.findingId === 'AI-CONFIG');
   if (hasAiConfig) {
     return {
-      text: 'Add AI instruction files to .git/info/exclude',
-      command: "echo 'CLAUDE.md' >> .git/info/exclude",
+      text: 'Fix all auto-fixable findings',
+      command: 'opena2a protect',
     };
   }
 
@@ -971,8 +849,8 @@ function getContextualTip(
   const hasEnv = report.findings.some(f => f.findingId === 'ENV-DOTENV');
   if (hasEnv) {
     return {
-      text: 'Add .env to .gitignore',
-      command: "echo '.env' >> .gitignore",
+      text: 'Fix all auto-fixable findings',
+      command: 'opena2a protect',
     };
   }
 
