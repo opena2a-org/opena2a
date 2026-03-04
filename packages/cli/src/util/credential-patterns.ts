@@ -151,9 +151,9 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
       // Skip large files (>1MB)
       try {
         const stat = fs.statSync(path.join(dir, entry.name));
-        if (stat.size > 1_048_576) return;
+        if (stat.size > 1_048_576) continue;
       } catch {
-        return;
+        continue;
       }
       callback(path.join(dir, entry.name));
     }

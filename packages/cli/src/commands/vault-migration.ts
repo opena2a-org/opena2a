@@ -130,6 +130,11 @@ export async function offerVaultMigration(ctx: VaultMigrationContext): Promise<b
       return false;
     }
 
+    if (!/^https?:\/\//i.test(vaultAddr)) {
+      process.stdout.write(red('Vault address must start with http:// or https://\n'));
+      return false;
+    }
+
     // Set for this process so the backend picks them up
     process.env['VAULT_ADDR']  = vaultAddr;
     process.env['VAULT_TOKEN'] = vaultToken;
