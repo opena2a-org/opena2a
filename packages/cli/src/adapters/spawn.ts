@@ -55,7 +55,7 @@ export class SpawnAdapter implements Adapter {
   async isAvailable(): Promise<boolean> {
     const command = this.config.command;
     if (!command) return false;
-    return this.commandExists(command) || this.commandExists('npx');
+    return await this.commandExists(command) || await this.commandExists('npx');
   }
 
   private async commandExists(cmd: string): Promise<boolean> {

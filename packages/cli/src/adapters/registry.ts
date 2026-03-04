@@ -23,7 +23,8 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
   // scan-soul and harden-soul are handled directly in commands/soul.ts (programmatic API)
   registry: {
     name: 'registry',
-    method: 'import',
+    method: 'spawn',
+    command: 'ai-trust',
     packageName: 'ai-trust',
     subcommand: 'check',
     description: 'Query OpenA2A Trust Registry for package security data',
