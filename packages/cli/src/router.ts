@@ -108,13 +108,18 @@ export async function dispatchCommand(
   if (command === 'guard') {
     const { guard } = await import('./commands/guard.js');
     const subcommand = args[0] ?? 'status';
+    const remainingArgs = args.slice(1);
+    // Extract directory from first remaining arg if it looks like a path
+    const dirFromArgs = remainingArgs.length > 0 && !remainingArgs[0]?.startsWith('-')
+      ? remainingArgs.shift()
+      : undefined;
     return guard({
       subcommand: subcommand as 'sign' | 'verify' | 'status' | 'policy',
-      targetDir: process.cwd(),
+      targetDir: dirFromArgs ?? process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
       verbose: globalOptions.verbose ?? false,
-      args: args.slice(1),
+      args: remainingArgs,
     });
   }
 
@@ -138,9 +143,11 @@ export async function dispatchCommand(
   if (command === 'runtime') {
     const { runtime } = await import('./commands/runtime.js');
     const subcommand = args[0] ?? 'status';
+    // Extract directory from second arg if it looks like a path
+    const dirFromArgs = args[1] && !args[1].startsWith('-') ? args[1] : undefined;
     return runtime({
       subcommand: subcommand as 'start' | 'status' | 'tail' | 'init',
-      targetDir: process.cwd(),
+      targetDir: dirFromArgs ?? process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
       verbose: globalOptions.verbose ?? false,

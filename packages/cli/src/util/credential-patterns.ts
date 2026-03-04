@@ -53,7 +53,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-002',
     title: 'OpenAI API Key',
-    pattern: /sk-(?!ant-api)(?:proj-|test-|svcacct-|live-)?[A-Za-z0-9_-]{20,}/g,
+    pattern: /sk-(?!ant-)(?:proj-|test-|svcacct-|live-)?[A-Za-z0-9_-]{20,}/g,
     envVarPrefix: 'OPENAI_API_KEY',
     severity: 'critical',
     explanation: 'OpenAI API key hardcoded in source. Grants full API access to anyone with the source code.',

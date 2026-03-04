@@ -146,10 +146,12 @@ Learn more: https://opena2a.org/docs`);
       }
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
+      // Extract directory from positional args if --dir not specified
+      const dirFromArgs = args.length > 0 && !args[0]?.startsWith('-') ? args.shift() : undefined;
       process.exitCode = await guard({
         subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot',
         files: opts.files,
-        targetDir: opts.dir,
+        targetDir: opts.dir ?? dirFromArgs,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -162,20 +164,20 @@ Learn more: https://opena2a.org/docs`);
 
   // Runtime command (ARP wrapper)
   program
-    .command('runtime <subcommand>')
+    .command('runtime <subcommand> [directory]')
     .description('Agent runtime protection (start|status|tail|init)')
     .option('--config <path>', 'Path to ARP config file')
     .option('--count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
-    .action(async (subcommand: string, opts) => {
+    .action(async (subcommand: string, directory: string | undefined, opts) => {
       const { runtime } = await import('./commands/runtime.js');
       const globalOpts = program.opts();
       process.exitCode = await runtime({
         subcommand: subcommand as 'start' | 'status' | 'tail' | 'init',
         configPath: opts.config,
         count: opts.count ? parseInt(opts.count, 10) : undefined,
-        targetDir: opts.dir,
+        targetDir: opts.dir ?? directory,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
