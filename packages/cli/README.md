@@ -450,80 +450,89 @@ Adapters install tools on first use. Each tool works standalone or through the C
 
 ## Behavioral Governance
 
-The [Agent Governance Specification (AGS)](https://github.com/opena2a-org/agent-governance-spec) defines a tiered behavioral safety framework for AI agents across 8 domains and up to 26 controls. OpenA2A CLI integrates AGS scanning through HackMyAgent.
+The [Agent Governance Specification (AGS)](https://github.com/opena2a-org/agent-governance-spec) defines a tiered behavioral safety framework for AI agents across 8 domains and 68 controls (OASB v2). OpenA2A CLI integrates AGS scanning through HackMyAgent.
 
 ### `opena2a scan-soul`
 
-Scan a SOUL.md governance file against AGS controls for your agent's capability tier.
+Scan your governance file (SOUL.md or equivalent) against AGS controls for your agent's capability tier. Auto-detects tier from file content.
 
 ```bash
 opena2a scan-soul                          # Scan SOUL.md in current directory
-opena2a scan-soul --file ./agent/SOUL.md  # Scan specific file
-opena2a scan-soul --tier TOOL-USING        # Scan for tool-using agents (13-21 controls)
-opena2a scan-soul --tier AGENTIC           # Scan for agentic agents (24 controls)
-opena2a scan-soul --tier MULTI-AGENT       # Scan for multi-agent systems (26 controls)
-opena2a scan-soul --format json            # Machine-readable output for CI
+opena2a scan-soul ./agent/                 # Scan specific directory
+opena2a scan-soul --tier TOOL-USING        # Force TOOL-USING tier (54 controls)
+opena2a scan-soul --tier AGENTIC           # Force AGENTIC tier (65 controls)
+opena2a scan-soul --tier MULTI-AGENT       # Force MULTI-AGENT tier (68 controls)
+opena2a scan-soul --json                   # Machine-readable output for CI
+opena2a scan-soul --deep                   # Enable LLM semantic analysis (requires ANTHROPIC_API_KEY)
+opena2a scan-soul --fail-below 60          # Exit 1 if score below threshold
 ```
 
 Tier-to-control mapping:
 
 | Tier | Controls | Use Case |
 |------|----------|----------|
-| `BASIC` | 13 | Single-turn chatbots, no tool use |
-| `TOOL-USING` | 21 | Agents with tool/function calling |
-| `AGENTIC` | 24 | Long-running, multi-step autonomous agents |
-| `MULTI-AGENT` | 26 | Orchestrators and sub-agent systems |
+| `BASIC` | 27 | Single-turn chatbots, no tool use |
+| `TOOL-USING` | 54 | Agents with tool/function calling |
+| `AGENTIC` | 65 | Long-running, multi-step autonomous agents |
+| `MULTI-AGENT` | 68 | Orchestrators and sub-agent systems |
+
+Governance file search order: `SOUL.md` > `system-prompt.md` > `CLAUDE.md` > `.cursorrules` > `agent-config.yaml` (and more).
+
+Conformance levels shown in output:
+- `none` — a critical control is missing (grade capped at C)
+- `essential` — all critical controls pass
+- `standard` — all critical + high controls pass, score ≥ 60
+- `hardened` — all controls pass, score ≥ 75
 
 ### `opena2a harden-soul`
 
-Generate a SOUL.md governance file, or improve an existing one. Outputs templates for all 8 behavioral domains regardless of tier.
+Generate a SOUL.md governance file, or add missing sections to an existing one. Existing content is always preserved.
 
 ```bash
-opena2a harden-soul                          # Generate SOUL.md in current directory
-opena2a harden-soul --file ./agent/SOUL.md  # Target specific file
-opena2a harden-soul --name "MyAgent"         # Set agent name in generated file
-opena2a harden-soul --tier AGENTIC           # Use AGENTIC tier guidance
+opena2a harden-soul                # Add missing sections to SOUL.md
+opena2a harden-soul ./agent/       # Target specific directory
+opena2a harden-soul --dry-run      # Preview what would be added, no writes
+opena2a harden-soul --json         # Machine-readable output
 ```
 
-The 8 AGS behavioral domains:
+The 8 AGS behavioral domains (OASB v2, domains 7–14):
 
-| Domain | Coverage |
-|--------|----------|
-| Core Behavioral Principles | Helpfulness, safety baseline, consistency |
-| Trust Hierarchy | Principal relationships, override rules |
-| Capability Scope | Permission boundaries, minimal footprint |
-| Harm Avoidance | Content filtering, dual-use detection |
-| Transparency | Self-disclosure, capability representation |
-| Honesty and Transparency | Truthfulness, uncertainty communication |
-| Security Practices | Prompt injection defense, credential handling |
-| Oversight and Governance | Human oversight, audit, recovery |
+| Domain | What it governs |
+|--------|----------------|
+| Trust Hierarchy | Principal relationships, conflict resolution |
+| Capability Boundaries | Allowed/denied actions, least privilege |
+| Injection Hardening | Prompt injection defense, encoded payload rejection |
+| Data Handling | PII protection, credential handling, data minimization |
+| Hardcoded Behaviors | Immutable safety rules (no exfiltration, kill switch) |
+| Agentic Safety | Iteration limits, budget caps, rollback, plan disclosure |
+| Honesty and Transparency | Uncertainty acknowledgment, identity disclosure |
+| Human Oversight | Approval gates, override mechanisms, monitoring |
 
 ## CI/CD Integration
 
-All commands support `--format json` and `--ci` flags for pipeline integration:
+Several commands support `--json` output and `--fail-below` for pipeline gates:
 
 ```yaml
 # GitHub Actions example
-- name: Security assessment
-  run: npx opena2a-cli init --ci --format json > security-report.json
-
 - name: Credential check
   run: |
-    npx opena2a-cli protect --dry-run --ci --format json > cred-report.json
-    # Fail if credentials found
+    npx opena2a-cli protect --dry-run --json > cred-report.json
     jq -e '.totalFound == 0' cred-report.json
 
+- name: Behavioral governance gate
+  run: npx opena2a-cli scan-soul --json --fail-below 60
+
 - name: Config integrity
-  run: npx opena2a-cli guard verify --ci
+  run: npx opena2a-cli guard verify
 ```
 
 ## Output Formats
 
 | Format | Flag | Use Case |
 |--------|------|----------|
-| Text | `--format text` (default) | Human-readable terminal output |
-| JSON | `--format json` | CI pipelines, programmatic consumption |
-| HTML | `--report <path>` | Interactive report with filtering (protect and shield report) |
+| Text | (default) | Human-readable terminal output |
+| JSON | `--json` | CI pipelines, programmatic consumption |
+| HTML | `--report <path>` | Interactive report (protect and shield commands) |
 
 ## Credential Patterns
 
