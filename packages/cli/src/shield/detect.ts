@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { homedir, hostname, platform } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -27,10 +27,11 @@ import { detectProject } from '../util/detect.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Run a command silently and return trimmed stdout, or null on failure. */
-function tryExec(cmd: string): string | null {
+/** Run a command silently and return trimmed stdout, or null on failure.
+ *  Uses execFileSync to avoid shell interpretation and prevent shell injection. */
+function tryExec(binary: string, args: string[] = []): string | null {
   try {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
     return null;
   }
@@ -63,7 +64,7 @@ function fileMtime(filePath: string): string | null {
 interface CliSpec {
   name: string;
   binary: string;
-  versionFlag: string;
+  versionArgs: string[];
   configDir: string;
   credentialFiles: string[];
 }
@@ -72,49 +73,49 @@ const CLI_SPECS: CliSpec[] = [
   {
     name: 'aws',
     binary: 'aws',
-    versionFlag: '--version',
+    versionArgs: ['--version'],
     configDir: join(homedir(), '.aws'),
     credentialFiles: ['credentials', 'sso/cache'],
   },
   {
     name: 'az',
     binary: 'az',
-    versionFlag: '--version',
+    versionArgs: ['--version'],
     configDir: join(homedir(), '.azure'),
     credentialFiles: ['msal_token_cache.json', 'accessTokens.json'],
   },
   {
     name: 'gcloud',
     binary: 'gcloud',
-    versionFlag: '--version',
+    versionArgs: ['--version'],
     configDir: join(homedir(), '.config', 'gcloud'),
     credentialFiles: ['application_default_credentials.json', 'credentials.db'],
   },
   {
     name: 'vercel',
     binary: 'vercel',
-    versionFlag: '--version',
+    versionArgs: ['--version'],
     configDir: join(homedir(), '.vercel'),
     credentialFiles: ['auth.json'],
   },
   {
     name: 'gh',
     binary: 'gh',
-    versionFlag: '--version',
+    versionArgs: ['--version'],
     configDir: join(homedir(), '.config', 'gh'),
     credentialFiles: ['hosts.yml'],
   },
   {
     name: 'kubectl',
     binary: 'kubectl',
-    versionFlag: 'version --client --short',
+    versionArgs: ['version', '--client', '--short'],
     configDir: join(homedir(), '.kube'),
     credentialFiles: ['config'],
   },
   {
     name: 'terraform',
     binary: 'terraform',
-    versionFlag: '--version',
+    versionArgs: ['--version'],
     configDir: join(homedir(), '.terraform.d'),
     credentialFiles: ['credentials.tfrc.json'],
   },
@@ -124,12 +125,12 @@ function detectClis(): DetectedCli[] {
   const results: DetectedCli[] = [];
 
   for (const spec of CLI_SPECS) {
-    const binaryPath = tryExec(`which ${spec.binary}`);
+    const binaryPath = tryExec('which', [spec.binary]);
     if (!binaryPath) continue;
 
     // Extract version string -- take only the first line to keep it concise
     let version: string | null = null;
-    const rawVersion = tryExec(`${spec.binary} ${spec.versionFlag}`);
+    const rawVersion = tryExec(spec.binary, spec.versionArgs);
     if (rawVersion) {
       version = rawVersion.split('\n')[0].trim();
     }

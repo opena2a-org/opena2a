@@ -188,7 +188,9 @@ describe('protect command', () => {
 
     const policyFile = path.join(os.homedir(), '.secretless-ai', 'broker-policies.json');
     if (fs.existsSync(policyFile)) {
-      const policies = JSON.parse(fs.readFileSync(policyFile, 'utf-8'));
+      const raw = JSON.parse(fs.readFileSync(policyFile, 'utf-8'));
+      // Handle both formats: plain array or { rules: [...] } object
+      const policies = Array.isArray(raw) ? raw : (Array.isArray(raw.rules) ? raw.rules : []);
       const hasPolicy = policies.some(
         (p: any) => p.credentialSelector === 'GOOGLE_API_KEY' && p.effect === 'deny'
       );

@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, normalize } from 'node:path';
 import { homedir } from 'node:os';
 
 import type {
@@ -402,14 +402,19 @@ export function evaluatePolicy(
 
   const { allow, deny } = rules as { allow: string[]; deny: string[] };
 
-  // For credentials and filesystem categories, expand ~ in patterns
-  const shouldExpandHome = resolvedCategory === 'filesystem' || resolvedCategory === 'credentials';
-  const expandPattern = shouldExpandHome ? expandHomedir : (p: string) => p;
+  // For credentials and filesystem categories, expand ~ in patterns and
+  // canonicalize the target path to prevent path traversal attacks.
+  // resolve() + normalize() collapses ../  sequences so that a target
+  // like "/home/user/.ssh/../../../etc/passwd" becomes "/etc/passwd"
+  // and matches deny rules correctly instead of bypassing them.
+  const isPathCategory = resolvedCategory === 'filesystem' || resolvedCategory === 'credentials';
+  const expandPattern = isPathCategory ? expandHomedir : (p: string) => p;
+  const canonicalTarget = isPathCategory ? normalize(resolve(target)) : target;
 
   // Check deny first (deny takes precedence)
   for (const pattern of deny) {
     const expanded = expandPattern(pattern);
-    if (matchesPattern(target, expanded)) {
+    if (matchesPattern(canonicalTarget, expanded)) {
       if (policy.mode === 'enforce') {
         return {
           allowed: false,
@@ -431,7 +436,7 @@ export function evaluatePolicy(
   // Check allow
   for (const pattern of allow) {
     const expanded = expandPattern(pattern);
-    if (matchesPattern(target, expanded)) {
+    if (matchesPattern(canonicalTarget, expanded)) {
       return {
         allowed: true,
         outcome: 'allowed',

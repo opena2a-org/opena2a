@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { ShieldStatus, ProductStatus, PolicyMode, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 
@@ -9,9 +9,11 @@ function getShieldDir(): string {
   return join(homedir(), '.opena2a', 'shield');
 }
 
-function tryExec(cmd: string): string | null {
+/** Run a command silently and return trimmed stdout, or null on failure.
+ *  Uses execFileSync to avoid shell interpretation and prevent shell injection. */
+function tryExec(binary: string, args: string[] = []): string | null {
   try {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
     return null;
   }
@@ -20,7 +22,7 @@ function tryExec(cmd: string): string | null {
 function detectProduct(name: string): ProductStatus {
   switch (name) {
     case 'Secretless': {
-      const version = tryExec('npx secretless-ai --version 2>/dev/null');
+      const version = tryExec('npx', ['secretless-ai', '--version']);
       const configExists = existsSync(join(process.cwd(), '.secretless.json')) ||
         existsSync(join(homedir(), '.secretless', 'config.json'));
       return {
@@ -62,7 +64,7 @@ function detectProduct(name: string): ProductStatus {
     }
 
     case 'HMA': {
-      const version = tryExec('npx hackmyagent --version 2>/dev/null');
+      const version = tryExec('npx', ['hackmyagent', '--version']);
       return {
         name: 'HackMyAgent',
         installed: version !== null,
@@ -74,7 +76,7 @@ function detectProduct(name: string): ProductStatus {
 
     case 'Registry': {
       // Registry is typically a remote service; check if CLI supports it
-      const hasRegistry = tryExec('npx opena2a registry --help 2>/dev/null');
+      const hasRegistry = tryExec('npx', ['opena2a', 'registry', '--help']);
       return {
         name: 'Registry',
         installed: hasRegistry !== null,
