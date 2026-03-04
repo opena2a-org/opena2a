@@ -261,6 +261,50 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
+  // Scan-soul command (governance scanner, uses hackmyagent SoulScanner API)
+  program
+    .command('scan-soul [directory]')
+    .description('Scan governance file for behavioral safety coverage (AGS)')
+    .option('--dir <path>', 'Target directory')
+    .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
+    .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
+    .option('--deep', 'Enable LLM-assisted deep analysis')
+    .action(async (directory: string | undefined, opts) => {
+      const { scanSoul } = await import('./commands/soul.js');
+      const globalOpts = program.opts();
+      process.exitCode = await scanSoul({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        profile: opts.profile,
+        tier: opts.tier,
+        deep: opts.deep,
+      });
+    });
+
+  // Harden-soul command (governance generator, uses hackmyagent SoulScanner API)
+  program
+    .command('harden-soul [directory]')
+    .description('Generate or improve governance file with AGS templates')
+    .option('--dir <path>', 'Target directory')
+    .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
+    .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
+    .option('--dry-run', 'Show what would be generated without writing')
+    .action(async (directory: string | undefined, opts) => {
+      const { hardenSoul } = await import('./commands/soul.js');
+      const globalOpts = program.opts();
+      process.exitCode = await hardenSoul({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        profile: opts.profile,
+        tier: opts.tier,
+        dryRun: opts.dryRun,
+      });
+    });
+
   // Self-register command
   program
     .command('self-register')

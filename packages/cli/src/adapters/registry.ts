@@ -20,18 +20,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'hackmyagent',
     description: 'Run security benchmark against AI agent (OASB)',
   },
-  'scan-soul': {
-    name: 'scan-soul',
-    method: 'import',
-    packageName: 'hackmyagent',
-    description: 'Scan governance file for behavioral safety coverage (AGS)',
-  },
-  'harden-soul': {
-    name: 'harden-soul',
-    method: 'import',
-    packageName: 'hackmyagent',
-    description: 'Generate or improve governance file with AGS templates',
-  },
+  // scan-soul and harden-soul are handled directly in commands/soul.ts (programmatic API)
   registry: {
     name: 'registry',
     method: 'import',

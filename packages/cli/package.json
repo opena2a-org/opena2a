@@ -18,10 +18,12 @@
   "dependencies": {
     "@opena2a/shared": "0.1.0",
     "commander": "^13.1.0",
-    "@inquirer/prompts": "^7.0.0"
+    "@inquirer/prompts": "^7.0.0",
+    "hackmyagent": "^0.9.5",
+    "secretless-ai": "^0.11.0",
+    "ai-trust": "^0.1.1"
   },
   "optionalDependencies": {
-    "secretless-ai": "*",
     "@opena2a/aim-core": "*"
   },
   "devDependencies": {

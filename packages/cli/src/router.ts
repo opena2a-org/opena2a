@@ -154,6 +154,29 @@ export async function dispatchCommand(
     });
   }
 
+  // Handle 'scan-soul' directly (SoulScanner programmatic API)
+  if (command === 'scan-soul') {
+    const { scanSoul } = await import('./commands/soul.js');
+    return scanSoul({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'harden-soul' directly (SoulScanner programmatic API)
+  if (command === 'harden-soul') {
+    const { hardenSoul } = await import('./commands/soul.js');
+    return hardenSoul({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+      dryRun: args.includes('--dry-run'),
+    });
+  }
+
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
     check: { adapter: 'scan', defaultArgs: ['secure'] },
