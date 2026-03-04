@@ -180,8 +180,10 @@ export async function offerVaultMigration(ctx: VaultMigrationContext): Promise<b
     const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
     const mod = 'default' in secretless ? secretless.default : secretless;
 
-    if (mod.migrateSecrets) {
-      const result = await mod.migrateSecrets('local', 'vault', { deleteFromSource: false });
+    if (mod.migrateSecrets && mod.createBackend) {
+      const sourceBackend = mod.createBackend('local');
+      const destBackend   = mod.createBackend('vault', { addr: vaultAddr, token: vaultToken });
+      const result = await mod.migrateSecrets(sourceBackend, destBackend, { deleteFromSource: false, prefix: 'secret' });
       spinner.stop();
 
       const migrated = result?.migrated ?? 0;
@@ -199,8 +201,8 @@ export async function offerVaultMigration(ctx: VaultMigrationContext): Promise<b
       return false;
     }
 
-    if (mod.setBackend) {
-      await mod.setBackend('vault');
+    if (mod.writeBackendConfig) {
+      mod.writeBackendConfig('vault');
       process.stdout.write(green('Default backend set to Vault.\n'));
     }
 

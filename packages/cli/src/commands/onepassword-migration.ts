@@ -154,9 +154,12 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
     const mod = 'default' in secretless ? secretless.default : secretless;
 
     // Attempt migration
-    if (mod.migrateSecrets) {
-      const result = await mod.migrateSecrets('local', '1password', {
+    if (mod.migrateSecrets && mod.createBackend) {
+      const sourceBackend = mod.createBackend('local');
+      const destBackend   = mod.createBackend('1password');
+      const result = await mod.migrateSecrets(sourceBackend, destBackend, {
         deleteFromSource: false,
+        prefix: 'secret',
       });
       spinner.stop();
 
@@ -176,8 +179,8 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
     }
 
     // Step 6: Set default backend
-    if (mod.setBackend) {
-      await mod.setBackend('1password');
+    if (mod.writeBackendConfig) {
+      mod.writeBackendConfig('1password');
       process.stdout.write(green('Default backend set to 1Password.') + '\n');
     }
 
