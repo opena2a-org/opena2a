@@ -59,6 +59,78 @@ export interface ScanReport {
   a2aCapabilities?: string[];
 }
 
+// --- Governance scan normalization ---
+
+/**
+ * Normalize a scan-soul governance result into the ScanReport format.
+ * Maps control gaps to findings so the registry can aggregate governance data.
+ */
+export function normalizeGovernanceReport(raw: Record<string, unknown>): ScanReport | null {
+  // Detect governance scan by presence of 'domains' array and 'grade' field
+  if (!raw.domains || !raw.grade) return null;
+
+  const score = (raw.score as number) ?? 0;
+  const grade = (raw.grade as string) ?? 'F';
+  const domains = raw.domains as Array<{
+    domain: string;
+    controls: Array<{ id: string; name: string; passed: boolean }>;
+    passed: number;
+    total: number;
+  }>;
+
+  const findings: ScanFinding[] = [];
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  // Severity map for known control IDs (CRITICAL and HIGH controls)
+  const severityMap: Record<string, string> = {
+    'SOUL-IH-003': 'critical', 'SOUL-HB-001': 'critical',
+    'SOUL-TH-001': 'high', 'SOUL-CB-001': 'high', 'SOUL-CB-002': 'high',
+    'SOUL-IH-001': 'high', 'SOUL-HB-002': 'high', 'SOUL-HB-003': 'high',
+    'SOUL-HO-001': 'high',
+  };
+
+  for (const domain of domains) {
+    for (const control of domain.controls) {
+      if (!control.passed) {
+        const severity = severityMap[control.id] ?? 'medium';
+        if (severity === 'critical') criticalCount++;
+        else if (severity === 'high') highCount++;
+        else if (severity === 'medium') mediumCount++;
+        else lowCount++;
+
+        findings.push({
+          findingId: control.id,
+          severity,
+          category: 'governance',
+          title: `${control.name} not addressed`,
+          description: `Control ${control.id} (${control.name}) was not detected in the governance file. Domain: ${domain.domain}.`,
+        });
+      }
+    }
+  }
+
+  const verdict = score >= 75 ? 'pass' : score >= 40 ? 'warnings' : 'fail';
+
+  return {
+    packageName: (raw.file as string) ?? 'SOUL.md',
+    packageType: 'governance',
+    scannerName: 'HackMyAgent',
+    scannerVersion: '1.0.0',
+    overallScore: score,
+    scanDurationMs: 0,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+    infoCount: 0,
+    verdict,
+    findings,
+  };
+}
+
 // --- Submission ---
 
 export async function submitScanReport(

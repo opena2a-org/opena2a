@@ -31,6 +31,8 @@ Quick Start:
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
   $ opena2a scan secure          Run 150+ security checks on your AI agent
+  $ opena2a scan-soul            Scan governance file for behavioral safety (AGS)
+  $ opena2a harden-soul          Generate or improve SOUL.md governance file
 
 Smart Features:
   $ opena2a                      Interactive guided mode (no args)
