@@ -273,15 +273,20 @@ export async function protect(options: ProtectOptions): Promise<number> {
     ]);
     process.stdout.write(table(findingsRows, ['Severity', 'ID', 'Type', 'Location', 'Env Var']) + '\n\n');
 
-    // Show detailed explanations (non-CI only)
+    // Show detailed explanations (non-CI only), deduplicated by finding type
     if (!options.ci) {
+      const seenTypes = new Set<string>();
       for (const m of matches) {
-        process.stdout.write(bold(`${m.findingId}: ${m.title}`) + '\n');
+        const key = m.findingId + ':' + m.title;
+        if (seenTypes.has(key)) continue;
+        seenTypes.add(key);
+        const count = matches.filter(x => x.findingId === m.findingId && x.title === m.title).length;
+        process.stdout.write(bold(`${m.findingId}: ${m.title}`) + (count > 1 ? dim(` (${count} instances)`) : '') + '\n');
         if (m.explanation) {
           process.stdout.write(dim('  Why: ') + m.explanation + '\n');
         }
         if (m.businessImpact) {
-          process.stdout.write(dim('  Impact: ') + yellow(m.businessImpact) + '\n');
+          process.stdout.write(dim('  Impact: ') + m.businessImpact + '\n');
         }
         process.stdout.write('\n');
       }

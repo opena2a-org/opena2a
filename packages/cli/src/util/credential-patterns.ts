@@ -48,7 +48,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     envVarPrefix: 'ANTHROPIC_API_KEY',
     severity: 'critical',
     explanation: 'Anthropic API key hardcoded in source. Anyone who reads this file can use your Anthropic account and access Claude models.',
-    businessImpact: 'Thousands in unauthorized API charges within hours. Bots actively scan for exposed keys in public repos.',
+    businessImpact: 'Grants full Anthropic API access. Migrate to environment variables and rotate the key.',
   },
   {
     id: 'CRED-002',
@@ -57,7 +57,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     envVarPrefix: 'OPENAI_API_KEY',
     severity: 'critical',
     explanation: 'OpenAI API key hardcoded in source. Grants full API access to anyone with the source code.',
-    businessImpact: 'Unauthorized model usage, data extraction, and billing abuse. Exposed keys are exploited within minutes.',
+    businessImpact: 'Grants full OpenAI API access. Migrate to environment variables and rotate the key.',
   },
   {
     id: 'DRIFT-001',
@@ -66,7 +66,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     envVarPrefix: 'GOOGLE_API_KEY',
     severity: 'high',
     explanation: 'Google API key may have been provisioned for Maps but also grants Gemini AI access. Scope drift means the key can do more than intended.',
-    businessImpact: 'Attacker could run AI workloads billed to your account. Cross-service scope drift means you pay for services you did not authorize.',
+    businessImpact: 'Key may access more Google services than intended. Review IAM scoping and restrict to required APIs.',
   },
   {
     id: 'DRIFT-002',
@@ -75,7 +75,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     envVarPrefix: 'AWS_ACCESS_KEY_ID',
     severity: 'high',
     explanation: 'AWS access key may grant Bedrock LLM access beyond its intended S3/EC2 scope. IAM policies often over-provision.',
-    businessImpact: 'Cross-service privilege escalation. AI model invocations billed to your account. Potential data exfiltration via Bedrock.',
+    businessImpact: 'Key may access more AWS services than intended. Review IAM policies and restrict to required services.',
   },
   {
     id: 'CRED-003',
@@ -84,7 +84,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     envVarPrefix: 'GITHUB_TOKEN',
     severity: 'high',
     explanation: 'GitHub token hardcoded in source. Grants repository access, potentially including private repos and org resources.',
-    businessImpact: 'Code theft, supply chain injection via unauthorized commits, and access to private repositories.',
+    businessImpact: 'Grants repository access. Migrate to environment variables and rotate the token.',
   },
   {
     id: 'CRED-004',
@@ -93,7 +93,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     envVarPrefix: 'API_KEY',
     severity: 'medium',
     explanation: 'Generic API key found in a variable assignment. The pattern suggests a secret intended for environment variables, not source code.',
-    businessImpact: 'Depends on the service -- could expose billing, data, or administrative access. Rotate immediately.',
+    businessImpact: 'Access level depends on the service. Migrate to environment variables and rotate.',
   },
 ];
 
