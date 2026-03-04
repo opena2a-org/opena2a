@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Shield `init` orchestration: unified security setup that runs scan, policy, and hooks
 - Cross-tab navigation for finding IDs in HTML dashboard
-- Standardized product nav bar ordering across repos
+- Standardized tool nav bar ordering across repos
 
 ### Fixed
 - Fix CI security checks: sync lock file, remove redundant secret-scan job

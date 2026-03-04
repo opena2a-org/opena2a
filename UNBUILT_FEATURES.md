@@ -56,12 +56,12 @@ Displayed in scan output: `Conformance: ESSENTIAL`
 
 ---
 
-## Non-Priority (Wrong Product Attribution)
+## Non-Priority (Wrong Tool Attribution)
 
-The following features were claimed in blogs but actually belong to **separate products** (AIM Platform, Python SDK). These are correct as positioned — they're not CLI features.
+The following features were claimed in blogs but actually belong to **separate tools** (AIM Platform, Python SDK). These are correct as positioned — they're not CLI features.
 
-| Feature | Blog | Actual Product |
-|---------|------|----------------|
+| Feature | Blog | Actual Tool |
+|---------|------|-------------|
 | Ed25519 keypair generation | how-do-you-give-an-ai-agent-a-verifiable-identity | AIM Platform (agent-identity-management) |
 | MCP server attestation | owasp-agentic-top-10-nhi-governance | AIM Platform |
 | Behavioral trust scoring (8-factor) | echoleak-one-line-secure-ai-agents | AIM Platform |

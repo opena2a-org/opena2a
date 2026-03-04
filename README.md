@@ -356,9 +356,9 @@ Shield stores events in a local tamper-evident log at `.opena2a/shield/events.js
 
 ## Adapter Commands
 
-The CLI orchestrates specialized tools through a unified interface. Each command maps to a standalone product that can also be used independently.
+The CLI orchestrates specialized tools through a unified interface. Each command maps to a standalone tool that can also be used independently.
 
-| Command | Product | Docs | Description |
+| Command | Tool | Docs | Description |
 |---------|---------|------|-------------|
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Credential management for AI coding tools |
@@ -372,9 +372,9 @@ The CLI orchestrates specialized tools through a unified interface. Each command
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
 
-**Command-to-product mapping:**
+**Command-to-tool mapping:**
 
-| Product | CLI Commands |
+| Tool | CLI Commands |
 |---------|-------------|
 | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `scan`, `benchmark` |
 | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `secrets`, `broker`, `dlp` |
@@ -422,7 +422,7 @@ opena2a CLI
   |
   +-- shield        Unified orchestration layer
   |     +-- init        11-step setup (secretless + aim-core + guard + policy + arp + ai-tools)
-  |     +-- status      Unified product status view
+  |     +-- status      Unified tool status view
   |     +-- log         Tamper-evident event log (SHA-256 hash chain)
   |     +-- report      Weekly security posture report
   |     +-- selfcheck   Integrity verification + self-healing
@@ -478,8 +478,8 @@ Language-aware replacements:
 
 OpenA2A is a platform of specialized security tools, each usable standalone or through the CLI.
 
-| Product | Install | Purpose |
-|---------|---------|---------|
+| Tool | Install | Purpose |
+|------|---------|---------|
 | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `npx hackmyagent secure` | Security scanner, attack simulation, benchmarks, runtime protection |
 | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `npx secretless-ai init` | Credential management, broker, DLP for AI coding tools |
 | [AIM](https://github.com/opena2a-org/agent-identity-management) | Self-hosted (Go) | Agent identity and access management |
@@ -487,7 +487,7 @@ OpenA2A is a platform of specialized security tools, each usable standalone or t
 | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `docker pull opena2a/dvaa` | Deliberately vulnerable AI agent for security training |
 | [Trust Registry](https://registry.opena2a.org) | `registry.opena2a.org` | Supply chain verification, trust scores, package metadata |
 
-All products are open source under Apache-2.0.
+All tools are open source under Apache-2.0.
 
 ## Upstream Contributions
 

@@ -193,11 +193,11 @@ opena2a config llm on             # Enable LLM-powered command matching
 
 ## Shield: Unified Security Orchestration
 
-Shield ties all OpenA2A products into a single security layer for AI coding assistants. It provides a tamper-evident event log, policy evaluation, runtime monitoring, session identification, integrity verification, and LLM-powered analysis.
+Shield ties all OpenA2A tools into a single security layer for AI coding assistants. It provides a tamper-evident event log, policy evaluation, runtime monitoring, session identification, integrity verification, and LLM-powered analysis.
 
 ```bash
 opena2a shield init              # Full environment scan + policy generation
-opena2a shield status            # Product availability and integrity state
+opena2a shield status            # Tool availability and integrity state
 opena2a shield selfcheck         # Run integrity checks across all subsystems
 ```
 
@@ -212,7 +212,7 @@ opena2a shield selfcheck         # Run integrity checks across all subsystems
 | **Session identification** | Detects which AI assistant is running (Claude Code, Cursor, Copilot, Windsurf) | Active |
 | **Config integrity** | Signs config files and detects unauthorized modifications | Active |
 | **ARP bridge** | Imports runtime protection events from HackMyAgent's ARP into Shield's log | Active |
-| **Posture scoring** | 0-100 security score based on active products, policy, hooks, credentials | Active |
+| **Posture scoring** | 0-100 security score based on active tools, policy, hooks, credentials | Active |
 | **LLM intelligence** | AI-powered policy suggestions, anomaly explanations, incident triage | Active (opt-in) |
 | **Integrity selfcheck** | Verifies policy, shell hooks, event chain, process, and artifact signatures | Active |
 | **Lockdown mode** | Enters lockdown when integrity checks fail; requires explicit recovery | Active |
@@ -239,7 +239,7 @@ opena2a shield init --format json      # Machine-readable output
 
 #### `opena2a shield status`
 
-Shows product availability, policy mode, shell integration, and integrity state.
+Shows tool availability, policy mode, shell integration, and integrity state.
 
 ```bash
 opena2a shield status
