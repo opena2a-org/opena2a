@@ -509,16 +509,37 @@ export async function protect(options: ProtectOptions): Promise<number> {
   } else {
     printReport(report);
 
-    // Offer 1Password migration after successful credential migration
+    // Offer backend upgrade after successful credential migration
     if (report.migrated > 0 && !options.ci) {
       try {
-        const { offer1PasswordMigration } = await import('./onepassword-migration.js');
-        await offer1PasswordMigration({
-          credentialCount: report.migrated,
-          ci: options.ci,
-        });
+        const { select } = await import('@inquirer/prompts');
+        const backendChoice = await select({
+          message: `${report.migrated} credential(s) stored in local vault. Upgrade to a team vault?`,
+          choices: [
+            {
+              name: '1Password -- team sharing, Touch ID, audit trails',
+              value: '1password',
+            },
+            {
+              name: 'HashiCorp Vault -- self-hosted, policies, dynamic secrets',
+              value: 'vault',
+            },
+            {
+              name: 'No, local vault is fine',
+              value: 'local',
+            },
+          ],
+        }).catch(() => 'local');
+
+        if (backendChoice === '1password') {
+          const { offer1PasswordMigration } = await import('./onepassword-migration.js');
+          await offer1PasswordMigration({ credentialCount: report.migrated, ci: options.ci });
+        } else if (backendChoice === 'vault') {
+          const { offerVaultMigration } = await import('./vault-migration.js');
+          await offerVaultMigration({ credentialCount: report.migrated, ci: options.ci });
+        }
       } catch {
-        // 1Password migration module not critical -- skip silently
+        // Backend upgrade is optional -- skip silently on any error
       }
     }
   }
