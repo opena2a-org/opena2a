@@ -4,7 +4,7 @@
 
 **Open-source security platform for AI agents**
 
-Credential detection, scope drift analysis, config integrity, runtime monitoring, and supply chain verification -- one CLI.
+Credential detection, scope drift analysis, config integrity, runtime monitoring, behavioral governance scanning, and supply chain verification -- one CLI.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/opena2a-org/opena2a/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)]()
@@ -435,6 +435,8 @@ The CLI orchestrates these specialized tools through a unified interface:
 | Command | Tool | Description |
 |---------|------|-------------|
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
+| `opena2a scan-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Behavioral governance scan against AGS (SOUL.md) |
+| `opena2a harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Generate or improve SOUL.md governance file |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
 | `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
@@ -445,6 +447,56 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
+
+## Behavioral Governance
+
+The [Agent Governance Specification (AGS)](https://github.com/opena2a-org/agent-governance-spec) defines a tiered behavioral safety framework for AI agents across 8 domains and up to 26 controls. OpenA2A CLI integrates AGS scanning through HackMyAgent.
+
+### `opena2a scan-soul`
+
+Scan a SOUL.md governance file against AGS controls for your agent's capability tier.
+
+```bash
+opena2a scan-soul                          # Scan SOUL.md in current directory
+opena2a scan-soul --file ./agent/SOUL.md  # Scan specific file
+opena2a scan-soul --tier TOOL-USING        # Scan for tool-using agents (13-21 controls)
+opena2a scan-soul --tier AGENTIC           # Scan for agentic agents (24 controls)
+opena2a scan-soul --tier MULTI-AGENT       # Scan for multi-agent systems (26 controls)
+opena2a scan-soul --format json            # Machine-readable output for CI
+```
+
+Tier-to-control mapping:
+
+| Tier | Controls | Use Case |
+|------|----------|----------|
+| `BASIC` | 13 | Single-turn chatbots, no tool use |
+| `TOOL-USING` | 21 | Agents with tool/function calling |
+| `AGENTIC` | 24 | Long-running, multi-step autonomous agents |
+| `MULTI-AGENT` | 26 | Orchestrators and sub-agent systems |
+
+### `opena2a harden-soul`
+
+Generate a SOUL.md governance file, or improve an existing one. Outputs templates for all 8 behavioral domains regardless of tier.
+
+```bash
+opena2a harden-soul                          # Generate SOUL.md in current directory
+opena2a harden-soul --file ./agent/SOUL.md  # Target specific file
+opena2a harden-soul --name "MyAgent"         # Set agent name in generated file
+opena2a harden-soul --tier AGENTIC           # Use AGENTIC tier guidance
+```
+
+The 8 AGS behavioral domains:
+
+| Domain | Coverage |
+|--------|----------|
+| Core Behavioral Principles | Helpfulness, safety baseline, consistency |
+| Trust Hierarchy | Principal relationships, override rules |
+| Capability Scope | Permission boundaries, minimal footprint |
+| Harm Avoidance | Content filtering, dual-use detection |
+| Transparency | Self-disclosure, capability representation |
+| Honesty and Transparency | Truthfulness, uncertainty communication |
+| Security Practices | Prompt injection defense, credential handling |
+| Oversight and Governance | Human oversight, audit, recovery |
 
 ## CI/CD Integration
 
