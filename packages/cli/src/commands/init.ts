@@ -263,17 +263,43 @@ export async function init(options: InitOptions): Promise<number> {
     if (driftFindings.length > 0) {
       process.stdout.write(yellow(bold('  Scope Drift Detected')) + '\n');
       process.stdout.write(gray('  ' + '-'.repeat(47)) + '\n');
+
+      // Group by drift type and show once per type with count
+      const driftByType = new Map<string, typeof driftFindings>();
       for (const d of driftFindings) {
-        const relPath = path.relative(targetDir, d.filePath);
-        const driftType = d.findingId === 'DRIFT-001' ? 'Google Maps key may access Gemini AI' : 'AWS key may access Bedrock AI';
-        process.stdout.write(`  ${yellow(d.findingId)} ${driftType}\n`);
-        process.stdout.write(`  ${dim('  ' + relPath + ':' + d.line)}\n`);
+        const existing = driftByType.get(d.findingId) ?? [];
+        existing.push(d);
+        driftByType.set(d.findingId, existing);
       }
-      process.stdout.write('\n');
-      process.stdout.write(dim('  Scope drift: keys provisioned for one service silently') + '\n');
-      process.stdout.write(dim('  gain access to AI services, expanding attack surface.') + '\n');
-      process.stdout.write(dim('  Run: opena2a protect') + '\n');
-      process.stdout.write('\n');
+
+      for (const [findingId, items] of driftByType) {
+        const first = items[0];
+        const relPath = path.relative(targetDir, first.filePath);
+        const extra = items.length > 1 ? ` (+${items.length - 1} more)` : '';
+
+        if (findingId === 'DRIFT-001') {
+          process.stdout.write(`  ${yellow(findingId)}  Google Maps key may access Gemini AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
+          process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
+          process.stdout.write(`  ${dim('  Keys provisioned for Maps silently authenticate to Gemini if the')}\n`);
+          process.stdout.write(`  ${dim('  Generative Language API is enabled in the same GCP project.')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  curl "https://generativelanguage.googleapis.com/v1beta/models?key=KEY" | jq \'.models | length\'')}\n`);
+          process.stdout.write(`  ${dim('           (200 = Gemini access confirmed; 403 = restricted)')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+        } else if (findingId === 'DRIFT-002') {
+          process.stdout.write(`  ${yellow(findingId)}  AWS key may access Bedrock AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
+          process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
+          process.stdout.write(`  ${dim('  IAM policies frequently over-provision. A key scoped for S3/EC2')}\n`);
+          process.stdout.write(`  ${dim('  may also pass STS auth and call Bedrock LLM endpoints.')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  aws sts get-caller-identity')}\n`);
+          process.stdout.write(`  ${dim('           aws bedrock list-foundation-models --region us-east-1')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+        } else {
+          process.stdout.write(`  ${yellow(findingId)}  Credential scope drift  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
+          process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
+          process.stdout.write(`  ${dim('  Fix: opena2a protect')}\n`);
+        }
+        process.stdout.write('\n');
+      }
     }
 
     // Show advisory warnings after main report
@@ -812,12 +838,34 @@ function getToolRecommendation(
 function getContextualTip(
   report: InitReport,
 ): { text: string; command: string } {
-  const hasAnyCreds = report.findings.some(
-    f => f.findingId.startsWith('CRED-') || f.findingId.startsWith('DRIFT-'),
-  );
-  if (hasAnyCreds) {
+  const credCount = report.credentialFindings;
+  const criticalCount = report.credentialsBySeverity['critical'] ?? 0;
+  const driftFindings = report.findings.filter(f => f.findingId.startsWith('DRIFT-'));
+  const hasDrift = driftFindings.length > 0;
+  const hasAwsDrift = report.findings.some(f => f.findingId === 'DRIFT-002');
+  const hasGcpDrift = report.findings.some(f => f.findingId === 'DRIFT-001');
+
+  if (credCount > 0) {
+    if (hasDrift && hasAwsDrift) {
+      return {
+        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including AWS keys with potential Bedrock access. opena2a protect migrates them to a vault and runs a live STS + Bedrock check to confirm actual exposure.`,
+        command: 'opena2a protect',
+      };
+    }
+    if (hasDrift && hasGcpDrift) {
+      return {
+        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including Google keys with potential Gemini access. opena2a protect migrates them and verifies live Generative Language API access.`,
+        command: 'opena2a protect',
+      };
+    }
+    if (criticalCount > 0) {
+      return {
+        text: `${criticalCount} critical credential${criticalCount === 1 ? '' : 's'} in source files — anyone with repo access can use them now. opena2a protect rewrites the files to use environment variables and removes the raw values.`,
+        command: 'opena2a protect',
+      };
+    }
     return {
-      text: 'Migrate credentials out of source files',
+      text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files. opena2a protect rewrites them as env var references, updates .gitignore, and signs config files for integrity monitoring.`,
       command: 'opena2a protect',
     };
   }
@@ -825,7 +873,7 @@ function getContextualTip(
   const hasMcpCred = report.findings.some(f => f.findingId === 'MCP-CRED');
   if (hasMcpCred) {
     return {
-      text: 'Move credentials out of MCP config files',
+      text: 'Credentials in MCP config files are read by every tool that loads the config. opena2a protect moves them to environment variables.',
       command: 'opena2a protect',
     };
   }
@@ -833,7 +881,7 @@ function getContextualTip(
   const hasAiConfig = report.findings.some(f => f.findingId === 'AI-CONFIG');
   if (hasAiConfig) {
     return {
-      text: 'Fix all auto-fixable findings',
+      text: 'AI tool config files have fixable issues. opena2a protect applies all auto-fixable changes in one pass.',
       command: 'opena2a protect',
     };
   }
@@ -841,28 +889,20 @@ function getContextualTip(
   const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
   if (hasLLM) {
     return {
-      text: 'Add authentication to your LLM server',
+      text: 'An unauthenticated LLM server is running. opena2a shield shows live protection status and recommended controls.',
       command: 'opena2a shield status',
-    };
-  }
-
-  const hasEnv = report.findings.some(f => f.findingId === 'ENV-DOTENV');
-  if (hasEnv) {
-    return {
-      text: 'Fix all auto-fixable findings',
-      command: 'opena2a protect',
     };
   }
 
   if (report.securityScore >= 90) {
     return {
-      text: 'Strong baseline. Run a full scan for deeper coverage',
+      text: 'Strong baseline. Run a deeper scan to check runtime behavior and agent-layer threats.',
       command: 'opena2a scan secure',
     };
   }
   if (report.securityScore >= 70) {
     return {
-      text: 'Good posture. Lock it in with config file integrity signing',
+      text: 'Good posture. Sign config files to detect unauthorized changes at runtime.',
       command: 'opena2a guard sign',
     };
   }
@@ -1027,6 +1067,13 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
 
   // Contextual tip
   const tip = getContextualTip(report);
-  process.stdout.write(dim(`  Tip: ${tip.command} -- ${tip.text}`) + '\n');
+  process.stdout.write(dim(`  Tip: ${tip.command}`) + '\n');
+  const wrappedTipText = wordWrap(tip.text, 68, 7);
+  process.stdout.write(dim(wrappedTipText) + '\n');
+  process.stdout.write('\n');
+
+  // OpenA2A footer
+  process.stdout.write(dim('  OpenA2A -- open-source security for AI agents') + '\n');
+  process.stdout.write(dim('  opena2a.org  |  github.com/opena2a-org') + '\n');
   process.stdout.write('\n');
 }
