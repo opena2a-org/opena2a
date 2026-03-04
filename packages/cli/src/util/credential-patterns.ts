@@ -78,6 +78,15 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     businessImpact: 'Key may access more AWS services than intended. Review IAM policies and restrict to required services.',
   },
   {
+    id: 'CRED-005',
+    title: 'AWS Secret Access Key',
+    pattern: /(?:AWS_SECRET_ACCESS_KEY|aws[_-]?secret[_-]?access[_-]?key)\s*[:=]\s*['"]?([A-Za-z0-9+\/]{40})['"]?/gi,
+    envVarPrefix: 'AWS_SECRET_ACCESS_KEY',
+    severity: 'critical',
+    explanation: 'AWS Secret Access Key hardcoded in source. Combined with an Access Key ID, this grants full programmatic AWS access to all authorized services.',
+    businessImpact: 'Full AWS API access. Migrate to environment variables and rotate the key pair immediately.',
+  },
+  {
     id: 'CRED-003',
     title: 'GitHub Token',
     pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g,
