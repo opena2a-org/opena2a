@@ -14,7 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
+import { bold, green, yellow, red, cyan, dim, gray, white } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { severityLabel, formatDuration, table } from '../util/format.js';
 
@@ -240,28 +240,30 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
     if (!isJson) {
       spinner.stop();
+      process.stdout.write('\n' + bold('Drift Verification Results') + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
       for (const [_key, result] of livenessResults) {
         if (result.live) {
           process.stdout.write(
             red(`${result.findingId}: DRIFT CONFIRMED`) +
-            ' -- ' + result.detail + '\n'
+            ' -- ' + white(result.detail) + '\n'
           );
           process.stdout.write(
             '  Severity escalated: ' + severityLabel('high') + ' -> ' + severityLabel('critical') + '\n\n'
           );
         } else if (result.checked && !result.error) {
           process.stdout.write(
-            dim(`${result.findingId}: ${result.detail}`) + '\n\n'
+            yellow(`${result.findingId}: `) + white(result.detail) + '\n\n'
           );
         } else if (result.error) {
           process.stdout.write(
-            dim(`${result.findingId}: ${result.detail}`) + '\n\n'
+            yellow(`${result.findingId}: `) + white(result.detail) + '\n\n'
           );
         }
       }
     }
   } else if (hasDriftFindings && options.skipLiveness && !isJson) {
-    process.stdout.write(dim('Liveness verification skipped (--skip-liveness)\n\n'));
+    process.stdout.write(yellow('Liveness verification skipped (--skip-liveness)') + '\n\n');
   }
 
   if (!isJson) {

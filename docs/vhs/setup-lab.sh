@@ -47,11 +47,11 @@ cat > src/agent.js << 'EOF'
 const Anthropic = require("@anthropic-ai/sdk");
 
 const client = new Anthropic({
-  apiKey: "sk-ant-api03-YzM2NjJhZDAtOWI0My00M2UwLWIzZTctMGZlZGQ4ZjE2NWUwLTEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0",
+  apiKey: "$ANTHROPIC_API_KEY",
 });
 
 // Google Maps key -- also grants Gemini access (scope drift)
-const MAPS_KEY = "AIzaSyC8x4i-FaKe_Key12345678901234567890abc";
+const MAPS_KEY = "$GOOGLE_API_KEY";
 
 async function chat(message) {
   return client.messages.create({
@@ -65,8 +65,8 @@ module.exports = { chat, MAPS_KEY };
 EOF
 
 cat > src/aws.js << 'EOF'
-const AWS_KEY = "AKIAIOSFODNN7EXAMPLE";
-const GH_TOKEN = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij1234";
+const AWS_KEY = "$AWS_ACCESS_KEY_ID";
+const GH_TOKEN = "$GITHUB_TOKEN";
 
 module.exports = { AWS_KEY, GH_TOKEN };
 EOF

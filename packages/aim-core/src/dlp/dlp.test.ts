@@ -53,19 +53,19 @@ describe('Secret Detection', () => {
   });
 
   it('detects OpenAI API key', () => {
-    const result = scanText('OPENAI_KEY=sk-proj1234567890abcdefghijklmnop');
+    const result = scanText('sk-FAKE01234567890abcdefghijklmnopqrstuvwxyz01234567');
     expect(result.detected).toBe(true);
     expect(result.matches.some((m) => m.patternId === 'secret-openai')).toBe(true);
   });
 
   it('detects AWS access key', () => {
-    const result = scanText('aws_key = AKIAIOSFODNN7EXAMPLE');
+    const result = scanText('AKIAFAKE01234567ABCD');
     expect(result.detected).toBe(true);
     expect(result.matches.some((m) => m.patternId === 'secret-aws-key')).toBe(true);
   });
 
   it('detects GitHub PAT', () => {
-    const result = scanText('token: ghp_abcdefghijklmnopqrstuvwxyz0123456789AB');
+    const result = scanText('ghp_FAKE01234567890abcdefghijklmnopqrstuv');
     expect(result.detected).toBe(true);
     expect(result.matches.some((m) => m.patternId === 'secret-github-pat')).toBe(true);
   });
