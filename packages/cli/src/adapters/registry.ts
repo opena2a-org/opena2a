@@ -25,6 +25,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     name: 'registry',
     method: 'import',
     packageName: 'ai-trust',
+    subcommand: 'check',
     description: 'Query OpenA2A Trust Registry for package security data',
   },
   train: {
