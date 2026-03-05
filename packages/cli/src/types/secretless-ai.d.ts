@@ -6,4 +6,6 @@ declare module 'secretless-ai' {
     filesCreated?: string[];
   }
   export function init(targetDir: string): InitResult;
+  export function readBackendConfig(): string | undefined;
+  export function writeBackendConfig(backend: string): void;
 }

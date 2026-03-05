@@ -126,6 +126,24 @@ export async function shieldInit(options: {
             process.stdout.write(`  Secrets protected: ${result.secretsFound}\n`);
           }
         }
+        // Check if 1Password backend is configured — guide users to warm to avoid Touch ID prompts
+        try {
+          const { readBackendConfig } = await import('secretless-ai');
+          if (typeof readBackendConfig === 'function') {
+            const backend = readBackendConfig();
+            if (backend === '1password') {
+              process.stdout.write('\n');
+              process.stdout.write(bold('  1Password backend detected.\n'));
+              process.stdout.write('  Run once at the start of each session to pre-authenticate\n');
+              process.stdout.write('  and avoid repeated Touch ID prompts during development:\n\n');
+              process.stdout.write('    ' + cyan('opena2a secrets warm') + '\n\n');
+              process.stdout.write(dim('  This loads all secrets into an encrypted local cache.\n'));
+              process.stdout.write(dim('  Touch ID is only prompted once per session (default: 8h).\n'));
+            }
+          }
+        } catch {
+          // backend check is best-effort
+        }
       }
     } else {
       // Secretless module found but no init function -- try CLI fallback

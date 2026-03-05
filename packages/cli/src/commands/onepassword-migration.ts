@@ -91,9 +91,10 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
   process.stdout.write('     1Password > Settings > Developer > "Integrate with 1Password CLI"\n\n');
   process.stdout.write('  3. ' + bold('1Password CLI') + '\n');
   process.stdout.write('     Install: ' + cyan('brew install 1password-cli') + '\n\n');
-  process.stdout.write('  ' + dim('Tip: If you use 1Password as your SSH agent, set key approval to') + '\n');
-  process.stdout.write('  ' + dim('"Until 1Password is locked" to avoid repeated Touch ID prompts') + '\n');
-  process.stdout.write('  ' + dim('during AI-assisted development (each git operation triggers approval).') + '\n\n');
+  process.stdout.write('  ' + bold('After migration, run this once at the start of each session:') + '\n');
+  process.stdout.write('    ' + cyan('opena2a secrets warm') + '\n');
+  process.stdout.write('  ' + dim('Authenticates once via Touch ID, caches all secrets for 8h.') + '\n');
+  process.stdout.write('  ' + dim('No repeated prompts during development.') + '\n\n');
 
   let ready = false;
   try {
@@ -184,9 +185,15 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
       process.stdout.write(green('Default backend set to 1Password.') + '\n');
     }
 
-    // Remind about SSH agent approval if applicable
-    process.stdout.write('\n' + dim('If Touch ID prompts are frequent: 1Password > Settings > Developer >') + '\n');
-    process.stdout.write(dim('SSH keys > set approval to "Until 1Password is locked"') + '\n');
+    // Guide users to warm session to eliminate repeated Touch ID prompts
+    process.stdout.write('\n' + bold('Avoiding repeated Touch ID prompts') + '\n\n');
+    process.stdout.write('Run this once at the start of each session:\n\n');
+    process.stdout.write('  ' + cyan('opena2a secrets warm') + '\n\n');
+    process.stdout.write(dim('This authenticates once via Touch ID and caches all secrets locally\n'));
+    process.stdout.write(dim('(AES-256-GCM encrypted). No further 1Password calls for 8 hours.\n'));
+    process.stdout.write(dim('Reduce prompts further: 1Password > Settings > Developer >\n'));
+    process.stdout.write(dim('"Ask approval for each new" -> "application" (not "application and\n'));
+    process.stdout.write(dim('terminal session").\n'));
 
     return true;
   } catch (err) {
