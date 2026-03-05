@@ -18,7 +18,7 @@ export const projectConfigSchema = z.object({
     autoFix: z.boolean().default(false),
   }).optional(),
   registry: z.object({
-    url: z.string().url().default('https://registry.opena2a.org'),
+    url: z.string().default(''),
     contribute: z.boolean().default(false),
   }).optional(),
 });

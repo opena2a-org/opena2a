@@ -4,7 +4,7 @@
  * Generates a self-contained HTML file with:
  * - Dark theme (#0f172a bg, #1e293b cards, teal primary)
  * - 6-tab navigation (Overview, Credentials, Hygiene, Integrity, Shield, HMA)
- * - Composite score gauge with grade
+ * - Composite score gauge with recovery summary
  * - Phase status cards with timing
  * - Cross-tab navigation
  * - Copy buttons for remediation commands
@@ -224,7 +224,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   };
 
   // Gauge SVG
-  function gaugeCircle(score,grade){
+  function gaugeCircle(score,label){
     var sz=170,cx=sz/2,cy=sz/2,r=65,sw=10,circ=2*Math.PI*r;
     var pct=Math.max(0,Math.min(100,score))/100,dash=pct*circ,gap=circ-dash;
     var clr=score>=90?'#22c55e':score>=70?'#06b6d4':score>=50?'#eab308':'#ef4444';
@@ -232,7 +232,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="'+sw+'"/>';
     s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+clr+'" stroke-width="'+sw+'" stroke-dasharray="'+dash+' '+gap+'" stroke-dashoffset="'+(circ*0.25)+'" stroke-linecap="round" transform="rotate(-90 '+cx+' '+cy+')"/>';
     s+='<text x="'+cx+'" y="'+(cy-6)+'" text-anchor="middle" dominant-baseline="middle" font-size="32" font-weight="700" fill="'+clr+'" font-family="var(--font)">'+score+'</text>';
-    s+='<text x="'+cx+'" y="'+(cy+20)+'" text-anchor="middle" dominant-baseline="middle" font-size="14" font-weight="600" fill="'+clr+'" font-family="var(--font)">Grade '+esc(grade)+'</text>';
+    s+='<text x="'+cx+'" y="'+(cy+20)+'" text-anchor="middle" dominant-baseline="middle" font-size="14" font-weight="600" fill="'+clr+'" font-family="var(--font)">'+esc(label||('out of 100'))+'</text>';
     s+='</svg>';return s;
   }
 
@@ -244,16 +244,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     return '<div class="stat-card"><div class="stat-value" style="color:'+color+'">'+esc(String(value))+'</div><div class="stat-label">'+esc(label)+'</div></div>';
   }
 
-  function scoreBanner(score,grade){
+  function scoreBanner(score,recoverySummary){
     var clr=scoreColor(score);
-    var gradeBg=score>=90?'rgba(34,197,94,0.15)':score>=70?'rgba(6,182,212,0.15)':score>=50?'rgba(234,179,8,0.15)':'rgba(239,68,68,0.15)';
     var h='<div class="score-banner">';
     h+='<div class="score-banner-num" style="color:'+clr+'">'+score+'</div>';
     h+='<div class="score-banner-bar">';
     h+='<div class="score-banner-label"><span>Composite Score</span><span>'+score+'/100</span></div>';
     h+='<div class="score-banner-track"><div class="score-banner-fill" style="width:'+score+'%;background:'+clr+'"></div></div>';
     h+='</div>';
-    h+='<div class="score-banner-grade" style="color:'+clr+';background:'+gradeBg+'">'+esc(grade)+'</div>';
+    // Recovery-framed: show path forward instead of letter grade
+    if(recoverySummary && recoverySummary.totalRecoverable>0){
+      var recovBg=score>=70?'rgba(6,182,212,0.15)':score>=50?'rgba(234,179,8,0.15)':'rgba(239,68,68,0.15)';
+      h+='<div class="score-banner-grade" style="color:'+clr+';background:'+recovBg+'">+'+recoverySummary.totalRecoverable+' recoverable</div>';
+    }
     h+='</div>';
     return h;
   }
@@ -279,7 +282,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     var sevCounts={critical:0,high:0,medium:0,low:0};
     var findings=report.findings||[];
     for(var i=0;i<findings.length;i++){var s=findings[i].severity;if(s in sevCounts)sevCounts[s]++;}
-    h+=scoreBanner(report.compositeScore,report.grade);
+    h+=scoreBanner(report.compositeScore,report.recoverySummary);
     h+='<div class="stats-grid">';
     h+=statCard(findings.length,'Findings',findings.length>0?'var(--amber)':'var(--green)');
     h+=statCard(sevCounts.critical,'Critical',sevCounts.critical>0?'var(--critical)':'var(--text)');
@@ -432,13 +435,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     var h='<div class="section-intro">Project hygiene measures foundational security practices. These checks do not require any OpenA2A tools -- they are standard development practices that prevent accidental exposure.</div>';
     h+='<div class="stats-grid">';
     h+=statCard(init.trustScore+'/100','Trust Score',scoreColor(init.trustScore));
-    h+=statCard('Grade '+init.grade,'Trust Grade',scoreColor(init.trustScore));
     h+=statCard(init.postureScore+'/100','Posture Score',scoreColor(init.postureScore));
     h+=statCard(init.riskLevel,'Risk Level',init.riskLevel==='SECURE'||init.riskLevel==='LOW'?'var(--green)':init.riskLevel==='MEDIUM'?'var(--medium)':'var(--red)');
     h+='</div>';
 
     h+='<div class="overview-top">';
-    h+='<div class="gauge-card">'+gaugeCircle(init.trustScore,init.grade)+'</div>';
+    h+='<div class="gauge-card">'+gaugeCircle(init.trustScore,'out of 100')+'</div>';
     h+='<div>';
     h+='<h2 class="section-title">Hygiene Checks</h2>';
     h+='<div class="card">';

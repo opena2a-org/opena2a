@@ -14,7 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
+import { bold, green, yellow, red, cyan, dim, gray, white } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { severityLabel, formatDuration, table } from '../util/format.js';
 
@@ -25,6 +25,8 @@ interface MigrationResult {
   credential: CredentialMatch;
   /** Whether the value was stored in Secretless vault */
   stored: boolean;
+  /** Where the credential was actually stored */
+  storageLocation?: 'vault' | 'shell-profile' | 'none';
   /** Whether the source file was updated */
   replaced: boolean;
   /** Whether a broker policy was created */
@@ -197,8 +199,12 @@ export async function protect(options: ProtectOptions): Promise<number> {
           noCredFixes.configsSignedFiles = signResult.files;
           anyFix = true;
           if (!isJson) {
-            process.stdout.write(green(`Signed ${signResult.signed} config file${signResult.signed === 1 ? '' : 's'}\n`));
-            process.stdout.write(yellow(`Run \`opena2a guard resign\` after editing signed files\n`));
+            process.stdout.write(green(`Signed ${signResult.signed} config file${signResult.signed === 1 ? '' : 's'}:\n`));
+            for (const f of signResult.files) {
+              process.stdout.write(`  ${dim(f)}\n`);
+            }
+            process.stdout.write(dim('After editing signed files: ') + 'opena2a guard resign\n');
+            process.stdout.write(dim('To undo signing:           ') + 'rm .opena2a/guard/signatures.json\n');
           }
         }
       } catch {
@@ -240,28 +246,30 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
     if (!isJson) {
       spinner.stop();
+      process.stdout.write('\n' + bold('Drift Verification Results') + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
       for (const [_key, result] of livenessResults) {
         if (result.live) {
           process.stdout.write(
             red(`${result.findingId}: DRIFT CONFIRMED`) +
-            ' -- ' + result.detail + '\n'
+            ' -- ' + white(result.detail) + '\n'
           );
           process.stdout.write(
             '  Severity escalated: ' + severityLabel('high') + ' -> ' + severityLabel('critical') + '\n\n'
           );
         } else if (result.checked && !result.error) {
           process.stdout.write(
-            dim(`${result.findingId}: ${result.detail}`) + '\n\n'
+            yellow(`${result.findingId}: `) + white(result.detail) + '\n\n'
           );
         } else if (result.error) {
           process.stdout.write(
-            dim(`${result.findingId}: ${result.detail}`) + '\n\n'
+            yellow(`${result.findingId}: `) + white(result.detail) + '\n\n'
           );
         }
       }
     }
   } else if (hasDriftFindings && options.skipLiveness && !isJson) {
-    process.stdout.write(dim('Liveness verification skipped (--skip-liveness)\n\n'));
+    process.stdout.write(yellow('Liveness verification skipped (--skip-liveness)') + '\n\n');
   }
 
   if (!isJson) {
@@ -417,8 +425,12 @@ export async function protect(options: ProtectOptions): Promise<number> {
         additionalFixes.configsSigned = signResult.signed;
         additionalFixes.configsSignedFiles = signResult.files;
         if (!isJson) {
-          process.stdout.write(green(`Signed ${signResult.signed} config file${signResult.signed === 1 ? '' : 's'}\n`));
-          process.stdout.write(yellow(`Run \`opena2a guard resign\` after editing signed files\n`));
+          process.stdout.write(green(`Signed ${signResult.signed} config file${signResult.signed === 1 ? '' : 's'}:\n`));
+          for (const f of signResult.files) {
+            process.stdout.write(`  ${dim(f)}\n`);
+          }
+          process.stdout.write(dim('After editing signed files: ') + 'opena2a guard resign\n');
+          process.stdout.write(dim('To undo signing:           ') + 'rm .opena2a/guard/signatures.json\n');
         }
       }
     } catch {
@@ -526,23 +538,47 @@ export async function protect(options: ProtectOptions): Promise<number> {
           // Already on a team vault -- skip the upgrade offer silently
         } else {
           const { select } = await import('@inquirer/prompts');
+          process.stdout.write('\n' + bold('Where should credentials be stored?') + '\n');
+          process.stdout.write(dim('Credentials are currently in the local Secretless vault (~/.secretless-ai/).') + '\n');
+          process.stdout.write(dim('A vault backend keeps secrets encrypted and out of AI tool context.') + '\n\n');
           const backendChoice = await select({
-            message: `${report.migrated} credential(s) in local vault. Store in a team vault instead?`,
+            message: 'Choose a vault backend:',
             choices: [
               {
-                name: '1Password -- team sharing, Touch ID, audit trails',
+                name: 'OS Keychain            Encrypted by macOS/Windows, no extra tools needed',
+                value: 'keychain',
+                description: 'Best for solo developers. Uses macOS Keychain or Windows Credential Manager.',
+              },
+              {
+                name: '1Password              Team sharing, Touch ID unlock, audit trails',
                 value: '1password',
+                description: 'Best for teams. Requires 1Password CLI (op). Setup: brew install 1password-cli',
               },
               {
-                name: 'HashiCorp Vault -- self-hosted, policies, dynamic secrets',
+                name: 'HashiCorp Vault         Self-hosted, fine-grained policies, dynamic secrets',
                 value: 'vault',
+                description: 'Best for enterprises. Requires a running Vault server. Setup: brew install vault',
               },
               {
-                name: 'No, local vault is fine',
+                name: 'Keep local vault        File-based, works offline, no setup required',
                 value: 'local',
               },
             ],
           }).catch(() => 'local');
+
+          if (backendChoice === 'keychain') {
+            try {
+              const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+              const mod = 'default' in secretless ? secretless.default : secretless;
+              if (typeof mod.setBackend === 'function') {
+                mod.setBackend('keychain');
+                process.stdout.write(green('Vault backend set to OS Keychain.\n'));
+                process.stdout.write(dim('Credentials will be encrypted by your OS. No extra setup needed.\n'));
+              }
+            } catch {
+              process.stdout.write(yellow('To set up keychain backend: npx secretless-ai backend set keychain\n'));
+            }
+          }
 
           if (backendChoice === '1password') {
             const { offer1PasswordMigration } = await import('./onepassword-migration.js');
@@ -658,23 +694,24 @@ async function migrateCredentials(
   for (const credential of matches) {
     try {
       // Step 1: Store in Secretless vault
-      const stored = await storeInVault(credential);
+      const vaultResult = await storeInVault(credential);
 
-      // Step 2: Replace in source file
-      const replaced = replaceInSource(credential);
+      // Step 2: Replace in source file (only if stored somewhere)
+      const replaced = vaultResult.stored ? replaceInSource(credential) : false;
 
       // Step 3: Create broker policy
-      const policyCreated = createBrokerPolicy(credential, targetDir);
+      const policyCreated = vaultResult.stored ? createBrokerPolicy(credential, targetDir) : false;
 
       results.push({
         credential,
-        stored,
+        stored: vaultResult.stored,
+        storageLocation: vaultResult.location,
         replaced,
         policyCreated,
       });
 
       if (options.verbose) {
-        const status = stored && replaced ? green('[OK]') : yellow('[PARTIAL]');
+        const status = vaultResult.stored && replaced ? green('[OK]') : yellow('[PARTIAL]');
         process.stdout.write(`${status} ${credential.envVar} <- ${path.relative(targetDir, credential.filePath)}:${credential.line}\n`);
       }
     } catch (err) {
@@ -698,48 +735,116 @@ async function migrateCredentials(
 /**
  * Store a credential value in the Secretless SecretStore.
  * Uses dynamic import to avoid hard dependency on secretless-ai.
+ *
+ * IMPORTANT: Never silently fall back to .env files. AI coding tools
+ * can read .env files, so storing credentials there defeats the purpose.
+ * If SecretStore is unavailable, store in shell profile (export statements)
+ * which are loaded at shell startup but not read by AI tools.
  */
-async function storeInVault(credential: CredentialMatch): Promise<boolean> {
+async function storeInVault(credential: CredentialMatch): Promise<{ stored: boolean; location: 'vault' | 'shell-profile' | 'none' }> {
   try {
     // Dynamic import -- secretless-ai may not be installed
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
     const mod = 'default' in secretless ? secretless.default : secretless;
+
+    // Pre-flight check: if backend is 1password, verify `op` CLI is installed
+    const backend = mod.readBackendConfig?.() ?? 'local';
+    if (backend === '1password') {
+      try {
+        const { execFileSync } = await import('node:child_process');
+        execFileSync('op', ['--version'], { stdio: 'pipe' });
+      } catch {
+        process.stderr.write(yellow(
+          `\nVault backend is set to 1Password, but the 1Password CLI (op) is not installed.\n` +
+          `Credentials cannot be stored until this is resolved.\n\n` +
+          `To install the 1Password CLI:\n` +
+          `  brew install 1password-cli\n\n` +
+          `Or switch to a backend that works now:\n` +
+          `  npx secretless-ai backend set keychain    Uses macOS Keychain (no extra tools)\n` +
+          `  npx secretless-ai backend set local        File-based vault (~/.secretless-ai/)\n\n`
+        ));
+        return { stored: false, location: 'none' };
+      }
+    }
+
     const { SecretStore } = mod;
     const store = new SecretStore();
     await store.setSecret(credential.envVar, credential.value);
-    return true;
-  } catch {
-    // Secretless not available -- write to .env file as fallback
-    return storeInDotEnv(credential);
+    return { stored: true, location: 'vault' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    // Surface the actual error so users know WHY it failed
+    if (message.includes('ENOENT')) {
+      // Missing CLI binary (op, vault, etc.)
+      process.stderr.write(yellow(
+        `\nFailed to store ${credential.envVar}: vault CLI tool not found.\n` +
+        `Check your vault backend: npx secretless-ai backend\n` +
+        `Switch to keychain:       npx secretless-ai backend set keychain\n\n`
+      ));
+    } else if (message.includes('Cannot find module') || message.includes('ERR_MODULE_NOT_FOUND')) {
+      process.stderr.write(yellow(
+        `\nSecretless AI is not installed. Credentials will be stored in shell profile.\n` +
+        `For vault storage: npm install -g secretless-ai && npx secretless-ai init\n\n`
+      ));
+    } else {
+      process.stderr.write(yellow(
+        `\nFailed to store ${credential.envVar} in vault: ${message}\n` +
+        `Check backend status: npx secretless-ai backend\n\n`
+      ));
+    }
+
+    // Secretless not available -- store in shell profile as env export.
+    // .env files are NOT safe because AI coding tools read them.
+    const shellResult = storeInShellProfile(credential);
+    return { stored: shellResult, location: shellResult ? 'shell-profile' : 'none' };
   }
 }
 
 /**
- * Fallback: append credential to .env file in the project root.
+ * Fallback: add credential as an export in the user's shell profile.
+ * Shell profile (~/.zshrc, ~/.bashrc) is loaded at shell startup and
+ * makes the variable available via process.env, but AI coding tools
+ * do not read shell profiles (unlike .env files which they actively scan).
  */
-function storeInDotEnv(credential: CredentialMatch): boolean {
-  const projectRoot = findProjectRoot(credential.filePath);
-  if (!projectRoot) return false;
+function storeInShellProfile(credential: CredentialMatch): boolean {
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  if (!home) return false;
 
-  const envPath = path.join(projectRoot, '.env');
-  let content = '';
-
-  if (fs.existsSync(envPath)) {
-    content = fs.readFileSync(envPath, 'utf-8');
-    // Don't add if already present
-    if (content.includes(`${credential.envVar}=`)) return true;
-    if (!content.endsWith('\n')) content += '\n';
+  // Detect shell profile
+  const shell = process.env.SHELL ?? '';
+  let profilePath: string;
+  if (shell.includes('zsh')) {
+    profilePath = path.join(home, '.zshrc');
+  } else {
+    profilePath = path.join(home, '.bashrc');
   }
 
-  content += `${credential.envVar}=${credential.value}\n`;
+  try {
+    let content = '';
+    if (fs.existsSync(profilePath)) {
+      content = fs.readFileSync(profilePath, 'utf-8');
+      // Don't add if already present
+      if (content.includes(`export ${credential.envVar}=`)) return true;
+      if (!content.endsWith('\n')) content += '\n';
+    }
 
-  // Write with restricted permissions (0o600)
-  const fd = fs.openSync(envPath, 'w', 0o600);
-  fs.writeSync(fd, content);
-  fs.closeSync(fd);
+    content += `\n# Added by opena2a protect (migrate to a vault for better security: npx secretless-ai backend set keychain)\n`;
+    content += `export ${credential.envVar}="${credential.value}"\n`;
 
-  return true;
+    fs.writeFileSync(profilePath, content, { encoding: 'utf-8', mode: 0o600 });
+
+    process.stderr.write(yellow(
+      `Secretless vault not available. Stored ${credential.envVar} in ${path.basename(profilePath)} instead.\n` +
+      `For better security, install a vault backend:\n` +
+      `  npx secretless-ai backend set keychain    OS keychain (recommended for solo devs)\n` +
+      `  npx secretless-ai backend set 1password    1Password (recommended for teams)\n\n`
+    ));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -1030,11 +1135,18 @@ function printReport(report: ProtectReport): void {
   const rows: string[][] = [];
 
   for (const result of report.results) {
-    const status = result.error
-      ? red('FAILED')
-      : result.stored && result.replaced
-        ? green('MIGRATED')
-        : yellow('PARTIAL');
+    let status: string;
+    if (result.error) {
+      status = red('FAILED');
+    } else if (result.stored && result.replaced && result.storageLocation === 'vault') {
+      status = green('VAULT');
+    } else if (result.stored && result.replaced && result.storageLocation === 'shell-profile') {
+      status = yellow('SHELL PROFILE');
+    } else if (result.stored && result.replaced) {
+      status = green('MIGRATED');
+    } else {
+      status = yellow('PARTIAL');
+    }
 
     rows.push([
       status,
@@ -1048,7 +1160,18 @@ function printReport(report: ProtectReport): void {
     }
   }
 
-  process.stdout.write(table(rows, ['Status', 'Finding', 'Env Var', 'Location']) + '\n\n');
+  process.stdout.write(table(rows, ['Stored In', 'Finding', 'Env Var', 'Source']) + '\n\n');
+
+  // Warn if any credentials ended up in shell profile instead of vault
+  const shellProfileResults = report.results.filter(r => r.storageLocation === 'shell-profile');
+  if (shellProfileResults.length > 0) {
+    process.stdout.write(yellow(
+      `${shellProfileResults.length} credential(s) stored in shell profile (fallback).\n` +
+      `For better security, set up a vault backend and re-run protect:\n` +
+      `  npx secretless-ai backend set keychain\n` +
+      `  npx opena2a-cli protect\n\n`
+    ));
+  }
 
   // Summary
   process.stdout.write(bold('Summary: '));
@@ -1074,8 +1197,10 @@ function printReport(report: ProtectReport): void {
       process.stdout.write(`  ${dim('AI tool configs')}  ${green(`Updated ${report.aiToolsUpdated.join(', ')}`)}\n`);
     }
     if (af.configsSigned && af.configsSigned > 0) {
-      process.stdout.write(`  ${dim('Config signing')}   ${green(`Signed ${af.configsSigned} config file${af.configsSigned === 1 ? '' : 's'}`)}\n`);
-      process.stdout.write(`  ${yellow('                  Run `opena2a guard resign` after editing signed files')}\n`);
+      const fileList = af.configsSignedFiles?.join(', ') ?? `${af.configsSigned} file${af.configsSigned === 1 ? '' : 's'}`;
+      process.stdout.write(`  ${dim('Config signing')}   ${green(`Signed: ${fileList}`)}\n`);
+      process.stdout.write(`  ${dim('                 After editing: ')}opena2a guard resign\n`);
+      process.stdout.write(`  ${dim('                 To undo:       ')}rm .opena2a/guard/signatures.json\n`);
     }
   }
 
@@ -1098,6 +1223,16 @@ function printReport(report: ProtectReport): void {
     process.stdout.write('  1. Review changes: ' + dim('git diff') + '\n');
     process.stdout.write('  2. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
     process.stdout.write('  3. Re-assess posture: ' + dim('opena2a init') + '\n');
+    process.stdout.write('\n' + dim('Rollback:') + '\n');
+    if (report.migrated > 0) {
+      process.stdout.write(dim('  git checkout -- <files>    Restore original files (credentials re-appear in source)') + '\n');
+    }
+    if (af?.configsSigned) {
+      process.stdout.write(dim('  rm .opena2a/guard/signatures.json   Remove config signatures') + '\n');
+    }
+    if (af?.gitignoreFixed) {
+      process.stdout.write(dim('  git checkout -- .gitignore          Restore original .gitignore') + '\n');
+    }
     process.stdout.write('\n' + dim('Continue hardening:') + '\n');
     process.stdout.write(dim('  opena2a runtime start     Enable runtime monitoring') + '\n');
   }

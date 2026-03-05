@@ -542,7 +542,7 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
     const config = mod.loadUserConfig();
     return config.registry.url;
   } catch {
-    return 'https://registry.opena2a.org';
+    return ''; // registry not yet available
   }
 }
 

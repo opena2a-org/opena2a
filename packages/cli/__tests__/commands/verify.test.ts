@@ -49,7 +49,7 @@ describe('verify', () => {
 
     const options: VerifyOptions = {
       packageName: 'hackmyagent',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };
@@ -79,7 +79,7 @@ describe('verify', () => {
 
     const options: VerifyOptions = {
       packageName: 'hackmyagent',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };
@@ -99,7 +99,7 @@ describe('verify', () => {
 
     const options: VerifyOptions = {
       packageName: 'nonexistent-package',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };
@@ -129,7 +129,7 @@ describe('verify', () => {
 
     const options: VerifyOptions = {
       packageName: 'hackmyagent',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };
@@ -168,7 +168,7 @@ describe('verify', () => {
 
     const options: VerifyOptions = {
       packageName: 'hackmyagent',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };

@@ -196,9 +196,9 @@ export async function getRegistryUrl(): Promise<string> {
   try {
     const mod = await loadShared();
     const config = mod.loadUserConfig();
-    return config.registry?.url ?? 'https://registry.opena2a.org';
+    return config.registry?.url ?? '';
   } catch {
-    return 'https://registry.opena2a.org';
+    return ''; // registry not yet available
   }
 }
 

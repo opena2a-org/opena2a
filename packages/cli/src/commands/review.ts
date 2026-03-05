@@ -57,7 +57,8 @@ export interface ReviewReport {
   projectType: string;
   phases: PhaseResult[];
   compositeScore: number;
-  grade: string;
+  grade: string; // kept for backward compat in JSON; not displayed as letter grade in CLI/HTML
+  recoverySummary: RecoverySummary;
   findings: ReviewFinding[];
   actionItems: ActionItem[];
   // Phase data
@@ -130,6 +131,19 @@ export interface HmaPhaseData {
   score: number;
 }
 
+export interface RecoveryOpportunity {
+  dimension: string;
+  pointsRecoverable: number;
+  action: string;
+}
+
+export interface RecoverySummary {
+  currentScore: number;
+  potentialScore: number;
+  totalRecoverable: number;
+  opportunities: RecoveryOpportunity[];
+}
+
 // --- Core ---
 
 export async function review(options: ReviewOptions): Promise<number> {
@@ -176,7 +190,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     status: phase1Status,
     score: initData.trustScore,
     durationMs: phase1Ms,
-    detail: `Trust ${initData.trustScore}/100 [${initData.grade}]`,
+    detail: `Trust ${initData.trustScore}/100`,
   });
   progressDone(1, 'Scanning project...          ', formatMs(phase1Ms));
 
@@ -275,6 +289,11 @@ export async function review(options: ReviewOptions): Promise<number> {
     hmaAvailable,
   );
   const grade = scoreToGrade(compositeScore);
+  const recoverySummary = computeRecoverySummary(
+    initData.trustScore, credScore, guardScore,
+    shieldData.postureScore, hmaAvailable ? hmaData!.score : 0,
+    hmaAvailable, compositeScore,
+  );
 
   // Aggregate findings
   const findings = aggregateFindings(credentialData, shieldData, targetDir);
@@ -291,6 +310,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     phases,
     compositeScore,
     grade,
+    recoverySummary,
     findings,
     actionItems,
     initData,
@@ -317,9 +337,16 @@ export async function review(options: ReviewOptions): Promise<number> {
   process.stdout.write('\n');
   const scoreColor = compositeScore >= 80 ? green
     : compositeScore >= 60 ? yellow : red;
+  // Recovery-framed output: show path forward, not punitive grade
+  const topRecovery = recoverySummary.opportunities.slice(0, 3)
+    .map(o => `+${o.pointsRecoverable} ${o.dimension.toLowerCase()}`)
+    .join(', ');
+  const recoveryHint = recoverySummary.totalRecoverable > 0
+    ? ` -- path to ${recoverySummary.potentialScore} available (${topRecovery})`
+    : '';
   process.stdout.write(
-    `  Score: ${scoreColor(`${compositeScore}/100`)} ${dim('[Grade')} ${scoreColor(grade)}${dim(']')}` +
-    `   ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)\n`,
+    `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}` +
+    `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)\n`,
   );
 
   // Generate HTML report
@@ -545,11 +572,66 @@ function computeCompositeScore(
 }
 
 function scoreToGrade(score: number): string {
+  // Kept for JSON backward compatibility; not displayed in CLI or HTML output
   if (score >= 90) return 'A';
   if (score >= 80) return 'B';
   if (score >= 70) return 'C';
   if (score >= 60) return 'D';
   return 'F';
+}
+
+function computeRecoverySummary(
+  trustScore: number,
+  credScore: number,
+  guardScore: number,
+  shieldScore: number,
+  hmaScore: number,
+  hmaAvailable: boolean,
+  compositeScore: number,
+): RecoverySummary {
+  const opportunities: RecoveryOpportunity[] = [];
+
+  // Compute how many composite points each dimension could recover (score gap * weight)
+  const dims = hmaAvailable
+    ? [
+        { name: 'Credentials', score: credScore, weight: 0.20, action: 'opena2a protect' },
+        { name: 'Shield', score: shieldScore, weight: 0.25, action: 'opena2a shield init' },
+        { name: 'Hygiene', score: trustScore, weight: 0.30, action: 'opena2a init' },
+        { name: 'Config integrity', score: guardScore, weight: 0.15, action: 'opena2a guard sign' },
+        { name: 'HMA scan', score: hmaScore, weight: 0.10, action: 'npx hackmyagent scan' },
+      ]
+    : [
+        { name: 'Credentials', score: credScore, weight: 0.22, action: 'opena2a protect' },
+        { name: 'Shield', score: shieldScore, weight: 0.25, action: 'opena2a shield init' },
+        { name: 'Hygiene', score: trustScore, weight: 0.35, action: 'opena2a init' },
+        { name: 'Config integrity', score: guardScore, weight: 0.18, action: 'opena2a guard sign' },
+      ];
+
+  for (const d of dims) {
+    const gap = 100 - d.score;
+    if (gap <= 0) continue;
+    const recoverable = Math.round(gap * d.weight);
+    if (recoverable > 0) {
+      opportunities.push({
+        dimension: d.name,
+        pointsRecoverable: recoverable,
+        action: d.action,
+      });
+    }
+  }
+
+  // Sort by most recoverable first
+  opportunities.sort((a, b) => b.pointsRecoverable - a.pointsRecoverable);
+
+  const totalRecoverable = opportunities.reduce((s, o) => s + o.pointsRecoverable, 0);
+  const potentialScore = Math.min(100, compositeScore + totalRecoverable);
+
+  return {
+    currentScore: compositeScore,
+    potentialScore,
+    totalRecoverable,
+    opportunities,
+  };
 }
 
 // --- Findings Aggregation ---

@@ -42,7 +42,7 @@ const DEFAULT_CONFIG: UserConfig = {
     consentVersion: '1.0',
   },
   registry: {
-    url: 'https://registry.opena2a.org',
+    url: '',
   },
   llm: {
     enabled: false,

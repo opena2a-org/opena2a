@@ -10,7 +10,7 @@ Credential detection, scope drift analysis, config integrity, runtime monitoring
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)]()
 [![npm](https://img.shields.io/npm/v/opena2a-cli.svg)](https://www.npmjs.com/package/opena2a-cli)
 
-[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Registry](https://registry.opena2a.org) | [Discord](https://discord.gg/uRZa3KXgEn) | [GitHub](https://github.com/opena2a-org/opena2a)
+[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Discord](https://discord.gg/uRZa3KXgEn) | [GitHub](https://github.com/opena2a-org/opena2a)
 
 </div>
 
@@ -36,7 +36,7 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 Run `opena2a init` in any project directory to get an instant security assessment:
 
 ```
-  OpenA2A Security Report  v0.3.7
+  OpenA2A Security Report  v0.5.0
 
   Project      myapp v2.1.0
   Type         Node.js + MCP server

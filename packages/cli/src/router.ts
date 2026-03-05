@@ -108,13 +108,18 @@ export async function dispatchCommand(
   if (command === 'guard') {
     const { guard } = await import('./commands/guard.js');
     const subcommand = args[0] ?? 'status';
+    const remainingArgs = args.slice(1);
+    // Extract directory from first remaining arg if it looks like a path
+    const dirFromArgs = remainingArgs.length > 0 && !remainingArgs[0]?.startsWith('-')
+      ? remainingArgs.shift()
+      : undefined;
     return guard({
       subcommand: subcommand as 'sign' | 'verify' | 'status' | 'policy',
-      targetDir: process.cwd(),
+      targetDir: dirFromArgs ?? process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
       verbose: globalOptions.verbose ?? false,
-      args: args.slice(1),
+      args: remainingArgs,
     });
   }
 
@@ -138,11 +143,60 @@ export async function dispatchCommand(
   if (command === 'runtime') {
     const { runtime } = await import('./commands/runtime.js');
     const subcommand = args[0] ?? 'status';
+    // Extract directory from second arg if it looks like a path
+    const dirFromArgs = args[1] && !args[1].startsWith('-') ? args[1] : undefined;
     return runtime({
       subcommand: subcommand as 'start' | 'status' | 'tail' | 'init',
-      targetDir: process.cwd(),
+      targetDir: dirFromArgs ?? process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'scan-soul' directly (SoulScanner programmatic API)
+  if (command === 'scan-soul') {
+    const { scanSoul } = await import('./commands/soul.js');
+    return scanSoul({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'harden-soul' directly (SoulScanner programmatic API)
+  if (command === 'harden-soul') {
+    const { hardenSoul } = await import('./commands/soul.js');
+    return hardenSoul({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+      dryRun: args.includes('--dry-run'),
+    });
+  }
+
+  // Handle 'benchmark' directly (OASB benchmark programmatic API)
+  if (command === 'benchmark') {
+    const { benchmark: runBenchmark } = await import('./commands/benchmark.js');
+    const levelIdx = args.indexOf('--level');
+    return runBenchmark({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      level: levelIdx >= 0 ? args[levelIdx + 1] : 'L1',
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'status' directly (not adapter-based)
+  if (command === 'status') {
+    const { status: runStatus } = await import('./commands/status.js');
+    return runStatus({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,
     });
   }
@@ -150,7 +204,6 @@ export async function dispatchCommand(
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
     check: { adapter: 'scan', defaultArgs: ['secure'] },
-    status: { adapter: 'scan', defaultArgs: ['status'] },
     publish: { adapter: 'registry', defaultArgs: ['check'] },
   };
 

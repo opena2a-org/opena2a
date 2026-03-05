@@ -45,12 +45,44 @@ Learn more: https://opena2a.org/docs`);
 
   // Register all adapter-backed commands
   for (const [name, config] of Object.entries(ADAPTER_REGISTRY)) {
-    program
+    const adapterCmd = program
       .command(name)
       .argument('[args...]', 'Subcommand and arguments')
       .description(config.description)
       .allowUnknownOption(true)
-      .action(async (args: string[], _opts, cmd) => {
+      .helpOption(false); // Disable Commander's --help interception so it passes through to the adapter
+
+    adapterCmd.action(async (args: string[], _opts: unknown, _cmd: unknown) => {
+        // Handle --help / -h: show adapter info and try to delegate to the underlying tool
+        if (args.includes('--help') || args.includes('-h')) {
+          const pkgLabel = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
+          process.stdout.write(`${name} - ${config.description}\n\n`);
+          process.stdout.write(`This command delegates to ${pkgLabel}.\n`);
+          process.stdout.write(`Run \`npx ${pkgLabel} --help\` for full subcommand documentation.\n\n`);
+          // Try to pass --help through to the adapter for real help output
+          const globalOpts = program.opts();
+          const exitCode = await dispatchCommand(name, args, {
+            verbose: globalOpts.verbose,
+            quiet: globalOpts.quiet,
+            ci: globalOpts.ci,
+            format: globalOpts.format,
+            contribute: globalOpts.contribute,
+          });
+          process.exitCode = exitCode;
+          return;
+        }
+
+        // For 'registry' with no args, show usage instead of crashing
+        if (name === 'registry' && args.length === 0) {
+          process.stdout.write(`registry - ${config.description}\n\n`);
+          process.stdout.write('Usage: opena2a registry <package-name>\n');
+          process.stdout.write('       opena2a registry express\n');
+          process.stdout.write('       opena2a registry langchain\n\n');
+          process.stdout.write('Queries the OpenA2A Trust Registry for security data on a package.\n');
+          process.exitCode = 0;
+          return;
+        }
+
         const globalOpts = program.opts();
         const exitCode = await dispatchCommand(name, args, {
           verbose: globalOpts.verbose,
@@ -91,26 +123,61 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
-  // Intent commands (init and protect are handled as direct commands)
-  for (const intent of ['check', 'status', 'publish']) {
-    if (!ADAPTER_REGISTRY[intent]) {
-      program
-        .command(intent)
-        .description(getIntentDescription(intent))
-        .allowUnknownOption(true)
-        .action(async (_opts, cmd) => {
-          const args = cmd.args ?? [];
-          const globalOpts = program.opts();
-          const exitCode = await dispatchCommand(intent, args, {
-            verbose: globalOpts.verbose,
-            quiet: globalOpts.quiet,
-            ci: globalOpts.ci,
-            format: globalOpts.format,
-            contribute: globalOpts.contribute,
-          });
-          process.exitCode = exitCode;
+  // Check command (alias for scan secure, supports [directory])
+  if (!ADAPTER_REGISTRY['check']) {
+    program
+      .command('check [directory]')
+      .description('Quick security check (alias for scan secure)')
+      .allowUnknownOption(true)
+      .action(async (directory: string | undefined, _opts, cmd) => {
+        const args = cmd.args ?? [];
+        if (directory) args.unshift(directory);
+        const globalOpts = program.opts();
+        const exitCode = await dispatchCommand('check', args, {
+          verbose: globalOpts.verbose,
+          quiet: globalOpts.quiet,
+          ci: globalOpts.ci,
+          format: globalOpts.format,
+          contribute: globalOpts.contribute,
         });
-    }
+        process.exitCode = exitCode;
+      });
+  }
+
+  // Status command (direct, shows project security status)
+  program
+    .command('status [directory]')
+    .description('Show security status of current project')
+    .option('--dir <path>', 'Target directory')
+    .action(async (directory: string | undefined, opts) => {
+      const { status: runStatus } = await import('./commands/status.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runStatus({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
+  // Publish intent command
+  if (!ADAPTER_REGISTRY['publish']) {
+    program
+      .command('publish')
+      .description('Verify package trust score before publishing')
+      .allowUnknownOption(true)
+      .action(async (_opts, cmd) => {
+        const args = cmd.args ?? [];
+        const globalOpts = program.opts();
+        const exitCode = await dispatchCommand('publish', args, {
+          verbose: globalOpts.verbose,
+          quiet: globalOpts.quiet,
+          ci: globalOpts.ci,
+          format: globalOpts.format,
+          contribute: globalOpts.contribute,
+        });
+        process.exitCode = exitCode;
+      });
   }
 
   // Init command (direct, not adapter-based)
@@ -146,10 +213,12 @@ Learn more: https://opena2a.org/docs`);
       }
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
+      // Extract directory from positional args if --dir not specified
+      const dirFromArgs = args.length > 0 && !args[0]?.startsWith('-') ? args.shift() : undefined;
       process.exitCode = await guard({
         subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot',
         files: opts.files,
-        targetDir: opts.dir,
+        targetDir: opts.dir ?? dirFromArgs,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -162,20 +231,20 @@ Learn more: https://opena2a.org/docs`);
 
   // Runtime command (ARP wrapper)
   program
-    .command('runtime <subcommand>')
+    .command('runtime <subcommand> [directory]')
     .description('Agent runtime protection (start|status|tail|init)')
     .option('--config <path>', 'Path to ARP config file')
     .option('--count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
-    .action(async (subcommand: string, opts) => {
+    .action(async (subcommand: string, directory: string | undefined, opts) => {
       const { runtime } = await import('./commands/runtime.js');
       const globalOpts = program.opts();
       process.exitCode = await runtime({
         subcommand: subcommand as 'start' | 'status' | 'tail' | 'init',
         configPath: opts.config,
         count: opts.count ? parseInt(opts.count, 10) : undefined,
-        targetDir: opts.dir,
+        targetDir: opts.dir ?? directory,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -253,6 +322,68 @@ Learn more: https://opena2a.org/docs`);
         reportPath: opts.report,
         autoOpen: opts.open !== false,
         skipHma: opts.skipHma,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
+  // Scan-soul command (governance scanner, uses hackmyagent SoulScanner API)
+  program
+    .command('scan-soul [directory]')
+    .description('Scan governance file for behavioral safety coverage (AGS)')
+    .option('--dir <path>', 'Target directory')
+    .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
+    .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
+    .option('--deep', 'Enable LLM-assisted deep analysis')
+    .action(async (directory: string | undefined, opts) => {
+      const { scanSoul } = await import('./commands/soul.js');
+      const globalOpts = program.opts();
+      process.exitCode = await scanSoul({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        profile: opts.profile,
+        tier: opts.tier,
+        deep: opts.deep,
+      });
+    });
+
+  // Harden-soul command (governance generator, uses hackmyagent SoulScanner API)
+  program
+    .command('harden-soul [directory]')
+    .description('Generate or improve governance file with AGS templates')
+    .option('--dir <path>', 'Target directory')
+    .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
+    .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
+    .option('--dry-run', 'Show what would be generated without writing')
+    .action(async (directory: string | undefined, opts) => {
+      const { hardenSoul } = await import('./commands/soul.js');
+      const globalOpts = program.opts();
+      process.exitCode = await hardenSoul({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        profile: opts.profile,
+        tier: opts.tier,
+        dryRun: opts.dryRun,
+      });
+    });
+
+  // Benchmark command (OASB security benchmark, uses hackmyagent programmatic API)
+  program
+    .command('benchmark [directory]')
+    .description('Run OASB security benchmark against AI agent')
+    .option('--dir <path>', 'Target directory')
+    .option('--level <level>', 'Benchmark level: L1, L2, L3', 'L1')
+    .action(async (directory: string | undefined, opts) => {
+      const { benchmark: runBenchmark } = await import('./commands/benchmark.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runBenchmark({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        level: opts.level,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -429,7 +560,7 @@ Valid actions:
   const KNOWN_COMMANDS = [
     ...Object.keys(ADAPTER_REGISTRY),
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
-    'config', 'self-register', 'verify', 'baselines',
+    'config', 'self-register', 'verify', 'baselines', 'benchmark',
     'check', 'status', 'publish',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {

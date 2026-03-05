@@ -8,7 +8,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { bold, red, yellow, dim, cyan } from './colors.js';
+import { bold, red, yellow, dim, cyan, orange } from './colors.js';
 
 // --- Types ---
 
@@ -181,7 +181,7 @@ export async function checkAdvisories(
   dir: string,
   registryUrl?: string,
 ): Promise<AdvisoryCheck> {
-  const url = registryUrl ?? 'https://registry.opena2a.org';
+  const url = registryUrl ?? '';
 
   // Check cache first
   const cached = readCache(dir);
@@ -242,7 +242,7 @@ export function printAdvisoryWarnings(check: AdvisoryCheck): void {
   for (const advisory of check.advisories) {
     const severity = advisory.severity?.[0]?.score ?? 'UNKNOWN';
     const severityColor = severity === 'CRITICAL' ? red
-      : severity === 'HIGH' ? red
+      : severity === 'HIGH' ? orange
       : severity === 'MODERATE' ? yellow
       : dim;
 

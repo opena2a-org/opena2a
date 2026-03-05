@@ -282,22 +282,26 @@ export async function init(options: InitOptions): Promise<number> {
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
           process.stdout.write(`  ${dim('  Keys provisioned for Maps silently authenticate to Gemini if the')}\n`);
           process.stdout.write(`  ${dim('  Generative Language API is enabled in the same GCP project.')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
-          process.stdout.write(`  ${dim('           (runs live Gemini API access check, no changes made)')}\n`);
-          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Scan:    opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (scans and reports drift, no live API checks)')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('           (runs live Gemini API access check and applies fixes)')}\n`);
         } else if (findingId === 'DRIFT-002') {
           process.stdout.write(`  ${yellow(findingId)}  AWS key may access Bedrock AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
           process.stdout.write(`  ${dim('  IAM policies frequently over-provision. A key scoped for S3/EC2')}\n`);
           process.stdout.write(`  ${dim('  may also pass STS auth and call Bedrock LLM endpoints.')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
-          process.stdout.write(`  ${dim('           (runs live STS + Bedrock access check, no changes made)')}\n`);
-          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Scan:    opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (scans and reports drift, no live API checks)')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('           (runs live STS + Bedrock access check and applies fixes)')}\n`);
         } else {
           process.stdout.write(`  ${yellow(findingId)}  Credential scope drift  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
-          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Scan:    opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (scans and reports drift, no live API checks)')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('           (runs live access check and applies fixes)')}\n`);
         }
         process.stdout.write('\n');
       }
@@ -313,6 +317,10 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write(dim(`  Tip: ${tip.command}`) + '\n');
     const wrappedTipText = wordWrap(tip.text, 68, 7);
     process.stdout.write(dim(wrappedTipText) + '\n');
+    process.stdout.write('\n');
+
+    // Deeper analysis hint
+    process.stdout.write(dim('  For deeper analysis (147+ checks): opena2a scan secure') + '\n');
     process.stdout.write('\n');
 
     // OpenA2A footer

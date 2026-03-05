@@ -14,3 +14,10 @@ export const blue = wrap(34, 39);
 export const cyan = wrap(36, 39);
 export const gray = wrap(90, 39);
 export const brightRed = wrap(91, 39);
+export const white = wrap(37, 39);
+
+/** Orange/amber via 256-color palette (color 208). Visually distinct from red. */
+export function orange(text: string): string {
+  if (!enabled) return text;
+  return `\x1b[38;5;208m${text}\x1b[39m`;
+}

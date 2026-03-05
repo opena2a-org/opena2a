@@ -14,28 +14,14 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     description: 'Manage credentials for AI coding tools (Secretless)',
   },
   // runtime is now handled directly by packages/cli/src/commands/runtime.ts
-  benchmark: {
-    name: 'benchmark',
-    method: 'import',
-    packageName: 'hackmyagent',
-    description: 'Run security benchmark against AI agent (OASB)',
-  },
-  'scan-soul': {
-    name: 'scan-soul',
-    method: 'import',
-    packageName: 'hackmyagent',
-    description: 'Scan governance file for behavioral safety coverage (AGS)',
-  },
-  'harden-soul': {
-    name: 'harden-soul',
-    method: 'import',
-    packageName: 'hackmyagent',
-    description: 'Generate or improve governance file with AGS templates',
-  },
+  // benchmark is now handled directly by packages/cli/src/commands/benchmark.ts (programmatic API)
+  // scan-soul and harden-soul are handled directly in commands/soul.ts (programmatic API)
   registry: {
     name: 'registry',
-    method: 'import',
+    method: 'spawn',
+    command: 'ai-trust',
     packageName: 'ai-trust',
+    subcommand: 'check',
     description: 'Query OpenA2A Trust Registry for package security data',
   },
   train: {

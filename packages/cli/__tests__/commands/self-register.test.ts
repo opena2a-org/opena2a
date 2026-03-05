@@ -58,7 +58,7 @@ describe('checkPackageExists', () => {
       json: async () => ({ id: 'pkg-123' }),
     });
 
-    const result = await checkPackageExists('https://registry.opena2a.org', TOOL_MANIFEST[0]);
+    const result = await checkPackageExists('https://test-registry.example.com', TOOL_MANIFEST[0]);
 
     expect(result.exists).toBe(true);
     expect(result.packageId).toBe('pkg-123');
@@ -71,7 +71,7 @@ describe('checkPackageExists', () => {
       status: 404,
     });
 
-    const result = await checkPackageExists('https://registry.opena2a.org', TOOL_MANIFEST[0]);
+    const result = await checkPackageExists('https://test-registry.example.com', TOOL_MANIFEST[0]);
 
     expect(result.exists).toBe(false);
     expect(result.packageId).toBeUndefined();
@@ -80,7 +80,7 @@ describe('checkPackageExists', () => {
   it('returns exists: false on network error', async () => {
     mockFetch.mockRejectedValue(new Error('Network error'));
 
-    const result = await checkPackageExists('https://registry.opena2a.org', TOOL_MANIFEST[0]);
+    const result = await checkPackageExists('https://test-registry.example.com', TOOL_MANIFEST[0]);
 
     expect(result.exists).toBe(false);
   });

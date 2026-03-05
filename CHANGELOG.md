@@ -2,6 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-03-05
+
+### Fixed
+- Fix all adapter --help commands (scan, secrets, benchmark, registry, broker, train, crypto) -- now pass through to underlying tool help instead of showing generic Commander.js description
+- Fix `status` command crash ("unknown command" error) -- now shows unified security status via Shield
+- Fix `check` command missing directory argument -- `opena2a check /path` now works
+- Fix `benchmark` dispatch showing HMA help instead of running -- converted to direct command using HMA programmatic API
+- Fix `registry` crash when invoked with no arguments -- now shows usage with examples
+- Fix review "Grade F" UX violation -- replaced with recovery-framed scoring ("path to 100 available")
+- Fix vault migration silently falling back to .env (AI tools read .env files, defeating the purpose)
+- Fix vault migration not detecting missing 1Password CLI (op) -- now shows pre-flight error with setup instructions
+- Fix protect output not showing which files were signed
+
+### Added
+- `status` command: unified security status across all installed tools
+- `benchmark` command: direct OASB-1 compliance checking with --level L1/L2/L3
+- OS Keychain vault backend option in protect migration flow
+- Per-file signing details in protect output
+- Rollback commands in protect output (undo signing, restore files)
+- "For deeper analysis" hint in init output pointing to scan secure
+- Storage location tracking (VAULT / SHELL PROFILE / FAILED) in migration report
+
+### Changed
+- Benchmark moved from adapter to direct command (programmatic HMA API)
+- Vault fallback: shell profile exports instead of .env files
+- Removed all registry.opena2a.org references (registry not yet available)
+
+## [0.4.0] - 2026-03-04
+
+### Fixed
+- Fix scan-soul/harden-soul dispatch: moved from broken ImportAdapter fallback to direct SoulScanner programmatic API
+- Fix registry command: changed from import to spawn method (ai-trust parses process.argv on import)
+- Fix SpawnAdapter.isAvailable(): missing await on Promise || Promise caused false negatives
+- Fix guard verify/status/diff ignoring positional directory argument
+- Fix runtime status/tail rejecting positional directory argument
+- Fix CRED-002 misclassifying sk-ant-* Anthropic keys as OpenAI (broadened negative lookahead)
+- Fix CRITICAL/HIGH severity label visibility in terminal output
+- Fix drift detection tip text inaccuracy
+- Exclude CLI own source files from credential scanning
+
+### Added
+- Bundle hackmyagent, secretless-ai, ai-trust as dependencies (npx opena2a-cli scan-soul works out of the box)
+- Direct scan-soul command with --profile, --tier, --deep options
+- Direct harden-soul command with --dry-run, --profile, --tier options
+- Progress-oriented scan-soul output with path-forward guidance
+
+### Changed
+- Remove "product" language throughout CLI (replaced with tool/platform/library)
+- scan-soul and harden-soul are now direct commands, not adapter-backed
+
 ## [0.3.1] - 2026-03-02
 
 ### Fixed

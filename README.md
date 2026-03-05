@@ -53,7 +53,7 @@ Or start with a quick assessment using `opena2a init`:
 </p>
 
 ```
-  OpenA2A Security Report  v0.3.3
+  OpenA2A Security Report  v0.4.0
 
   Project      myapp v2.1.0
   Type         Node.js + MCP server

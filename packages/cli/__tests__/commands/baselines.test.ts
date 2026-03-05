@@ -82,7 +82,7 @@ describe('baselines', () => {
           default: {
             loadUserConfig: () => ({
               contribute: { enabled: true },
-              registry: { url: 'https://registry.opena2a.org' },
+              registry: { url: 'https://test-registry.example.com' },
             }),
           },
         });
@@ -104,7 +104,7 @@ describe('baselines', () => {
 
     const options: BaselinesOptions = {
       packageName: 'vitest',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };
@@ -139,7 +139,7 @@ describe('baselines', () => {
           default: {
             loadUserConfig: () => ({
               contribute: { enabled: true },
-              registry: { url: 'https://registry.opena2a.org' },
+              registry: { url: 'https://test-registry.example.com' },
             }),
           },
         });
@@ -159,7 +159,7 @@ describe('baselines', () => {
 
     const options: BaselinesOptions = {
       packageName: 'vitest',
-      registryUrl: 'https://registry.opena2a.org',
+      registryUrl: 'https://test-registry.example.com',
       ci: true,
       format: 'json',
     };
