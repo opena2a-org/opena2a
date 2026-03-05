@@ -1,3 +1,5 @@
+import { resolve, join, dirname } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 
 /**
@@ -43,12 +45,13 @@ export class ImportAdapter implements Adapter {
         return { exitCode: 0, stdout: '', stderr: '' };
       }
 
-      // Fallback: spawn the bin command from the package
+      // Fallback: spawn the workspace binary (not the global one)
       const { SpawnAdapter } = await import('./spawn.js');
+      const workspaceBin = this.resolveWorkspaceBin(pkgName);
       const fallback = new SpawnAdapter({
         ...this.config,
         method: 'spawn',
-        command: pkgName,
+        command: workspaceBin ?? pkgName,
       });
       return fallback.run(options);
     } catch (err) {
@@ -71,6 +74,28 @@ export class ImportAdapter implements Adapter {
 
       return { exitCode: 1, stdout: '', stderr: `Failed to load ${pkgName}: ${message}` };
     }
+  }
+
+  /**
+   * Resolve the workspace node_modules/.bin binary for a package.
+   * This ensures we use the version installed in the workspace, not a stale global.
+   */
+  private resolveWorkspaceBin(pkgName: string): string | undefined {
+    try {
+      // Walk up from this file to find the nearest node_modules/.bin
+      const thisDir = dirname(__filename);
+      let dir = resolve(thisDir);
+      for (let i = 0; i < 10; i++) {
+        const binPath = join(dir, 'node_modules', '.bin', pkgName);
+        if (existsSync(binPath)) return binPath;
+        const parent = resolve(dir, '..');
+        if (parent === dir) break;
+        dir = parent;
+      }
+    } catch {
+      // Fall through
+    }
+    return undefined;
   }
 
   async isAvailable(): Promise<boolean> {
