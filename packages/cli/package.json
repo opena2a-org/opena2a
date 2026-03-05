@@ -1,6 +1,6 @@
 {
   "name": "opena2a-cli",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Unified CLI for the OpenA2A security platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,7 @@
     "ai-trust": "^0.1.1",
     "commander": "^13.1.0",
     "hackmyagent": "^0.9.8",
-    "secretless-ai": "^0.11.2"
+    "secretless-ai": "^0.11.4"
   },
   "optionalDependencies": {
     "@opena2a/aim-core": "*"
