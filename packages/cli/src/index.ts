@@ -12,6 +12,9 @@ import { getVersion } from './util/version.js';
 
 const VERSION = getVersion();
 
+// Tell downstream tools (hackmyagent, secretless) to use 'opena2a' in user-facing messages
+process.env.HMA_CLI_PREFIX = 'opena2a scan';
+
 async function main(): Promise<void> {
   const program = new Command();
 
