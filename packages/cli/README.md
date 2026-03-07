@@ -6,6 +6,12 @@
 
 Credential detection, scope drift analysis, config integrity, runtime monitoring, behavioral governance scanning, and supply chain verification -- one CLI.
 
+**Get a full security review in one command:**
+
+```bash
+npx opena2a-cli review
+```
+
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/opena2a-org/opena2a/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)]()
 [![npm](https://img.shields.io/npm/v/opena2a-cli.svg)](https://www.npmjs.com/package/opena2a-cli)
@@ -98,6 +104,17 @@ When drift is detected, `opena2a protect` migrates the key to environment variab
 
 ## Core Commands
 
+### `opena2a review`
+
+Run all security checks and generate a unified HTML dashboard. This is the recommended starting point -- it combines credential scanning, config integrity, Shield posture, advisory checks, and optional HMA deep scan into a single interactive report.
+
+```bash
+opena2a review                     # Scan + open HTML report in browser
+opena2a review --no-open           # Generate report without opening
+opena2a review --report out.html   # Save to custom path
+opena2a review --format json       # JSON output for CI
+```
+
 ### `opena2a init`
 
 Assess your project's security posture. Detects project type, scans for credentials, checks hygiene (`.gitignore`, `.env` protection, lock file, security config), calculates a trust score (0-100), and provides prioritized next steps.
@@ -168,17 +185,6 @@ Register OpenA2A tools in the public Trust Registry with security scan results.
 ```bash
 opena2a self-register --dry-run   # Preview what would be registered
 opena2a self-register             # Register all 13 tools
-```
-
-### `opena2a review`
-
-Run all security checks and generate a unified HTML dashboard. Combines credential scanning, config integrity, Shield posture, advisory checks, and optional HMA deep scan into a single interactive report.
-
-```bash
-opena2a review                     # Scan + open HTML report in browser
-opena2a review --no-open           # Generate report without opening
-opena2a review --report out.html   # Save to custom path
-opena2a review --format json       # JSON output for CI
 ```
 
 ### `opena2a config`
