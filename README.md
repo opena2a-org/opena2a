@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# opena2a-cli
+# OpenA2A CLI
 
 **One CLI for all OpenA2A security tools**
 
