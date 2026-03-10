@@ -108,7 +108,7 @@ export const TOOL_MANIFEST: ToolManifest[] = [
     description: 'Browser extension for AI agent security - prompt injection detection, MCP monitoring',
     packageType: 'ai_tool',
     version: '0.1.0-beta',
-    repositoryUrl: 'https://github.com/opena2a-org/aibrowserguard',
+    repositoryUrl: 'https://github.com/opena2a-org/AI-BrowserGuard',
     license: 'Apache-2.0',
     tags: ['browser', 'extension', 'mcp', 'prompt-injection'],
     scannable: true,
