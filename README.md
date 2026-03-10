@@ -1,4 +1,4 @@
-> **[OpenA2A](https://github.com/opena2a-org)**: [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless AI](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management)· [Browser Guard](https://github.com/opena2a-org/ai-browserguard)
+> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) · Registry (coming soon)
 
 <div align="center">
 
@@ -12,7 +12,7 @@ This is the unified entry point to the entire [OpenA2A](https://github.com/opena
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)]()
 
-[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Registry](https://registry.opena2a.org) | [Discord](https://discord.gg/uRZa3KXgEn)
+[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Discord](https://discord.gg/uRZa3KXgEn)
 
 </div>
 
@@ -136,7 +136,7 @@ One command sets up credential protection, agent identity, config integrity, run
 | `secrets` / `broker` / `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) — credential management for AI dev tools | [docs](https://opena2a.org/docs/secretless) |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) — agent identity and access management | [docs](https://opena2a.org/docs/aim) |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) — vulnerable AI agent for security training | [docs](https://opena2a.org/docs/dvaa) |
-| `registry` | [Trust Registry](https://registry.opena2a.org) — package verification and trust scores | |
+| `registry` | **Registry** — package verification and trust scores (coming soon) | |
 | `crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) — cryptographic inventory, PQC readiness | [docs](https://opena2a.org/docs/cryptoserve) |
 
 ## Smart Input Modes
@@ -191,8 +191,8 @@ Each tool in the ecosystem can be used independently — the CLI is optional.
 | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `npx secretless-ai init` | Credential management for AI coding tools |
 | [AIM](https://github.com/opena2a-org/agent-identity-management) | `pip install aim-sdk` | Agent identity, keypairs, capability policies |
 | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `docker pull opena2a/dvaa` | Deliberately vulnerable AI agent for training |
-| [AI Browser Guard](https://github.com/opena2a-org/ai-browserguard) | Chrome Web Store | Browser extension for AI agent detection |
-| [Trust Registry](https://registry.opena2a.org) | `registry.opena2a.org` | Supply chain verification and trust scores |
+| [AI Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) | Chrome Web Store | Browser extension for AI agent detection |
+| **Registry** | `registry.opena2a.org` | Coming soon |
 
 ## Upstream Contributions
 

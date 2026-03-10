@@ -94,7 +94,7 @@ ${CSS}
     <span class="footer-sep"> | </span>
     <a href="https://opena2a.org/star" target="_blank" rel="noopener noreferrer">Open Source</a>
     <span class="footer-sep"> | </span>
-    <a href="https://github.com/opena2a-org" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <a href="https://github.com/opena2a-org/opena2a" target="_blank" rel="noopener noreferrer">GitHub</a>
   </footer>
 </div>
 <script>
