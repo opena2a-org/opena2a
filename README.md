@@ -1,4 +1,4 @@
-> **[OpenA2A](https://github.com/opena2a-org)**: [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless AI](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management). · [AGS](https://github.com/opena2a-org/hackmyagent) · [Browser Guard](https://github.com/opena2a-org/ai-browserguard)
+> **[OpenA2A](https://github.com/opena2a-org)**: [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless AI](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management)· [Browser Guard](https://github.com/opena2a-org/ai-browserguard)
 
 <div align="center">
 
