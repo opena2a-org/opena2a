@@ -54,7 +54,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'identity', 'registry', 'train',
     'guard', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
-    'scan-soul', 'harden-soul', 'detect', 'mcp',
+    'scan-soul', 'harden-soul', 'detect', 'mcp', 'demo',
   ];
 
   if (KNOWN_COMMANDS.includes(first)) {
@@ -195,6 +195,19 @@ export async function dispatchCommand(
     const { detect } = await import('./commands/detect.js');
     return detect({
       targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'demo' directly
+  if (command === 'demo') {
+    const { demo } = await import('./commands/demo.js');
+    return demo({
+      scenario: args[0] && !args[0].startsWith('-') ? args[0] : 'aim',
+      interactive: args.includes('--interactive'),
+      keep: args.includes('--keep'),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,

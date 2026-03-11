@@ -479,6 +479,27 @@ Learn more: https://opena2a.org/docs`);
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
+  // Demo command (interactive AIM demonstration)
+  program
+    .command('demo [scenario]')
+    .description('Run interactive demos (scenarios: aim, dvaa)')
+    .option('--interactive', 'Pause between steps for explanation')
+    .option('--keep', 'Keep the sandbox directory after demo completes')
+    .option('--dir <path>', 'Use a specific directory instead of temporary sandbox')
+    .action(async (scenario: string | undefined, opts) => {
+      const { demo } = await import('./commands/demo.js');
+      const globalOpts = program.opts();
+      process.exitCode = await demo({
+        scenario: scenario ?? 'aim',
+        interactive: opts.interactive,
+        keep: opts.keep,
+        dir: opts.dir,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Config command
   program
     .command('config <action> [key] [value]')
@@ -609,7 +630,7 @@ Valid actions:
     ...Object.keys(ADAPTER_REGISTRY),
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines', 'benchmark',
-    'check', 'status', 'publish', 'detect', 'mcp',
+    'check', 'status', 'publish', 'detect', 'mcp', 'demo',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');
