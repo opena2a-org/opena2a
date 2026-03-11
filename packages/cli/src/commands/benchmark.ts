@@ -187,7 +187,7 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
             process.stdout.write(`    - ${cat.name} (${cat.compliance}%)\n`);
           }
         }
-        process.stdout.write(`\n  Run \`opena2a scan secure\` for detailed findings.\n`);
+        process.stdout.write(`\n  Run \`opena2a scan --deep\` for detailed findings.\n`);
         process.stdout.write(`  Run \`opena2a benchmark --verbose\` for per-category breakdown.\n`);
       }
       process.stdout.write('\n');

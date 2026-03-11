@@ -14,6 +14,7 @@ import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../u
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
 import { Spinner } from '../util/spinner.js';
+import { printFooter } from '../util/footer.js';
 import { writeEvent, getShieldDir } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -320,13 +321,17 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write('\n');
 
     // Deeper analysis hint
-    process.stdout.write(dim('  For deeper analysis (147+ checks): opena2a scan secure') + '\n');
+    process.stdout.write(dim('  For deeper analysis (147+ checks): opena2a scan --deep') + '\n');
+
+    // Global install hint (only when running via npx)
+    if (isRunningViaNpx()) {
+      process.stdout.write(dim('  Tip: Install globally for easier access: npm install -g opena2a-cli') + '\n');
+    }
+
     process.stdout.write('\n');
 
-    // OpenA2A footer
-    process.stdout.write(cyan('  OpenA2A -- open-source security for AI agents') + '\n');
-    process.stdout.write(cyan('  opena2a.org  |  github.com/opena2a-org') + '\n');
-    process.stdout.write('\n');
+    // OpenA2A footer (shared)
+    printFooter({ ci: options.ci });
   }
 
   const hasCritical = nextSteps.some(s => s.severity === 'critical');
@@ -654,7 +659,7 @@ function generateActions(
     const totalHma = hmaFindings.reduce((n, f) => n + f.count, 0);
     actions.push({
       description: `Clean ${totalHma} shell environment finding${totalHma === 1 ? '' : 's'}`,
-      command: 'opena2a scan secure',
+      command: 'opena2a scan --deep',
       why: 'Shell config files and history can contain API keys in plaintext. Rotating exposed keys and clearing history entries removes persistent exposure.',
     });
   }
@@ -836,7 +841,7 @@ function getToolRecommendation(
     return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId.startsWith('HMA-')) {
-    return { command: 'opena2a scan secure', label: 'opena2a scan secure' };
+    return { command: 'opena2a scan --deep', label: 'opena2a scan --deep' };
   }
   if (findingId === 'MCP-TOOLS') {
     return { command: 'opena2a shield status', label: 'opena2a shield status' };
@@ -1089,4 +1094,13 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
   }
 
   process.stdout.write('\n');
+}
+
+/**
+ * Detect if the CLI is running via npx (not globally installed).
+ * Checks if process.argv[1] is within an _npx cache directory.
+ */
+function isRunningViaNpx(): boolean {
+  const execPath = process.argv[1] ?? '';
+  return execPath.includes('_npx') || execPath.includes('.npm/_npx');
 }

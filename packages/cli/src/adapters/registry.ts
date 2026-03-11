@@ -5,6 +5,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     name: 'scan',
     method: 'import',
     packageName: 'hackmyagent',
+    subcommand: 'secure',
     description: 'Scan AI agent for security vulnerabilities (HackMyAgent)',
   },
   secrets: {
