@@ -85,7 +85,27 @@ function detectTool(name: string): ToolStatus {
     }
 
     case 'HMA': {
-      const version = whichBinary('hackmyagent') ? tryExecFile('hackmyagent', ['--version']) : null;
+      // Prefer workspace version over stale global binary
+      let version: string | null = null;
+      try {
+        // resolve from CLI's own location (not cwd) to find workspace hackmyagent
+        const entryPath = require.resolve('hackmyagent', { paths: [__dirname, process.cwd()] });
+        let dir = entryPath;
+        for (let i = 0; i < 10; i++) {
+          dir = join(dir, '..');
+          const pkgPath = join(dir, 'package.json');
+          if (existsSync(pkgPath)) {
+            const hmaPkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+            if (hmaPkg.name === 'hackmyagent') {
+              version = hmaPkg.version ?? null;
+              break;
+            }
+          }
+        }
+      } catch {
+        // Fall back to global binary
+        version = whichBinary('hackmyagent') ? tryExecFile('hackmyagent', ['--version']) : null;
+      }
       return {
         name: 'HackMyAgent',
         installed: version !== null,
