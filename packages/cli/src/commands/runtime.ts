@@ -98,18 +98,49 @@ async function runtimeStart(targetDir: string, options: RuntimeOptions): Promise
   // Start ARP
   try {
     const mod = 'default' in arp ? arp.default : arp;
-    if (mod.startMonitoring) {
-      await mod.startMonitoring({ configPath, cwd: targetDir });
-    } else if (mod.start) {
-      await mod.start({ configPath, cwd: targetDir });
-    } else {
-      process.stderr.write(red('ARP module does not export a start function.\n'));
+
+    // AgentRuntimeProtection is a class — instantiate it with the config path
+    const ARPClass = mod.AgentRuntimeProtection ?? arp.AgentRuntimeProtection;
+    if (!ARPClass) {
+      process.stderr.write(red('ARP module does not export AgentRuntimeProtection class.\n'));
       return 1;
     }
 
-    if (!isJson) {
-      process.stdout.write(green('ARP monitoring active.\n'));
+    const instance = new ARPClass(configPath);
+    await instance.start();
+
+    const status = instance.getStatus();
+    const monitorCount = status.monitors?.length ?? 0;
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        running: true,
+        monitors: status.monitors,
+        budget: status.budget,
+      }, null, 2) + '\n');
+    } else {
+      process.stdout.write(green(`ARP monitoring active.`) + ` ${monitorCount} monitors running.\n`);
+      for (const m of (status.monitors ?? [])) {
+        process.stdout.write(dim(`  - ${m.type}: ${m.running ? 'running' : 'stopped'}\n`));
+      }
+      process.stdout.write('\n' + dim('Press Ctrl+C to stop monitoring.\n'));
     }
+
+    // Keep the process alive until interrupted
+    await new Promise<void>((resolve) => {
+      const shutdown = async () => {
+        if (!isJson) {
+          process.stdout.write('\n' + dim('Stopping ARP monitoring...\n'));
+        }
+        await instance.stop();
+        if (!isJson) {
+          process.stdout.write(green('ARP monitoring stopped.\n'));
+        }
+        resolve();
+      };
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
+    });
     return 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -137,20 +168,74 @@ async function runtimeStatus(targetDir: string, options: RuntimeOptions): Promis
   if (configPath) {
     try {
       const raw = fs.readFileSync(configPath, 'utf-8');
-      // Simple YAML-like parsing for monitor detection
-      if (raw.includes('process:') && raw.includes('enabled: true')) monitors.push('process');
-      if (raw.includes('network:') && raw.includes('enabled: true')) monitors.push('network');
-      if (raw.includes('filesystem:') && raw.includes('enabled: true')) monitors.push('filesystem');
-      if (raw.includes('prompt:')) interceptors.push('prompt');
-      if (raw.includes('mcp-protocol:')) interceptors.push('mcp-protocol');
-      if (raw.includes('a2a-protocol:')) interceptors.push('a2a-protocol');
+
+      if (configPath.endsWith('.json')) {
+        // Parse JSON config
+        const cfg = JSON.parse(raw);
+        if (cfg.monitors?.process?.enabled !== false) monitors.push('process');
+        if (cfg.monitors?.network?.enabled !== false) monitors.push('network');
+        if (cfg.monitors?.filesystem?.enabled !== false) monitors.push('filesystem');
+        if (cfg.aiLayer?.prompt) interceptors.push('prompt');
+        if (cfg.aiLayer?.['mcp-protocol'] || cfg.aiLayer?.mcp) interceptors.push('mcp-protocol');
+        if (cfg.aiLayer?.['a2a-protocol'] || cfg.aiLayer?.a2a) interceptors.push('a2a-protocol');
+      } else {
+        // YAML: parse section-aware to avoid false positives from unrelated "enabled: true"
+        const lines = raw.split('\n');
+        let currentSection = '';
+        let currentSubSection = '';
+        for (const line of lines) {
+          const trimmed = line.trimStart();
+          const indent = line.length - trimmed.length;
+
+          if (indent === 0 && trimmed.endsWith(':')) {
+            currentSection = trimmed.slice(0, -1);
+            currentSubSection = '';
+          } else if (indent <= 2 && trimmed.includes(':')) {
+            currentSubSection = trimmed.split(':')[0].trim();
+          }
+
+          if (currentSection === 'monitors' && trimmed.includes('enabled: true')) {
+            if (currentSubSection === 'process' || trimmed.startsWith('process:')) monitors.push('process');
+            if (currentSubSection === 'network' || trimmed.startsWith('network:')) monitors.push('network');
+            if (currentSubSection === 'filesystem' || trimmed.startsWith('filesystem:')) monitors.push('filesystem');
+          }
+
+          if (currentSection === 'aiLayer') {
+            if (currentSubSection === 'prompt' && (trimmed === 'prompt: true' || trimmed.includes('enabled: true'))) interceptors.push('prompt');
+            if ((currentSubSection === 'mcp-protocol' || currentSubSection === 'mcp') && (trimmed.includes(': true') || trimmed.includes('enabled: true'))) interceptors.push('mcp-protocol');
+            if ((currentSubSection === 'a2a-protocol' || currentSubSection === 'a2a') && (trimmed.includes(': true') || trimmed.includes('enabled: true'))) interceptors.push('a2a-protocol');
+          }
+        }
+
+        // Deduplicate in case of inline YAML like { enabled: true }
+        const dedupMonitors = [...new Set(monitors)];
+        const dedupInterceptors = [...new Set(interceptors)];
+        monitors.length = 0;
+        interceptors.length = 0;
+        monitors.push(...dedupMonitors);
+        interceptors.push(...dedupInterceptors);
+      }
     } catch {
       // Config unreadable
     }
   }
 
+  // Check if ARP is actively running by looking for recent events (within last 30s)
+  let running = false;
+  if (eventCount > 0) {
+    try {
+      const content = fs.readFileSync(eventsPath, 'utf-8');
+      const lastLine = content.trim().split('\n').pop();
+      if (lastLine) {
+        const lastEvent = JSON.parse(lastLine);
+        const lastTime = new Date(lastEvent.timestamp).getTime();
+        running = Date.now() - lastTime < 30_000;
+      }
+    } catch { /* ok */ }
+  }
+
   const status: RuntimeStatus = {
-    running: false, // Cannot determine without ARP process check
+    running,
     monitors,
     interceptors,
     eventCount,
