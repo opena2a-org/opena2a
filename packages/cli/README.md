@@ -42,7 +42,7 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 Run `opena2a init` in any project directory to get an instant security assessment:
 
 ```
-  OpenA2A Security Report  v0.5.3
+  OpenA2A Security Report  v0.5.4
 
   Project      myapp v2.1.0
   Type         Node.js + MCP server
@@ -453,6 +453,19 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
+
+### Identity Subcommands
+
+The `identity` command manages Ed25519 agent identities via `@opena2a/aim-core`:
+
+```bash
+opena2a identity list              # Show local agent identity (ID, public key, creation date)
+opena2a identity create --name bot # Create a new named identity
+opena2a identity trust             # Calculate and display trust score with factor breakdown
+opena2a identity audit --limit 10  # Show recent audit events
+```
+
+Trust scores range from 0-100 and reflect how many security practices are active: identity (Ed25519 key), capability policies, audit logging, secrets management, config signing, skill verification, network controls, and heartbeat monitoring. The score shows a path forward, not a judgment.
 
 ## Behavioral Governance
 
