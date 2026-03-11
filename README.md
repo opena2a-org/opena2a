@@ -32,7 +32,7 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 │  opena2a secrets / broker  → Secretless AI (credential mgmt)   │
 │  opena2a identity          → AIM  (agent identity & access)    │
 │  opena2a runtime           → ARP  (runtime protection)         │
-│  opena2a scan-soul         → AGS  (behavioral governance)      │
+│  opena2a scan-soul         → ABGS (behavioral governance)      │
 │  opena2a benchmark oasb-2  → OASB (compliance benchmarks)      │
 │  opena2a train             → DVAA (vulnerable agent training)  │
 │                                                                 │
@@ -47,7 +47,7 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 | `secrets`, `broker`, `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for Claude Code, Cursor, Windsurf |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Ed25519 keypairs, capability policies, audit logging |
 | `runtime` | ARP ([in HMA](https://github.com/opena2a-org/hackmyagent)) | Process, network, filesystem monitoring |
-| `scan-soul`, `harden-soul` | AGS ([in HMA](https://github.com/opena2a-org/hackmyagent)) | Behavioral governance — SOUL.md, 68 controls |
+| `scan-soul`, `harden-soul` | ABGS ([in HMA](https://github.com/opena2a-org/hackmyagent)) | Behavioral governance -- SOUL.md, 68 controls |
 | `benchmark oasb-2` | OASB ([in HMA](https://github.com/opena2a-org/hackmyagent)) | 222 test scenarios, compliance scoring |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Deliberately vulnerable AI agents for training |
 | `guard` | ConfigGuard (built-in) | Config file integrity, SHA-256 signing |
@@ -132,7 +132,7 @@ One command sets up credential protection, agent identity, config integrity, run
 |---------|------|------|
 | `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — 150+ security checks, attack simulation | [docs](https://opena2a.org/docs/hackmyagent) |
 | `benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — OASB-1 + OASB-2 compliance scoring | [docs](https://opena2a.org/docs/oasb) |
-| `scan-soul` / `harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — AGS behavioral governance, 68 controls | [docs](https://opena2a.org/docs/hackmyagent) |
+| `scan-soul` / `harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) -- ABGS behavioral governance, 68 controls | [docs](https://opena2a.org/docs/hackmyagent) |
 | `secrets` / `broker` / `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) — credential management for AI dev tools | [docs](https://opena2a.org/docs/secretless) |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) — agent identity and access management | [docs](https://opena2a.org/docs/aim) |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) — vulnerable AI agent for security training | [docs](https://opena2a.org/docs/dvaa) |
@@ -441,7 +441,7 @@ Each tool in the ecosystem can be used independently — the CLI is optional.
 
 | Tool | Install Standalone | Purpose |
 |------|-------------------|---------|
-| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `npx hackmyagent secure` | Security scanner, attack simulation, OASB, ARP, AGS |
+| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `npx hackmyagent secure` | Security scanner, attack simulation, OASB, ARP, ABGS |
 | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `npx secretless-ai init` | Credential management for AI coding tools |
 | [AIM](https://github.com/opena2a-org/agent-identity-management) | `pip install aim-sdk` | Agent identity, keypairs, capability policies |
 | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `docker pull opena2a/dvaa` | Deliberately vulnerable AI agent for training |

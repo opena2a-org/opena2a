@@ -340,7 +340,7 @@ Learn more: https://opena2a.org/docs`);
   // Scan-soul command (governance scanner, uses hackmyagent SoulScanner API)
   program
     .command('scan-soul [directory]')
-    .description('Scan governance file for behavioral safety coverage (AGS)')
+    .description('Scan governance file for behavioral safety coverage (ABGS)')
     .option('--dir <path>', 'Target directory')
     .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
     .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
@@ -363,7 +363,7 @@ Learn more: https://opena2a.org/docs`);
   // Harden-soul command (governance generator, uses hackmyagent SoulScanner API)
   program
     .command('harden-soul [directory]')
-    .description('Generate or improve governance file with AGS templates')
+    .description('Generate or improve governance file with ABGS templates')
     .option('--dir <path>', 'Target directory')
     .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
     .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
