@@ -556,10 +556,11 @@ Valid actions:
 
   // MCP command (MCP server identity management)
   program
-    .command('mcp <subcommand> [server]')
+    .command('mcp [subcommand] [server]')
     .description('MCP server identity management (audit|sign|verify)')
     .option('--dir <path>', 'Target directory')
-    .action(async (subcommand: string, server: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, server: string | undefined, opts) => {
+      if (!subcommand) subcommand = 'audit';
       const { mcpCommand } = await import('./commands/mcp-audit.js');
       const globalOpts = program.opts();
       process.exitCode = await mcpCommand({

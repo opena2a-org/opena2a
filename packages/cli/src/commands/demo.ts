@@ -507,7 +507,7 @@ async function runAimDemo(opts: DemoOptions): Promise<DemoResult> {
     process.stdout.write('\n');
     for (const entry of auditLog) {
       const action = entry.action.padEnd(20);
-      const target = entry.target.padEnd(16);
+      const target = entry.target.padEnd(20);
       process.stdout.write(
         '  ' + dim(entry.timestamp) + '  ' + action + target + green(entry.outcome) + '\n',
       );
