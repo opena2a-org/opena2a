@@ -9,6 +9,7 @@ import { handleNaturalLanguage, matchIntent } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY } from './adapters/registry.js';
 import { getVersion } from './util/version.js';
+import { printFooter } from './util/footer.js';
 
 const VERSION = getVersion();
 
@@ -124,6 +125,7 @@ Learn more: https://opena2a.org/docs`);
         skipGit: opts.skipGit,
         report: opts.report,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Check command (alias for scan secure, supports [directory])
@@ -230,6 +232,7 @@ Learn more: https://opena2a.org/docs`);
         heartbeats: opts.heartbeats,
         args,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Runtime command (ARP wrapper)
@@ -253,6 +256,7 @@ Learn more: https://opena2a.org/docs`);
         verbose: globalOpts.verbose,
         force: opts.force,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Identity command (native, uses @opena2a/aim-core)
@@ -307,6 +311,7 @@ Learn more: https://opena2a.org/docs`);
         format: globalOpts.format,
         verbose: globalOpts.verbose,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Review command (unified security review)
@@ -329,6 +334,7 @@ Learn more: https://opena2a.org/docs`);
         format: globalOpts.format,
         verbose: globalOpts.verbose,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Scan-soul command (governance scanner, uses hackmyagent SoulScanner API)
@@ -351,6 +357,7 @@ Learn more: https://opena2a.org/docs`);
         tier: opts.tier,
         deep: opts.deep,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Harden-soul command (governance generator, uses hackmyagent SoulScanner API)
@@ -373,6 +380,7 @@ Learn more: https://opena2a.org/docs`);
         tier: opts.tier,
         dryRun: opts.dryRun,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Benchmark command (OASB security benchmark, uses hackmyagent programmatic API)
@@ -391,6 +399,7 @@ Learn more: https://opena2a.org/docs`);
         format: globalOpts.format,
         verbose: globalOpts.verbose,
       });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   // Self-register command

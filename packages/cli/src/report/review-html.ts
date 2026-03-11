@@ -581,7 +581,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     h+=statCard(hma.score+'/100','HMA Score',scoreColor(hma.score));
     h+=statCard('Available','Status','var(--green)');
     h+='</div>';
-    h+='<div class="card"><div class="empty-state">HMA is available. Run a full scan for detailed results:</div>'+cmdBlock('opena2a scan secure')+'</div>';
+    h+='<div class="card"><div class="empty-state">HMA is available. Run a full scan for detailed results:</div>'+cmdBlock('opena2a scan --deep')+'</div>';
     return h;
   }
 
