@@ -36,6 +36,10 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 │  opena2a benchmark oasb-2  → OASB (compliance benchmarks)      │
 │  opena2a train             → DVAA (vulnerable agent training)  │
 │                                                                 │
+│  opena2a detect            → Shadow AI agent audit             │
+│  opena2a mcp               → MCP server identity & signing     │
+│  opena2a demo              → Interactive security walkthrough  │
+│                                                                 │
 │  opena2a shield init       → All of the above, one command     │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -51,6 +55,9 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 | `benchmark oasb-2` | OASB ([in HMA](https://github.com/opena2a-org/hackmyagent)) | 222 test scenarios, compliance scoring |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Deliberately vulnerable AI agents for training |
 | `guard` | ConfigGuard (built-in) | Config file integrity, SHA-256 signing |
+| `detect` | Shadow AI Audit (built-in) | Discover running AI agents and MCP servers |
+| `mcp` | MCP Identity (built-in) | Audit, sign, and verify MCP server configs |
+| `demo` | Demo (built-in) | Interactive AIM and DVAA security walkthroughs |
 | `shield` | Shield (built-in) | Unified orchestration across all tools |
 
 Adapters install tools on first use — no manual setup required.
@@ -123,6 +130,9 @@ One command sets up credential protection, agent identity, config integrity, run
 | [`review`](https://opena2a.org/docs/cli/commands/review) | Unified HTML security dashboard with composite score | [docs](https://opena2a.org/docs/cli/commands/review) |
 | [`runtime`](https://opena2a.org/docs/cli/commands/runtime) | Agent Runtime Protection (ARP) — process, network, filesystem monitoring | [docs](https://opena2a.org/docs/cli/commands/runtime) |
 | [`verify`](https://opena2a.org/docs/cli/commands/verify) | Binary integrity verification against Trust Registry | [docs](https://opena2a.org/docs/cli/commands/verify) |
+| [`detect`](https://opena2a.org/docs/cli/commands/detect) | Shadow AI audit -- discover running AI agents, MCP servers, identity status | [docs](https://opena2a.org/docs/cli/commands/detect) |
+| [`mcp`](https://opena2a.org/docs/cli/commands/mcp) | MCP server identity -- audit configs, Ed25519 signing, trust verification | [docs](https://opena2a.org/docs/cli/commands/mcp) |
+| [`demo`](https://opena2a.org/docs/cli/commands/demo) | Interactive walkthroughs -- AIM lifecycle (22-87 score) and DVAA attack/defend | [docs](https://opena2a.org/docs/cli/commands/demo) |
 | `config` | Manage user preferences and feature toggles | |
 | `baselines` | Behavioral observation collection for crowdsourced agent profiles | |
 
@@ -325,6 +335,43 @@ Collect behavioral observations for crowdsourced agent profiles (opt-in). Monito
 ```bash
 opena2a baselines --package hackmyagent          # Observe for 60 seconds (default)
 opena2a baselines --package hackmyagent --duration 120  # Custom duration
+```
+
+### [`opena2a detect`](https://opena2a.org/docs/cli/commands/detect)
+
+Shadow AI agent audit. Scans running processes for AI agents (Claude Code, Cursor, Copilot, Windsurf, Aider, Continue, Cline), discovers MCP server configurations, and reports identity and governance status.
+
+```bash
+opena2a detect                  # Scan current directory
+opena2a detect --dir ./project  # Scan specific directory
+opena2a detect --verbose        # Show detection methods and target dir
+opena2a detect --format json    # Machine-readable output for CI
+```
+
+### [`opena2a mcp`](https://opena2a.org/docs/cli/commands/mcp)
+
+MCP server identity management. Audit discovered MCP server configurations, sign servers with Ed25519 keypairs, and verify signatures with trust scoring.
+
+**Subcommands:**
+
+```bash
+opena2a mcp                     # Alias for `opena2a mcp audit`
+opena2a mcp audit               # Discover MCP configs across Claude, Cursor, Windsurf, project
+opena2a mcp sign <server>       # Create Ed25519 identity for an MCP server
+opena2a mcp verify <server>     # Verify signature and show trust score
+```
+
+### [`opena2a demo`](https://opena2a.org/docs/cli/commands/demo)
+
+Interactive security walkthroughs that demonstrate AIM value without requiring a live agent deployment.
+
+**Scenarios:**
+
+```bash
+opena2a demo aim                # 8-step AIM lifecycle: trust score rises from 22 to 87
+opena2a demo dvaa               # 5-step attack/defend: 4/4 attacks blocked, score 18 to 91
+opena2a demo aim --keep         # Keep the temporary sandbox directory after demo
+opena2a demo dvaa --format json # JSON output for CI integration
 ```
 
 ### `opena2a config`
