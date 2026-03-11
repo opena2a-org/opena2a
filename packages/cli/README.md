@@ -441,7 +441,7 @@ The CLI orchestrates these specialized tools through a unified interface:
 | Command | Tool | Description |
 |---------|------|-------------|
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
-| `opena2a scan-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Behavioral governance scan against AGS (SOUL.md) |
+| `opena2a scan-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Behavioral governance scan against ABGS (SOUL.md) |
 | `opena2a harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Generate or improve SOUL.md governance file |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
@@ -456,11 +456,11 @@ Adapters install tools on first use. Each tool works standalone or through the C
 
 ## Behavioral Governance
 
-The [Agent Governance Specification (AGS)](https://github.com/opena2a-org/agent-governance-spec) defines a tiered behavioral safety framework for AI agents across 8 domains and 68 controls (OASB v2). OpenA2A CLI integrates AGS scanning through HackMyAgent.
+The [Agent Behavioral Governance Specification (ABGS)](https://github.com/opena2a-org/agent-governance-spec) defines a tiered behavioral safety framework for AI agents across 8 domains and 68 controls (OASB v2). OpenA2A CLI integrates ABGS scanning through HackMyAgent.
 
 ### `opena2a scan-soul`
 
-Scan your governance file (SOUL.md or equivalent) against AGS controls for your agent's capability tier. Auto-detects tier from file content.
+Scan your governance file (SOUL.md or equivalent) against ABGS controls for your agent's capability tier. Auto-detects tier from file content.
 
 ```bash
 opena2a scan-soul                          # Scan SOUL.md in current directory
@@ -501,7 +501,7 @@ opena2a harden-soul --dry-run      # Preview what would be added, no writes
 opena2a harden-soul --json         # Machine-readable output
 ```
 
-The 8 AGS behavioral domains (OASB v2, domains 7–14):
+The 8 ABGS behavioral domains (OASB v2, domains 7-14):
 
 | Domain | What it governs |
 |--------|----------------|
