@@ -462,6 +462,44 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
+  // Detect command (shadow AI agent audit)
+  program
+    .command('detect [directory]')
+    .description('Discover AI agents running on this machine and check their security posture')
+    .option('--dir <path>', 'Target directory for project-local checks')
+    .action(async (directory: string | undefined, opts) => {
+      const { detect } = await import('./commands/detect.js');
+      const globalOpts = program.opts();
+      process.exitCode = await detect({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+    });
+
+  // Demo command (interactive AIM demonstration)
+  program
+    .command('demo [scenario]')
+    .description('Run interactive demos (scenarios: aim, dvaa)')
+    .option('--interactive', 'Pause between steps for explanation')
+    .option('--keep', 'Keep the sandbox directory after demo completes')
+    .option('--dir <path>', 'Use a specific directory instead of temporary sandbox')
+    .action(async (scenario: string | undefined, opts) => {
+      const { demo } = await import('./commands/demo.js');
+      const globalOpts = program.opts();
+      process.exitCode = await demo({
+        scenario: scenario ?? 'aim',
+        interactive: opts.interactive,
+        keep: opts.keep,
+        dir: opts.dir,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Config command
   program
     .command('config <action> [key] [value]')
@@ -514,6 +552,26 @@ Valid actions:
         process.stderr.write('       opena2a config show\n');
         process.exitCode = 1;
       }
+    });
+
+  // MCP command (MCP server identity management)
+  program
+    .command('mcp [subcommand] [server]')
+    .description('MCP server identity management (audit|sign|verify)')
+    .option('--dir <path>', 'Target directory')
+    .action(async (subcommand: string | undefined, server: string | undefined, opts) => {
+      if (!subcommand) subcommand = 'audit';
+      const { mcpCommand } = await import('./commands/mcp-audit.js');
+      const globalOpts = program.opts();
+      process.exitCode = await mcpCommand({
+        subcommand,
+        server,
+        targetDir: opts.dir ?? process.cwd(),
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
   const rawArgs = process.argv.slice(2);
@@ -573,7 +631,7 @@ Valid actions:
     ...Object.keys(ADAPTER_REGISTRY),
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines', 'benchmark',
-    'check', 'status', 'publish',
+    'check', 'status', 'publish', 'detect', 'mcp', 'demo',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');

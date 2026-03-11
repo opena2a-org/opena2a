@@ -54,7 +54,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'identity', 'registry', 'train',
     'guard', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
-    'scan-soul', 'harden-soul',
+    'scan-soul', 'harden-soul', 'detect', 'mcp', 'demo',
   ];
 
   if (KNOWN_COMMANDS.includes(first)) {
@@ -190,11 +190,50 @@ export async function dispatchCommand(
     });
   }
 
+  // Handle 'detect' directly (shadow AI agent audit)
+  if (command === 'detect') {
+    const { detect } = await import('./commands/detect.js');
+    return detect({
+      targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'demo' directly
+  if (command === 'demo') {
+    const { demo } = await import('./commands/demo.js');
+    return demo({
+      scenario: args[0] && !args[0].startsWith('-') ? args[0] : 'aim',
+      interactive: args.includes('--interactive'),
+      keep: args.includes('--keep'),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
   // Handle 'status' directly (not adapter-based)
   if (command === 'status') {
     const { status: runStatus } = await import('./commands/status.js');
     return runStatus({
       targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'mcp' directly (MCP server identity management)
+  if (command === 'mcp') {
+    const { mcpCommand } = await import('./commands/mcp-audit.js');
+    const subcommand = args[0] ?? 'audit';
+    const server = args[1] && !args[1].startsWith('-') ? args[1] : undefined;
+    return mcpCommand({
+      subcommand,
+      server,
+      targetDir: process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,
