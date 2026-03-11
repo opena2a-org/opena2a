@@ -7,6 +7,7 @@
 **One CLI for all OpenA2A security tools**
 
 Scan, protect, benchmark, and monitor AI agents from a single command.
+Detect Shadow AI -- unmanaged agents and MCP servers running in your environment.
 This is the unified entry point to the entire [OpenA2A](https://github.com/opena2a-org) ecosystem.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -36,7 +37,7 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 │  opena2a benchmark oasb-2  → OASB (compliance benchmarks)      │
 │  opena2a train             → DVAA (vulnerable agent training)  │
 │                                                                 │
-│  opena2a detect            → Shadow AI agent audit             │
+│  opena2a detect            → Shadow AI discovery               │
 │  opena2a mcp               → MCP server identity & signing     │
 │  opena2a demo              → Interactive security walkthrough  │
 │                                                                 │
@@ -55,7 +56,7 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 | `benchmark oasb-2` | OASB ([in HMA](https://github.com/opena2a-org/hackmyagent)) | 222 test scenarios, compliance scoring |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Deliberately vulnerable AI agents for training |
 | `guard` | ConfigGuard (built-in) | Config file integrity, SHA-256 signing |
-| `detect` | Shadow AI Audit (built-in) | Discover running AI agents and MCP servers |
+| `detect` | Shadow AI Discovery (built-in) | Find unmanaged AI agents and MCP servers in your environment |
 | `mcp` | MCP Identity (built-in) | Audit, sign, and verify MCP server configs |
 | `demo` | Demo (built-in) | Interactive AIM and DVAA security walkthroughs |
 | `shield` | Shield (built-in) | Unified orchestration across all tools |
@@ -130,7 +131,7 @@ One command sets up credential protection, agent identity, config integrity, run
 | [`review`](https://opena2a.org/docs/cli/commands/review) | Unified HTML security dashboard with composite score | [docs](https://opena2a.org/docs/cli/commands/review) |
 | [`runtime`](https://opena2a.org/docs/cli/commands/runtime) | Agent Runtime Protection (ARP) — process, network, filesystem monitoring | [docs](https://opena2a.org/docs/cli/commands/runtime) |
 | [`verify`](https://opena2a.org/docs/cli/commands/verify) | Binary integrity verification against Trust Registry | [docs](https://opena2a.org/docs/cli/commands/verify) |
-| [`detect`](https://opena2a.org/docs/cli/commands/detect) | Shadow AI audit -- discover running AI agents, MCP servers, identity status | [docs](https://opena2a.org/docs/cli/commands/detect) |
+| [`detect`](https://opena2a.org/docs/cli/commands/detect) | Shadow AI Discovery -- find unmanaged agents and MCP servers, report governance gaps | [docs](https://opena2a.org/docs/cli/commands/detect) |
 | [`mcp`](https://opena2a.org/docs/cli/commands/mcp) | MCP server identity -- audit configs, Ed25519 signing, trust verification | [docs](https://opena2a.org/docs/cli/commands/mcp) |
 | [`demo`](https://opena2a.org/docs/cli/commands/demo) | Interactive walkthroughs -- AIM lifecycle (22-87 score) and DVAA attack/defend | [docs](https://opena2a.org/docs/cli/commands/demo) |
 | `config` | Manage user preferences and feature toggles | |
@@ -337,9 +338,9 @@ opena2a baselines --package hackmyagent          # Observe for 60 seconds (defau
 opena2a baselines --package hackmyagent --duration 120  # Custom duration
 ```
 
-### [`opena2a detect`](https://opena2a.org/docs/cli/commands/detect)
+### [`opena2a detect`](https://opena2a.org/docs/cli/commands/detect) -- Shadow AI Discovery
 
-Shadow AI agent audit. Scans running processes for AI agents (Claude Code, Cursor, Copilot, Windsurf, Aider, Continue, Cline), discovers MCP server configurations, and reports identity and governance status.
+Detect Shadow AI in your environment -- unmanaged AI agents and MCP servers running without identity or governance. Scans processes for 7 AI tools (Claude Code, Cursor, Copilot, Windsurf, Aider, Continue, Cline), discovers MCP server configurations, and reports identity and governance status.
 
 ```bash
 opena2a detect                  # Scan current directory
