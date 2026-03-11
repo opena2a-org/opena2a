@@ -284,6 +284,15 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
           const envKeys = Object.keys(server.env);
           process.stdout.write(dim(`                     env vars: ${envKeys.join(', ')}`) + '\n');
         }
+        if (status?.signed) {
+          process.stdout.write(dim(`                     identity: .opena2a/mcp-identities/${server.name}.json`) + '\n');
+        }
+        const fullCmd = server.transport === 'stdio'
+          ? [server.command, ...(server.args ?? [])].join(' ')
+          : server.url ?? '';
+        if (fullCmd.length > 45) {
+          process.stdout.write(dim(`                     full command: ${fullCmd}`) + '\n');
+        }
       }
     }
     process.stdout.write('\n');

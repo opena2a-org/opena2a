@@ -385,7 +385,7 @@ describe('detect command', () => {
     const { output } = await captureStdout(() =>
       detect({ targetDir: tempDir, format: 'text' })
     );
-    expect(output).toContain('1 SOUL.md files found');
+    expect(output).toContain('1 SOUL.md found');
   });
 
   it('verbose mode adds detection method details', async () => {

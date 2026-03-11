@@ -815,22 +815,32 @@ export async function demo(opts: DemoOptions): Promise<number> {
 
   let result: DemoResult;
 
+  // In JSON mode, capture the demo silently and only output the JSON result
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  if (format === 'json') {
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+  }
+
   try {
     if (scenario === 'dvaa') {
       result = await runDvaaDemo(opts);
     } else if (scenario === 'aim' || !scenario) {
       result = await runAimDemo(opts);
     } else {
+      if (format === 'json') process.stdout.write = originalWrite;
       process.stderr.write(`Unknown demo scenario: ${scenario}\n`);
       process.stderr.write('Available scenarios: aim (default), dvaa\n');
       return 1;
     }
   } catch (err) {
+    if (format === 'json') process.stdout.write = originalWrite;
     process.stderr.write(`Demo error: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   }
 
+  // Restore stdout and output JSON if needed
   if (format === 'json') {
+    process.stdout.write = originalWrite;
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   }
 

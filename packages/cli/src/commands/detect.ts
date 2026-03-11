@@ -34,6 +34,7 @@ export interface DetectedMcpServer {
 
 export interface IdentitySummary {
   aimIdentities: number;
+  mcpIdentities: number;
   totalAgents: number;
   soulFiles: number;
   capabilityPolicies: number;
@@ -202,17 +203,23 @@ export function scanMcpServers(targetDir: string): DetectedMcpServer[] {
  * Check for AIM identity and governance files.
  */
 export function scanIdentity(targetDir: string): IdentitySummary {
-  const home = os.homedir();
   let aimIdentities = 0;
+  let mcpIdentities = 0;
   let soulFiles = 0;
   let capabilityPolicies = 0;
 
-  // Check for .opena2a/ directory in target and home
-  const checkDirs = [targetDir, home];
-  for (const dir of checkDirs) {
-    const opena2aDir = path.join(dir, '.opena2a');
-    if (fs.existsSync(opena2aDir)) {
-      aimIdentities++;
+  // Check for .opena2a/ directory in target dir only (project-scoped)
+  const opena2aDir = path.join(targetDir, '.opena2a');
+  if (fs.existsSync(opena2aDir)) {
+    aimIdentities++;
+
+    // Count MCP server identities separately
+    const mcpIdDir = path.join(opena2aDir, 'mcp-identities');
+    if (fs.existsSync(mcpIdDir)) {
+      try {
+        const files = fs.readdirSync(mcpIdDir).filter((f) => f.endsWith('.json'));
+        mcpIdentities = files.length;
+      } catch { /* ignore */ }
     }
   }
 
@@ -241,13 +248,13 @@ export function scanIdentity(targetDir: string): IdentitySummary {
     }
   }
 
-  return { aimIdentities, totalAgents: 0, soulFiles, capabilityPolicies };
+  return { aimIdentities, mcpIdentities, totalAgents: 0, soulFiles, capabilityPolicies };
 }
 
 /**
  * Format text output for the detect command.
  */
-function formatText(result: DetectResult, verbose: boolean): string {
+function formatText(result: DetectResult, verbose: boolean, targetDir: string): string {
   const lines: string[] = [];
 
   lines.push(bold('Shadow AI Agent Audit'));
@@ -295,11 +302,13 @@ function formatText(result: DetectResult, verbose: boolean): string {
 
   // Identity Status
   lines.push(bold('Identity Status'));
+  const aimLabel = result.identity.aimIdentities > 0 ? green('initialized') : yellow('not initialized');
+  lines.push(`  AIM project:          ${aimLabel}`);
+  if (result.identity.mcpIdentities > 0) {
+    lines.push(`  MCP identities:       ${result.identity.mcpIdentities} server(s) signed`);
+  }
   lines.push(
-    `  AIM identities:       ${result.identity.aimIdentities} of ${result.identity.totalAgents} agents identified`
-  );
-  lines.push(
-    `  Governance files:     ${result.identity.soulFiles} SOUL.md files found`
+    `  Governance files:     ${result.identity.soulFiles === 0 ? 'none' : `${result.identity.soulFiles} SOUL.md found`}`
   );
   lines.push(
     `  Capability policies:  ${result.identity.capabilityPolicies === 0 ? 'none' : String(result.identity.capabilityPolicies)}`
@@ -321,7 +330,7 @@ function formatText(result: DetectResult, verbose: boolean): string {
   if (verbose) {
     lines.push('');
     lines.push(dim('Detection methods: process list (ps aux), MCP config files, AIM identity directories'));
-    lines.push(dim(`Target directory: ${process.cwd()}`));
+    lines.push(dim(`Target directory: ${targetDir}`));
   }
 
   return lines.join('\n');
@@ -355,6 +364,17 @@ export async function detect(options: DetectOptions): Promise<number> {
     // In a real implementation, this would match agent names to identities
   }
 
+  // Enrich MCP servers with signing status from .opena2a/mcp-identities/
+  const mcpIdDir = path.join(dir, '.opena2a', 'mcp-identities');
+  if (fs.existsSync(mcpIdDir)) {
+    for (const server of mcpServers) {
+      const idFile = path.join(mcpIdDir, `${server.name}.json`);
+      if (fs.existsSync(idFile)) {
+        server.verified = true;
+      }
+    }
+  }
+
   const result: DetectResult = { agents, mcpServers, identity };
 
   if (options.format === 'json') {
@@ -362,6 +382,6 @@ export async function detect(options: DetectOptions): Promise<number> {
     return 0;
   }
 
-  process.stdout.write(formatText(result, options.verbose ?? false) + '\n');
+  process.stdout.write(formatText(result, options.verbose ?? false, dir) + '\n');
   return 0;
 }
