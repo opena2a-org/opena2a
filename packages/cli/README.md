@@ -39,10 +39,10 @@ No configuration required. Works with Node.js, Python, Go, and MCP server projec
 
 ## What It Does
 
-Run `opena2a init` in any project directory to get an instant security assessment:
+Run `opena2a init` in any project directory to get a read-only security assessment:
 
 ```
-  OpenA2A Security Report  v0.5.5
+  OpenA2A Security Report  v0.5.7
 
   Project      myapp v2.1.0
   Type         Node.js + MCP server
@@ -117,7 +117,7 @@ opena2a review --format json       # JSON output for CI
 
 ### `opena2a init`
 
-Assess your project's security posture. Detects project type, scans for credentials, checks hygiene (`.gitignore`, `.env` protection, lock file, security config), calculates a trust score (0-100), and provides prioritized next steps.
+Read-only security assessment. Detects project type (Node.js, Python via `pyproject.toml`, Go via `go.mod`), scans for credentials, checks hygiene (`.gitignore`, `.env` protection, lock file, security config, `.mcp/config.json`), calculates a trust score (0-100), and provides prioritized next steps. Does not modify any files -- use `opena2a protect` or `opena2a shield init` to take action.
 
 ```bash
 opena2a init                    # Assess current directory
@@ -125,6 +125,8 @@ opena2a init --dir ./my-agent   # Assess specific directory
 opena2a init --verbose          # Show individual credential details
 opena2a init --format json      # Machine-readable output for CI
 ```
+
+For a full security orchestration (credential scanning, policy generation, shell hooks, event log), use `opena2a shield init` instead.
 
 ### `opena2a protect`
 
@@ -197,6 +199,31 @@ opena2a config contribute on      # Enable community data sharing
 opena2a config llm on             # Enable LLM-powered command matching
 ```
 
+### `opena2a trust`
+
+Look up the trust profile for an AI agent or MCP server from the OpenA2A Trust Registry (Agent Trust Protocol).
+
+```bash
+opena2a trust express                  # Look up npm package
+opena2a trust langchain --source pypi  # Look up PyPI package
+opena2a trust https://github.com/org/repo  # GitHub URL (auto-parsed)
+opena2a trust                          # Auto-detect from package.json in cwd
+opena2a trust express --json           # Machine-readable output
+opena2a trust express --verbose        # Show full posture details
+```
+
+Defaults to npm as the source when `--source` is not specified. Supports `npm`, `pypi`, and `github` sources.
+
+### `opena2a claim`
+
+Claim ownership of a discovered agent in the Trust Registry. Verifies ownership via npm or GitHub, generates an Ed25519 keypair at `~/.opena2a/keys/`, and links the profile to your verified identity.
+
+```bash
+opena2a claim my-agent                 # Claim via npm ownership verification
+opena2a claim                          # Auto-detect from package.json in cwd
+opena2a claim my-agent --json          # Machine-readable output
+```
+
 ## Shield: Unified Security Orchestration
 
 Shield ties all OpenA2A tools into a single security layer for AI coding assistants. It provides a tamper-evident event log, policy evaluation, runtime monitoring, session identification, integrity verification, and LLM-powered analysis.
@@ -240,7 +267,7 @@ Full environment scan: detects project type, scans for credentials, discovers AI
 ```bash
 opena2a shield init                    # Scan current directory
 opena2a shield init --dir ./my-agent   # Scan specific directory
-opena2a shield init --format json      # Machine-readable output
+opena2a shield init --format json      # Single valid JSON document for CI
 ```
 
 #### `opena2a shield status`
@@ -268,7 +295,7 @@ opena2a shield log --format json           # JSON output
 
 #### `opena2a shield selfcheck`
 
-Runs five integrity checks: policy hash, shell hook content, event chain validity, process binary, and artifact signatures. Returns `healthy`, `degraded`, or `compromised` status.
+Runs five integrity checks: policy hash, shell hook content, event chain validity, process binary, and artifact signatures. Returns `healthy`, `degraded`, or `compromised` status. Event chain gaps (e.g., from log rotation) report as `degraded` rather than `compromised`, since they indicate data loss rather than tampering.
 
 ```bash
 opena2a shield selfcheck
@@ -403,19 +430,22 @@ Shield maintains a tamper-evident event log. Events are stored in the project-lo
 ### Quick Start
 
 ```bash
-# 1. Initialize Shield in your project
+# 1. Initialize Shield (full 11-step orchestration)
 opena2a shield init
 
-# 2. Check what AI assistants are running
+# 2. Look up trust profiles for your dependencies
+opena2a trust express
+
+# 3. Check what AI assistants are running
 opena2a shield session
 
-# 3. View security events
+# 4. View security events
 opena2a shield log --severity medium
 
-# 4. Generate a posture report
+# 5. Generate a posture report
 opena2a shield report
 
-# 5. Run integrity verification
+# 6. Run integrity verification
 opena2a shield selfcheck
 ```
 
@@ -451,6 +481,8 @@ The CLI orchestrates these specialized tools through a unified interface:
 | `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |
 | `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Identity-aware credential broker daemon |
 | `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
+| `opena2a trust` | [OpenA2A Registry](https://registry.opena2a.org) | Agent Trust Protocol lookup (npm, PyPI, GitHub) |
+| `opena2a claim` | [OpenA2A Registry](https://registry.opena2a.org) | Claim ownership of a discovered agent |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
 
