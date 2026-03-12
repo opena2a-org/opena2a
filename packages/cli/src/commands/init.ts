@@ -321,7 +321,7 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write('\n');
 
     // Deeper analysis hint
-    process.stdout.write(dim('  For deeper analysis (147+ checks): opena2a scan --deep') + '\n');
+    process.stdout.write(dim('  For deeper analysis (147 checks): opena2a scan --deep') + '\n');
 
     // Global install hint (only when running via npx)
     if (isRunningViaNpx()) {
