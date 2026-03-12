@@ -21,6 +21,7 @@ export interface TrustOptions {
   registryUrl?: string;
   ci?: boolean;
   format?: 'text' | 'json';
+  json?: boolean;
   verbose?: boolean;
 }
 
@@ -70,13 +71,32 @@ export const _internals = {
 
 // --- Core ---
 
+const VALID_SOURCES = ['npm', 'pypi', 'github'] as const;
+
 export async function trust(options: TrustOptions): Promise<number> {
   const registryUrl = await resolveRegistryUrl(options.registryUrl);
-  const isJson = options.format === 'json';
+  const isJson = options.json || options.format === 'json';
   const isCi = options.ci ?? false;
+
+  // Validate --source
+  if (options.source && !VALID_SOURCES.includes(options.source as any)) {
+    const msg = `Invalid source '${options.source}'. Valid sources: npm, pypi, github.`;
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ error: msg }) + '\n');
+    } else {
+      process.stderr.write(red(msg) + '\n');
+    }
+    return 1;
+  }
 
   // Resolve package name
   let packageName = options.packageName;
+
+  // Handle empty/whitespace-only input
+  if (packageName !== undefined && packageName.trim() === '') {
+    packageName = undefined;
+  }
+
   if (!packageName) {
     packageName = _internals.readLocalPackageName() ?? undefined;
     if (!packageName) {
@@ -105,14 +125,17 @@ export async function trust(options: TrustOptions): Promise<number> {
 
     if (!result.ok || !result.data) {
       const notFoundMsg = `No trust profile found for ${packageName}. It may not have been discovered yet.`;
+      const registerHint = `To add this package, run: opena2a self-register ${packageName}`;
       if (isJson) {
         process.stdout.write(JSON.stringify({
           error: 'not_found',
           package: packageName,
           message: notFoundMsg,
+          hint: registerHint,
         }) + '\n');
       } else {
         process.stdout.write(yellow(notFoundMsg) + '\n');
+        process.stdout.write(dim(registerHint) + '\n');
         process.stdout.write(dim('Learn more: https://opena2a.org/docs/cli/trust') + '\n');
       }
       return 1;
@@ -136,6 +159,7 @@ export async function trust(options: TrustOptions): Promise<number> {
     } else {
       process.stderr.write(red(`Failed to query trust profile: ${errMsg}`) + '\n');
       process.stderr.write(dim(`Registry: ${registryUrl}`) + '\n');
+      process.stderr.write(dim('Check your registry URL in ~/.opena2a/config.json or use --registry-url <url>') + '\n');
     }
     return 1;
   }

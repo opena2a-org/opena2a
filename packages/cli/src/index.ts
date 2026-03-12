@@ -451,6 +451,7 @@ Learn more: https://opena2a.org/docs`);
     .description('Look up the trust profile for an AI agent or MCP server')
     .option('--source <source>', 'Package source: npm, pypi, github')
     .option('--registry-url <url>', 'Registry URL')
+    .option('--json', 'Output as JSON (alias for --format json)')
     .action(async (packageArg: string | undefined, opts) => {
       const { trust: runTrust } = await import('./commands/trust.js');
       const globalOpts = program.opts();
@@ -460,9 +461,10 @@ Learn more: https://opena2a.org/docs`);
         registryUrl: opts.registryUrl,
         ci: globalOpts.ci,
         format: globalOpts.format,
+        json: opts.json,
         verbose: globalOpts.verbose,
       });
-      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+      printFooter({ ci: globalOpts.ci, json: opts.json || globalOpts.format === 'json' });
     });
 
   // Claim command (ATP claim flow)
@@ -471,6 +473,7 @@ Learn more: https://opena2a.org/docs`);
     .description('Claim ownership of a discovered agent in the trust registry')
     .option('--source <source>', 'Package source: npm, pypi, github')
     .option('--registry-url <url>', 'Registry URL')
+    .option('--json', 'Output as JSON (alias for --format json)')
     .action(async (packageArg: string | undefined, opts) => {
       const { claim: runClaim } = await import('./commands/claim.js');
       const globalOpts = program.opts();
@@ -480,9 +483,10 @@ Learn more: https://opena2a.org/docs`);
         registryUrl: opts.registryUrl,
         ci: globalOpts.ci,
         format: globalOpts.format,
+        json: opts.json,
         verbose: globalOpts.verbose,
       });
-      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+      printFooter({ ci: globalOpts.ci, json: opts.json || globalOpts.format === 'json' });
     });
 
   // Baselines command

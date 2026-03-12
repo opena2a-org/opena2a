@@ -25,6 +25,7 @@ export interface ClaimOptions {
   registryUrl?: string;
   ci?: boolean;
   format?: 'text' | 'json';
+  json?: boolean;
   verbose?: boolean;
 }
 
@@ -226,7 +227,7 @@ export const _internals = {
 
 export async function claim(options: ClaimOptions): Promise<number> {
   const registryUrl = await resolveRegistryUrl(options.registryUrl);
-  const isJson = options.format === 'json';
+  const isJson = options.json || options.format === 'json';
   const isCi = options.ci ?? false;
 
   // Resolve package name
@@ -263,7 +264,7 @@ export async function claim(options: ClaimOptions): Promise<number> {
     if (!isCi && !isJson) spinner.stop();
 
     if (!result.ok || !result.data) {
-      const msg = `No trust profile found. Run \`opena2a trust ${packageName}\` to check.`;
+      const msg = `No trust profile found. Run \`opena2a self-register ${packageName}\` to add it first.`;
       if (isJson) {
         process.stdout.write(JSON.stringify({ error: 'not_found', package: packageName, message: msg }) + '\n');
       } else {
@@ -337,7 +338,6 @@ export async function claim(options: ClaimOptions): Promise<number> {
       process.stderr.write('Ownership verification requires one of:\n');
       process.stderr.write('  npm:    Logged in with publish access (npm login)\n');
       process.stderr.write('  GitHub: Push access to the repository (gh auth login)\n');
-      process.stderr.write('  PyPI:   API token verification (--source pypi)\n');
     }
     return 1;
   }
