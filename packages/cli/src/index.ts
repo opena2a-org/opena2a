@@ -445,6 +445,50 @@ Learn more: https://opena2a.org/docs`);
       });
     });
 
+  // Trust command (ATP trust lookup)
+  program
+    .command('trust [package]')
+    .description('Look up the trust profile for an AI agent or MCP server')
+    .option('--source <source>', 'Package source: npm, pypi, github')
+    .option('--registry-url <url>', 'Registry URL')
+    .option('--json', 'Output as JSON (alias for --format json)')
+    .action(async (packageArg: string | undefined, opts) => {
+      const { trust: runTrust } = await import('./commands/trust.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runTrust({
+        packageName: packageArg,
+        source: opts.source,
+        registryUrl: opts.registryUrl,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        json: opts.json,
+        verbose: globalOpts.verbose,
+      });
+      printFooter({ ci: globalOpts.ci, json: opts.json || globalOpts.format === 'json' });
+    });
+
+  // Claim command (ATP claim flow)
+  program
+    .command('claim [package]')
+    .description('Claim ownership of a discovered agent in the trust registry')
+    .option('--source <source>', 'Package source: npm, pypi, github')
+    .option('--registry-url <url>', 'Registry URL')
+    .option('--json', 'Output as JSON (alias for --format json)')
+    .action(async (packageArg: string | undefined, opts) => {
+      const { claim: runClaim } = await import('./commands/claim.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runClaim({
+        packageName: packageArg,
+        source: opts.source,
+        registryUrl: opts.registryUrl,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        json: opts.json,
+        verbose: globalOpts.verbose,
+      });
+      printFooter({ ci: globalOpts.ci, json: opts.json || globalOpts.format === 'json' });
+    });
+
   // Baselines command
   program
     .command('baselines')
@@ -635,6 +679,7 @@ Valid actions:
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines', 'benchmark',
     'check', 'status', 'publish', 'detect', 'mcp', 'demo',
+    'trust', 'claim',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');
