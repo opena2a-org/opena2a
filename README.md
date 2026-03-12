@@ -13,7 +13,7 @@ This is the unified entry point to the entire [OpenA2A](https://github.com/opena
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)]()
 
-[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Discord](https://discord.gg/uRZa3KXgEn)
+[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Demos](https://opena2a.org/demos) | [Discord](https://discord.gg/uRZa3KXgEn)
 
 </div>
 
