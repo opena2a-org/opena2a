@@ -5,7 +5,7 @@
 Output docs/vhs/init.gif
 
 Set Width 1200
-Set Height 600
+Set Height 800
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
@@ -30,7 +30,7 @@ Sleep 1s
 # Step 1: Run security assessment
 Type "opena2a init --verbose"
 Enter
-Sleep 6s
+Sleep 8s
 
-# Pause so viewers can read the output
-Sleep 4s
+# Pause so viewers can read the full output
+Sleep 5s

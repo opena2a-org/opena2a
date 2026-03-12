@@ -5,7 +5,7 @@
 Output docs/vhs/mcp.gif
 
 Set Width 1200
-Set Height 600
+Set Height 700
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
@@ -33,7 +33,7 @@ Enter
 Sleep 5s
 
 # Let users read the audit
-Sleep 3s
+Sleep 4s
 
 # Step 2: Sign a server identity
 Type "opena2a mcp sign filesystem"
@@ -41,7 +41,7 @@ Enter
 Sleep 5s
 
 # Let users read signing output
-Sleep 3s
+Sleep 4s
 
 # Step 3: Verify the signature
 Type "opena2a mcp verify filesystem"
@@ -49,4 +49,4 @@ Enter
 Sleep 5s
 
 # Final pause
-Sleep 3s
+Sleep 4s

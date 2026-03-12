@@ -5,7 +5,7 @@
 Output docs/vhs/guard.gif
 
 Set Width 1200
-Set Height 600
+Set Height 700
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"

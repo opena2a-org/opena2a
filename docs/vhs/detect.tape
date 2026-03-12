@@ -5,7 +5,7 @@
 Output docs/vhs/detect.gif
 
 Set Width 1200
-Set Height 600
+Set Height 700
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
@@ -30,10 +30,10 @@ Sleep 1s
 # Step 1: Discover Shadow AI
 Type "opena2a detect --verbose"
 Enter
-Sleep 6s
+Sleep 5s
 
 # Let users read the findings
-Sleep 3s
+Sleep 4s
 
 # Step 2: Audit MCP servers
 Type "opena2a mcp"
@@ -41,7 +41,7 @@ Enter
 Sleep 5s
 
 # Let users read MCP audit
-Sleep 3s
+Sleep 4s
 
 # Step 3: Sign a server identity
 Type "opena2a mcp sign filesystem"
@@ -49,4 +49,4 @@ Enter
 Sleep 5s
 
 # Final pause to read results
-Sleep 3s
+Sleep 4s

@@ -5,7 +5,7 @@
 Output docs/vhs/protect.gif
 
 Set Width 1200
-Set Height 600
+Set Height 700
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
@@ -33,7 +33,7 @@ Enter
 Sleep 6s
 
 # Let users read the findings
-Sleep 3s
+Sleep 5s
 
 # Step 2: Run the migration
 Type "opena2a protect"
@@ -41,4 +41,4 @@ Enter
 Sleep 6s
 
 # Let users read the results
-Sleep 3s
+Sleep 4s

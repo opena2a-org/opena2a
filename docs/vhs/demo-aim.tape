@@ -5,7 +5,7 @@
 Output docs/vhs/demo-aim.gif
 
 Set Width 1200
-Set Height 700
+Set Height 800
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
@@ -27,7 +27,7 @@ Sleep 1s
 # Run the full AIM lifecycle demo
 Type "opena2a demo aim"
 Enter
-Sleep 12s
+Sleep 14s
 
 # Pause so viewers can read the full lifecycle
 Sleep 6s

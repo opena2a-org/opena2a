@@ -5,7 +5,7 @@
 Output docs/vhs/shield-init.gif
 
 Set Width 1200
-Set Height 700
+Set Height 800
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
@@ -30,7 +30,7 @@ Sleep 1s
 # Run the full shield init
 Type "opena2a shield init"
 Enter
-Sleep 10s
+Sleep 12s
 
 # Pause so viewers can read the summary
 Sleep 6s
