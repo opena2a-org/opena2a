@@ -804,7 +804,7 @@ function getVerificationCommand(
   }
   if (finding.findingId === 'MCP-TOOLS') {
     // Show the first MCP config file found
-    for (const f of ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json']) {
+    for (const f of ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json']) {
       if (fs.existsSync(path.join(reportDir, f))) {
         return `cat ${f}`;
       }
@@ -812,7 +812,7 @@ function getVerificationCommand(
     return 'cat mcp.json';
   }
   if (finding.findingId === 'MCP-CRED') {
-    for (const f of ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json']) {
+    for (const f of ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json']) {
       if (fs.existsSync(path.join(reportDir, f))) {
         return `cat ${f}`;
       }

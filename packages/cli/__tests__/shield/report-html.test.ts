@@ -91,7 +91,7 @@ function sampleReport(overrides?: Partial<WeeklyReport>): WeeklyReport {
 
     posture: {
       score: 77,
-      grade: 'C',
+      grade: 'moderate',
       factors: [
         { name: 'severity', score: 77, weight: 0.4, detail: '0 critical, 1 high' },
         { name: 'enforcement', score: 80, weight: 0.3, detail: '3 blocked' },
@@ -192,7 +192,7 @@ describe('generateShieldHtmlReport', () => {
   it('contains the posture grade in embedded data', () => {
     const html = generateShieldHtmlReport(sampleReport());
     const parsed = parseEmbeddedData(html);
-    expect(parsed.report.posture.grade).toBe('C');
+    expect(parsed.report.posture.grade).toBe('moderate');
   });
 
   it('embeds report data as JSON', () => {
@@ -285,7 +285,7 @@ describe('generateShieldHtmlReport', () => {
       },
       posture: {
         score: 100,
-        grade: 'A',
+        grade: 'strong',
         factors: [],
         trend: null,
         comparative: null,
@@ -360,7 +360,7 @@ describe('generateShieldHtmlReport', () => {
     const html = generateShieldHtmlReport(sampleReport({
       posture: {
         score: 95,
-        grade: 'A',
+        grade: 'strong',
         factors: [],
         trend: 'stable',
         comparative: null,
@@ -368,14 +368,14 @@ describe('generateShieldHtmlReport', () => {
     }));
     const parsed = parseEmbeddedData(html);
     expect(parsed.report.posture.score).toBe(95);
-    expect(parsed.report.posture.grade).toBe('A');
+    expect(parsed.report.posture.grade).toBe('strong');
   });
 
   it('handles low score (<50) report', () => {
     const html = generateShieldHtmlReport(sampleReport({
       posture: {
         score: 25,
-        grade: 'F',
+        grade: 'needs-attention',
         factors: [],
         trend: 'declining',
         comparative: null,
@@ -383,6 +383,6 @@ describe('generateShieldHtmlReport', () => {
     }));
     const parsed = parseEmbeddedData(html);
     expect(parsed.report.posture.score).toBe(25);
-    expect(parsed.report.posture.grade).toBe('F');
+    expect(parsed.report.posture.grade).toBe('needs-attention');
   });
 });

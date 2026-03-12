@@ -112,7 +112,8 @@ export function detectProject(dir: string): ProjectInfo {
   // Check for MCP configuration
   info.hasMcp =
     existsSync(resolve(dir, 'mcp.json')) ||
-    existsSync(resolve(dir, '.mcp.json'));
+    existsSync(resolve(dir, '.mcp.json')) ||
+    existsSync(resolve(dir, '.mcp', 'config.json'));
 
   if (info.hasMcp) {
     info.frameworkHints.push('MCP server');

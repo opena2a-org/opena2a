@@ -70,7 +70,7 @@ export function normalizeGovernanceReport(raw: Record<string, unknown>): ScanRep
   if (!raw.domains || !raw.grade) return null;
 
   const score = (raw.score as number) ?? 0;
-  const grade = (raw.grade as string) ?? 'F';
+  const grade = (raw.grade as string) ?? 'needs-attention';
   const domains = raw.domains as Array<{
     domain: string;
     controls: Array<{ id: string; name: string; passed: boolean }>;

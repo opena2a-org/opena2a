@@ -21,7 +21,7 @@ export interface AiConfigFinding {
 
 // --- Constants ---
 
-export const MCP_CONFIG_FILES = ['mcp.json', '.mcp.json', '.claude/settings.json', '.cursor/mcp.json'];
+export const MCP_CONFIG_FILES = ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'];
 
 const HIGH_RISK_SERVER_PATTERNS = [
   'filesystem', 'shell', 'bash', 'database', 'exec',

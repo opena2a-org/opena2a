@@ -71,6 +71,7 @@ function getConfigSources(targetDir: string): ConfigSource[] {
     { filePath: path.join(home, '.config', 'windsurf', 'mcp.json'), label: 'Windsurf' },
     { filePath: path.join(targetDir, 'mcp.json'), label: 'project-local' },
     { filePath: path.join(targetDir, '.mcp.json'), label: 'project-local' },
+    { filePath: path.join(targetDir, '.mcp', 'config.json'), label: 'project-local (.mcp/)' },
   ];
 }
 

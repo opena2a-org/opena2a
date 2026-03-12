@@ -573,11 +573,11 @@ function computeCompositeScore(
 
 function scoreToGrade(score: number): string {
   // Kept for JSON backward compatibility; not displayed in CLI or HTML output
-  if (score >= 90) return 'A';
-  if (score >= 80) return 'B';
-  if (score >= 70) return 'C';
-  if (score >= 60) return 'D';
-  return 'F';
+  if (score >= 90) return 'strong';
+  if (score >= 80) return 'good';
+  if (score >= 70) return 'moderate';
+  if (score >= 60) return 'improving';
+  return 'needs-attention';
 }
 
 function computeRecoverySummary(
@@ -858,11 +858,11 @@ function calculateTrustScore(
   score = Math.max(0, Math.min(100, score));
 
   let grade: string;
-  if (score >= 90) grade = 'A';
-  else if (score >= 80) grade = 'B';
-  else if (score >= 70) grade = 'C';
-  else if (score >= 60) grade = 'D';
-  else grade = 'F';
+  if (score >= 90) grade = 'strong';
+  else if (score >= 80) grade = 'good';
+  else if (score >= 70) grade = 'moderate';
+  else if (score >= 60) grade = 'improving';
+  else grade = 'needs-attention';
 
   return { score, grade };
 }

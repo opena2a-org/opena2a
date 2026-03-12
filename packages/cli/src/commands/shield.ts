@@ -822,7 +822,7 @@ async function buildWeeklyReport(
 
   let score = Math.round(severityScore * 0.5 + enforcementScore * 0.25 + coverageScore * 0.25);
   score = Math.max(0, Math.min(100, score));
-  const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+  const grade = score >= 90 ? 'strong' : score >= 80 ? 'good' : score >= 70 ? 'moderate' : score >= 60 ? 'improving' : 'needs-attention';
 
   const report: import('../shield/types.js').WeeklyReport = {
     version: 1,

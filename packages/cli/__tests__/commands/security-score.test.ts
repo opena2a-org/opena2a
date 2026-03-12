@@ -13,7 +13,7 @@ describe('calculateSecurityScore', () => {
   it('returns 100 + bonus for clean project with security config', () => {
     const { score, grade } = calculateSecurityScore({}, cleanChecks);
     expect(score).toBe(100);
-    expect(grade).toBe('A');
+    expect(grade).toBe('strong');
   });
 
   it('applies diminishing returns for critical findings', () => {
@@ -61,10 +61,10 @@ describe('calculateSecurityScore', () => {
   });
 
   it('assigns correct grades', () => {
-    expect(calculateSecurityScore({}, cleanChecks).grade).toBe('A');
-    expect(calculateSecurityScore({ critical: 1 }, cleanChecks).grade).toBe('B');
-    expect(calculateSecurityScore({ critical: 2 }, cleanChecks).grade).toBe('C');
-    expect(calculateSecurityScore({ critical: 3, high: 2 }, cleanChecks).grade).toBe('F');
+    expect(calculateSecurityScore({}, cleanChecks).grade).toBe('strong');
+    expect(calculateSecurityScore({ critical: 1 }, cleanChecks).grade).toBe('good');
+    expect(calculateSecurityScore({ critical: 2 }, cleanChecks).grade).toBe('moderate');
+    expect(calculateSecurityScore({ critical: 3, high: 2 }, cleanChecks).grade).toBe('needs-attention');
   });
 
   it('includes HMA findings in environment deduction', () => {

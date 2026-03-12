@@ -63,7 +63,7 @@ export function calculateTrust(
   overall = Math.round(Math.min(overall, 1.0) * 100) / 100;
 
   const score = Math.round(overall * 100);
-  const grade = score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F';
+  const grade = score >= 80 ? 'strong' : score >= 60 ? 'good' : score >= 40 ? 'moderate' : score >= 20 ? 'improving' : 'needs-attention';
 
   return {
     overall,

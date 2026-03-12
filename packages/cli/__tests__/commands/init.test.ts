@@ -50,7 +50,7 @@ describe('init', () => {
     // Unified score: clean project scores well but environmental factors
     // (running LLM servers, HMA shell findings) may lower it on real machines
     expect(report.securityScore).toBeGreaterThanOrEqual(70);
-    expect(['A', 'B', 'C']).toContain(report.securityGrade);
+    expect(['strong', 'good', 'moderate']).toContain(report.securityGrade);
     // Backward compat aliases
     expect(report.trustScore).toBe(report.securityScore);
     expect(report.grade).toBe(report.securityGrade);
@@ -172,7 +172,7 @@ describe('init', () => {
     }));
 
     const report = JSON.parse(output);
-    expect(report.securityGrade).toMatch(/^[A-F]$/);
+    expect(['strong', 'good', 'moderate', 'improving', 'needs-attention']).toContain(report.securityGrade);
     expect(report.securityScore).toBeGreaterThanOrEqual(0);
     expect(report.securityScore).toBeLessThanOrEqual(100);
   });

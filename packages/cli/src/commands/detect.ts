@@ -73,7 +73,7 @@ const MCP_CONFIG_LOCATIONS: McpConfigLocation[] = [
   { path: '.config/windsurf/mcp.json', label: '~/.config/windsurf/mcp.json' },
 ];
 
-const PROJECT_MCP_FILES = ['mcp.json', '.mcp.json'];
+const PROJECT_MCP_FILES = ['mcp.json', '.mcp.json', '.mcp/config.json'];
 
 /**
  * Scan running processes for AI agents.

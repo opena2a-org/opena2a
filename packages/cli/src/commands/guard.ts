@@ -85,7 +85,7 @@ export interface ConfigIntegritySummary {
 // --- Default guarded files ---
 
 const GUARD_FILES = [
-  'mcp.json', '.mcp.json', '.claude/settings.json',
+  'mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json',
   'package.json', 'package-lock.json',
   'arp.yaml', 'arp.yml', 'arp.json',
   'openclaw.json', '.openclaw/config.json',
