@@ -17,9 +17,9 @@ const CATEGORIES: WizardCategory[] = [
     label: 'Scan & Harden',
     description: 'Find and fix security issues in AI agents',
     commands: [
-      { label: 'Full security scan', command: 'opena2a scan secure', description: '150+ security checks with auto-fix' },
+      { label: 'Full security scan', command: 'opena2a scan secure', description: '147 security checks with auto-fix' },
       { label: 'Attack mode', command: 'opena2a scan attack', description: 'Adversarial testing against your agent' },
-      { label: 'Security benchmark', command: 'opena2a benchmark', description: 'OASB benchmark (222 attack scenarios)' },
+      { label: 'Security benchmark', command: 'opena2a benchmark', description: 'OASB benchmark (222 standardized attack scenarios)' },
       { label: 'Credential scan', command: 'opena2a secrets scan', description: 'Find hardcoded secrets in your codebase' },
     ],
   },

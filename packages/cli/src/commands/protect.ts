@@ -534,7 +534,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
           // secretless not available -- assume local
         }
 
-        if (currentBackend === '1password' || currentBackend === 'vault') {
+        if (currentBackend === '1password' || currentBackend === 'vault' || currentBackend === 'gcp-sm') {
           // Already on a team vault -- skip the upgrade offer silently
         } else {
           const { select } = await import('@inquirer/prompts');
@@ -558,6 +558,11 @@ export async function protect(options: ProtectOptions): Promise<number> {
                 name: 'HashiCorp Vault         Self-hosted, fine-grained policies, dynamic secrets',
                 value: 'vault',
                 description: 'Best for enterprises. Requires a running Vault server. Setup: brew install vault',
+              },
+              {
+                name: 'GCP Secret Manager      Cloud-native, IAM-integrated, auto-versioned',
+                value: 'gcp-sm',
+                description: 'Best for GCP users. Requires gcloud CLI or service account key.',
               },
               {
                 name: 'Keep local vault        File-based, works offline, no setup required',
@@ -586,6 +591,9 @@ export async function protect(options: ProtectOptions): Promise<number> {
           } else if (backendChoice === 'vault') {
             const { offerVaultMigration } = await import('./vault-migration.js');
             await offerVaultMigration({ credentialCount: report.migrated, ci: options.ci });
+          } else if (backendChoice === 'gcp-sm') {
+            const { offerGCPSMMigration } = await import('./gcp-sm-migration.js');
+            await offerGCPSMMigration({ credentialCount: report.migrated, ci: options.ci });
           }
         }
       } catch {

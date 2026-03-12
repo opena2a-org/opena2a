@@ -569,7 +569,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   function renderHma(){
     var hma=report.hmaData;
     if(!hma||!hma.available){
-      var h='<div class="section-intro">HackMyAgent runs 150+ security checks against AI agent endpoints, testing for prompt injection, tool misuse, excessive agency, and OWASP Top 10 for LLM vulnerabilities.</div>';
+      var h='<div class="section-intro">HackMyAgent runs 147 security checks against AI agent endpoints, testing for prompt injection, tool misuse, excessive agency, and OWASP Top 10 for LLM vulnerabilities.</div>';
       h+='<div class="cta-card"><div class="cta-title">HackMyAgent Not Installed</div>';
       h+='<div class="cta-desc">Install HMA to run comprehensive security scans against your AI agent.</div>';
       h+=cmdBlock('npm install -g hackmyagent');
