@@ -449,9 +449,16 @@ Learn more: https://opena2a.org/docs`);
   program
     .command('trust [package]')
     .description('Look up the trust profile for an AI agent or MCP server')
-    .option('--source <source>', 'Package source: npm, pypi, github')
+    .option('--source <source>', 'Package source (npm, pypi, github)')
     .option('--registry-url <url>', 'Registry URL')
     .option('--json', 'Output as JSON (alias for --format json)')
+    .addHelpText('after', `
+Examples:
+  $ opena2a trust express                    Look up npm package
+  $ opena2a trust langchain --source pypi    Look up PyPI package
+  $ opena2a trust                            Auto-detect from package.json
+  $ opena2a trust express --json             JSON output
+  $ opena2a trust https://github.com/org/repo   GitHub URL (auto-detected)`)
     .action(async (packageArg: string | undefined, opts) => {
       const { trust: runTrust } = await import('./commands/trust.js');
       const globalOpts = program.opts();
@@ -471,9 +478,15 @@ Learn more: https://opena2a.org/docs`);
   program
     .command('claim [package]')
     .description('Claim ownership of a discovered agent in the trust registry')
-    .option('--source <source>', 'Package source: npm, pypi, github')
+    .option('--source <source>', 'Package source (npm, pypi, github)')
     .option('--registry-url <url>', 'Registry URL')
     .option('--json', 'Output as JSON (alias for --format json)')
+    .addHelpText('after', `
+Examples:
+  $ opena2a claim my-agent                   Claim via npm ownership
+  $ opena2a claim my-agent --source github   Claim via GitHub ownership
+  $ opena2a claim                            Auto-detect from package.json
+  $ opena2a claim https://github.com/org/repo   GitHub URL (auto-detected)`)
     .action(async (packageArg: string | undefined, opts) => {
       const { claim: runClaim } = await import('./commands/claim.js');
       const globalOpts = program.opts();

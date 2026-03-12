@@ -92,6 +92,15 @@ export async function trust(options: TrustOptions): Promise<number> {
   // Resolve package name
   let packageName = options.packageName;
 
+  // Auto-detect GitHub URLs
+  if (packageName && packageName.startsWith('https://github.com/')) {
+    const match = packageName.match(/github\.com\/([^/]+\/[^/]+)/);
+    if (match) {
+      packageName = match[1].replace(/\.git$/, '');
+      if (!options.source) options.source = 'github';
+    }
+  }
+
   // Handle empty/whitespace-only input
   if (packageName !== undefined && packageName.trim() === '') {
     packageName = undefined;
@@ -137,6 +146,12 @@ export async function trust(options: TrustOptions): Promise<number> {
         process.stdout.write(yellow(notFoundMsg) + '\n');
         process.stdout.write(dim(registerHint) + '\n');
         process.stdout.write(dim('Learn more: https://opena2a.org/docs/cli/trust') + '\n');
+        if (options.verbose) {
+          const params = new URLSearchParams({ package: packageName });
+          if (options.source) params.set('source', options.source);
+          process.stdout.write(dim(`Registry: ${registryUrl}`) + '\n');
+          process.stdout.write(dim(`Request: GET /v1/trust/lookup?${params}`) + '\n');
+        }
       }
       return 1;
     }
@@ -160,6 +175,9 @@ export async function trust(options: TrustOptions): Promise<number> {
       process.stderr.write(red(`Failed to query trust profile: ${errMsg}`) + '\n');
       process.stderr.write(dim(`Registry: ${registryUrl}`) + '\n');
       process.stderr.write(dim('Check your registry URL in ~/.opena2a/config.json or use --registry-url <url>') + '\n');
+      if (options.verbose) {
+        process.stderr.write(dim(`Full error: ${err instanceof Error ? err.stack ?? err.message : String(err)}`) + '\n');
+      }
     }
     return 1;
   }

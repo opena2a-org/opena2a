@@ -232,6 +232,16 @@ export async function claim(options: ClaimOptions): Promise<number> {
 
   // Resolve package name
   let packageName = options.packageName;
+
+  // Auto-detect GitHub URLs
+  if (packageName && packageName.startsWith('https://github.com/')) {
+    const match = packageName.match(/github\.com\/([^/]+\/[^/]+)/);
+    if (match) {
+      packageName = match[1].replace(/\.git$/, '');
+      if (!options.source) options.source = 'github';
+    }
+  }
+
   if (!packageName) {
     packageName = _internals.readLocalPackageName() ?? undefined;
     if (!packageName) {
@@ -269,6 +279,12 @@ export async function claim(options: ClaimOptions): Promise<number> {
         process.stdout.write(JSON.stringify({ error: 'not_found', package: packageName, message: msg }) + '\n');
       } else {
         process.stdout.write(yellow(msg) + '\n');
+        if (options.verbose) {
+          const params = new URLSearchParams({ package: packageName });
+          if (options.source) params.set('source', options.source);
+          process.stdout.write(dim(`Registry: ${registryUrl}`) + '\n');
+          process.stdout.write(dim(`Request: GET /v1/trust/lookup?${params}`) + '\n');
+        }
       }
       return 1;
     }
@@ -280,6 +296,10 @@ export async function claim(options: ClaimOptions): Promise<number> {
       process.stdout.write(JSON.stringify({ error: 'lookup_failed', message: errMsg }) + '\n');
     } else {
       process.stderr.write(red(`Failed to look up trust profile: ${errMsg}`) + '\n');
+      if (options.verbose) {
+        process.stderr.write(dim(`Registry: ${registryUrl}`) + '\n');
+        process.stderr.write(dim(`Full error: ${err instanceof Error ? err.stack ?? err.message : String(err)}`) + '\n');
+      }
     }
     return 1;
   }
@@ -445,6 +465,9 @@ export async function claim(options: ClaimOptions): Promise<number> {
     } else {
       process.stderr.write(red(`Failed to submit claim: ${errMsg}`) + '\n');
       process.stderr.write(dim(`Registry: ${registryUrl}`) + '\n');
+      if (options.verbose) {
+        process.stderr.write(dim(`Full error: ${err instanceof Error ? err.stack ?? err.message : String(err)}`) + '\n');
+      }
     }
     return 1;
   }
