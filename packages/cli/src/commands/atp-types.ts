@@ -45,10 +45,10 @@ export interface TrustLookupResponse {
   publisherVerified: boolean;
   trustScore: number;
   trustLevel: TrustLevel;
-  posture: TrustPosture;
-  factors: TrustFactors;
-  capabilities: string[];
-  supplyChain: SupplyChainInfo;
+  posture?: TrustPosture;
+  factors?: TrustFactors;
+  capabilities?: string[];
+  supplyChain?: SupplyChainInfo;
   lastScanned: string;
   profileUrl: string;
 }
