@@ -5,14 +5,14 @@
 Output docs/vhs/shield-init.gif
 
 Set Width 1200
-Set Height 800
+Set Height 1400
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
 Set Framerate 30
-Set PlaybackSpeed 1.0
+Set PlaybackSpeed 0.5
 
 # Hidden setup
 Hide
@@ -27,10 +27,10 @@ Show
 # Title pause
 Sleep 1s
 
-# Run the full shield init
+# Run the full shield init (76 lines of output across 11 steps)
 Type "opena2a shield init"
 Enter
-Sleep 12s
+Sleep 15s
 
 # Pause so viewers can read the summary
-Sleep 6s
+Sleep 8s

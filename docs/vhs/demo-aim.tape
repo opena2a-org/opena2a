@@ -5,14 +5,14 @@
 Output docs/vhs/demo-aim.gif
 
 Set Width 1200
-Set Height 800
+Set Height 1400
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
 Set Framerate 30
-Set PlaybackSpeed 1.0
+Set PlaybackSpeed 0.5
 
 # Hidden setup
 Hide
@@ -24,10 +24,10 @@ Show
 # Title pause
 Sleep 1s
 
-# Run the full AIM lifecycle demo
+# Run the full AIM lifecycle demo (96 lines, 8 steps)
 Type "opena2a demo aim"
 Enter
-Sleep 14s
+Sleep 15s
 
-# Pause so viewers can read the full lifecycle
-Sleep 6s
+# Pause so viewers can read the final summary
+Sleep 8s

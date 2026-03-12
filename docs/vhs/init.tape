@@ -5,14 +5,14 @@
 Output docs/vhs/init.gif
 
 Set Width 1200
-Set Height 800
+Set Height 1400
 Set FontSize 20
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
 Set Framerate 30
-Set PlaybackSpeed 1.0
+Set PlaybackSpeed 0.5
 
 # Hidden setup
 Hide
@@ -27,10 +27,10 @@ Show
 # Title pause
 Sleep 1s
 
-# Step 1: Run security assessment
-Type "opena2a init --verbose"
+# Run security assessment (109 lines of output)
+Type "opena2a init"
 Enter
-Sleep 8s
+Sleep 10s
 
-# Pause so viewers can read the full output
-Sleep 5s
+# Pause so viewers can read the full report
+Sleep 8s

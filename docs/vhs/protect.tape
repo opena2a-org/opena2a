@@ -27,18 +27,18 @@ Show
 # Title pause
 Sleep 1s
 
-# Step 1: Preview credential scan
+# Step 1: Preview credential scan (31 lines)
 Type "opena2a protect --dry-run"
 Enter
 Sleep 6s
 
-# Let users read the findings
-Sleep 5s
+# Let users read the credential findings and severity
+Sleep 6s
 
-# Step 2: Run the migration
+# Step 2: Run the actual migration
 Type "opena2a protect"
 Enter
 Sleep 6s
 
-# Let users read the results
-Sleep 4s
+# Let users read the migration results
+Sleep 5s

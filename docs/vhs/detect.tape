@@ -27,26 +27,26 @@ Show
 # Title pause
 Sleep 1s
 
-# Step 1: Discover Shadow AI
+# Step 1: Discover Shadow AI (25 lines)
 Type "opena2a detect --verbose"
 Enter
 Sleep 5s
 
-# Let users read the findings
-Sleep 4s
+# Let users read the agent/MCP inventory
+Sleep 5s
 
-# Step 2: Audit MCP servers
+# Step 2: Audit MCP servers (19 lines)
 Type "opena2a mcp"
 Enter
 Sleep 5s
 
-# Let users read MCP audit
-Sleep 4s
+# Let users read MCP audit results
+Sleep 5s
 
 # Step 3: Sign a server identity
 Type "opena2a mcp sign filesystem"
 Enter
 Sleep 5s
 
-# Final pause to read results
-Sleep 4s
+# Final pause to read signing output
+Sleep 5s
