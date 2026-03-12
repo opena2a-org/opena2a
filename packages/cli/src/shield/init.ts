@@ -126,7 +126,7 @@ export async function shieldInit(options: {
             process.stdout.write(`  Secrets protected: ${result.secretsFound}\n`);
           }
         }
-        // Check if 1Password backend is configured — guide users to warm to avoid Touch ID prompts
+        // Check backend — guide users to authenticate for their configured backend
         try {
           const { readBackendConfig } = await import('secretless-ai');
           if (typeof readBackendConfig === 'function') {
@@ -139,6 +139,19 @@ export async function shieldInit(options: {
               process.stdout.write('    ' + cyan('opena2a secrets warm') + '\n\n');
               process.stdout.write(dim('  This loads all secrets into an encrypted local cache.\n'));
               process.stdout.write(dim('  Touch ID is only prompted once per session (default: 8h).\n'));
+            } else if (backend === 'gcp-sm') {
+              process.stdout.write('\n');
+              process.stdout.write(bold('  GCP Secret Manager backend configured.\n'));
+              process.stdout.write('  Ensure your GCP credentials are active:\n\n');
+              process.stdout.write('    ' + cyan('gcloud auth application-default login') + '\n\n');
+              process.stdout.write(dim('  Secrets are stored in GCP Secret Manager and injected at runtime.\n'));
+            } else if (backend === 'vault') {
+              process.stdout.write('\n');
+              process.stdout.write(bold('  HashiCorp Vault backend configured.\n'));
+              process.stdout.write('  Ensure VAULT_ADDR and VAULT_TOKEN are set in your shell:\n\n');
+              process.stdout.write('    ' + cyan('export VAULT_ADDR=https://vault.example.com') + '\n');
+              process.stdout.write('    ' + cyan('export VAULT_TOKEN=<your-token>') + '\n\n');
+              process.stdout.write(dim('  Secrets are stored in Vault KV v2 and injected at runtime.\n'));
             }
           }
         } catch {

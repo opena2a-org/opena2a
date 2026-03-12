@@ -880,13 +880,13 @@ function getContextualTip(
     }
     if (hasDrift && hasGcpDrift) {
       return {
-        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including Google keys with potential Gemini access. opena2a protect moves them to Secretless AI (encrypted local vault) and verifies live Generative Language API access.`,
+        text: `${credCount} credential${credCount === 1 ? '' : 's'} in source files, including Google keys with potential Gemini access. opena2a protect moves them to Secretless AI (local vault, OS keychain, 1Password, Vault, or GCP Secret Manager) and verifies live Generative Language API access.`,
         command: 'opena2a protect',
       };
     }
     if (criticalCount > 0) {
       return {
-        text: `${criticalCount} critical credential${criticalCount === 1 ? '' : 's'} in source files — anyone with repo access can use them now. opena2a protect moves them to Secretless AI (encrypted local vault) and rewrites the source files to reference env vars.`,
+        text: `${criticalCount} critical credential${criticalCount === 1 ? '' : 's'} in source files — anyone with repo access can use them now. opena2a protect moves them to Secretless AI (local vault, OS keychain, 1Password, Vault, or GCP Secret Manager) and rewrites the source files to reference env vars.`,
         command: 'opena2a protect',
       };
     }
@@ -899,7 +899,7 @@ function getContextualTip(
   const hasMcpCred = report.findings.some(f => f.findingId === 'MCP-CRED');
   if (hasMcpCred) {
     return {
-      text: 'Credentials in MCP config files are read by every AI tool that loads the config. opena2a protect moves them to Secretless AI and injects them as env vars at runtime — no more plaintext in config files.',
+      text: 'Credentials in MCP config files are read by every AI tool that loads the config. opena2a protect moves them to Secretless AI (1Password, GCP Secret Manager, Vault, or local vault) and injects them as env vars at runtime — no more plaintext in config files.',
       command: 'opena2a protect',
     };
   }

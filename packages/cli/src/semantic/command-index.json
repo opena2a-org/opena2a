@@ -30,7 +30,7 @@
     "id": "secrets-init",
     "path": "opena2a secrets init",
     "description": "Set up credential protection for AI coding tools",
-    "tags": ["secrets", "credentials", "protection", "encrypt", "vault"],
+    "tags": ["secrets", "credentials", "protection", "encrypt", "vault", "1password", "gcp-sm", "keychain"],
     "synonyms": ["protect-secrets", "encrypt", "hide-keys"],
     "domains": ["cursor", "claude-code", "windsurf", "vscode"],
     "examples": ["protect my API keys", "hide credentials from AI", "encrypt secrets"]
@@ -48,7 +48,7 @@
     "id": "protect",
     "path": "opena2a protect",
     "description": "Detect credentials and migrate them to encrypted vault. Detects Google API key drift to Gemini and AWS key drift to Bedrock.",
-    "tags": ["protect", "migrate", "vault", "remediate", "fix", "drift", "google", "aws", "gemini", "bedrock"],
+    "tags": ["protect", "migrate", "vault", "1password", "gcp-sm", "keychain", "remediate", "fix", "drift", "google", "aws", "gemini", "bedrock"],
     "synonyms": ["migrate-secrets", "vault", "fix-credentials", "scope-drift", "key-detection"],
     "domains": ["credentials", "security", "google", "aws", "drift"],
     "examples": ["move secrets to vault", "fix hardcoded credentials", "migrate API keys", "detect google key drift", "find AWS bedrock drift"]
