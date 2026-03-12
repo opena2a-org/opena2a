@@ -29,19 +29,19 @@ Every OpenA2A project is accessible through `opena2a <command>`. Each tool also 
 │                    npm install -g opena2a-cli                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  opena2a scan / benchmark  → HackMyAgent  (security scanner)   │
-│  opena2a secrets / broker  → Secretless AI (credential mgmt)   │
-│  opena2a identity          → AIM  (agent identity & access)    │
-│  opena2a runtime           → ARP  (runtime protection)         │
-│  opena2a scan-soul         → ABGS (behavioral governance)      │
-│  opena2a benchmark oasb-2  → OASB (compliance benchmarks)      │
-│  opena2a train             → DVAA (vulnerable agent training)  │
+│  opena2a scan / benchmark  → HackMyAgent  (security scanner)    │
+│  opena2a secrets / broker  → Secretless AI (credential mgmt)    │
+│  opena2a identity          → AIM  (agent identity & access)     │
+│  opena2a runtime           → ARP  (runtime protection)          │
+│  opena2a scan-soul         → ABGS (behavioral governance)       │
+│  opena2a benchmark oasb-2  → OASB (compliance benchmarks)       │
+│  opena2a train             → DVAA (vulnerable agent training)   │
 │                                                                 │
-│  opena2a detect            → Shadow AI discovery               │
-│  opena2a mcp               → MCP server identity & signing     │
-│  opena2a demo              → Interactive security walkthrough  │
+│  opena2a detect            → Shadow AI discovery                │
+│  opena2a mcp               → MCP server identity & signing      │
+│  opena2a demo              → Interactive security walkthrough   │
 │                                                                 │
-│  opena2a shield init       → All of the above, one command     │
+│  opena2a shield init       → All of the above, one command      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
