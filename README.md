@@ -122,33 +122,33 @@ One command sets up credential protection, agent identity, config integrity, run
 
 ### Built-in
 
-| Command | What It Does | [Docs](https://opena2a.org/docs) |
-|---------|-------------|------|
-| [`init`](https://opena2a.org/docs/cli/commands/init) | Assess security posture, calculate trust score (0-100), prioritize next steps | [docs](https://opena2a.org/docs/cli/commands/init) |
-| [`protect`](https://opena2a.org/docs/cli/commands/protect) | Fix all auto-fixable findings — credentials, .gitignore, config signing | [docs](https://opena2a.org/docs/cli/commands/protect) |
-| [`guard`](https://opena2a.org/docs/cli/commands/guard) | Config file integrity — sign, verify, watch, diff, policy, pre-commit hooks | [docs](https://opena2a.org/docs/cli/commands/guard) |
-| [`shield`](https://opena2a.org/docs/cli/commands/shield) | Unified orchestration — init, status, log, report, monitor, triage | [docs](https://opena2a.org/docs/cli/commands/shield) |
-| [`review`](https://opena2a.org/docs/cli/commands/review) | Unified HTML security dashboard with composite score | [docs](https://opena2a.org/docs/cli/commands/review) |
-| [`runtime`](https://opena2a.org/docs/cli/commands/runtime) | Agent Runtime Protection (ARP) — process, network, filesystem monitoring | [docs](https://opena2a.org/docs/cli/commands/runtime) |
-| [`verify`](https://opena2a.org/docs/cli/commands/verify) | Binary integrity verification against Trust Registry | [docs](https://opena2a.org/docs/cli/commands/verify) |
-| [`detect`](https://opena2a.org/docs/cli/commands/detect) | Shadow AI Discovery -- find unmanaged agents and MCP servers, report governance gaps | [docs](https://opena2a.org/docs/cli/commands/detect) |
-| [`mcp`](https://opena2a.org/docs/cli/commands/mcp) | MCP server identity -- audit configs, Ed25519 signing, trust verification | [docs](https://opena2a.org/docs/cli/commands/mcp) |
-| [`demo`](https://opena2a.org/docs/cli/commands/demo) | Interactive walkthroughs -- AIM lifecycle (22-87 score) and DVAA attack/defend | [docs](https://opena2a.org/docs/cli/commands/demo) |
-| `config` | Manage user preferences and feature toggles | |
-| `baselines` | Behavioral observation collection for crowdsourced agent profiles | |
+| Command | What It Does |
+|---------|-------------|
+| [`init`](#opena2a-init) | Assess security posture, calculate trust score (0-100), prioritize next steps |
+| [`protect`](#opena2a-protect) | Fix all auto-fixable findings — credentials, .gitignore, config signing |
+| [`guard`](#opena2a-guard) | Config file integrity — sign, verify, watch, diff, policy, pre-commit hooks |
+| [`shield`](#opena2a-shield) | Unified orchestration — init, status, log, report, monitor, triage |
+| `review` | Unified HTML security dashboard with composite score |
+| [`runtime`](#opena2a-runtime) | Agent Runtime Protection (ARP) — process, network, filesystem monitoring |
+| [`verify`](#opena2a-verify) | Binary integrity verification against Trust Registry |
+| [`detect`](#opena2a-detect----shadow-ai-discovery) | Shadow AI Discovery -- find unmanaged agents and MCP servers, report governance gaps |
+| [`mcp`](#opena2a-mcp) | MCP server identity -- audit configs, Ed25519 signing, trust verification |
+| [`demo`](#opena2a-demo) | Interactive walkthroughs -- AIM lifecycle (22-87 score) and DVAA attack/defend |
+| `config` | Manage user preferences and feature toggles |
+| `baselines` | Behavioral observation collection for crowdsourced agent profiles |
 
 ### Adapters (install tools on first use)
 
-| Command | Tool | [Docs](https://opena2a.org/docs) |
-|---------|------|------|
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — 150+ security checks, attack simulation | [docs](https://opena2a.org/docs/hackmyagent) |
-| `benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — OASB-1 + OASB-2 compliance scoring | [docs](https://opena2a.org/docs/oasb) |
-| `scan-soul` / `harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) -- ABGS behavioral governance, 68 controls | [docs](https://opena2a.org/docs/hackmyagent) |
-| `secrets` / `broker` / `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) — credential management for AI dev tools | [docs](https://opena2a.org/docs/secretless) |
-| `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) — agent identity and access management | [docs](https://opena2a.org/docs/aim) |
-| `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) — vulnerable AI agent for security training | [docs](https://opena2a.org/docs/dvaa) |
-| `registry` | **Registry** — package verification and trust scores (coming soon) | |
-| `crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) — cryptographic inventory, PQC readiness | [docs](https://opena2a.org/docs/cryptoserve) |
+| Command | Tool |
+|---------|------|
+| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — 150+ security checks, attack simulation |
+| `benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — OASB-1 + OASB-2 compliance scoring |
+| `scan-soul` / `harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) -- ABGS behavioral governance, 68 controls |
+| `secrets` / `broker` / `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) — credential management for AI dev tools |
+| `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) — agent identity and access management |
+| `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) — vulnerable AI agent for security training |
+| `registry` | **Registry** — package verification and trust scores (coming soon) |
+| `crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) — cryptographic inventory, PQC readiness |
 
 ## Smart Input Modes
 
@@ -174,7 +174,7 @@ When drift is detected, `opena2a protect` migrates the key to environment variab
 
 ## CI/CD Integration
 
-### [`opena2a init`](https://opena2a.org/docs/cli/commands/init)
+### `opena2a init`
 
 Assess your project's security posture. Detects project type, scans for credentials, checks hygiene (`.gitignore`, `.env` protection, lock file, security config), calculates a trust score (0-100), and provides prioritized next steps.
 
@@ -185,7 +185,7 @@ opena2a init --verbose          # Show individual credential details
 opena2a init --format json      # Machine-readable output for CI
 ```
 
-### [`opena2a protect`](https://opena2a.org/docs/cli/commands/protect)
+### `opena2a protect`
 
 Single command to fix all auto-fixable findings. Migrates credentials, fixes `.gitignore`, excludes AI config files from git, signs config files, and shows before/after security score.
 
@@ -211,7 +211,7 @@ What protect fixes:
 4. **Config signing** -- Sign config files for tamper detection (`.opena2a/guard/signatures.json`)
 5. **Verification** -- Re-scan to confirm all credentials removed, show before/after score
 
-### [`opena2a guard`](https://opena2a.org/docs/cli/commands/guard)
+### `opena2a guard`
 
 Config file integrity protection. Sign your config files, detect unauthorized modifications, enforce policies, and manage signature snapshots for rollback.
 
@@ -269,7 +269,7 @@ opena2a guard snapshot list              # View available snapshots
 opena2a guard snapshot restore <id>      # Roll back if needed
 ```
 
-### [`opena2a shield`](https://opena2a.org/docs/cli/commands/shield)
+### `opena2a shield`
 
 Unified security orchestration. One command to set up everything -- credential protection, agent identity, config integrity, policy generation, shell hooks, runtime monitoring, and AI tool configuration.
 
@@ -300,7 +300,7 @@ opena2a review --no-open        # Generate report without opening browser
 opena2a review --skip-hma       # Skip HMA scan even if available
 ```
 
-### [`opena2a runtime`](https://opena2a.org/docs/cli/commands/runtime)
+### `opena2a runtime`
 
 Agent Runtime Protection (ARP) wrapper. Monitor process, network, and filesystem activity.
 
@@ -311,7 +311,7 @@ opena2a runtime status          # Show monitor/interceptor status
 opena2a runtime tail            # View recent security events
 ```
 
-### [`opena2a verify`](https://opena2a.org/docs/cli/commands/verify)
+### `opena2a verify`
 
 Binary integrity verification. Compares installed package hashes against the OpenA2A Trust Registry to detect supply chain tampering.
 
@@ -338,7 +338,7 @@ opena2a baselines --package hackmyagent          # Observe for 60 seconds (defau
 opena2a baselines --package hackmyagent --duration 120  # Custom duration
 ```
 
-### [`opena2a detect`](https://opena2a.org/docs/cli/commands/detect) -- Shadow AI Discovery
+### `opena2a detect` -- Shadow AI Discovery
 
 Detect Shadow AI in your environment -- unmanaged AI agents and MCP servers running without identity or governance. Scans processes for 7 AI tools (Claude Code, Cursor, Copilot, Windsurf, Aider, Continue, Cline), discovers MCP server configurations, and reports identity and governance status.
 
@@ -349,7 +349,7 @@ opena2a detect --verbose        # Show detection methods and target dir
 opena2a detect --format json    # Machine-readable output for CI
 ```
 
-### [`opena2a mcp`](https://opena2a.org/docs/cli/commands/mcp)
+### `opena2a mcp`
 
 MCP server identity management. Audit discovered MCP server configurations, sign servers with Ed25519 keypairs, and verify signatures with trust scoring.
 
@@ -362,7 +362,7 @@ opena2a mcp sign <server>       # Create Ed25519 identity for an MCP server
 opena2a mcp verify <server>     # Verify signature and show trust score
 ```
 
-### [`opena2a demo`](https://opena2a.org/docs/cli/commands/demo)
+### `opena2a demo`
 
 Interactive security walkthroughs that demonstrate AIM value without requiring a live agent deployment.
 
@@ -436,16 +436,16 @@ Shield stores events in a local tamper-evident log at `.opena2a/shield/events.js
 
 The CLI orchestrates specialized tools through a unified interface. Each command maps to a standalone tool that can also be used independently.
 
-| Command | Tool | Docs | Description |
-|---------|---------|------|-------------|
-| `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
-| `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Credential management for AI coding tools |
-| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Identity-aware credential broker daemon |
-| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | [docs](https://opena2a.org/docs/secretless) | Data loss prevention for AI tool transcripts |
-| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | [docs](https://opena2a.org/docs/aim) | Agent identity and access management |
-| `opena2a benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | [docs](https://opena2a.org/docs/oasb) | 222 attack scenarios, compliance scoring (OASB) |
-| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | [docs](https://opena2a.org/docs/dvaa) | Vulnerable AI agent for security training |
-| `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | [docs](https://opena2a.org/docs/cryptoserve) | Cryptographic inventory, PQC readiness |
+| Command | Tool | Description |
+|---------|---------|-------------|
+| `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 150+ security checks, attack simulation, auto-fix |
+| `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
+| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Identity-aware credential broker daemon |
+| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
+| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity and access management |
+| `opena2a benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 222 attack scenarios, compliance scoring (OASB) |
+| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
+| `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 
 Adapters install tools on first use. Each tool works standalone or through the CLI.
 
@@ -463,7 +463,7 @@ Adapters install tools on first use. Each tool works standalone or through the C
 | Shield (built-in) | `shield`, `init`, `review` |
 | Protect (built-in, Secretless for vault) | `protect` |
 
-## [CI/CD Integration](https://opena2a.org/docs/cli/ci-cd)
+## CI/CD Integration
 
 All commands support `--format json` and `--ci` flags for pipeline integration:
 
