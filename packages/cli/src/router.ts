@@ -55,6 +55,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'guard', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
     'scan-soul', 'harden-soul', 'detect', 'mcp', 'demo',
+    'trust', 'claim',
   ];
 
   if (KNOWN_COMMANDS.includes(first)) {
@@ -239,6 +240,34 @@ export async function dispatchCommand(
       targetDir: process.cwd(),
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'trust' directly (ATP trust lookup)
+  if (command === 'trust') {
+    const { trust: runTrust } = await import('./commands/trust.js');
+    const packageName = args[0] && !args[0].startsWith('-') ? args[0] : undefined;
+    const sourceIdx = args.indexOf('--source');
+    return runTrust({
+      packageName,
+      source: sourceIdx >= 0 ? args[sourceIdx + 1] : undefined,
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as 'text' | 'json') ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
+  // Handle 'claim' directly (ATP claim flow)
+  if (command === 'claim') {
+    const { claim: runClaim } = await import('./commands/claim.js');
+    const packageName = args[0] && !args[0].startsWith('-') ? args[0] : undefined;
+    const sourceIdx = args.indexOf('--source');
+    return runClaim({
+      packageName,
+      source: sourceIdx >= 0 ? args[sourceIdx + 1] : undefined,
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as 'text' | 'json') ?? 'text',
       verbose: globalOptions.verbose ?? false,
     });
   }
