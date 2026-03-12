@@ -130,8 +130,14 @@ export async function trust(options: TrustOptions): Promise<number> {
     spinner.start();
   }
 
+  const params = new URLSearchParams({ package: packageName });
+  params.set('source', source);
+  const requestUrl = `${registryUrl}/v1/trust/lookup?${params}`;
+
   try {
+    const startTime = Date.now();
     const result = await _internals.fetchTrustLookup(registryUrl, packageName, source);
+    const elapsed = Date.now() - startTime;
 
     if (!isCi && !isJson) {
       spinner.stop();
@@ -152,19 +158,22 @@ export async function trust(options: TrustOptions): Promise<number> {
         process.stdout.write(dim(registerHint) + '\n');
         process.stdout.write(dim('Learn more: https://opena2a.org/docs/cli/trust') + '\n');
         if (options.verbose) {
-          const params = new URLSearchParams({ package: packageName });
-          if (source) params.set('source', source);
-          process.stdout.write(dim(`Registry: ${registryUrl}`) + '\n');
-          process.stdout.write(dim(`Request: GET /v1/trust/lookup?${params}`) + '\n');
+          process.stdout.write('\n');
+          process.stdout.write(dim(`Request:  GET ${requestUrl}`) + '\n');
+          process.stdout.write(dim(`Status:   ${result.status}`) + '\n');
+          process.stdout.write(dim(`Time:     ${elapsed}ms`) + '\n');
         }
       }
       return 1;
     }
 
     if (isJson) {
-      process.stdout.write(JSON.stringify(result.data, null, 2) + '\n');
+      const output = options.verbose
+        ? { ...result.data, _debug: { requestUrl, responseTime: `${elapsed}ms`, httpStatus: result.status } }
+        : result.data;
+      process.stdout.write(JSON.stringify(output, null, 2) + '\n');
     } else {
-      printTrustProfile(result.data, options.verbose ?? false);
+      printTrustProfile(result.data, options.verbose ?? false, requestUrl, elapsed);
     }
 
     return 0;
@@ -190,7 +199,7 @@ export async function trust(options: TrustOptions): Promise<number> {
 
 // --- Output ---
 
-function printTrustProfile(data: TrustLookupResponse, verbose: boolean): void {
+function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestUrl?: string, elapsed?: number): void {
   const verifiedLabel = data.publisherVerified ? green('verified') : yellow('unverified');
   const scoreDisplay = Math.round(data.trustScore * 100);
   const scoreColor = scoreDisplay >= 70 ? green : scoreDisplay >= 30 ? yellow : red;
@@ -250,15 +259,26 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean): void {
     process.stdout.write(`Capabilities: ${data.capabilities.join(', ')}\n`);
   }
 
-  // Verbose: factor breakdown
-  if (verbose && data.factors) {
-    process.stdout.write('\n');
-    process.stdout.write(bold('Trust Factors') + '\n');
-    for (const [factor, value] of Object.entries(data.factors)) {
-      const pct = Math.round((value as number) * 100);
-      const label = factor.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
-      process.stdout.write(`  ${label.padEnd(20)} ${pct}%\n`);
+  // Verbose: factor breakdown, request details, raw metadata
+  if (verbose) {
+    if (data.factors && Object.keys(data.factors).length > 0) {
+      process.stdout.write('\n');
+      process.stdout.write(bold('Trust Factors') + '\n');
+      for (const [factor, value] of Object.entries(data.factors)) {
+        const pct = Math.round((value as number) * 100);
+        const label = factor.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+        process.stdout.write(`  ${label.padEnd(20)} ${pct}%\n`);
+      }
     }
+
+    process.stdout.write('\n');
+    process.stdout.write(bold('Request Details') + '\n');
+    if (requestUrl) process.stdout.write(`  URL:      ${dim(requestUrl)}\n`);
+    if (elapsed !== undefined) process.stdout.write(`  Time:     ${dim(`${elapsed}ms`)}\n`);
+    process.stdout.write(`  Agent ID: ${dim(data.agentId)}\n`);
+    process.stdout.write(`  Source:   ${dim(data.source ?? 'npm')}\n`);
+    process.stdout.write(`  Version:  ${dim(data.version)}\n`);
+    if (data.lastScanned) process.stdout.write(`  Scanned:  ${dim(data.lastScanned)}\n`);
   }
 
   // Links
