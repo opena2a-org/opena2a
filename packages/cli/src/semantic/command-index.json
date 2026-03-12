@@ -137,11 +137,20 @@
   {
     "id": "init",
     "path": "opena2a init",
-    "description": "Initialize OpenA2A security in a project -- scan for credentials, detect scope drift, check hygiene, calculate trust score",
-    "tags": ["init", "setup", "initialize", "onboard", "start", "drift", "trust-score"],
-    "synonyms": ["setup", "start", "onboard", "configure", "assess"],
+    "description": "Read-only security assessment -- scan for credentials, detect scope drift, check hygiene, calculate trust score (no changes made)",
+    "tags": ["init", "assess", "scan", "drift", "trust-score", "posture"],
+    "synonyms": ["assess", "audit", "evaluate", "check posture"],
     "domains": ["project", "config", "credentials"],
-    "examples": ["set up security", "initialize project", "get started", "check my project"]
+    "examples": ["assess my project", "check security posture", "security audit", "scan project"]
+  },
+  {
+    "id": "shield-init",
+    "path": "opena2a shield init",
+    "description": "Full 11-step security setup -- scan, protect credentials, sign configs, generate policy, install git hooks",
+    "tags": ["shield", "init", "setup", "initialize", "onboard", "start", "full-setup"],
+    "synonyms": ["setup", "start", "onboard", "configure", "initialize", "get started"],
+    "domains": ["project", "config", "credentials", "policy", "hooks"],
+    "examples": ["set up security", "initialize project", "get started", "full security setup", "install shield"]
   },
   {
     "id": "status",

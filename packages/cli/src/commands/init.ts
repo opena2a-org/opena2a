@@ -320,6 +320,9 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write(dim(wrappedTipText) + '\n');
     process.stdout.write('\n');
 
+    // Shield init hint
+    process.stdout.write(dim('  To set up full Shield protection (11-step orchestration): opena2a shield init') + '\n');
+
     // Deeper analysis hint
     process.stdout.write(dim('  For deeper analysis (147 checks): opena2a scan --deep') + '\n');
 
