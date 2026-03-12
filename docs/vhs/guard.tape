@@ -27,26 +27,26 @@ Show
 # Title pause
 Sleep 1s
 
-# Step 1: Sign config files
+# Step 1: Sign config files (14 lines)
 Type "opena2a guard sign"
 Enter
 Sleep 5s
 
-# Let users read signing output
-Sleep 3s
+# Let users read the signed files list
+Sleep 4s
 
-# Step 2: Verify integrity
+# Step 2: Verify integrity (15 lines)
 Type "opena2a guard verify"
 Enter
 Sleep 5s
 
-# Let users read verification
-Sleep 3s
+# Let users read the verification table
+Sleep 4s
 
-# Step 3: Check status
+# Step 3: Check status (10 lines)
 Type "opena2a guard status"
 Enter
 Sleep 4s
 
 # Final pause
-Sleep 3s
+Sleep 4s

@@ -27,13 +27,13 @@ Show
 # Title pause
 Sleep 1s
 
-# Step 1: Discover and audit MCP configs
+# Step 1: Discover and audit MCP configs (19 lines)
 Type "opena2a mcp"
 Enter
 Sleep 5s
 
-# Let users read the audit
-Sleep 4s
+# Let users read the MCP server audit
+Sleep 5s
 
 # Step 2: Sign a server identity
 Type "opena2a mcp sign filesystem"
@@ -41,12 +41,12 @@ Enter
 Sleep 5s
 
 # Let users read signing output
-Sleep 4s
+Sleep 5s
 
 # Step 3: Verify the signature
 Type "opena2a mcp verify filesystem"
 Enter
 Sleep 5s
 
-# Final pause
-Sleep 4s
+# Final pause to read verification
+Sleep 5s
