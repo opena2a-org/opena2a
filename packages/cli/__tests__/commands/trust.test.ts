@@ -134,10 +134,11 @@ describe('trust', () => {
     const { exitCode, output } = await captureStdout(() => trust(options));
 
     expect(exitCode).toBe(0);
+    // source defaults to 'npm' when not explicitly provided
     expect(_internals.fetchTrustLookup).toHaveBeenCalledWith(
       'https://test-registry.example.com',
       'my-local-package',
-      undefined,
+      'npm',
     );
   });
 

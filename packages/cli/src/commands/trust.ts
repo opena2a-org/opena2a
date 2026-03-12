@@ -120,13 +120,18 @@ export async function trust(options: TrustOptions): Promise<number> {
     }
   }
 
+  // Default source to "npm" -- the most common package source.
+  // Without a source the registry API returns 400 "source parameter is required",
+  // which would surface as a misleading "not found" error to the user.
+  const source = options.source ?? 'npm';
+
   const spinner = new Spinner(`Looking up trust profile for ${packageName}...`);
   if (!isCi && !isJson) {
     spinner.start();
   }
 
   try {
-    const result = await _internals.fetchTrustLookup(registryUrl, packageName, options.source);
+    const result = await _internals.fetchTrustLookup(registryUrl, packageName, source);
 
     if (!isCi && !isJson) {
       spinner.stop();
@@ -148,7 +153,7 @@ export async function trust(options: TrustOptions): Promise<number> {
         process.stdout.write(dim('Learn more: https://opena2a.org/docs/cli/trust') + '\n');
         if (options.verbose) {
           const params = new URLSearchParams({ package: packageName });
-          if (options.source) params.set('source', options.source);
+          if (source) params.set('source', source);
           process.stdout.write(dim(`Registry: ${registryUrl}`) + '\n');
           process.stdout.write(dim(`Request: GET /v1/trust/lookup?${params}`) + '\n');
         }
@@ -202,37 +207,45 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean): void {
   process.stdout.write('\n');
   process.stdout.write(bold('Security Posture') + '\n');
 
-  const hardeningPct = Math.round(data.posture.hardeningPassRate * 100);
-  process.stdout.write(`  Hardening:    ${hardeningPct}% pass rate\n`);
+  if (data.posture) {
+    const hardeningPct = Math.round(data.posture.hardeningPassRate * 100);
+    process.stdout.write(`  Hardening:    ${hardeningPct}% pass rate\n`);
 
-  const oasbPct = Math.round(data.posture.oasbCompliance * 100);
-  const oasbLevel = oasbPct >= 80 ? 'L1 Compliant' : oasbPct >= 50 ? 'Partial' : 'Minimal';
-  process.stdout.write(`  OASB:         ${oasbLevel} (${oasbPct}%)\n`);
+    const oasbPct = Math.round(data.posture.oasbCompliance * 100);
+    const oasbLevel = oasbPct >= 80 ? 'L1 Compliant' : oasbPct >= 50 ? 'Partial' : 'Minimal';
+    process.stdout.write(`  OASB:         ${oasbLevel} (${oasbPct}%)\n`);
 
-  process.stdout.write(`  Governance:   ${data.posture.soulConformance} conformance\n`);
+    process.stdout.write(`  Governance:   ${data.posture.soulConformance} conformance\n`);
 
-  const riskColor = data.posture.attackSurfaceRisk === 'low' ? green
-    : data.posture.attackSurfaceRisk === 'medium' ? yellow
-    : red;
-  process.stdout.write(`  Attack Risk:  ${riskColor(data.posture.attackSurfaceRisk)}\n`);
+    const riskColor = data.posture.attackSurfaceRisk === 'low' ? green
+      : data.posture.attackSurfaceRisk === 'medium' ? yellow
+      : red;
+    process.stdout.write(`  Attack Risk:  ${riskColor(data.posture.attackSurfaceRisk)}\n`);
+  } else {
+    process.stdout.write(dim('  No scan data yet. Run: opena2a scan') + '\n');
+  }
 
   // Supply Chain
   process.stdout.write('\n');
   process.stdout.write(bold('Supply Chain') + '\n');
 
-  const sc = data.supplyChain;
-  const critLabel = sc.criticalVulnerabilities === 0
-    ? green('0 critical')
-    : red(`${sc.criticalVulnerabilities} critical`);
-  const highLabel = sc.highVulnerabilities === 0
-    ? green('0 high')
-    : yellow(`${sc.highVulnerabilities} high`);
-  process.stdout.write(`  Dependencies: ${sc.totalDependencies} (${critLabel}, ${highLabel} CVE)\n`);
-  process.stdout.write(`  Published:    ${formatRelativeTime(sc.lastPublished)}\n`);
-  process.stdout.write(`  Maintainers:  ${sc.maintainerCount}\n`);
+  if (data.supplyChain) {
+    const sc = data.supplyChain;
+    const critLabel = sc.criticalVulnerabilities === 0
+      ? green('0 critical')
+      : red(`${sc.criticalVulnerabilities} critical`);
+    const highLabel = sc.highVulnerabilities === 0
+      ? green('0 high')
+      : yellow(`${sc.highVulnerabilities} high`);
+    process.stdout.write(`  Dependencies: ${sc.totalDependencies} (${critLabel}, ${highLabel} CVE)\n`);
+    process.stdout.write(`  Published:    ${formatRelativeTime(sc.lastPublished)}\n`);
+    process.stdout.write(`  Maintainers:  ${sc.maintainerCount}\n`);
+  } else {
+    process.stdout.write(dim('  No supply chain data yet') + '\n');
+  }
 
   // Capabilities
-  if (data.capabilities.length > 0) {
+  if (data.capabilities && data.capabilities.length > 0) {
     process.stdout.write('\n');
     process.stdout.write(`Capabilities: ${data.capabilities.join(', ')}\n`);
   }
