@@ -1,21 +1,20 @@
-# opena2a shield init -- Unified security orchestration
-# Records: full 11-step shield initialization
-# THE signature demo for OpenA2A
+# OpenA2A shield init -- Unified Security Orchestration
+# Full 11-step security assessment in one command
+# Run: vhs docs/vhs/shield-init.tape
 
 Output docs/vhs/shield-init.gif
 
-Require opena2a
-
-Set Shell "bash"
-Set FontSize 14
-Set Width 900
+Set Width 1200
 Set Height 700
+Set FontSize 20
+Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
-Set FontFamily "JetBrains Mono"
+Set Framerate 30
+Set PlaybackSpeed 1.0
 
-# Set up the demo project (hidden)
+# Hidden setup
 Hide
 Type "bash docs/vhs/setup-lab.sh 2>/dev/null"
 Enter
@@ -25,14 +24,13 @@ Enter
 Sleep 500ms
 Show
 
-# Show the project
-Type "# One command to secure any AI agent project"
-Enter
-Sleep 1.5s
+# Title pause
+Sleep 1s
 
+# Run the full shield init
 Type "opena2a shield init"
 Enter
-Sleep 8s
-
-# Pause on the output so viewers can read the summary
 Sleep 10s
+
+# Pause so viewers can read the summary
+Sleep 6s

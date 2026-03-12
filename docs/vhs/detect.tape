@@ -1,21 +1,20 @@
-# opena2a detect -- Shadow AI Discovery
-# Records: unmanaged agent detection, MCP server discovery, governance gaps
-# THE enterprise demo for Shadow AI visibility
+# OpenA2A detect -- Shadow AI Discovery
+# Find unmanaged AI agents and MCP servers
+# Run: vhs docs/vhs/detect.tape
 
 Output docs/vhs/detect.gif
 
-Require opena2a
-
-Set Shell "bash"
-Set FontSize 14
-Set Width 900
+Set Width 1200
 Set Height 600
+Set FontSize 20
+Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
-Set FontFamily "JetBrains Mono"
+Set Framerate 30
+Set PlaybackSpeed 1.0
 
-# Set up the demo project (hidden)
+# Hidden setup
 Hide
 Type "bash docs/vhs/setup-lab.sh 2>/dev/null"
 Enter
@@ -25,14 +24,29 @@ Enter
 Sleep 500ms
 Show
 
-# Show the scenario
-Type "# Shadow AI Discovery: what AI agents and MCP servers are running?"
-Enter
-Sleep 1.5s
+# Title pause
+Sleep 1s
 
+# Step 1: Discover Shadow AI
 Type "opena2a detect --verbose"
+Enter
+Sleep 6s
+
+# Let users read the findings
+Sleep 3s
+
+# Step 2: Audit MCP servers
+Type "opena2a mcp"
 Enter
 Sleep 5s
 
-# Pause so viewers can read the findings
-Sleep 8s
+# Let users read MCP audit
+Sleep 3s
+
+# Step 3: Sign a server identity
+Type "opena2a mcp sign filesystem"
+Enter
+Sleep 5s
+
+# Final pause to read results
+Sleep 3s

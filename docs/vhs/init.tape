@@ -1,19 +1,20 @@
-# opena2a init -- Security posture assessment
-# Records: project detection, credential scan, trust score, scope drift
+# OpenA2A init -- Security Posture Assessment
+# Project detection, credential scan, trust score
+# Run: vhs docs/vhs/init.tape
 
 Output docs/vhs/init.gif
 
-Require opena2a
-
-Set Shell "bash"
-Set FontSize 14
-Set Width 900
+Set Width 1200
 Set Height 600
+Set FontSize 20
+Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
+Set Framerate 30
+Set PlaybackSpeed 1.0
 
-# Set up the demo project (hidden)
+# Hidden setup
 Hide
 Type "bash docs/vhs/setup-lab.sh 2>/dev/null"
 Enter
@@ -23,14 +24,13 @@ Enter
 Sleep 500ms
 Show
 
-# Show the project
-Type "# Assess security posture of an AI agent project"
-Enter
+# Title pause
 Sleep 1s
 
+# Step 1: Run security assessment
 Type "opena2a init --verbose"
 Enter
-Sleep 4s
+Sleep 6s
 
-# Pause on the output so viewers can read it
-Sleep 8s
+# Pause so viewers can read the output
+Sleep 4s

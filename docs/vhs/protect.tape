@@ -1,19 +1,20 @@
-# opena2a protect -- Credential migration
-# Records: detection, dry-run preview, migration, verification
+# OpenA2A protect -- Credential Protection
+# Detect hardcoded credentials, migrate to env vars
+# Run: vhs docs/vhs/protect.tape
 
 Output docs/vhs/protect.gif
 
-Require opena2a
-
-Set Shell "bash"
-Set FontSize 14
-Set Width 900
-Set Height 650
+Set Width 1200
+Set Height 600
+Set FontSize 20
+Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 Set Padding 20
+Set Framerate 30
+Set PlaybackSpeed 1.0
 
-# Set up the demo project (hidden)
+# Hidden setup
 Hide
 Type "bash docs/vhs/setup-lab.sh 2>/dev/null"
 Enter
@@ -23,31 +24,21 @@ Enter
 Sleep 500ms
 Show
 
-# Dry run first
-Type "# Preview credential migration"
-Enter
+# Title pause
 Sleep 1s
 
+# Step 1: Preview credential scan
 Type "opena2a protect --dry-run"
 Enter
-Sleep 4s
-Sleep 5s
+Sleep 6s
 
-# Now actually protect
-Type "# Migrate credentials to environment variables"
-Enter
-Sleep 1s
+# Let users read the findings
+Sleep 3s
 
+# Step 2: Run the migration
 Type "opena2a protect"
 Enter
-Sleep 4s
-Sleep 5s
+Sleep 6s
 
-# Show the result
-Type "# Verify: hardcoded keys replaced with env var references"
-Enter
-Sleep 500ms
-
-Type "cat src/agent.js"
-Enter
-Sleep 5s
+# Let users read the results
+Sleep 3s
