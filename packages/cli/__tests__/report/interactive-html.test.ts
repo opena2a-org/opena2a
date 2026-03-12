@@ -13,7 +13,7 @@ function sampleData(overrides?: Partial<InteractiveReportData>): InteractiveRepo
       totalFindings: 3,
       bySeverity: { critical: 1, high: 1, medium: 1, low: 0, info: 0 },
       score: 52,
-      grade: 'C',
+      grade: 'moderate',
     },
     findings: [
       {
@@ -155,7 +155,7 @@ describe('generateInteractiveHtml', () => {
 
   it('handles empty findings', () => {
     const html = generateInteractiveHtml(sampleData({
-      summary: { totalFindings: 0, bySeverity: {}, score: 100, grade: 'A' },
+      summary: { totalFindings: 0, bySeverity: {}, score: 100, grade: 'strong' },
       findings: [],
     }));
     expect(html).toContain('<!DOCTYPE html>');

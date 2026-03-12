@@ -126,7 +126,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     process.stdout.write(bold('Trust Score') + '\n');
     process.stdout.write(gray('-'.repeat(50)) + '\n');
     const displayScore = trust.score ?? Math.round((trust.overall ?? 0) * 100);
-    const displayGrade = trust.grade ?? (displayScore >= 80 ? 'A' : displayScore >= 60 ? 'B' : displayScore >= 40 ? 'C' : displayScore >= 20 ? 'D' : 'F');
+    const displayGrade = trust.grade ?? (displayScore >= 80 ? 'strong' : displayScore >= 60 ? 'good' : displayScore >= 40 ? 'moderate' : displayScore >= 20 ? 'improving' : 'needs-attention');
     process.stdout.write(`  Score:  ${bold(String(displayScore))}  Grade: ${bold(displayGrade)}\n`);
     process.stdout.write('\n');
     process.stdout.write('  Factors:\n');

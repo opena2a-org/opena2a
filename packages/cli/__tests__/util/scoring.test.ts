@@ -18,7 +18,7 @@ describe('calculateSecurityScore (shared module)', () => {
   it('returns 100 for clean project with security config', () => {
     const { score, grade } = calculateSecurityScore({}, cleanChecks);
     expect(score).toBe(100);
-    expect(grade).toBe('A');
+    expect(grade).toBe('strong');
   });
 
   it('applies diminishing returns for critical findings', () => {

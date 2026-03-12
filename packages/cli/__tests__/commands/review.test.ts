@@ -51,7 +51,7 @@ describe('review', () => {
     // Score depends on Shield product detection and guard signing status.
     // A clean project without Shield products or signatures scores ~65-75.
     expect(report.compositeScore).toBeGreaterThanOrEqual(60);
-    expect(report.grade).toMatch(/^[A-D]$/);
+    expect(['strong', 'good', 'moderate', 'improving']).toContain(report.grade);
     expect(report.phases).toHaveLength(5);
   });
 

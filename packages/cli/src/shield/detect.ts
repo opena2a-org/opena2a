@@ -264,6 +264,7 @@ function mcpConfigPaths(targetDir: string): { label: string; path: string }[] {
   return [
     { label: 'mcp.json', path: join(targetDir, 'mcp.json') },
     { label: '.mcp.json', path: join(targetDir, '.mcp.json') },
+    { label: '.mcp/config.json', path: join(targetDir, '.mcp', 'config.json') },
     { label: '.claude/settings.json', path: join(targetDir, '.claude', 'settings.json') },
     { label: '.cursor/mcp.json', path: join(targetDir, '.cursor', 'mcp.json') },
     { label: '~/.claude/settings.json', path: join(homedir(), '.claude', 'settings.json') },

@@ -79,7 +79,7 @@ export interface TrustScore {
   overall: number;
   /** Trust score as integer (0-100) */
   score: number;
-  /** Letter grade: A (80-100), B (60-79), C (40-59), D (20-39), F (0-19) */
+  /** Descriptive grade: strong (80-100), good (60-79), moderate (40-59), improving (20-39), needs-attention (0-19) */
   grade: string;
   /** Individual factor scores */
   factors: TrustFactors;

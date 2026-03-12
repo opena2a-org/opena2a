@@ -115,11 +115,11 @@ export function calculateSecurityScore(
   const score = Math.max(0, Math.min(100, 100 - credDeduction - envDeduction - configDeduction + configBonus));
 
   let grade: string;
-  if (score >= 90) grade = 'A';
-  else if (score >= 80) grade = 'B';
-  else if (score >= 70) grade = 'C';
-  else if (score >= 60) grade = 'D';
-  else grade = 'F';
+  if (score >= 90) grade = 'strong';
+  else if (score >= 80) grade = 'good';
+  else if (score >= 70) grade = 'moderate';
+  else if (score >= 60) grade = 'improving';
+  else grade = 'needs-attention';
 
   return {
     score,
