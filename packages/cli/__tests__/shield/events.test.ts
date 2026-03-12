@@ -201,6 +201,6 @@ describe('selfcheck integration', () => {
 
     const eventChainCheck = state.checks.find((c) => c.name === 'event-chain');
     expect(eventChainCheck).toBeDefined();
-    expect(eventChainCheck!.status).toBe('fail');
+    expect(eventChainCheck!.status).toBe('warn');
   });
 });
