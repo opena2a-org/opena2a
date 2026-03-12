@@ -109,8 +109,11 @@ export async function dispatchCommand(
     const { guard } = await import('./commands/guard.js');
     const subcommand = args[0] ?? 'status';
     const remainingArgs = args.slice(1);
-    // Extract directory from first remaining arg if it looks like a path
-    const dirFromArgs = remainingArgs.length > 0 && !remainingArgs[0]?.startsWith('-')
+    // Subcommands that take an action argument (not a directory) as their first positional arg
+    const actionSubcommands = ['hook', 'policy', 'snapshot'];
+    const isActionSub = actionSubcommands.includes(subcommand);
+    // Extract directory from first remaining arg only if it's not an action subcommand
+    const dirFromArgs = !isActionSub && remainingArgs.length > 0 && !remainingArgs[0]?.startsWith('-')
       ? remainingArgs.shift()
       : undefined;
     return guard({
@@ -242,7 +245,7 @@ export async function dispatchCommand(
 
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
-    check: { adapter: 'scan', defaultArgs: ['secure'] },
+    check: { adapter: 'scan', defaultArgs: [] },
     publish: { adapter: 'registry', defaultArgs: ['check'] },
   };
 

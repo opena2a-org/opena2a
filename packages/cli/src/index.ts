@@ -218,8 +218,11 @@ Learn more: https://opena2a.org/docs`);
       }
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
-      // Extract directory from positional args if --dir not specified
-      const dirFromArgs = args.length > 0 && !args[0]?.startsWith('-') ? args.shift() : undefined;
+      // Subcommands that take action args (not directory) as first positional
+      const actionSubs = ['hook', 'policy', 'snapshot'];
+      const isActionSub = actionSubs.includes(subcommand ?? '');
+      // Extract directory from positional args only for non-action subcommands
+      const dirFromArgs = !isActionSub && args.length > 0 && !args[0]?.startsWith('-') ? args.shift() : undefined;
       process.exitCode = await guard({
         subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot',
         files: opts.files,

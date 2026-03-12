@@ -51,7 +51,7 @@ export async function scanSoul(options: SoulOptions): Promise<number> {
     }
 
     // Exit 1 if score is below threshold (no governance or low score)
-    return result.overallScore < 60 ? 1 : 0;
+    return (result.score ?? result.overallScore ?? 0) < 60 ? 1 : 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`scan-soul failed: ${message}\n`);
@@ -88,13 +88,13 @@ export async function hardenSoul(options: SoulOptions): Promise<number> {
 }
 
 function formatScanResult(result: any, verbose: boolean): void {
-  const score = result.overallScore ?? 0;
+  const score = result.score ?? result.overallScore ?? 0;
   const level = result.level ?? result.grade ?? 'unknown';
   const file = result.file ?? 'not found';
   const tier = result.agentTier ?? 'unknown';
   const profile = result.agentProfile ?? 'unknown';
   const totalControls = result.totalControls ?? 0;
-  const passingControls = result.passingControls ?? 0;
+  const passingControls = result.totalPassed ?? result.passingControls ?? 0;
 
   process.stdout.write(`\nGovernance Score: ${score}/100 [${level}]\n`);
   process.stdout.write(`File: ${file}\n`);
