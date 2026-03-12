@@ -30,8 +30,8 @@ async function main(): Promise<void> {
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
     .addHelpText('after', `
 Quick Start:
-  $ opena2a shield init          Unified security setup (scan, policy, hooks)
-  $ opena2a init                 Assess your project's security posture
+  $ opena2a shield init          Full 11-step security setup (scan, protect, sign, policy, hooks)
+  $ opena2a init                 Read-only security assessment (no changes to your project)
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
   $ opena2a scan secure          Run 147 security checks on your AI agent
@@ -188,7 +188,7 @@ Learn more: https://opena2a.org/docs`);
   // Init command (direct, not adapter-based)
   program
     .command('init [directory]')
-    .description('Initialize OpenA2A security in your project')
+    .description('Assess your project security posture (read-only scan; use "shield init" for full setup)')
     .option('--dir <path>', 'Target directory')
     .action(async (directory: string | undefined, opts) => {
       const { init } = await import('./commands/init.js');
@@ -289,7 +289,7 @@ Learn more: https://opena2a.org/docs`);
   // Shield command (unified security orchestration)
   program
     .command('shield <subcommand> [args...]')
-    .description('Unified security orchestration (init|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage)')
+    .description('Unified security orchestration ("shield init" runs full 11-step setup; also:|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage)')
     .allowUnknownOption(true)
     .option('--dir <path>', 'Target directory')
     .option('--agent <name>', 'Agent name filter')
@@ -714,7 +714,7 @@ Valid actions:
 
 function getIntentDescription(intent: string): string {
   switch (intent) {
-    case 'init': return 'Initialize OpenA2A security in your project';
+    case 'init': return 'Assess your project security posture (read-only scan)';
     case 'check': return 'Quick security check (alias for scan secure)';
     case 'protect': return 'Detect and migrate credentials to encrypted vault';
     case 'status': return 'Show security status of current project';

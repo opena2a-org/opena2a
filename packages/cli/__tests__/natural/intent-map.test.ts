@@ -37,8 +37,8 @@ describe('intent map', () => {
   });
 
   it('matches setup intents', () => {
-    expect(matchIntent('get started')?.command).toBe('opena2a init');
-    expect(matchIntent('how do I start')?.command).toBe('opena2a init');
+    expect(matchIntent('get started')?.command).toBe('opena2a shield init');
+    expect(matchIntent('how do I start')?.command).toBe('opena2a shield init');
   });
 
   it('returns null for unrecognized input', () => {

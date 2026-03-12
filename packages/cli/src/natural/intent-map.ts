@@ -152,8 +152,8 @@ const INTENT_MAPPINGS: IntentMapping[] = [
       /\bhow\s+do\s+i\s+(start|begin|use)\b/i,
       /\bquick\s*start\b/i,
     ],
-    command: 'opena2a init',
-    description: 'Initialize OpenA2A security in your project',
+    command: 'opena2a shield init',
+    description: 'Full security setup: scan, protect, sign, policy, hooks (11 steps)',
   },
 ];
 
