@@ -356,6 +356,45 @@ async function runtimeInit(targetDir: string, options: RuntimeOptions): Promise<
   return 0;
 }
 
+// --- Silent init (for shield init integration) ---
+
+/**
+ * Initialize ARP config without any stdout output. Returns what was created.
+ * Used by shield init to silently create ARP config as part of the init flow.
+ */
+export async function runtimeInitSilent(targetDir: string): Promise<{ created: boolean; path: string; agentName?: string }> {
+  const project = detectProject(targetDir);
+  const configPath = path.join(targetDir, 'arp.yaml');
+
+  if (fs.existsSync(configPath)) {
+    return { created: false, path: configPath };
+  }
+
+  const agentName = project.name ?? path.basename(targetDir);
+  const hasMcp = project.hasMcp;
+
+  const config = [
+    `agentName: ${agentName}`,
+    'monitors:',
+    '  process: { enabled: true, intervalMs: 5000 }',
+    '  network: { enabled: true, intervalMs: 10000 }',
+    '  filesystem: { enabled: true }',
+    'interceptors:',
+    '  process: true',
+    '  network: true',
+    '  filesystem: true',
+    'aiLayer:',
+    '  prompt: true',
+    hasMcp ? '  mcp-protocol: true' : '  mcp-protocol: false',
+    '  a2a-protocol: true',
+    '',
+  ].join('\n');
+
+  fs.writeFileSync(configPath, config, 'utf-8');
+
+  return { created: true, path: configPath, agentName };
+}
+
 // --- Helpers ---
 
 function findConfigFile(dir: string): string | null {

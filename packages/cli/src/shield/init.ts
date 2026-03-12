@@ -19,6 +19,7 @@ import { configureAiTools } from './ai-tool-config.js';
 import type { AiToolConfigResult } from './ai-tool-config.js';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
+import { runtimeInitSilent } from '../commands/runtime.js';
 
 interface InitResult {
   scan: EnvironmentScan;
@@ -28,6 +29,8 @@ interface InitResult {
   secretlessConfigured: boolean;
   identityCreated: boolean;
   aiToolsConfigured: boolean;
+  configSigning: { signed: number; files: string[] } | null;
+  arpInit: { created: boolean; path: string; agentName?: string } | null;
   steps: { name: string; status: 'done' | 'skipped' | 'warn' }[];
 }
 
@@ -225,23 +228,23 @@ export async function shieldInit(options: {
 
   // --- Step 5: Config Integrity Baseline ---
   if (isText) process.stdout.write(bold('Step 5: Config Integrity Baseline\n'));
+  let configSigningResult: { signed: number; files: string[] } | null = null;
   try {
-    const { guard } = await import('../commands/guard.js');
-    await guard({
-      subcommand: 'sign',
-      targetDir,
-      ci: true,
-      format: 'json',
-      verbose: false,
-    });
+    const { signConfigFilesSilent } = await import('../commands/guard.js');
+    configSigningResult = await signConfigFilesSilent(targetDir);
     steps.push({ name: 'Config signing', status: 'done' });
-    if (isText) process.stdout.write(green('  Config files signed as baseline\n'));
+    if (isText) {
+      if (configSigningResult.signed > 0) {
+        process.stdout.write(green(`  Signed ${configSigningResult.signed} config file${configSigningResult.signed === 1 ? '' : 's'} (${configSigningResult.files.join(', ')})\n`));
+      } else {
+        process.stdout.write(dim('  No config files found to sign\n'));
+      }
+    }
   } catch {
     steps.push({ name: 'Config signing', status: 'skipped' });
     if (isText) process.stdout.write(dim('  Config signing skipped\n'));
   }
   if (isText) process.stdout.write('\n');
-
   // --- Step 6: Generate Policy ---
   if (isText) process.stdout.write(bold('Step 6: Generate Policy\n'));
 
@@ -312,23 +315,22 @@ export async function shieldInit(options: {
 
   // --- Step 8: ARP Initialization ---
   if (isText) process.stdout.write(bold('Step 8: Runtime Protection\n'));
+  let arpInitResult: { created: boolean; path: string; agentName?: string } | null = null;
   try {
-    const { runtime } = await import('../commands/runtime.js');
-    await runtime({
-      subcommand: 'init',
-      targetDir,
-      ci: true,
-      format: 'json',
-      verbose: false,
-    });
+    arpInitResult = await runtimeInitSilent(targetDir);
     steps.push({ name: 'ARP init', status: 'done' });
-    if (isText) process.stdout.write(green('  ARP config generated\n'));
+    if (isText) {
+      if (arpInitResult.created) {
+        process.stdout.write(green(`  ARP config created at ${arpInitResult.path}\n`));
+      } else {
+        process.stdout.write(dim(`  ARP config already exists at ${arpInitResult.path}\n`));
+      }
+    }
   } catch {
     steps.push({ name: 'ARP init', status: 'skipped' });
-    if (isText) process.stdout.write(dim('  ARP initialization skipped (hackmyagent not installed)\n'));
+    if (isText) process.stdout.write(dim('  ARP initialization skipped\n'));
   }
   if (isText) process.stdout.write('\n');
-
   // --- Step 9: AI Tool Configuration ---
   if (isText) process.stdout.write(bold('Step 9: AI Tool Configuration\n'));
   let aiToolsConfigured = false;
@@ -440,6 +442,8 @@ export async function shieldInit(options: {
     secretlessConfigured,
     identityCreated,
     aiToolsConfigured,
+    configSigning: configSigningResult,
+    arpInit: arpInitResult,
     steps,
   };
 
