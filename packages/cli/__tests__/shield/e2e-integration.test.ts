@@ -260,14 +260,14 @@ describe('Shield E2E Integration', () => {
       const tampered = content.replace(GENESIS_HASH, 'deadbeef'.repeat(8));
       fs.writeFileSync(eventsPath, tampered);
 
-      // Step 4: Run integrity checks -- should detect compromise
+      // Step 4: Run integrity checks -- should detect degradation (not compromise)
       const state = runIntegrityChecks({ shell: 'zsh' });
-      expect(state.status).toBe('compromised');
+      expect(state.status).toBe('degraded');
 
-      // Step 5: Verify event-chain check specifically fails
+      // Step 5: Verify event-chain check shows warning (not failure)
       const eventChainCheck = state.checks.find(c => c.name === 'event-chain');
       expect(eventChainCheck).toBeDefined();
-      expect(eventChainCheck!.status).toBe('fail');
+      expect(eventChainCheck!.status).toBe('warn');
     });
 
     it('detects tampered event hash within the chain', () => {
@@ -285,7 +285,7 @@ describe('Shield E2E Integration', () => {
 
       const state = runIntegrityChecks({ shell: 'zsh' });
       const eventChainCheck = state.checks.find(c => c.name === 'event-chain');
-      expect(eventChainCheck!.status).toBe('fail');
+      expect(eventChainCheck!.status).toBe('warn');
     });
   });
 

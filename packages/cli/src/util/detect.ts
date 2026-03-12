@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export type ProjectType = 'node' | 'go' | 'python' | 'rust' | 'java' | 'ruby' | 'docker' | 'generic';
@@ -29,7 +29,6 @@ export function detectProject(dir: string): ProjectInfo {
   if (existsSync(pkgPath)) {
     info.type = 'node';
     try {
-      const { readFileSync } = require('node:fs');
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
       info.name = pkg.name ?? null;
       info.version = pkg.version ?? null;
@@ -39,13 +38,36 @@ export function detectProject(dir: string): ProjectInfo {
   }
 
   // Check for Go project
-  if (existsSync(resolve(dir, 'go.mod'))) {
+  const goModPath = resolve(dir, 'go.mod');
+  if (existsSync(goModPath)) {
     info.type = 'go';
+    try {
+      const goModContent = readFileSync(goModPath, 'utf-8');
+      const goMatch = goModContent.match(/^module\s+(\S+)/m);
+      if (goMatch) {
+        // Extract last path segment: github.com/org/name -> name
+        const segments = goMatch[1].split('/');
+        info.name = segments[segments.length - 1];
+      }
+    } catch {
+      // Ignore read errors
+    }
   }
 
   // Check for Python project
-  if (
-    existsSync(resolve(dir, 'pyproject.toml')) ||
+  const pyprojectPath = resolve(dir, 'pyproject.toml');
+  if (existsSync(pyprojectPath)) {
+    info.type = 'python';
+    try {
+      const pyContent = readFileSync(pyprojectPath, 'utf-8');
+      const pyMatch = pyContent.match(/^\s*name\s*=\s*"([^"]+)"/m);
+      if (pyMatch) {
+        info.name = pyMatch[1];
+      }
+    } catch {
+      // Ignore read errors
+    }
+  } else if (
     existsSync(resolve(dir, 'setup.py')) ||
     existsSync(resolve(dir, 'requirements.txt'))
   ) {
