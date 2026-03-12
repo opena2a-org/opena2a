@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.8] - 2026-03-12
+
+### Fixed
+- Fix `claim` command failing to find packages that `trust` could find -- now defaults source to 'npm' before registry lookup
+- Fix `trust --verbose` producing identical output to non-verbose -- now shows request URL, response time, agent ID, source, and version
+
 ## [0.5.0] - 2026-03-05
 
 ### Fixed

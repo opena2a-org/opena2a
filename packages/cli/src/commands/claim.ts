@@ -262,6 +262,10 @@ export async function claim(options: ClaimOptions): Promise<number> {
 
   const spinner = new Spinner('');
 
+  // Default source to "npm" -- same pattern as trust.ts.
+  // Without a source the registry API returns 400 "source parameter is required".
+  const source = options.source ?? 'npm';
+
   // Step 1: Look up the package in the registry
   if (!isCi && !isJson) {
     spinner.update('Looking up trust profile...');
@@ -270,7 +274,7 @@ export async function claim(options: ClaimOptions): Promise<number> {
 
   let lookupData: TrustLookupResponse;
   try {
-    const result = await _internals.fetchTrustLookup(registryUrl, packageName, options.source);
+    const result = await _internals.fetchTrustLookup(registryUrl, packageName, source);
     if (!isCi && !isJson) spinner.stop();
 
     if (!result.ok || !result.data) {
@@ -281,7 +285,7 @@ export async function claim(options: ClaimOptions): Promise<number> {
         process.stdout.write(yellow(msg) + '\n');
         if (options.verbose) {
           const params = new URLSearchParams({ package: packageName });
-          if (options.source) params.set('source', options.source);
+          params.set('source', source);
           process.stdout.write(dim(`Registry: ${registryUrl}`) + '\n');
           process.stdout.write(dim(`Request: GET /v1/trust/lookup?${params}`) + '\n');
         }
@@ -329,15 +333,16 @@ export async function claim(options: ClaimOptions): Promise<number> {
     spinner.start();
   }
 
-  const source = options.source ?? lookupData.source ?? 'npm';
+  // Re-resolve source: prefer explicit option, then registry-reported source, then default
+  const ownershipSource = options.source ?? lookupData.source ?? source;
   let proof: OwnershipProof | null = null;
 
-  if (source === 'npm' || (!options.source && !lookupData.source)) {
+  if (ownershipSource === 'npm' || (!options.source && !lookupData.source)) {
     if (!isCi && !isJson) spinner.update('Verifying npm publish access...');
     proof = await _internals.verifyNpmOwnership(packageName);
   }
 
-  if (!proof && (source === 'github' || !options.source)) {
+  if (!proof && (ownershipSource === 'github' || !options.source)) {
     if (!isCi && !isJson) spinner.update('Verifying GitHub repository access...');
     proof = await _internals.verifyGithubOwnership(packageName);
   }

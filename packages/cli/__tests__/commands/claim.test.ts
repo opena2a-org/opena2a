@@ -249,7 +249,7 @@ describe('claim', () => {
     expect(_internals.fetchTrustLookup).toHaveBeenCalledWith(
       'https://test-registry.example.com',
       'my-local-package',
-      undefined,
+      'npm',
     );
   });
 
