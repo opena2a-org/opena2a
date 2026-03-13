@@ -213,6 +213,21 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
     aim.getIdentity(); // ensure identity exists
+
+    // Auto-sync trust hints if a manifest exists (tools are attached)
+    const targetDir = path.resolve(options.dir ?? process.cwd());
+    try {
+      const { readManifest } = await import('../identity/manifest.js');
+      const { collectTrustHints } = await import('../identity/trust-collector.js');
+      const manifest = readManifest(targetDir);
+      if (manifest) {
+        const { hints } = collectTrustHints(targetDir, manifest);
+        (aim as any).setTrustHints(hints);
+      }
+    } catch {
+      // Identity module not available or manifest missing — that's fine
+    }
+
     const trust = aim.calculateTrust();
 
     if (isJson) {
