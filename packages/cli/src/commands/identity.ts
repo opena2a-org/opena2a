@@ -2,6 +2,18 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { bold, dim, green, yellow, red, gray, cyan } from '../util/colors.js';
 
+interface PolicyRule {
+  capability: string;
+  action: 'allow' | 'deny';
+  plugins?: string[];
+}
+
+interface Policy {
+  version: string;
+  defaultAction: 'allow' | 'deny';
+  rules: PolicyRule[];
+}
+
 interface IdentityOptions {
   subcommand: string;
   name?: string;
@@ -283,10 +295,18 @@ async function handleLog(options: IdentityOptions): Promise<number> {
     const aim = new mod.AIMCore({ agentName: 'default' });
     aim.getIdentity(); // ensure identity exists
 
+    const validResults = ['allowed', 'denied', 'error'] as const;
+    const resultInput = options.result ?? 'allowed';
+    if (!validResults.includes(resultInput as typeof validResults[number])) {
+      process.stderr.write(`Invalid --result value: ${resultInput}\n`);
+      process.stderr.write('Valid values: allowed, denied, error\n');
+      return 1;
+    }
+
     const event = aim.logEvent({
       action,
       target: options.target ?? '',
-      result: (options.result as 'allowed' | 'denied' | 'error') ?? 'allowed',
+      result: resultInput as 'allowed' | 'denied' | 'error',
       plugin: options.plugin ?? 'cli',
     });
 
@@ -326,7 +346,7 @@ async function handlePolicy(options: IdentityOptions): Promise<number> {
   // Otherwise show the current policy
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
-    const p = aim.loadPolicy() as { defaultAction: string; rules: Array<{ capability: string; action: string; plugins?: string[] }> };
+    const p = aim.loadPolicy() as Policy;
 
     if (isJson) {
       process.stdout.write(JSON.stringify(p, null, 2) + '\n');
@@ -375,17 +395,14 @@ async function handlePolicyLoad(mod: typeof import('@opena2a/aim-core'), options
 
   try {
     const content = fs.readFileSync(resolved, 'utf-8');
-    let parsed: any;
+    let parsed: Policy;
 
     if (resolved.endsWith('.json')) {
       parsed = JSON.parse(content);
+    } else if (resolved.endsWith('.yaml') || resolved.endsWith('.yml')) {
+      parsed = parseSimpleYamlPolicy(content);
     } else {
-      // Simple YAML parsing for policy files
-      // Supports the common format: version, defaultAction, rules[]
-      const yaml = await import('node:fs');
-      // For now, only support JSON policies. YAML requires a parser.
-      process.stderr.write('Only JSON policy files are supported. Convert your YAML to JSON.\n');
-      process.stderr.write('Example: { "version": "1", "defaultAction": "deny", "rules": [{"capability": "db:read", "action": "allow"}] }\n');
+      process.stderr.write('Unsupported file format. Use .json or .yaml/.yml\n');
       return 1;
     }
 
@@ -534,10 +551,7 @@ async function handleVerify(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
   try {
-    const mod2 = await loadAimCore();
-    if (!mod2) return 1;
-
-    const aim = new mod2.AIMCore({ agentName: 'default' });
+    const aim = new mod.AIMCore({ agentName: 'default' });
     const dataBytes = new TextEncoder().encode(data);
     const sigBytes = new Uint8Array(Buffer.from(signature, 'base64'));
     const valid = aim.verify(dataBytes, sigBytes, publicKey);
@@ -575,4 +589,100 @@ function progressBar(pct: number, width: number): string {
   const filled = Math.round((pct / 100) * width);
   const empty = width - filled;
   return green('#'.repeat(filled)) + dim('.'.repeat(empty));
+}
+
+/**
+ * Parse a simple YAML capability policy file.
+ *
+ * Supports the format:
+ *   version: "1"
+ *   defaultAction: deny
+ *   rules:
+ *     - capability: "db:read"
+ *       action: allow
+ *     - capability: "net:*"
+ *       action: deny
+ *       plugins:
+ *         - untrusted-plugin
+ */
+function parseSimpleYamlPolicy(content: string): Policy {
+  const lines = content.split('\n');
+  let version = '1';
+  let defaultAction: 'allow' | 'deny' = 'deny';
+  const rules: Array<{ capability: string; action: 'allow' | 'deny'; plugins?: string[] }> = [];
+
+  let inRules = false;
+  let currentRule: { capability?: string; action?: string; plugins?: string[] } | null = null;
+  let inPlugins = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+
+    // Top-level keys
+    if (!line.startsWith(' ') && !line.startsWith('\t')) {
+      inRules = false;
+      inPlugins = false;
+      if (currentRule?.capability && currentRule?.action) {
+        rules.push(currentRule as { capability: string; action: 'allow' | 'deny'; plugins?: string[] });
+        currentRule = null;
+      }
+    }
+
+    const kvMatch = trimmed.match(/^(\w+):\s*(.*)$/);
+
+    if (kvMatch && !inRules) {
+      const [, key, val] = kvMatch;
+      const cleanVal = val.replace(/^["']|["']$/g, '');
+      if (key === 'version') version = cleanVal;
+      if (key === 'defaultAction') defaultAction = cleanVal as 'allow' | 'deny';
+      if (key === 'rules') inRules = true;
+      continue;
+    }
+
+    if (inRules) {
+      // New rule entry (starts with "- ")
+      if (trimmed.startsWith('- ')) {
+        if (currentRule?.capability && currentRule?.action) {
+          rules.push(currentRule as { capability: string; action: 'allow' | 'deny'; plugins?: string[] });
+        }
+        currentRule = {};
+        inPlugins = false;
+        const inlineKv = trimmed.slice(2).match(/^(\w+):\s*(.*)$/);
+        if (inlineKv) {
+          const cleanVal = inlineKv[2].replace(/^["']|["']$/g, '');
+          if (inlineKv[1] === 'capability') currentRule.capability = cleanVal;
+          if (inlineKv[1] === 'action') currentRule.action = cleanVal;
+        }
+        continue;
+      }
+
+      // Rule properties
+      if (currentRule && kvMatch) {
+        const [, key, val] = kvMatch;
+        const cleanVal = val.replace(/^["']|["']$/g, '');
+        if (key === 'capability') currentRule.capability = cleanVal;
+        if (key === 'action') currentRule.action = cleanVal;
+        if (key === 'plugins') {
+          inPlugins = true;
+          currentRule.plugins = [];
+        }
+        continue;
+      }
+
+      // Plugin list items
+      if (inPlugins && currentRule && trimmed.startsWith('- ')) {
+        const pluginName = trimmed.slice(2).replace(/^["']|["']$/g, '');
+        if (!currentRule.plugins) currentRule.plugins = [];
+        currentRule.plugins.push(pluginName);
+      }
+    }
+  }
+
+  // Flush last rule
+  if (currentRule?.capability && currentRule?.action) {
+    rules.push(currentRule as { capability: string; action: 'allow' | 'deny'; plugins?: string[] });
+  }
+
+  return { version, defaultAction, rules };
 }
