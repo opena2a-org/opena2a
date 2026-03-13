@@ -679,7 +679,7 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
       agent: { name: id.agentName, agentId: id.agentId, publicKey: id.publicKey, created: id.createdAt },
       tools: enabledTools,
       bridging: { autoSync: options.autoSync ?? true, lastSyncAt: null as string | null },
-      registry: { shareIntel: false },
+      registry: { contribute: false, gtin: false, sensorToken: null },
     };
 
     const { hints, details } = collectTrustHints(targetDir, manifest);

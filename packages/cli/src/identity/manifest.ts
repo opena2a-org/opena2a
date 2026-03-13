@@ -32,7 +32,12 @@ export interface AgentManifest {
     lastSyncAt: string | null;
   };
   registry: {
-    shareIntel: boolean;
+    /** Opt-in: share anonymized scan findings with OpenA2A Registry (POST /v1/telemetry/scan) */
+    contribute: boolean;
+    /** Opt-in: join Global Threat Intelligence Network for ARP runtime telemetry (POST /v1/telemetry/runtime) */
+    gtin: boolean;
+    /** Hashed sensor token for GTIN (SHA256, generated locally, never reversible) */
+    sensorToken: string | null;
   };
 }
 
@@ -103,8 +108,11 @@ function serializeManifestYaml(m: AgentManifest): string {
     `  autoSync: ${m.bridging.autoSync}`,
     `  lastSyncAt: ${m.bridging.lastSyncAt ? `"${m.bridging.lastSyncAt}"` : 'null'}`,
     '',
+    '# Registry intelligence (opt-in, no PII, no source code)',
     'registry:',
-    `  shareIntel: ${m.registry.shareIntel}`,
+    `  contribute: ${m.registry.contribute}`,
+    `  gtin: ${m.registry.gtin}`,
+    `  sensorToken: ${m.registry.sensorToken ? `"${m.registry.sensorToken}"` : 'null'}`,
     '',
   ];
   return lines.join('\n');
@@ -152,7 +160,9 @@ function parseManifestYaml(content: string): AgentManifest {
       lastSyncAt: flat['bridging.lastSyncAt'] === 'null' ? null : (flat['bridging.lastSyncAt'] ?? null),
     },
     registry: {
-      shareIntel: flat['registry.shareIntel'] === 'true',
+      contribute: flat['registry.contribute'] === 'true',
+      gtin: flat['registry.gtin'] === 'true',
+      sensorToken: flat['registry.sensorToken'] === 'null' ? null : (flat['registry.sensorToken'] ?? null),
     },
   };
 }
