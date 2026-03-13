@@ -28,7 +28,8 @@ const USAGE = [
   'Identity & Keys',
   '  list               Show local agent identity',
   '  create --name <n>  Create a new agent identity',
-  '  sign --data <d>    Sign data with agent private key',
+  '  sign --data <d>    Sign a string with agent private key',
+  '  sign --file <f>    Sign a file with agent private key',
   '  verify             Verify a signature against a public key',
   '',
   'Trust & Audit',
@@ -135,14 +136,32 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
 
   try {
     const aim = new mod.AIMCore({ agentName: name });
-    const id = aim.getIdentity();
+
+    // Check if identity already exists
+    let existing = false;
+    try {
+      const prev = aim.getIdentity();
+      if (prev && prev.agentId) {
+        existing = true;
+      }
+    } catch {
+      // No existing identity -- good, we'll create one
+    }
+
+    const id = aim.getOrCreateIdentity();
 
     if (isJson) {
-      process.stdout.write(JSON.stringify(id, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ ...id, created: !existing }, null, 2) + '\n');
       return 0;
     }
 
-    process.stdout.write(green('Identity created') + '\n');
+    if (existing) {
+      process.stdout.write(yellow('Identity already exists') + '\n');
+      process.stdout.write(dim('  aim-core uses a single identity per data directory.') + '\n');
+      process.stdout.write(dim('  To start fresh, remove ~/.opena2a/aim-core/ and re-run.') + '\n\n');
+    } else {
+      process.stdout.write(green('Identity created') + '\n');
+    }
     process.stdout.write(`  Agent ID:    ${cyan(id.agentId)}\n`);
     process.stdout.write(`  Name:        ${id.agentName}\n`);
     process.stdout.write(`  Public Key:  ${dim(id.publicKey.slice(0, 32) + '...')}\n`);
@@ -436,10 +455,27 @@ async function handleSign(options: IdentityOptions): Promise<number> {
   const mod = await loadAimCore();
   if (!mod) return 1;
 
-  const data = options.data;
-  if (!data) {
-    process.stderr.write('Missing required option: --data <string>\n');
-    process.stderr.write('Usage: opena2a identity sign --data "message to sign"\n');
+  let data: string | undefined = options.data;
+  let label = data;
+  let dataBytes: Uint8Array;
+
+  if (options.file && options.subcommand === 'sign') {
+    // Sign file contents
+    const resolved = path.resolve(options.file);
+    if (!fs.existsSync(resolved)) {
+      process.stderr.write(`File not found: ${resolved}\n`);
+      return 1;
+    }
+    const fileContents = fs.readFileSync(resolved);
+    dataBytes = new Uint8Array(fileContents);
+    label = path.basename(resolved);
+  } else if (data) {
+    dataBytes = new TextEncoder().encode(data);
+  } else {
+    process.stderr.write('Missing required option: --data <string> or --file <path>\n');
+    process.stderr.write('Usage:\n');
+    process.stderr.write('  opena2a identity sign --data "message to sign"\n');
+    process.stderr.write('  opena2a identity sign --file ./config.json\n');
     return 1;
   }
 
@@ -448,13 +484,12 @@ async function handleSign(options: IdentityOptions): Promise<number> {
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
     const id = aim.getIdentity();
-    const dataBytes = new TextEncoder().encode(data);
     const signature = aim.sign(dataBytes);
     const sigBase64 = Buffer.from(signature).toString('base64');
 
     if (isJson) {
       process.stdout.write(JSON.stringify({
-        data,
+        ...(options.file ? { file: path.resolve(options.file) } : { data }),
         signature: sigBase64,
         publicKey: id.publicKey,
         agentId: id.agentId,
@@ -463,7 +498,12 @@ async function handleSign(options: IdentityOptions): Promise<number> {
     }
 
     process.stdout.write(bold('Signature') + '\n');
-    process.stdout.write(`  Data:       ${dim(data.length > 60 ? data.slice(0, 60) + '...' : data)}\n`);
+    const displayLabel = label && label.length > 60 ? label.slice(0, 60) + '...' : (label ?? '');
+    if (options.file) {
+      process.stdout.write(`  File:       ${dim(path.resolve(options.file))}\n`);
+    } else {
+      process.stdout.write(`  Data:       ${dim(displayLabel)}\n`);
+    }
     process.stdout.write(`  Signature:  ${sigBase64}\n`);
     process.stdout.write(`  Public Key: ${dim(id.publicKey)}\n`);
     return 0;
