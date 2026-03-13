@@ -188,8 +188,8 @@ export function verifyShellHookIntegrity(
   if (startIdx === -1 || endIdx === -1) {
     return {
       name: 'shell-hook',
-      status: 'warn',
-      detail: 'Shield hook markers not found in rc file. Hook may not be installed.',
+      status: 'pass',
+      detail: 'Shell hook not installed (opt-in via: opena2a shield init --shell-hook).',
       checkedAt: now,
     };
   }

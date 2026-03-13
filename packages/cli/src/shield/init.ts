@@ -39,6 +39,8 @@ export async function shieldInit(options: {
   ci?: boolean;
   format?: string;
   verbose?: boolean;
+  shellHook?: boolean;
+  aiTools?: boolean;
 }): Promise<{ exitCode: number; result: InitResult }> {
   const targetDir = options.targetDir ?? process.cwd();
   const ci = options.ci ?? false;
@@ -272,7 +274,7 @@ export async function shieldInit(options: {
   steps.push({ name: 'Policy generation', status: 'done' });
   if (isText) process.stdout.write('\n');
 
-  // --- Step 7: Shell Integration ---
+  // --- Step 7: Shell Integration (opt-in via --shell-hook) ---
   if (isText) process.stdout.write(bold('Step 7: Shell Integration\n'));
   let shellHookInstalled = false;
 
@@ -280,7 +282,7 @@ export async function shieldInit(options: {
     : process.env.SHELL?.includes('bash') ? 'bash' as const
     : null;
 
-  if (shell && !ci) {
+  if (options.shellHook && shell && !ci) {
     const rcFile = shell === 'zsh'
       ? join(homedir(), '.zshrc')
       : join(homedir(), '.bashrc');
@@ -291,7 +293,6 @@ export async function shieldInit(options: {
         if (isText) process.stdout.write(yellow('  Cannot read rc file, skipping shell hooks\n'));
         steps.push({ name: 'Shell integration', status: 'skipped' });
         if (isText) process.stdout.write('\n');
-        // Skip shell integration entirely if we can't read an existing file
         rcContent = '';
       }
     }
@@ -305,6 +306,8 @@ export async function shieldInit(options: {
       shellHookInstalled = true;
       if (isText) process.stdout.write(green(`  Shell hooks installed in ~/.${shell}rc\n`));
     }
+  } else if (!options.shellHook) {
+    if (isText) process.stdout.write(dim('  Skipped (opt-in: use --shell-hook to install)\n'));
   } else if (ci) {
     if (isText) process.stdout.write(dim('  Shell hooks skipped (CI mode)\n'));
   } else {
@@ -331,12 +334,12 @@ export async function shieldInit(options: {
     if (isText) process.stdout.write(dim('  ARP initialization skipped\n'));
   }
   if (isText) process.stdout.write('\n');
-  // --- Step 9: AI Tool Configuration ---
+  // --- Step 9: AI Tool Configuration (opt-in via --ai-tools) ---
   if (isText) process.stdout.write(bold('Step 9: AI Tool Configuration\n'));
   let aiToolsConfigured = false;
   let aiToolResult: AiToolConfigResult | null = null;
 
-  if (!ci) {
+  if (options.aiTools && !ci) {
     const detectedAssistants = scan.assistants
       .filter((a: DetectedAssistant) => a.detected)
       .map((a: DetectedAssistant) => a.name);
@@ -355,6 +358,8 @@ export async function shieldInit(options: {
         process.stdout.write(dim('  No AI tools detected\n'));
       }
     }
+  } else if (!options.aiTools) {
+    if (isText) process.stdout.write(dim('  Skipped (opt-in: use --ai-tools to configure)\n'));
   } else {
     if (isText) process.stdout.write(dim('  AI tool configuration skipped (CI mode)\n'));
   }

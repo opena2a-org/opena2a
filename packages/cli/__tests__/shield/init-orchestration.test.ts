@@ -173,10 +173,10 @@ describe('shield init orchestration', () => {
     expect(step?.status).toBe('skipped');
   });
 
-  it('skips AI tool config in CI mode', async () => {
+  it('skips AI tool config when --ai-tools is not passed', async () => {
     const { result } = await shieldInit({
       targetDir: tempDir,
-      ci: true,
+      ci: false,
       format: 'json',
     });
 
@@ -185,11 +185,12 @@ describe('shield init orchestration', () => {
     expect(step?.status).toBe('skipped');
   });
 
-  it('configures AI tools in non-CI mode', async () => {
+  it('configures AI tools when --ai-tools is passed', async () => {
     const { result } = await shieldInit({
       targetDir: tempDir,
       ci: false,
       format: 'json',
+      aiTools: true,
     });
 
     // AI tool config should run (Claude Code always configured)

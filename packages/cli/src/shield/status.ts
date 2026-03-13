@@ -269,7 +269,7 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
   // Recommendations
   const recs: string[] = [];
   if (!status.policyLoaded) recs.push('Run: opena2a shield init');
-  if (!status.shellIntegration) recs.push('Shell hooks not installed. Re-run: opena2a shield init');
+  // Shell hooks are opt-in -- don't recommend installation unless user has opted in before
   if (status.integrityStatus === 'lockdown') recs.push('LOCKDOWN active. Run: opena2a shield recover --verify');
   if (status.integrityStatus === 'compromised') recs.push('Integrity issues detected. Run: opena2a shield selfcheck');
 

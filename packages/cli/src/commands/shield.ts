@@ -43,6 +43,8 @@ export interface ShieldOptions {
   format?: string;
   verbose?: boolean;
   report?: string;
+  shellHook?: boolean;
+  aiTools?: boolean;
 }
 
 // --- Core dispatcher ---
@@ -94,6 +96,8 @@ async function handleInit(options: ShieldOptions): Promise<number> {
     ci: options.ci,
     format: options.format,
     verbose: options.verbose,
+    shellHook: options.shellHook,
+    aiTools: options.aiTools,
   });
   return exitCode;
 }
@@ -295,11 +299,10 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
 
   if (isJson) {
     process.stdout.write(JSON.stringify(decision, null, 2) + '\n');
-  } else if (decision.outcome !== 'blocked') {
-    // Only print non-blocked outcomes to stdout (blocked warning goes to stderr above)
-    const outcomeLabel = decision.outcome === 'allowed' ? green('ALLOWED')
-      : yellow('MONITORED');
-    process.stdout.write(`${outcomeLabel}  rule=${decision.rule}\n`);
+  } else if (decision.outcome === 'monitored') {
+    // Only print monitored outcomes -- allowed is silent to avoid noise
+    // in shell preexec hooks where evaluate runs on every command.
+    process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}\n`);
   }
 
   return decision.outcome === 'blocked' ? 1 : 0;

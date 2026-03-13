@@ -303,6 +303,8 @@ Learn more: https://opena2a.org/docs`);
     .option('--forensic', 'Forensic mode')
     .option('--analyze', 'Enable LLM analysis')
     .option('--report <path>', 'Write HTML posture report to file')
+    .option('--shell-hook', 'Install shell preexec hook (shield init only)')
+    .option('--ai-tools', 'Configure AI tool settings (shield init only)')
     .action(async (subcommand: string, args: string[], opts) => {
       const { shield } = await import('./commands/shield.js');
       const globalOpts = program.opts();
