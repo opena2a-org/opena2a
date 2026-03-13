@@ -216,11 +216,13 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
 
     // Auto-sync trust hints if a manifest exists (tools are attached)
     const targetDir = path.resolve(options.dir ?? process.cwd());
+    let hasManifest = false;
     try {
       const { readManifest } = await import('../identity/manifest.js');
       const { collectTrustHints } = await import('../identity/trust-collector.js');
       const manifest = readManifest(targetDir);
       if (manifest) {
+        hasManifest = true;
         const { hints } = collectTrustHints(targetDir, manifest);
         (aim as any).setTrustHints(hints);
       }
@@ -231,7 +233,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     const trust = aim.calculateTrust();
 
     if (isJson) {
-      process.stdout.write(JSON.stringify(trust, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ ...trust, attached: hasManifest }, null, 2) + '\n');
       return 0;
     }
 
@@ -252,8 +254,34 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     }
     process.stdout.write(gray('-'.repeat(50)) + '\n');
 
-    if (options.verbose && trust.calculatedAt) {
-      process.stdout.write(dim(`  Calculated: ${trust.calculatedAt}`) + '\n');
+    if (options.verbose) {
+      if (trust.calculatedAt) {
+        process.stdout.write(dim(`  Calculated: ${trust.calculatedAt}`) + '\n');
+      }
+      // Show improvement suggestions for factors at 0%
+      const zeroFactors = Object.entries(trust.factors).filter(([, v]) => (v as number) === 0);
+      if (zeroFactors.length > 0) {
+        process.stdout.write('\n' + bold('  How to improve:') + '\n');
+        const factorSuggestions: Record<string, string> = {
+          secretsManaged: 'npx secretless-ai init',
+          configSigned: 'opena2a guard sign',
+          skillsVerified: 'npx hackmyagent secure',
+          networkControlled: 'opena2a runtime --init',
+          heartbeatMonitored: 'opena2a shield init',
+        };
+        for (const [factor] of zeroFactors) {
+          const suggestion = factorSuggestions[factor];
+          if (suggestion) {
+            const label = factor.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+            process.stdout.write(`    ${label.padEnd(18)} ${dim(suggestion)}\n`);
+          }
+        }
+      }
+    }
+
+    if (!hasManifest) {
+      process.stdout.write('\n' + dim('  No tools attached. Run: opena2a identity attach --all') + '\n');
+      process.stdout.write(dim('  Attaching tools improves trust by syncing real security state.') + '\n');
     }
     return 0;
   } catch (err) {
