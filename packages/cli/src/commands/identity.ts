@@ -648,6 +648,13 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
     } else if (options.tools) {
       // Enable specific tools, merge with existing
       const requested = options.tools.split(',').map(t => t.trim().toLowerCase());
+      const knownTools = ['secretless', 'configguard', 'guard', 'arp', 'hma', 'hackmyagent', 'shield'];
+      const unknown = requested.filter(t => !knownTools.includes(t));
+      if (unknown.length > 0) {
+        process.stderr.write(`Unknown tool(s): ${unknown.join(', ')}\n`);
+        process.stderr.write(`Valid tools: secretless, configguard, arp, hma, shield\n`);
+        return 1;
+      }
       if (existing) {
         enabledTools = { ...existing.tools };
       }
@@ -678,11 +685,36 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
     const { hints, details } = collectTrustHints(targetDir, manifest);
 
     if (!isJson) {
+      if (options.tools) {
+        process.stdout.write(bold('  Requested tools: ') + options.tools + '\n\n');
+      }
       process.stdout.write(bold('  Tool Detection:') + '\n');
-      for (const d of details) {
-        const icon = d.active ? green('ACTIVE') : dim(' OFF  ');
-        const enabledLabel = enabledTools[d.tool.toLowerCase() as keyof typeof enabledTools] ? '' : dim(' (not enabled)');
-        process.stdout.write(`    ${icon}  ${d.tool.padEnd(14)} ${dim(d.reason)}${enabledLabel}\n`);
+
+      // Show all tools (not just enabled ones) so user sees the full picture
+      const allToolNames = [
+        { key: 'secretless' as const, label: 'Secretless' },
+        { key: 'configguard' as const, label: 'ConfigGuard' },
+        { key: 'arp' as const, label: 'ARP' },
+        { key: 'hma' as const, label: 'HMA' },
+        { key: 'shield' as const, label: 'Shield' },
+      ];
+      for (const t of allToolNames) {
+        const isEnabled = enabledTools[t.key];
+        const detail = details.find(d => d.tool === t.label);
+        let icon: string;
+        let reason: string;
+        if (!isEnabled) {
+          icon = dim(' SKIP ');
+          reason = 'not requested';
+        } else if (detail?.active) {
+          icon = green('ACTIVE');
+          reason = detail.reason;
+        } else {
+          icon = yellow(' OFF  ');
+          reason = detail?.reason ?? 'not detected';
+        }
+        const suffix = '';
+        process.stdout.write(`    ${icon}  ${t.label.padEnd(14)} ${dim(reason)}${suffix}\n`);
       }
       process.stdout.write('\n');
     }
