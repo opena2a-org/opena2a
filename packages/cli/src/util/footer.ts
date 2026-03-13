@@ -1,23 +1,12 @@
 /**
- * Shared CLI footer for all command output.
- * Displays a short attribution line with links.
- * Suppressed when --json or --ci flags are active.
+ * Shared CLI footer stub.
+ * The promotional footer was removed to keep CLI output clean and
+ * script-friendly.  The export is retained so call sites don't break.
  */
-
-import { cyan } from './colors.js';
 
 /**
- * Print the OpenA2A footer to stdout.
- * Call this after command output completes.
- *
- * @param options.ci   - true when running in CI mode (suppresses footer)
- * @param options.json - true when JSON output is requested (suppresses footer)
+ * No-op -- footer output has been suppressed.
  */
-export function printFooter(options?: { ci?: boolean; json?: boolean }): void {
-  if (options?.ci || options?.json) return;
-
-  process.stdout.write('\n');
-  process.stdout.write(cyan('  OpenA2A -- open-source security for AI agents') + '\n');
-  process.stdout.write(cyan('  opena2a.org  |  github.com/opena2a-org') + '\n');
-  process.stdout.write('\n');
+export function printFooter(_options?: { ci?: boolean; json?: boolean }): void {
+  // intentionally empty
 }
