@@ -264,15 +264,26 @@ Learn more: https://opena2a.org/docs`);
 
   // Identity command (native, uses @opena2a/aim-core)
   program
-    .command('identity [subcommand]')
-    .description('Agent identity management (list|create|trust|audit)')
+    .command('identity [subcommand] [args...]')
+    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify)')
+    .allowUnknownOption(true)
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
-    .action(async (subcommand: string | undefined, opts) => {
+    .option('--action <action>', 'Audit event action (for log)')
+    .option('--target <target>', 'Audit event target (for log)')
+    .option('--result <result>', 'Audit event result: allowed|denied|error (for log)')
+    .option('--plugin <plugin>', 'Plugin name (for log, check)')
+    .option('--file <path>', 'Policy file path (for policy load)')
+    .option('--data <data>', 'Data to sign or verify')
+    .option('--signature <sig>', 'Base64 signature (for verify)')
+    .option('--public-key <key>', 'Base64 public key (for verify)')
+    .action(async (subcommand: string | undefined, args: string[], opts) => {
       if (!subcommand) {
         subcommand = 'list';
       }
+      // For "check", the capability is the first positional arg
+      const capability = subcommand === 'check' ? args[0] : undefined;
       const { identity } = await import('./commands/identity.js');
       const globalOpts = program.opts();
       process.exitCode = await identity({
@@ -283,6 +294,15 @@ Learn more: https://opena2a.org/docs`);
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
+        action: opts.action,
+        target: opts.target,
+        result: opts.result,
+        plugin: opts.plugin,
+        file: opts.file,
+        data: opts.data,
+        signature: opts.signature,
+        publicKey: opts.publicKey,
+        capability,
       });
     });
 
