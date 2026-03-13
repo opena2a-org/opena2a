@@ -265,7 +265,7 @@ Learn more: https://opena2a.org/docs`);
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
-    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify)')
+    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync)')
     .allowUnknownOption(true)
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
@@ -278,6 +278,9 @@ Learn more: https://opena2a.org/docs`);
     .option('--data <data>', 'Data to sign or verify')
     .option('--signature <sig>', 'Base64 signature (for verify)')
     .option('--public-key <key>', 'Base64 public key (for verify)')
+    .option('--tools <list>', 'Comma-separated tools to enable (attach)')
+    .option('--all', 'Enable all detected tools (attach)')
+    .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
     .action(async (subcommand: string | undefined, args: string[], opts) => {
       if (!subcommand) {
         subcommand = 'list';
@@ -303,6 +306,9 @@ Learn more: https://opena2a.org/docs`);
         signature: opts.signature,
         publicKey: opts.publicKey,
         capability,
+        tools: opts.tools,
+        all: opts.all,
+        autoSync: opts.autoSync,
       });
     });
 

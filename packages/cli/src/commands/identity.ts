@@ -31,6 +31,9 @@ interface IdentityOptions {
   data?: string;
   signature?: string;
   publicKey?: string;
+  tools?: string;
+  all?: boolean;
+  autoSync?: boolean;
 }
 
 const USAGE = [
@@ -53,6 +56,12 @@ const USAGE = [
   '  policy             Show current capability policy',
   '  policy load <file> Load a YAML capability policy',
   '  check <capability> Check if a capability is allowed',
+  '',
+  'Cross-Tool Integration',
+  '  attach [--tools <list>]  Wire tools to identity (audit + trust)',
+  '  attach --all             Enable all detected tools',
+  '  detach                   Remove cross-tool wiring',
+  '  sync                     Sync events from enabled tools',
   '',
 ].join('\n');
 
@@ -78,6 +87,12 @@ export async function identity(options: IdentityOptions): Promise<number> {
       return handleSign(options);
     case 'verify':
       return handleVerify(options);
+    case 'attach':
+      return handleAttach(options);
+    case 'detach':
+      return handleDetach(options);
+    case 'sync':
+      return handleSync(options);
     default:
       process.stderr.write(`Unknown identity subcommand: ${sub}\n`);
       process.stderr.write(USAGE + '\n');
@@ -569,6 +584,313 @@ async function handleVerify(options: IdentityOptions): Promise<number> {
     return valid ? 0 : 1;
   } catch (err) {
     process.stderr.write(`Failed to verify: ${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// attach -- wire tools to identity
+// ---------------------------------------------------------------------------
+
+async function handleAttach(options: IdentityOptions): Promise<number> {
+  const mod = await loadAimCore();
+  if (!mod) return 1;
+
+  const isJson = options.format === 'json';
+  const targetDir = path.resolve(options.dir ?? process.cwd());
+
+  try {
+    // 1. Get or create identity
+    const agentName = options.name ?? 'default';
+    const aim = new mod.AIMCore({ agentName });
+    const id = aim.getOrCreateIdentity();
+
+    if (!isJson) {
+      process.stdout.write(bold('Attaching identity to tools') + '\n');
+      process.stdout.write(gray('-'.repeat(60)) + '\n');
+      process.stdout.write(`  Agent:     ${cyan(id.agentId)}\n`);
+      process.stdout.write(`  Name:      ${id.agentName}\n`);
+      process.stdout.write(`  Directory: ${dim(targetDir)}\n\n`);
+    }
+
+    // 2. Determine which tools to enable
+    const { readManifest, writeManifest } = await import('../identity/manifest.js');
+    const { collectTrustHints } = await import('../identity/trust-collector.js');
+    const { importAllToolEvents } = await import('../identity/bridges.js');
+
+    const existing = readManifest(targetDir);
+    let enabledTools = {
+      secretless: false,
+      configguard: false,
+      arp: false,
+      hma: false,
+      shield: false,
+    };
+
+    if (options.all) {
+      // Enable all
+      enabledTools = { secretless: true, configguard: true, arp: true, hma: true, shield: true };
+    } else if (options.tools) {
+      // Enable specific tools, merge with existing
+      const requested = options.tools.split(',').map(t => t.trim().toLowerCase());
+      if (existing) {
+        enabledTools = { ...existing.tools };
+      }
+      for (const tool of requested) {
+        if (tool === 'secretless') enabledTools.secretless = true;
+        if (tool === 'configguard' || tool === 'guard') enabledTools.configguard = true;
+        if (tool === 'arp') enabledTools.arp = true;
+        if (tool === 'hma' || tool === 'hackmyagent') enabledTools.hma = true;
+        if (tool === 'shield') enabledTools.shield = true;
+      }
+    } else if (existing) {
+      // Re-attach with existing config
+      enabledTools = existing.tools;
+    } else {
+      // First attach with no flags — enable all by default
+      enabledTools = { secretless: true, configguard: true, arp: true, hma: true, shield: true };
+    }
+
+    // 3. Collect trust hints from enabled tools
+    const manifest = {
+      version: '1',
+      agent: { name: id.agentName, agentId: id.agentId, publicKey: id.publicKey, created: id.createdAt },
+      tools: enabledTools,
+      bridging: { autoSync: options.autoSync ?? true, lastSyncAt: null as string | null },
+      registry: { shareIntel: false },
+    };
+
+    const { hints, details } = collectTrustHints(targetDir, manifest);
+
+    if (!isJson) {
+      process.stdout.write(bold('  Tool Detection:') + '\n');
+      for (const d of details) {
+        const icon = d.active ? green('ACTIVE') : dim(' OFF  ');
+        const enabledLabel = enabledTools[d.tool.toLowerCase() as keyof typeof enabledTools] ? '' : dim(' (not enabled)');
+        process.stdout.write(`    ${icon}  ${d.tool.padEnd(14)} ${dim(d.reason)}${enabledLabel}\n`);
+      }
+      process.stdout.write('\n');
+    }
+
+    // 4. Apply trust hints
+    (aim as any).setTrustHints(hints);
+
+    // 5. Calculate trust score BEFORE sync
+    const trustBefore = aim.calculateTrust();
+
+    // 6. Import events from enabled tools
+    const bridgeResults = importAllToolEvents(aim, targetDir, enabledTools);
+
+    // 7. Calculate trust score AFTER sync
+    const trustAfter = aim.calculateTrust();
+
+    // 8. Write manifest
+    manifest.bridging.lastSyncAt = new Date().toISOString();
+    writeManifest(targetDir, manifest);
+
+    // 9. Log the attach event
+    aim.logEvent({
+      action: 'identity.attach',
+      target: targetDir,
+      result: 'allowed',
+      plugin: 'opena2a-cli',
+    });
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        agentId: id.agentId,
+        name: id.agentName,
+        tools: enabledTools,
+        hints,
+        bridgeResults: bridgeResults.total,
+        trustBefore: { score: trustBefore.score, grade: trustBefore.grade },
+        trustAfter: { score: trustAfter.score, grade: trustAfter.grade },
+        manifestPath: path.join(targetDir, '.opena2a', 'agent.yaml'),
+      }, null, 2) + '\n');
+      return 0;
+    }
+
+    // 10. Display results
+    if (bridgeResults.total.imported > 0) {
+      process.stdout.write(bold('  Event Sync:') + '\n');
+      const tools = ['shield', 'arp', 'hma', 'configguard', 'secretless'] as const;
+      for (const t of tools) {
+        const r = bridgeResults[t];
+        if (r.imported > 0 || r.skipped > 0) {
+          process.stdout.write(`    ${t.padEnd(14)} ${green(`+${r.imported}`)} imported${r.skipped > 0 ? dim(`, ${r.skipped} skipped`) : ''}\n`);
+        }
+      }
+      process.stdout.write('\n');
+    }
+
+    process.stdout.write(bold('  Trust Score:') + '\n');
+    const beforeColor = trustBefore.score >= 60 ? yellow : red;
+    const afterColor = trustAfter.score >= 80 ? green : trustAfter.score >= 60 ? yellow : red;
+    const delta = trustAfter.score - trustBefore.score;
+    const deltaLabel = delta > 0 ? green(`+${delta}`) : delta < 0 ? red(`${delta}`) : dim('+0');
+
+    process.stdout.write(`    ${beforeColor(String(trustBefore.score))} -> ${afterColor(bold(String(trustAfter.score)))} (${deltaLabel})\n`);
+    process.stdout.write(`    Grade: ${afterColor(trustAfter.grade)}\n\n`);
+
+    // Active hints
+    const activeHintCount = Object.values(hints).filter(Boolean).length;
+    const totalHintCount = Object.keys(hints).length;
+    process.stdout.write(`  Trust factors active: ${green(String(activeHintCount))}/${totalHintCount}\n`);
+
+    process.stdout.write(gray('-'.repeat(60)) + '\n');
+    process.stdout.write(dim(`  Manifest: ${path.join(targetDir, '.opena2a', 'agent.yaml')}`) + '\n');
+
+    // Suggestions for inactive tools
+    const inactiveTools = details.filter(d => !d.active);
+    if (inactiveTools.length > 0) {
+      process.stdout.write('\n' + dim('  To improve your trust score:') + '\n');
+      for (const t of inactiveTools) {
+        const suggestion = getToolSuggestion(t.tool);
+        if (suggestion) {
+          process.stdout.write(dim(`    ${t.tool}: ${suggestion}`) + '\n');
+        }
+      }
+    }
+
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to attach: ${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+}
+
+function getToolSuggestion(tool: string): string | null {
+  switch (tool) {
+    case 'Secretless': return 'npx secretless-ai init';
+    case 'ConfigGuard': return 'opena2a guard sign';
+    case 'ARP': return 'opena2a runtime --init';
+    case 'HMA': return 'npx hackmyagent secure';
+    case 'Shield': return 'opena2a shield init';
+    default: return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// detach -- remove cross-tool wiring
+// ---------------------------------------------------------------------------
+
+async function handleDetach(options: IdentityOptions): Promise<number> {
+  const mod = await loadAimCore();
+  if (!mod) return 1;
+
+  const isJson = options.format === 'json';
+  const targetDir = path.resolve(options.dir ?? process.cwd());
+
+  try {
+    const { readManifest, removeManifest } = await import('../identity/manifest.js');
+
+    const manifest = readManifest(targetDir);
+    if (!manifest) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ detached: false, reason: 'no manifest found' }, null, 2) + '\n');
+      } else {
+        process.stderr.write('No identity attachment found in this directory.\n');
+        process.stderr.write(dim('Run: opena2a identity attach') + '\n');
+      }
+      return 1;
+    }
+
+    // Log detach event before removing
+    const aim = new mod.AIMCore({ agentName: manifest.agent.name });
+    aim.logEvent({
+      action: 'identity.detach',
+      target: targetDir,
+      result: 'allowed',
+      plugin: 'opena2a-cli',
+    });
+
+    // Clear trust hints
+    (aim as any).setTrustHints({});
+
+    // Remove manifest
+    removeManifest(targetDir);
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ detached: true, agentId: manifest.agent.agentId }, null, 2) + '\n');
+    } else {
+      process.stdout.write(green('Identity detached') + '\n');
+      process.stdout.write(`  Agent:     ${manifest.agent.agentId}\n`);
+      process.stdout.write(`  Directory: ${dim(targetDir)}\n`);
+      process.stdout.write(dim('\n  Identity, audit log, and tool configs are preserved.') + '\n');
+      process.stdout.write(dim('  Only the cross-tool wiring was removed.') + '\n');
+    }
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to detach: ${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// sync -- re-sync events from enabled tools
+// ---------------------------------------------------------------------------
+
+async function handleSync(options: IdentityOptions): Promise<number> {
+  const mod = await loadAimCore();
+  if (!mod) return 1;
+
+  const isJson = options.format === 'json';
+  const targetDir = path.resolve(options.dir ?? process.cwd());
+
+  try {
+    const { readManifest, writeManifest } = await import('../identity/manifest.js');
+    const { applyTrustHints } = await import('../identity/trust-collector.js');
+    const { importAllToolEvents } = await import('../identity/bridges.js');
+
+    const manifest = readManifest(targetDir);
+    if (!manifest) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ synced: false, reason: 'no manifest found' }, null, 2) + '\n');
+      } else {
+        process.stderr.write('No identity attachment found. Run: opena2a identity attach\n');
+      }
+      return 1;
+    }
+
+    const aim = new mod.AIMCore({ agentName: manifest.agent.name });
+
+    // Refresh trust hints
+    const { hints, score } = applyTrustHints(aim, targetDir, manifest);
+
+    // Import new events
+    const bridgeResults = importAllToolEvents(aim, targetDir, manifest.tools);
+
+    // Update manifest sync timestamp
+    manifest.bridging.lastSyncAt = new Date().toISOString();
+    writeManifest(targetDir, manifest);
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        synced: true,
+        imported: bridgeResults.total.imported,
+        skipped: bridgeResults.total.skipped,
+        trustScore: score.score,
+        trustGrade: score.grade,
+      }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(green('Sync complete') + '\n');
+    process.stdout.write(`  Events imported: ${bridgeResults.total.imported}\n`);
+    if (bridgeResults.total.skipped > 0) {
+      process.stdout.write(`  Skipped (dedup): ${bridgeResults.total.skipped}\n`);
+    }
+
+    const scoreColor = score.score >= 80 ? green : score.score >= 60 ? yellow : red;
+    process.stdout.write(`  Trust score:     ${scoreColor(bold(`${score.score}/100`))} (${scoreColor(score.grade)})\n`);
+
+    const activeHints = Object.entries(hints).filter(([, v]) => v).map(([k]) => k);
+    if (activeHints.length > 0) {
+      process.stdout.write(`  Active factors:  ${activeHints.join(', ')}\n`);
+    }
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to sync: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   }
 }
