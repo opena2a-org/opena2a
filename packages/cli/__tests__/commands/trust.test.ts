@@ -31,6 +31,8 @@ function makeTrustResponse(overrides?: Partial<TrustLookupResponse>): TrustLooku
       drift: 0.90,
       feedback: 0.75,
     },
+    packageType: 'mcp_server',
+    displayType: 'MCP Server',
     capabilities: ['web:read', 'http:fetch', 'file:read'],
     supplyChain: {
       totalDependencies: 12,
@@ -220,11 +222,31 @@ describe('trust', () => {
     expect(output).toContain('@anthropic/mcp-server-fetch');
     expect(output).toContain('v1.2.0');
     expect(output).toContain('anthropic');
+    expect(output).toContain('72%');
+    expect(output).toContain('MCP Server');
     expect(output).toContain('Security Posture');
     expect(output).toContain('Supply Chain');
     expect(output).toContain('web:read');
     expect(output).toContain('Profile:');
     expect(output).toContain('Badge:');
+  });
+
+  it('falls back to formatted packageType when displayType is absent', async () => {
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: makeTrustResponse({ displayType: undefined, packageType: 'a2a_agent' }),
+    });
+
+    const options: TrustOptions = {
+      packageName: 'some-agent',
+      registryUrl: 'https://test-registry.example.com',
+      ci: true,
+      format: 'text',
+    };
+
+    const { output } = await captureStdout(() => trust(options));
+    expect(output).toContain('A2A Agent');
   });
 
   it('shows trust factors in verbose mode', async () => {
