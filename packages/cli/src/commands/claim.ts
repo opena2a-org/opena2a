@@ -31,7 +31,7 @@ export interface ClaimOptions {
 
 // --- Constants ---
 
-const DEFAULT_REGISTRY_URL = 'https://registry.opena2a.org';
+const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
 
 // --- Testable internals ---
 
