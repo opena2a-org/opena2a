@@ -153,7 +153,7 @@ async function fetchTrustScore(serverName: string): Promise<number | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     const resp = await fetch(
-      `https://registry.opena2a.org/api/v1/packages/${encodeURIComponent(serverName)}`,
+      `https://api.oa2a.org/api/v1/packages/${encodeURIComponent(serverName)}`,
       { signal: controller.signal },
     );
     clearTimeout(timeout);
