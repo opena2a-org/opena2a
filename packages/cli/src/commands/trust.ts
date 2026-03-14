@@ -207,10 +207,15 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     : data.trustLevel === 'claimed' || data.trustLevel === 'scanned' ? yellow
     : dim;
 
+  const typeLabel = data.displayType ?? formatPackageType(data.packageType);
+
   process.stdout.write('\n');
   process.stdout.write(bold(`${data.name} v${data.version}`) + '\n');
+  if (typeLabel) {
+    process.stdout.write(`Type:      ${typeLabel}\n`);
+  }
   process.stdout.write(`Publisher: ${data.publisher} (${verifiedLabel})\n`);
-  process.stdout.write(`Trust: ${scoreColor(`${scoreDisplay}/100`)} (${levelColor(data.trustLevel)})\n`);
+  process.stdout.write(`Trust:     ${scoreColor(`${scoreDisplay}%`)} (${levelColor(data.trustLevel)})\n`);
 
   // Security Posture
   process.stdout.write('\n');
@@ -310,6 +315,19 @@ function formatRelativeTime(isoDate: string): string {
 }
 
 // --- Helpers ---
+
+/** Map raw packageType slugs to human-friendly labels. */
+function formatPackageType(packageType?: string): string | undefined {
+  if (!packageType) return undefined;
+  const labels: Record<string, string> = {
+    mcp_server: 'MCP Server',
+    a2a_agent: 'A2A Agent',
+    ai_tool: 'AI Tool',
+    skill: 'Skill',
+    llm: 'LLM',
+  };
+  return labels[packageType] ?? packageType;
+}
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
   if (override) return override.replace(/\/$/, '');

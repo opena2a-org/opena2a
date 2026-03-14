@@ -45,6 +45,10 @@ export interface TrustLookupResponse {
   publisherVerified: boolean;
   trustScore: number;
   trustLevel: TrustLevel;
+  packageType?: string;
+  displayType?: string;
+  description?: string;
+  repositoryUrl?: string;
   posture?: TrustPosture;
   factors?: TrustFactors;
   capabilities?: string[];
