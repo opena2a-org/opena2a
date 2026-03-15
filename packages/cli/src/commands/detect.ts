@@ -559,6 +559,27 @@ function generateFindings(result: Omit<DetectResult, 'findings'>): Finding[] {
     });
   }
 
+  // Recommend MCP signing for project-local servers (low priority, after identity + governance)
+  const projectMcpCount = result.mcpServers.filter(
+    (s) => s.source.includes('(project)')
+  ).length;
+  const signedMcpCount = result.mcpServers.filter(
+    (s) => s.source.includes('(project)') && s.verified
+  ).length;
+  if (projectMcpCount > 0 && signedMcpCount < projectMcpCount && projectCriticalMcp.length === 0) {
+    const unsigned = projectMcpCount - signedMcpCount;
+    findings.push({
+      severity: 'low',
+      category: 'mcp',
+      title: `${unsigned} project MCP server${unsigned !== 1 ? 's' : ''} without signed identity`,
+      detail: `Signing creates a tamper-evident record of each server's configuration.`,
+      whyItMatters: 'Without signing, you cannot detect if an MCP server configuration was modified '
+        + 'by an attacker or by another agent. Signing lets you verify that the server you are using '
+        + 'is the exact version you approved.',
+      remediation: 'opena2a mcp sign',
+    });
+  }
+
   // Config files with credential references
   const criticalConfigs = result.aiConfigs.filter((c) => c.risk === 'critical');
   if (criticalConfigs.length > 0) {
