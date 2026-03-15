@@ -877,7 +877,9 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
     lines.push(`  MCP identities:       ${green(`${result.identity.mcpIdentities} server(s) signed`)}`);
   }
   lines.push(`  Behavioral rules:     ${result.identity.soulFiles === 0 ? yellow('none -- agents rely on their defaults') : green(`${result.identity.soulFiles} SOUL.md defines boundaries`)}`);
-  lines.push(`  Capability policies:  ${result.identity.capabilityPolicies === 0 ? yellow('none -- no restrictions on agent actions') : green(String(result.identity.capabilityPolicies) + ' policy file(s)')}`);
+  if (result.identity.capabilityPolicies > 0) {
+    lines.push(`  Capability policies:  ${green(String(result.identity.capabilityPolicies) + ' policy file(s)')}`);
+  }
   lines.push('');
 
   // MCP Servers -- show summary in default mode, full list in verbose

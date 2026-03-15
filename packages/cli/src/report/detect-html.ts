@@ -139,7 +139,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   h+='<h2 class="section-title">Identity &amp; Governance</h2><div class="card">';
   h+='<div class="identity-row"><span class="identity-label">Agent identity</span><span style="color:'+(id.aimIdentities>0?'var(--green)':'var(--amber)')+';">'+(id.aimIdentities>0?'Registered':'Not registered')+'</span></div>';
   h+='<div class="identity-row"><span class="identity-label">Behavioral rules (SOUL.md)</span><span style="color:'+(id.soulFiles>0?'var(--green)':'var(--amber)')+';">'+(id.soulFiles>0?id.soulFiles+' defined':'None')+'</span></div>';
-  h+='<div class="identity-row"><span class="identity-label">Capability policies</span><span style="color:'+(id.capabilityPolicies>0?'var(--green)':'var(--amber)')+';">'+(id.capabilityPolicies>0?id.capabilityPolicies+' policy file(s)':'None')+'</span></div>';
+  if(id.capabilityPolicies>0){h+='<div class="identity-row"><span class="identity-label">Capability policies</span><span style="color:var(--green);">'+id.capabilityPolicies+' policy file(s)</span></div>';}
   if(id.mcpIdentities>0){h+='<div class="identity-row"><span class="identity-label">MCP identities</span><span style="color:var(--green);">'+id.mcpIdentities+' signed</span></div>';}
   h+='</div>';
 
