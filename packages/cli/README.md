@@ -106,7 +106,7 @@ When drift is detected, `opena2a protect` migrates the key to environment variab
 
 ### `opena2a review`
 
-Run all security checks and generate a unified HTML dashboard. This is the recommended starting point -- it combines credential scanning, config integrity, Shield posture, advisory checks, and optional HMA deep scan into a single interactive report.
+Run all security checks and generate a unified HTML dashboard. This is the recommended starting point -- it combines credential scanning, config integrity, Shield posture, shadow AI detection, advisory checks, and optional HMA deep scan into a single interactive report with 6 tabs.
 
 ```bash
 opena2a review                     # Scan + open HTML report in browser
@@ -114,6 +114,26 @@ opena2a review --no-open           # Generate report without opening
 opena2a review --report out.html   # Save to custom path
 opena2a review --format json       # JSON output for CI
 ```
+
+### `opena2a detect`
+
+Discover AI agents, MCP servers, and AI configurations running on this machine. Reports a governance score (0-100, where 100 = fully governed) with actionable findings that explain why each issue matters and how to fix it.
+
+```bash
+opena2a detect                              # Scan current project
+opena2a detect --report                     # Generate HTML executive report
+opena2a detect --export-csv assets.csv      # Export asset inventory for CMDB
+opena2a detect --format json                # Machine-readable output
+opena2a detect --verbose                    # Show full MCP server list and PIDs
+```
+
+What detect finds:
+- **Running AI agents**: Claude Code, Cursor, GitHub Copilot, Windsurf, Aider, Ollama, LM Studio, and more
+- **MCP servers**: Project-local and machine-wide configurations across Claude, Cursor, Windsurf, Cline, and VS Code
+- **AI config files**: `.cursorrules`, `CLAUDE.md`, `.copilot`, `.windsurfrules`, and framework configs
+- **Governance posture**: AIM identity, SOUL.md behavioral rules, capability policies
+
+The CSV export includes hostname, username, scan directory, and timestamp on every row for enterprise CMDB import.
 
 ### `opena2a init`
 

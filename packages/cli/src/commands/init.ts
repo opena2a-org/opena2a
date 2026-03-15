@@ -48,6 +48,7 @@ interface GroupedFinding {
   explanation: string;
   businessImpact: string;
   locations: { file: string; line: number }[];
+  attackClass?: string;
 }
 
 interface ActionItem {
@@ -142,7 +143,7 @@ export async function init(options: InitOptions): Promise<number> {
   // 5. HMA integration (optional dynamic import)
   if (isTTY) spinner.update('Scanning shell environment...');
   let hmaAvailable = false;
-  const hmaFindings: { severity: string; checkId: string; message: string }[] = [];
+  const hmaFindings: { severity: string; checkId: string; message: string; attackClass?: string }[] = [];
   try {
     const hma = await import('hackmyagent');
     hmaAvailable = true;
@@ -474,7 +475,7 @@ async function checkLLMServerExposure(): Promise<HygieneCheck | null> {
 function groupFindings(
   creds: CredentialMatch[],
   checks: HygieneCheck[],
-  hmaFindings: { severity: string; checkId: string; message: string }[],
+  hmaFindings: { severity: string; checkId: string; message: string; attackClass?: string }[],
 ): GroupedFinding[] {
   const groups = new Map<string, GroupedFinding>();
 
@@ -582,6 +583,7 @@ function groupFindings(
         explanation: '',
         businessImpact: '',
         locations: [],
+        attackClass: f.attackClass,
       });
     }
   }
@@ -999,6 +1001,10 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
 
       const countPrefix = finding.count > 1 ? `${finding.count} ` : '';
       process.stdout.write(`  ${sevTag}  ${countPrefix}${bold(finding.title)}\n`);
+
+      if (finding.attackClass) {
+        process.stdout.write(`            ${dim('Attack Class:')} ${cyan(finding.attackClass)}\n`);
+      }
 
       if (finding.explanation) {
         const wrapped = wordWrap(finding.explanation, 70, 12);

@@ -2,14 +2,14 @@
  * opena2a review -- One-command unified security review.
  *
  * Runs all meaningful security checks (init scan, credential scan,
- * config integrity, shield analysis, optional HMA scan), aggregates
- * results into a composite score, generates a self-contained HTML
- * dashboard, and auto-opens it in the browser.
+ * config integrity, shield analysis, optional HMA scan, shadow AI
+ * detection), aggregates results into a composite score, generates
+ * a self-contained HTML dashboard, and auto-opens it in the browser.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { platform, tmpdir } from 'node:os';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject } from '../util/detect.js';
@@ -21,6 +21,7 @@ import { classifyEvents, type ClassifiedFinding } from '../shield/findings.js';
 import { getARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
 import { createAdapter } from '../adapters/index.js';
+import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
 
@@ -67,6 +68,7 @@ export interface ReviewReport {
   guardData: GuardPhaseData;
   shieldData: ShieldPhaseData;
   hmaData: HmaPhaseData | null;
+  detectData: DetectPhaseData;
 }
 
 export interface ReviewFinding {
@@ -131,6 +133,16 @@ export interface HmaPhaseData {
   score: number;
 }
 
+export interface DetectPhaseData {
+  governanceScore: number;
+  agents: { name: string; category: string; identityStatus: string; governanceStatus: string }[];
+  mcpServers: { name: string; transport: string; source: string; verified: boolean; capabilities: string[]; risk: string }[];
+  aiConfigs: { file: string; tool: string; risk: string; details: string }[];
+  identity: { aimIdentities: number; mcpIdentities: number; soulFiles: number; capabilityPolicies: number };
+  findings: { severity: string; title: string; whyItMatters: string; remediation: string }[];
+  recoverablePoints: number;
+}
+
 export interface RecoveryOpportunity {
   dimension: string;
   pointsRecoverable: number;
@@ -161,16 +173,16 @@ export async function review(options: ReviewOptions): Promise<number> {
   function progress(step: number, label: string): void {
     if (!isText) return;
     if (isTTY) {
-      process.stdout.write(dim(`  [${step}/5] ${label}`));
+      process.stdout.write(dim(`  [${step}/6] ${label}`));
     }
   }
 
   function progressDone(step: number, label: string, timing: string): void {
     if (!isText) return;
     if (isTTY) {
-      process.stdout.write(`\r  [${step}/5] ${label} ${dim(timing)}\n`);
+      process.stdout.write(`\r  [${step}/6] ${label} ${dim(timing)}\n`);
     } else {
-      process.stdout.write(`  [${step}/5] ${label} ${dim(timing)}\n`);
+      process.stdout.write(`  [${step}/6] ${label} ${dim(timing)}\n`);
     }
   }
 
@@ -197,7 +209,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Phase 2: Credential Scan (reuses Phase 1 credential data)
   const phase2Start = Date.now();
   progress(2, 'Checking credentials...');
-  const credentialData = runCredentialPhase(targetDir, initData);
+  const credentialData = runCredentialPhase(targetDir);
   const phase2Ms = Date.now() - phase2Start;
   const credScore = computeCredentialScore(credentialData);
   const phase2Status = credentialData.totalFindings === 0 ? 'pass'
@@ -278,6 +290,22 @@ export async function review(options: ReviewOptions): Promise<number> {
     progressDone(5, 'Running HMA security scan... ', 'skipped');
   }
 
+  // Phase 6: Shadow AI Detection
+  const phase6Start = Date.now();
+  progress(6, 'Detecting shadow AI...');
+  const detectData = await runDetectPhase(targetDir);
+  const phase6Ms = Date.now() - phase6Start;
+  const phase6Status = detectData.governanceScore >= 70 ? 'pass'
+    : detectData.governanceScore >= 40 ? 'warn' : 'fail';
+  phases.push({
+    name: 'Shadow AI',
+    status: phase6Status,
+    score: detectData.governanceScore,
+    durationMs: phase6Ms,
+    detail: `Governance ${detectData.governanceScore}/100`,
+  });
+  progressDone(6, 'Detecting shadow AI...       ', formatMs(phase6Ms));
+
   // Composite score
   const hmaAvailable = hmaData?.available ?? false;
   const compositeScore = computeCompositeScore(
@@ -287,12 +315,13 @@ export async function review(options: ReviewOptions): Promise<number> {
     shieldData.postureScore,
     hmaAvailable ? hmaData!.score : 0,
     hmaAvailable,
+    detectData.governanceScore,
   );
   const grade = scoreToGrade(compositeScore);
   const recoverySummary = computeRecoverySummary(
     initData.trustScore, credScore, guardScore,
     shieldData.postureScore, hmaAvailable ? hmaData!.score : 0,
-    hmaAvailable, compositeScore,
+    hmaAvailable, compositeScore, detectData.governanceScore,
   );
 
   // Aggregate findings
@@ -318,6 +347,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     guardData,
     shieldData,
     hmaData,
+    detectData,
   };
 
   // Severity counts
@@ -364,6 +394,42 @@ export async function review(options: ReviewOptions): Promise<number> {
     process.stdout.write(` ${dim('(opened in browser)')}`);
   }
   process.stdout.write('\n\n');
+
+  // Community contribution
+  try {
+    const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
+      await import('../util/report-submission.js');
+    await recordScanAndMaybePrompt();
+
+    if (await isContributeEnabled()) {
+      const registryUrl = await getRegistryUrl();
+      if (registryUrl) {
+        await submitScanReport(registryUrl, {
+          packageName: report.projectName ?? 'unknown',
+          packageType: report.projectType ?? 'unknown',
+          scannerName: 'opena2a-review',
+          scannerVersion: '0.6.3',
+          overallScore: compositeScore,
+          scanDurationMs: phases.reduce((sum, p) => sum + p.durationMs, 0),
+          criticalCount: sevCounts.critical,
+          highCount: sevCounts.high,
+          mediumCount: sevCounts.medium,
+          lowCount: sevCounts.low,
+          infoCount: 0,
+          verdict: compositeScore >= 80 ? 'pass' : compositeScore >= 50 ? 'warnings' : 'fail',
+          findings: findings.map((f, i) => ({
+            findingId: f.id || `REVIEW-${String(i + 1).padStart(3, '0')}`,
+            severity: f.severity,
+            category: f.source,
+            title: f.title,
+            description: f.detail,
+          })),
+        }, options.verbose);
+      }
+    }
+  } catch {
+    // Non-critical
+  }
 
   return compositeScore < 50 ? 1 : 0;
 }
@@ -425,8 +491,7 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   };
 }
 
-function runCredentialPhase(targetDir: string, initData: InitPhaseData): CredentialPhaseData {
-  // Reuse credential scan from init phase (avoid duplicate scan)
+function runCredentialPhase(targetDir: string): CredentialPhaseData {
   const matches = quickCredentialScan(targetDir);
   const bySeverity: Record<string, number> = {};
   for (const m of matches) {
@@ -527,6 +592,104 @@ async function runHmaPhase(): Promise<HmaPhaseData> {
   }
 }
 
+async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
+  const { scanProcesses, scanMcpServers, scanIdentity, scanAiConfigs } = await import('./detect.js');
+
+  const detectedAgents = scanProcesses();
+  const detectedMcpServers = scanMcpServers(targetDir);
+  const detectedIdentity = scanIdentity(targetDir);
+  const detectedAiConfigs = scanAiConfigs(targetDir);
+
+  // Enrich agents with identity/governance from project context
+  if (detectedIdentity.aimIdentities > 0) {
+    for (const agent of detectedAgents) {
+      agent.identityStatus = 'identified';
+    }
+  }
+  if (detectedIdentity.soulFiles > 0 || detectedIdentity.capabilityPolicies > 0) {
+    for (const agent of detectedAgents) {
+      agent.governanceStatus = 'governed';
+    }
+  }
+
+  // Enrich MCP servers with signing status
+  const mcpIdDir = path.join(targetDir, '.opena2a', 'mcp-identities');
+  if (fs.existsSync(mcpIdDir)) {
+    for (const server of detectedMcpServers) {
+      const idFile = path.join(mcpIdDir, `${server.name}.json`);
+      if (fs.existsSync(idFile)) {
+        server.verified = true;
+      }
+    }
+  }
+
+  // Calculate governance score using shared utility
+  const { governanceScore, deductions: governanceDeductions } = calculateGovernanceScore({
+    agents: detectedAgents,
+    mcpServers: detectedMcpServers,
+    aiConfigs: detectedAiConfigs,
+    identity: detectedIdentity,
+  });
+
+  // Build detect findings
+  const detectFindings: DetectPhaseData['findings'] = [];
+  const ungovernedAgents = detectedAgents.filter(a => a.governanceStatus === 'no governance');
+  if (ungovernedAgents.length > 0) {
+    detectFindings.push({
+      severity: 'high',
+      title: `${ungovernedAgents.length} AI agent${ungovernedAgents.length !== 1 ? 's' : ''} running without governance`,
+      whyItMatters: 'These agents can take actions in your project but have no rules defining what they should or should not do.',
+      remediation: 'opena2a init && opena2a harden-soul',
+    });
+  }
+  if (detectedIdentity.aimIdentities === 0 && detectedAgents.length > 0) {
+    detectFindings.push({
+      severity: 'high',
+      title: 'No agent identity registered for this project',
+      whyItMatters: 'Without an identity, agent actions cannot be traced back to a specific tool or session.',
+      remediation: 'opena2a identity create --name my-agent',
+    });
+  }
+  const projectCriticalMcp = detectedMcpServers.filter(
+    s => s.risk === 'critical' && !s.verified && s.source.includes('(project)')
+  );
+  if (projectCriticalMcp.length > 0) {
+    detectFindings.push({
+      severity: 'critical',
+      title: `${projectCriticalMcp.length} project MCP server${projectCriticalMcp.length !== 1 ? 's' : ''} with sensitive access`,
+      whyItMatters: 'These MCP servers grant access to sensitive operations like running commands or accessing databases.',
+      remediation: 'opena2a mcp audit',
+    });
+  }
+  const criticalConfigs = detectedAiConfigs.filter(c => c.risk === 'critical');
+  if (criticalConfigs.length > 0) {
+    detectFindings.push({
+      severity: 'critical',
+      title: 'AI config files contain credential references',
+      whyItMatters: 'API keys or tokens appear to be stored directly in configuration files.',
+      remediation: 'opena2a protect',
+    });
+  }
+  if (detectedIdentity.soulFiles === 0 && detectedAgents.length > 0) {
+    detectFindings.push({
+      severity: 'medium',
+      title: 'No SOUL.md governance file in this project',
+      whyItMatters: 'Without a SOUL.md, agents rely entirely on their defaults which may not match your expectations.',
+      remediation: 'opena2a harden-soul',
+    });
+  }
+
+  return {
+    governanceScore,
+    agents: detectedAgents.map(a => ({ name: a.name, category: a.category, identityStatus: a.identityStatus, governanceStatus: a.governanceStatus })),
+    mcpServers: detectedMcpServers.map(s => ({ name: s.name, transport: s.transport, source: s.source, verified: s.verified, capabilities: s.capabilities, risk: s.risk })),
+    aiConfigs: detectedAiConfigs.map(c => ({ file: c.file, tool: c.tool, risk: c.risk, details: c.details })),
+    identity: { aimIdentities: detectedIdentity.aimIdentities, mcpIdentities: detectedIdentity.mcpIdentities, soulFiles: detectedIdentity.soulFiles, capabilityPolicies: detectedIdentity.capabilityPolicies },
+    findings: detectFindings,
+    recoverablePoints: governanceDeductions,
+  };
+}
+
 // --- Scoring ---
 
 function computeCredentialScore(data: CredentialPhaseData): number {
@@ -553,21 +716,26 @@ function computeCompositeScore(
   shieldScore: number,
   hmaScore: number,
   hmaAvailable: boolean,
+  shadowAiScore: number,
 ): number {
   if (hmaAvailable) {
+    // With HMA: 25% trust + 18% cred + 12% integrity + 22% shield + 8% HMA + 15% shadowAI
     return Math.round(
-      trustScore * 0.30 +
-      credScore * 0.20 +
-      guardScore * 0.15 +
-      shieldScore * 0.25 +
-      hmaScore * 0.10,
+      trustScore * 0.25 +
+      credScore * 0.18 +
+      guardScore * 0.12 +
+      shieldScore * 0.22 +
+      hmaScore * 0.08 +
+      shadowAiScore * 0.15,
     );
   }
+  // Without HMA: 30% trust + 20% cred + 15% integrity + 20% shield + 15% shadowAI
   return Math.round(
-    trustScore * 0.35 +
-    credScore * 0.22 +
-    guardScore * 0.18 +
-    shieldScore * 0.25,
+    trustScore * 0.30 +
+    credScore * 0.20 +
+    guardScore * 0.15 +
+    shieldScore * 0.20 +
+    shadowAiScore * 0.15,
   );
 }
 
@@ -588,23 +756,26 @@ function computeRecoverySummary(
   hmaScore: number,
   hmaAvailable: boolean,
   compositeScore: number,
+  shadowAiScore: number,
 ): RecoverySummary {
   const opportunities: RecoveryOpportunity[] = [];
 
   // Compute how many composite points each dimension could recover (score gap * weight)
   const dims = hmaAvailable
     ? [
-        { name: 'Credentials', score: credScore, weight: 0.20, action: 'opena2a protect' },
-        { name: 'Shield', score: shieldScore, weight: 0.25, action: 'opena2a shield init' },
-        { name: 'Hygiene', score: trustScore, weight: 0.30, action: 'opena2a init' },
-        { name: 'Config integrity', score: guardScore, weight: 0.15, action: 'opena2a guard sign' },
-        { name: 'HMA scan', score: hmaScore, weight: 0.10, action: 'npx hackmyagent scan' },
+        { name: 'Credentials', score: credScore, weight: 0.18, action: 'opena2a protect' },
+        { name: 'Shield', score: shieldScore, weight: 0.22, action: 'opena2a shield init' },
+        { name: 'Hygiene', score: trustScore, weight: 0.25, action: 'opena2a init' },
+        { name: 'Config integrity', score: guardScore, weight: 0.12, action: 'opena2a guard sign' },
+        { name: 'HMA scan', score: hmaScore, weight: 0.08, action: 'npx hackmyagent scan' },
+        { name: 'Shadow AI', score: shadowAiScore, weight: 0.15, action: 'opena2a detect' },
       ]
     : [
-        { name: 'Credentials', score: credScore, weight: 0.22, action: 'opena2a protect' },
-        { name: 'Shield', score: shieldScore, weight: 0.25, action: 'opena2a shield init' },
-        { name: 'Hygiene', score: trustScore, weight: 0.35, action: 'opena2a init' },
-        { name: 'Config integrity', score: guardScore, weight: 0.18, action: 'opena2a guard sign' },
+        { name: 'Credentials', score: credScore, weight: 0.20, action: 'opena2a protect' },
+        { name: 'Shield', score: shieldScore, weight: 0.20, action: 'opena2a shield init' },
+        { name: 'Hygiene', score: trustScore, weight: 0.30, action: 'opena2a init' },
+        { name: 'Config integrity', score: guardScore, weight: 0.15, action: 'opena2a guard sign' },
+        { name: 'Shadow AI', score: shadowAiScore, weight: 0.15, action: 'opena2a detect' },
       ];
 
   for (const d of dims) {
@@ -754,7 +925,7 @@ function openInBrowser(filePath: string): void {
   const cmd = platform() === 'darwin' ? 'open'
     : platform() === 'win32' ? 'start'
     : 'xdg-open';
-  exec(`${cmd} "${filePath}"`);
+  spawn(cmd, [filePath], { detached: true, stdio: 'ignore' }).unref();
 }
 
 function formatProjectType(project: ReturnType<typeof detectProject>): string {

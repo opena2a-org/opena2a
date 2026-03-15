@@ -122,6 +122,19 @@ async function handleList(options: IdentityOptions): Promise<number> {
 
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
+
+    // Check if identity file exists before calling getIdentity(),
+    // which auto-creates one if none exists.
+    const identityFile = path.join(aim.getDataDir(), 'identity.json');
+    if (!fs.existsSync(identityFile)) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ error: 'no identity found' }, null, 2) + '\n');
+      } else {
+        process.stdout.write('No identity found. Create one with: opena2a identity create --name my-agent\n');
+      }
+      return 0;
+    }
+
     const id = aim.getIdentity();
 
     if (isJson) {
@@ -164,18 +177,14 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   try {
     const aim = new mod.AIMCore({ agentName: name });
 
-    // Check if identity already exists
-    let existing = false;
-    try {
-      const prev = aim.getIdentity();
-      if (prev && prev.agentId) {
-        existing = true;
-      }
-    } catch {
-      // No existing identity -- good, we'll create one
-    }
+    // Check if identity file already exists BEFORE calling getIdentity
+    // (getIdentity creates one if missing, so we check the file directly)
+    const dataDir = aim.getDataDir();
+    const identityPath = await import('node:path').then(p => p.join(dataDir, 'identity.json'));
+    const { existsSync } = await import('node:fs');
+    const existing = existsSync(identityPath);
 
-    const id = aim.getOrCreateIdentity();
+    const id = aim.getIdentity();
 
     if (isJson) {
       process.stdout.write(JSON.stringify({ ...id, created: !existing }, null, 2) + '\n');
@@ -283,6 +292,44 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
       process.stdout.write('\n' + dim('  No tools attached. Run: opena2a identity attach --all') + '\n');
       process.stdout.write(dim('  Attaching tools improves trust by syncing real security state.') + '\n');
     }
+
+    // Community contribution: share trust score with registry
+    try {
+      const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
+        await import('../util/report-submission.js');
+      await recordScanAndMaybePrompt();
+
+      if (await isContributeEnabled()) {
+        const registryUrl = await getRegistryUrl();
+        if (registryUrl) {
+          await submitScanReport(registryUrl, {
+            packageName: 'agent-trust',
+            packageType: 'trust',
+            scannerName: 'opena2a-identity',
+            scannerVersion: '0.6.3',
+            overallScore: displayScore,
+            scanDurationMs: 0,
+            criticalCount: 0,
+            highCount: 0,
+            mediumCount: 0,
+            lowCount: 0,
+            infoCount: Object.keys(trust.factors).length,
+            verdict: displayScore >= 70 ? 'pass' : displayScore >= 40 ? 'warnings' : 'fail',
+            findings: Object.entries(trust.factors)
+              .filter(([, v]) => (v as number) === 0)
+              .map(([factor], i) => ({
+                findingId: `TRUST-${String(i + 1).padStart(3, '0')}`,
+                severity: 'medium',
+                category: 'trust',
+                title: `${factor.replace(/([A-Z])/g, ' $1').trim()} not active`,
+              })),
+          }, options.verbose);
+        }
+      }
+    } catch {
+      // Non-critical
+    }
+
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to calculate trust: ${err instanceof Error ? err.message : String(err)}\n`);
@@ -646,7 +693,7 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
     // 1. Get or create identity
     const agentName = options.name ?? 'default';
     const aim = new mod.AIMCore({ agentName });
-    const id = aim.getOrCreateIdentity();
+    const id = aim.getIdentity();
 
     if (!isJson) {
       process.stdout.write(bold('Attaching identity to tools') + '\n');
@@ -1049,7 +1096,7 @@ function parseSimpleYamlPolicy(content: string): Policy {
         if (inlineKv) {
           const cleanVal = inlineKv[2].replace(/^["']|["']$/g, '');
           if (inlineKv[1] === 'capability') currentRule.capability = cleanVal;
-          if (inlineKv[1] === 'action') currentRule.action = cleanVal;
+          if (inlineKv[1] === 'action' || inlineKv[1] === 'effect') currentRule.action = cleanVal;
         }
         continue;
       }
@@ -1059,7 +1106,7 @@ function parseSimpleYamlPolicy(content: string): Policy {
         const [, key, val] = kvMatch;
         const cleanVal = val.replace(/^["']|["']$/g, '');
         if (key === 'capability') currentRule.capability = cleanVal;
-        if (key === 'action') currentRule.action = cleanVal;
+        if (key === 'action' || key === 'effect') currentRule.action = cleanVal;
         if (key === 'plugins') {
           inPlugins = true;
           currentRule.plugins = [];

@@ -52,7 +52,7 @@ describe('review', () => {
     // A clean project without Shield products or signatures scores ~65-75.
     expect(report.compositeScore).toBeGreaterThanOrEqual(60);
     expect(['strong', 'good', 'moderate', 'improving']).toContain(report.grade);
-    expect(report.phases).toHaveLength(5);
+    expect(report.phases).toHaveLength(6);
   });
 
   it('project with credentials returns lower score', async () => {

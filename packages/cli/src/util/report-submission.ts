@@ -26,6 +26,7 @@ export interface ScanFinding {
   filePath?: string;
   lineNumber?: number;
   autoFixable?: boolean;
+  attackClass?: string;
 }
 
 export interface ScanReport {
@@ -220,6 +221,68 @@ export async function recordScanAndMaybePrompt(): Promise<void> {
   } catch {
     // Non-critical
   }
+}
+
+// --- Detect scan normalization ---
+
+/**
+ * Normalize a detect result into the ScanReport format.
+ * Maps shadow AI findings so the registry can aggregate:
+ * - Which agents and MCP servers are in use across the community
+ * - What governance gaps are most common
+ * - Which MCP capabilities are widespread
+ */
+export function normalizeDetectReport(result: {
+  summary: { governanceScore: number; totalAgents: number; mcpServers: number; aiConfigs: number };
+  agents: { name: string; category: string; governanceStatus: string }[];
+  mcpServers: { name: string; capabilities: string[]; source: string }[];
+  findings: { severity: string; category: string; title: string; whyItMatters: string }[];
+  scanDirectory: string;
+}): ScanReport {
+  const score = result.summary.governanceScore;
+  let criticalCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+
+  const findings: ScanFinding[] = result.findings.map((f, i) => {
+    if (f.severity === 'critical') criticalCount++;
+    else if (f.severity === 'high') highCount++;
+    else if (f.severity === 'medium') mediumCount++;
+    else lowCount++;
+
+    return {
+      findingId: `DETECT-${f.category.toUpperCase()}-${String(i + 1).padStart(3, '0')}`,
+      severity: f.severity,
+      category: f.category,
+      title: f.title,
+      description: f.whyItMatters,
+    };
+  });
+
+  // Include MCP tool names for community intelligence
+  const mcpTools = result.mcpServers
+    .filter(s => s.source.includes('(project)'))
+    .map(s => s.name);
+
+  const verdict = score >= 80 ? 'pass' : score >= 50 ? 'warnings' : 'fail';
+
+  return {
+    packageName: 'shadow-ai-audit',
+    packageType: 'detect',
+    scannerName: 'opena2a-detect',
+    scannerVersion: '0.6.3',
+    overallScore: score,
+    scanDurationMs: 0,
+    criticalCount,
+    highCount,
+    mediumCount,
+    lowCount,
+    infoCount: 0,
+    verdict,
+    findings,
+    mcpTools: mcpTools.length > 0 ? mcpTools : undefined,
+  };
 }
 
 function printContributePrompt(): void {
