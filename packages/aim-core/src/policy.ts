@@ -85,7 +85,7 @@ function parseRule(raw: unknown): CapabilityRule {
   const obj = raw as Record<string, unknown>;
   return {
     capability: String(obj.capability ?? '*'),
-    action: obj.action === 'allow' ? 'allow' : 'deny',
+    action: (obj.action ?? obj.effect) === 'allow' ? 'allow' : 'deny',
     plugins: Array.isArray(obj.plugins) ? obj.plugins.map(String) : undefined,
   };
 }

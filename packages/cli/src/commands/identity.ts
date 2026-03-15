@@ -122,6 +122,19 @@ async function handleList(options: IdentityOptions): Promise<number> {
 
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
+
+    // Check if identity file exists before calling getIdentity(),
+    // which auto-creates one if none exists.
+    const identityFile = path.join(aim.getDataDir(), 'identity.json');
+    if (!fs.existsSync(identityFile)) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ error: 'no identity found' }, null, 2) + '\n');
+      } else {
+        process.stdout.write('No identity found. Create one with: opena2a identity create --name my-agent\n');
+      }
+      return 0;
+    }
+
     const id = aim.getIdentity();
 
     if (isJson) {
@@ -1045,7 +1058,7 @@ function parseSimpleYamlPolicy(content: string): Policy {
         if (inlineKv) {
           const cleanVal = inlineKv[2].replace(/^["']|["']$/g, '');
           if (inlineKv[1] === 'capability') currentRule.capability = cleanVal;
-          if (inlineKv[1] === 'action') currentRule.action = cleanVal;
+          if (inlineKv[1] === 'action' || inlineKv[1] === 'effect') currentRule.action = cleanVal;
         }
         continue;
       }
@@ -1055,7 +1068,7 @@ function parseSimpleYamlPolicy(content: string): Policy {
         const [, key, val] = kvMatch;
         const cleanVal = val.replace(/^["']|["']$/g, '');
         if (key === 'capability') currentRule.capability = cleanVal;
-        if (key === 'action') currentRule.action = cleanVal;
+        if (key === 'action' || key === 'effect') currentRule.action = cleanVal;
         if (key === 'plugins') {
           inPlugins = true;
           currentRule.plugins = [];
