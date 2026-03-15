@@ -1,6 +1,6 @@
 {
   "name": "opena2a-cli",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Unified CLI for the OpenA2A security platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
