@@ -292,6 +292,44 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
       process.stdout.write('\n' + dim('  No tools attached. Run: opena2a identity attach --all') + '\n');
       process.stdout.write(dim('  Attaching tools improves trust by syncing real security state.') + '\n');
     }
+
+    // Community contribution: share trust score with registry
+    try {
+      const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
+        await import('../util/report-submission.js');
+      await recordScanAndMaybePrompt();
+
+      if (await isContributeEnabled()) {
+        const registryUrl = await getRegistryUrl();
+        if (registryUrl) {
+          await submitScanReport(registryUrl, {
+            packageName: 'agent-trust',
+            packageType: 'trust',
+            scannerName: 'opena2a-identity',
+            scannerVersion: '0.6.3',
+            overallScore: displayScore,
+            scanDurationMs: 0,
+            criticalCount: 0,
+            highCount: 0,
+            mediumCount: 0,
+            lowCount: 0,
+            infoCount: Object.keys(trust.factors).length,
+            verdict: displayScore >= 70 ? 'pass' : displayScore >= 40 ? 'warnings' : 'fail',
+            findings: Object.entries(trust.factors)
+              .filter(([, v]) => (v as number) === 0)
+              .map(([factor], i) => ({
+                findingId: `TRUST-${String(i + 1).padStart(3, '0')}`,
+                severity: 'medium',
+                category: 'trust',
+                title: `${factor.replace(/([A-Z])/g, ' $1').trim()} not active`,
+              })),
+          }, options.verbose);
+        }
+      }
+    } catch {
+      // Non-critical
+    }
+
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to calculate trust: ${err instanceof Error ? err.message : String(err)}\n`);
