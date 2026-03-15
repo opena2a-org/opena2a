@@ -164,16 +164,12 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   try {
     const aim = new mod.AIMCore({ agentName: name });
 
-    // Check if identity already exists
-    let existing = false;
-    try {
-      const prev = aim.getIdentity();
-      if (prev && prev.agentId) {
-        existing = true;
-      }
-    } catch {
-      // No existing identity -- good, we'll create one
-    }
+    // Check if identity file already exists BEFORE calling getIdentity
+    // (getIdentity creates one if missing, so we check the file directly)
+    const dataDir = aim.getDataDir();
+    const identityPath = await import('node:path').then(p => p.join(dataDir, 'identity.json'));
+    const { existsSync } = await import('node:fs');
+    const existing = existsSync(identityPath);
 
     const id = aim.getIdentity();
 
