@@ -150,16 +150,17 @@ function computeConfigHash(entry: McpServerEntry): string {
 
 async function fetchTrustScore(serverName: string): Promise<number | null> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
     const resp = await fetch(
-      `https://api.oa2a.org/api/v1/packages/${encodeURIComponent(serverName)}`,
-      { signal: controller.signal },
+      `https://api.oa2a.org/api/v1/trust/query?name=${encodeURIComponent(serverName)}&type=mcp_server`,
+      { signal: AbortSignal.timeout(5000) },
     );
-    clearTimeout(timeout);
     if (!resp.ok) return null;
     const data = await resp.json() as any;
-    return typeof data.trustScore === 'number' ? data.trustScore : null;
+    // trustScore is 0-1 from the registry, convert to 0-100
+    if (typeof data.trustScore === 'number') {
+      return Math.round(data.trustScore * 100);
+    }
+    return null;
   } catch {
     return null;
   }
