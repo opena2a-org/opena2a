@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.12] - 2026-03-14
+
+### Changed
+- Trust score now displays as percentage (e.g., `50%` instead of `0.5`)
+- Package type shows human-friendly labels (`MCP Server` instead of `mcp_server`)
+- Uses `displayType` from API when available, falls back to local mapping
+
+### Added
+- `displayType`, `packageType`, `description`, `repositoryUrl` fields in ATP response types
+
 ## [0.5.8] - 2026-03-12
 
 ### Fixed
