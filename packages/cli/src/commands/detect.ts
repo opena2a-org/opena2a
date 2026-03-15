@@ -654,22 +654,22 @@ function generateAssetCsv(result: DetectResult): string {
   const scanDir = result.scanDirectory;
 
   // Header -- columns designed for enterprise CMDB/ServiceNow import
-  rows.push('Hostname,Username,ScanDirectory,ScanTimestamp,Type,Name,Source,Transport,Capabilities,Risk,Status');
+  rows.push('Hostname,Username,Scan Directory,Scan Timestamp,Asset Type,Name,Installed From,Transport,Capabilities,Risk,Approved');
 
   const deviceCols = [csvEscape(hostname), csvEscape(username), csvEscape(scanDir), scanTime].join(',');
 
   // AI Agents
   for (const agent of result.agents) {
-    const status = agent.governanceStatus === 'governed' ? 'managed' : 'unmanaged';
+    const approved = agent.governanceStatus === 'governed' ? 'Yes' : 'No';
     rows.push([
       deviceCols,
       'AI Agent',
       csvEscape(agent.name),
-      'process',
+      'Running process',
       '',
       agent.category,
       agent.risk,
-      status,
+      approved,
     ].join(','));
   }
 
@@ -677,16 +677,16 @@ function generateAssetCsv(result: DetectResult): string {
   for (const server of result.mcpServers) {
     const caps = server.capabilities.filter((c) => c !== 'unknown');
     const isProjectLocal = server.source.includes('(project)');
-    const status = isProjectLocal ? 'project-installed' : 'machine-wide';
+    const scope = isProjectLocal ? 'This project' : 'User machine';
     rows.push([
       deviceCols,
       'MCP Server',
       csvEscape(server.name),
-      csvEscape(server.source),
+      scope,
       server.transport,
       csvEscape(caps.map((c) => capabilityDescription(c)).join('; ')),
       server.risk,
-      status,
+      'No',
     ].join(','));
   }
 
@@ -700,7 +700,7 @@ function generateAssetCsv(result: DetectResult): string {
       '',
       csvEscape(config.details),
       config.risk,
-      'detected',
+      'N/A',
     ].join(','));
   }
 
