@@ -175,7 +175,7 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
       // No existing identity -- good, we'll create one
     }
 
-    const id = aim.getOrCreateIdentity();
+    const id = aim.getIdentity();
 
     if (isJson) {
       process.stdout.write(JSON.stringify({ ...id, created: !existing }, null, 2) + '\n');
@@ -646,7 +646,7 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
     // 1. Get or create identity
     const agentName = options.name ?? 'default';
     const aim = new mod.AIMCore({ agentName });
-    const id = aim.getOrCreateIdentity();
+    const id = aim.getIdentity();
 
     if (!isJson) {
       process.stdout.write(bold('Attaching identity to tools') + '\n');
