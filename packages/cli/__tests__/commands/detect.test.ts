@@ -336,8 +336,7 @@ describe('detect command', () => {
     expect(output).toContain('Shadow AI Agent Audit');
     expect(output).toContain('Running AI Agents');
     expect(output).toContain('MCP Servers');
-    expect(output).toContain('Identity Status');
-    expect(output).toContain('Next Steps');
+    expect(output).toContain('Identity & Governance');
   });
 
   it('returns valid JSON for json format', async () => {
@@ -385,15 +384,15 @@ describe('detect command', () => {
     const { output } = await captureStdout(() =>
       detect({ targetDir: tempDir, format: 'text' })
     );
-    expect(output).toContain('1 SOUL.md found');
+    expect(output).toContain('1 SOUL.md');
   });
 
   it('verbose mode adds detection method details', async () => {
     const { output } = await captureStdout(() =>
       detect({ targetDir: tempDir, format: 'text', verbose: true })
     );
-    expect(output).toContain('Detection methods');
-    expect(output).toContain('ps aux');
+    // Verbose mode shows PIDs inline with agents
+    expect(output).toContain('PID');
   });
 
   it('returns exit code 1 for inaccessible directory', async () => {

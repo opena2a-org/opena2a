@@ -555,14 +555,24 @@ Examples:
     .command('detect [directory]')
     .description('Discover AI agents running on this machine and check their security posture')
     .option('--dir <path>', 'Target directory for project-local checks')
+    .option('--report [path]', 'Generate HTML executive report')
+    .option('--export-csv <path>', 'Export asset inventory as CSV for import into CMDB/ServiceNow')
     .action(async (directory: string | undefined, opts) => {
       const { detect } = await import('./commands/detect.js');
       const globalOpts = program.opts();
+      let reportPath = opts.report;
+      if (reportPath === true) {
+        const os = await import('node:os');
+        const nodePath = await import('node:path');
+        reportPath = nodePath.join(os.tmpdir(), `opena2a-detect-${Date.now()}.html`);
+      }
       process.exitCode = await detect({
         targetDir: opts.dir ?? directory ?? process.cwd(),
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
+        reportPath,
+        exportCsv: opts.exportCsv,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
