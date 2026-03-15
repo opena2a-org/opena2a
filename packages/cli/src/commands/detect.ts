@@ -654,13 +654,12 @@ function generateAssetCsv(result: DetectResult): string {
   const scanDir = result.scanDirectory;
 
   // Header -- columns designed for enterprise CMDB/ServiceNow import
-  rows.push('Hostname,Username,Scan Directory,Scan Timestamp,Asset Type,Name,Installed From,Transport,Capabilities,Risk,Approved');
+  rows.push('Hostname,Username,Scan Directory,Scan Timestamp,Asset Type,Name,Installed From,Transport,Capabilities,Risk');
 
   const deviceCols = [csvEscape(hostname), csvEscape(username), csvEscape(scanDir), scanTime].join(',');
 
   // AI Agents
   for (const agent of result.agents) {
-    const approved = agent.governanceStatus === 'governed' ? 'Yes' : 'No';
     rows.push([
       deviceCols,
       'AI Agent',
@@ -669,7 +668,6 @@ function generateAssetCsv(result: DetectResult): string {
       '',
       agent.category,
       agent.risk,
-      approved,
     ].join(','));
   }
 
@@ -686,7 +684,6 @@ function generateAssetCsv(result: DetectResult): string {
       server.transport,
       csvEscape(caps.map((c) => capabilityDescription(c)).join('; ')),
       server.risk,
-      'No',
     ].join(','));
   }
 
@@ -700,7 +697,6 @@ function generateAssetCsv(result: DetectResult): string {
       '',
       csvEscape(config.details),
       config.risk,
-      'N/A',
     ].join(','));
   }
 
