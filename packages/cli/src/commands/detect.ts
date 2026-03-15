@@ -428,7 +428,11 @@ export function scanIdentity(targetDir: string): IdentitySummary {
 
   const opena2aDir = path.join(targetDir, '.opena2a');
   if (fs.existsSync(opena2aDir)) {
-    aimIdentities++;
+    // Check for actual AIM identity file, not just the directory existing
+    const identityFile = path.join(opena2aDir, 'aim', 'identity.json');
+    if (fs.existsSync(identityFile)) {
+      aimIdentities++;
+    }
 
     const mcpIdDir = path.join(opena2aDir, 'mcp-identities');
     if (fs.existsSync(mcpIdDir)) {
@@ -515,6 +519,21 @@ function calculateGovernanceScore(result: Omit<DetectResult, 'summary' | 'findin
 function generateFindings(result: Omit<DetectResult, 'findings'>): Finding[] {
   const findings: Finding[] = [];
 
+  // No AIM identity -- recommend this first since identity is the foundation
+  const hasIdentity = result.identity.aimIdentities > 0;
+  if (!hasIdentity && result.agents.length > 0) {
+    findings.push({
+      severity: 'high',
+      category: 'identity',
+      title: 'No agent identity for this project',
+      detail: `${result.agents.length} AI tool${result.agents.length !== 1 ? 's' : ''} detected but no identity is registered`,
+      whyItMatters: 'An agent identity is a cryptographic key pair that lets you track which agent '
+        + 'did what in this project. Without one, agent actions cannot be attributed, verified, or '
+        + 'audited. This is the first step to managing AI tools in your project.',
+      remediation: 'opena2a identity create --name my-project',
+    });
+  }
+
   // Ungoverned agents (consolidates governance + SOUL.md into one finding)
   const ungoverned = result.agents.filter((a) => a.governanceStatus === 'no governance');
   if (ungoverned.length > 0) {
@@ -530,19 +549,6 @@ function generateFindings(result: Omit<DetectResult, 'findings'>): Finding[] {
         + 'should or should not do. A SOUL.md file sets behavioral boundaries — what agents can and '
         + 'cannot do, and what requires human approval. Without one, agents rely entirely on their defaults.',
       remediation: 'opena2a harden-soul',
-    });
-  }
-
-  // No AIM identity
-  if (result.identity.aimIdentities === 0 && result.agents.length > 0) {
-    findings.push({
-      severity: 'high',
-      category: 'identity',
-      title: 'No agent identity registered for this project',
-      detail: `${result.agents.length} agent${result.agents.length !== 1 ? 's' : ''} running without a project identity`,
-      whyItMatters: 'When something goes wrong, you need to know which agent did what. Without '
-        + 'an identity, agent actions cannot be traced back to a specific tool or session.',
-      remediation: 'opena2a identity create --name my-agent',
     });
   }
 

@@ -284,10 +284,17 @@ describe('scanIdentity', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('detects .opena2a directory as AIM identity', () => {
-    fs.mkdirSync(path.join(tempDir, '.opena2a'));
+  it('detects AIM identity file in .opena2a/aim/', () => {
+    fs.mkdirSync(path.join(tempDir, '.opena2a', 'aim'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.opena2a', 'aim', 'identity.json'), '{"agentId":"test"}');
     const summary = scanIdentity(tempDir);
     expect(summary.aimIdentities).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not count bare .opena2a directory as identity', () => {
+    fs.mkdirSync(path.join(tempDir, '.opena2a'));
+    const summary = scanIdentity(tempDir);
+    expect(summary.aimIdentities).toBe(0);
   });
 
   it('detects SOUL.md governance file', () => {
