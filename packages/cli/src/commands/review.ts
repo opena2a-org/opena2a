@@ -395,6 +395,42 @@ export async function review(options: ReviewOptions): Promise<number> {
   }
   process.stdout.write('\n\n');
 
+  // Community contribution
+  try {
+    const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
+      await import('../util/report-submission.js');
+    await recordScanAndMaybePrompt();
+
+    if (await isContributeEnabled()) {
+      const registryUrl = await getRegistryUrl();
+      if (registryUrl) {
+        await submitScanReport(registryUrl, {
+          packageName: report.projectName ?? 'unknown',
+          packageType: report.projectType ?? 'unknown',
+          scannerName: 'opena2a-review',
+          scannerVersion: '0.6.3',
+          overallScore: compositeScore,
+          scanDurationMs: phases.reduce((sum, p) => sum + p.durationMs, 0),
+          criticalCount: sevCounts.critical,
+          highCount: sevCounts.high,
+          mediumCount: sevCounts.medium,
+          lowCount: sevCounts.low,
+          infoCount: 0,
+          verdict: compositeScore >= 80 ? 'pass' : compositeScore >= 50 ? 'warnings' : 'fail',
+          findings: findings.map((f, i) => ({
+            findingId: f.id || `REVIEW-${String(i + 1).padStart(3, '0')}`,
+            severity: f.severity,
+            category: f.source,
+            title: f.title,
+            description: f.detail,
+          })),
+        }, options.verbose);
+      }
+    }
+  } catch {
+    // Non-critical
+  }
+
   return compositeScore < 50 ? 1 : 0;
 }
 
