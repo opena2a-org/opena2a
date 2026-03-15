@@ -336,7 +336,7 @@ describe('detect command', () => {
     expect(output).toContain('Shadow AI Agent Audit');
     expect(output).toContain('Running AI Agents');
     expect(output).toContain('MCP Servers');
-    expect(output).toContain('Identity & Governance');
+    expect(output).toContain('Governance:');
   });
 
   it('returns valid JSON for json format', async () => {
@@ -378,13 +378,12 @@ describe('detect command', () => {
     expect(projServers[0].name).toBe('testServer');
   });
 
-  it('reports identity status in text output', async () => {
-    fs.writeFileSync(path.join(tempDir, 'SOUL.md'), '# Soul\n');
-
+  it('reports governance score in text output', async () => {
     const { output } = await captureStdout(() =>
       detect({ targetDir: tempDir, format: 'text' })
     );
-    expect(output).toContain('1 SOUL.md');
+    expect(output).toContain('Governance:');
+    expect(output).toContain('/100');
   });
 
   it('verbose mode adds detection method details', async () => {

@@ -872,17 +872,18 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
   }
   lines.push('');
 
-  // Identity & Governance status
-  lines.push(bold('Identity & Governance'));
-  lines.push(`  Project identity:     ${result.identity.aimIdentities > 0 ? green('initialized (.opena2a/)') : yellow('not initialized')}`);
-  if (result.identity.mcpIdentities > 0) {
-    lines.push(`  MCP identities:       ${green(`${result.identity.mcpIdentities} server(s) signed`)}`);
+  // Identity & Governance details are omitted from default output.
+  // The governance score and findings already communicate everything actionable.
+  // Show only in verbose mode for debugging.
+  if (verbose) {
+    lines.push(bold('Identity & Governance'));
+    lines.push(`  Project identity:     ${result.identity.aimIdentities > 0 ? green('initialized (.opena2a/)') : yellow('not initialized')}`);
+    lines.push(`  Behavioral rules:     ${result.identity.soulFiles === 0 ? yellow('none') : green(`${result.identity.soulFiles} SOUL.md`)}`);
+    if (result.identity.mcpIdentities > 0) {
+      lines.push(`  MCP identities:       ${green(`${result.identity.mcpIdentities} server(s) signed`)}`);
+    }
+    lines.push('');
   }
-  lines.push(`  Behavioral rules:     ${result.identity.soulFiles === 0 ? yellow('none -- agents rely on their defaults') : green(`${result.identity.soulFiles} SOUL.md defines boundaries`)}`);
-  if (result.identity.capabilityPolicies > 0) {
-    lines.push(`  Capability policies:  ${green(String(result.identity.capabilityPolicies) + ' policy file(s)')}`);
-  }
-  lines.push('');
 
   // MCP Servers -- show summary in default mode, full list in verbose
   const mcpCount = result.mcpServers.length;

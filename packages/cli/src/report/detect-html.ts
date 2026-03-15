@@ -137,13 +137,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   var nw=(report.aiConfigs||[]).filter(function(c){return c.risk!=='low';});
   if(nw.length>0){h+='<h2 class="section-title">AI Config Files</h2><div class="card">';for(var n=0;n<nw.length;n++){var cfg=nw[n];h+='<div class="config-row"><div class="config-file">'+esc(cfg.file)+' <span class="sev-badge sev-'+cfg.risk+'">'+cfg.risk+'</span></div><div class="config-detail">'+esc(cfg.tool)+' -- '+esc(cfg.details)+'</div></div>';}h+='</div>';}
 
-  var id=report.identity;
-  h+='<h2 class="section-title">Identity &amp; Governance</h2><div class="card">';
-  h+='<div class="identity-row"><span class="identity-label">Project identity (.opena2a/)</span><span style="color:'+(id.aimIdentities>0?'var(--green)':'var(--amber)')+';">'+(id.aimIdentities>0?'Initialized':'Not initialized')+'</span></div>';
-  h+='<div class="identity-row"><span class="identity-label">Behavioral rules (SOUL.md)</span><span style="color:'+(id.soulFiles>0?'var(--green)':'var(--amber)')+';">'+(id.soulFiles>0?id.soulFiles+' defined':'None')+'</span></div>';
-  if(id.capabilityPolicies>0){h+='<div class="identity-row"><span class="identity-label">Capability policies</span><span style="color:var(--green);">'+id.capabilityPolicies+' policy file(s)</span></div>';}
-  if(id.mcpIdentities>0){h+='<div class="identity-row"><span class="identity-label">MCP identities</span><span style="color:var(--green);">'+id.mcpIdentities+' signed</span></div>';}
-  h+='</div>';
+  // Identity & Governance section omitted from HTML report.
+  // The governance score and findings already communicate everything
+  // actionable. Showing internal details like ".opena2a/ exists" or
+  // "SOUL.md count" adds noise without helping the reader.
 
   document.getElementById('report').innerHTML=h;
 
