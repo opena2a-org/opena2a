@@ -557,6 +557,7 @@ Examples:
     .option('--dir <path>', 'Target directory for project-local checks')
     .option('--report [path]', 'Generate HTML executive report')
     .option('--export-csv <path>', 'Export asset inventory as CSV for import into CMDB/ServiceNow')
+    .option('--registry', 'Enrich results with community trust data from OpenA2A Registry')
     .action(async (directory: string | undefined, opts) => {
       const { detect } = await import('./commands/detect.js');
       const globalOpts = program.opts();
@@ -573,6 +574,7 @@ Examples:
         verbose: globalOpts.verbose,
         reportPath,
         exportCsv: opts.exportCsv,
+        registry: opts.registry,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });

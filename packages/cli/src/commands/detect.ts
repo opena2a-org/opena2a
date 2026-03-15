@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
+import type { RegistryEnrichment } from '../util/registry-enrichment.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +25,7 @@ export interface DetectOptions {
   verbose?: boolean;
   reportPath?: string;
   exportCsv?: string;
+  registry?: boolean;
 }
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
@@ -37,6 +39,14 @@ export interface DetectedAgent {
   risk: RiskLevel;
 }
 
+export interface McpRegistryData {
+  trustScore: number;
+  trustLevel: number;
+  verdict: string;
+  communityScans: number;
+  verified: boolean;
+}
+
 export interface DetectedMcpServer {
   name: string;
   transport: 'stdio' | 'sse' | 'unknown';
@@ -44,6 +54,7 @@ export interface DetectedMcpServer {
   verified: boolean;
   capabilities: string[];
   risk: RiskLevel;
+  registryData?: McpRegistryData;
 }
 
 export interface AiConfigFile {
@@ -716,6 +727,17 @@ function riskLabel(level: RiskLevel): string {
   return riskColor(level)(level.toUpperCase());
 }
 
+/** Format a compact trust label for an MCP server row. Empty string if no registry data. */
+function formatMcpTrustLabel(server: DetectedMcpServer): string {
+  if (!server.registryData) return '';
+  const score = Math.round(server.registryData.trustScore * 100);
+  const parts = [`Trust: ${score}/100`];
+  if (server.registryData.communityScans > 0) {
+    parts.push(`${server.registryData.communityScans} community scan${server.registryData.communityScans !== 1 ? 's' : ''}`);
+  }
+  return cyan(` ${parts.join(' | ')}`);
+}
+
 function buildSummaryLine(result: DetectResult): string {
   const { summary } = result;
   const parts: string[] = [];
@@ -898,11 +920,12 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
       for (const server of projectMcp) {
         const nameCol = server.name.padEnd(20);
         const verifiedStr = server.verified ? green(' verified') : '';
+        const trustStr = formatMcpTrustLabel(server);
         const realCaps = server.capabilities.filter((c) => c !== 'unknown');
         const capsStr = realCaps.length > 0
           ? dim(` -- ${realCaps.map((c) => capabilityDescription(c).toLowerCase()).join(', ')}`)
           : '';
-        lines.push(`    ${nameCol}${verifiedStr}${capsStr}`);
+        lines.push(`    ${nameCol}${verifiedStr}${trustStr}${capsStr}`);
       }
     }
 
@@ -912,11 +935,12 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
         lines.push(`  ${bold('Machine-wide')} (${globalMcp.length})`);
         for (const server of globalMcp) {
           const nameCol = server.name.padEnd(20);
+          const trustStr = formatMcpTrustLabel(server);
           const realCaps = server.capabilities.filter((c) => c !== 'unknown');
           const capsStr = realCaps.length > 0
             ? dim(` -- ${realCaps.map((c) => capabilityDescription(c).toLowerCase()).join(', ')}`)
             : '';
-          lines.push(`    ${nameCol}${capsStr}`);
+          lines.push(`    ${nameCol}${trustStr}${capsStr}`);
         }
       } else {
         // Compact: just show the count and which ones have sensitive access
@@ -1005,6 +1029,44 @@ export async function detect(options: DetectOptions): Promise<number> {
       if (fs.existsSync(idFile)) {
         server.verified = true;
         server.risk = 'low';
+      }
+    }
+  }
+
+  // Registry enrichment (opt-in via --registry)
+  let registryEnrichments: Map<string, RegistryEnrichment> | undefined;
+  if (options.registry && mcpServers.length > 0) {
+    try {
+      const { enrichFromRegistry } = await import('../util/registry-enrichment.js');
+      const { getRegistryUrl } = await import('../util/report-submission.js');
+
+      const registryUrl = (await getRegistryUrl()) || 'https://api.oa2a.org';
+      const assets = mcpServers.map((s) => ({ name: s.name, type: 'mcp_server' }));
+      registryEnrichments = await enrichFromRegistry(assets, registryUrl);
+
+      // Attach registry data to each MCP server
+      for (const server of mcpServers) {
+        const key = `${server.name}:mcp_server`;
+        const enrichment = registryEnrichments.get(key);
+        if (enrichment) {
+          server.registryData = {
+            trustScore: enrichment.trustScore,
+            trustLevel: enrichment.trustLevel,
+            verdict: enrichment.verdict,
+            communityScans: enrichment.communityScans,
+            verified: enrichment.verified,
+          };
+        }
+      }
+
+      if (options.verbose) {
+        const enriched = mcpServers.filter((s) => s.registryData).length;
+        process.stderr.write(dim(`Registry: enriched ${enriched}/${mcpServers.length} MCP servers\n`));
+      }
+    } catch {
+      // Registry enrichment is non-critical -- never block the scan
+      if (options.verbose) {
+        process.stderr.write(dim('Registry: enrichment skipped (unavailable or timed out)\n'));
       }
     }
   }
