@@ -161,7 +161,7 @@ const AI_CONFIG_PATTERNS: AiConfigPattern[] = [
   { files: ['.windsurfrules', '.windsurf/config.json'], tool: 'Windsurf' },
   { files: ['.aider.conf.yml', '.aiderignore'], tool: 'Aider' },
   { files: ['.continue/config.json', '.continuerules'], tool: 'Continue' },
-  { files: ['SOUL.md', '.opena2a/SOUL.md'], tool: 'OpenA2A SOUL' },
+  // SOUL.md is a governance file, not a risk config -- detected by scanIdentity() instead
   { files: ['arp.config.yml', 'arp.config.yaml', '.opena2a/arp.config.yml'], tool: 'Agent Runtime Protection' },
   { files: ['langchain.config.js', 'langchain.config.ts'], tool: 'LangChain' },
   { files: ['.env.ai', 'ai.config.json', 'ai.config.yml'], tool: 'AI Framework' },
@@ -428,11 +428,21 @@ export function scanIdentity(targetDir: string): IdentitySummary {
 
   const opena2aDir = path.join(targetDir, '.opena2a');
   if (fs.existsSync(opena2aDir)) {
-    // Check for actual AIM identity file, not just the directory existing
+    // Check for actual AIM identity file in project
     const identityFile = path.join(opena2aDir, 'aim', 'identity.json');
     if (fs.existsSync(identityFile)) {
       aimIdentities++;
     }
+  }
+
+  // Also check global identity location (~/.opena2a/aim-core/identity.json)
+  // This is where `opena2a identity create` writes by default
+  const globalIdentity = path.join(os.homedir(), '.opena2a', 'aim-core', 'identity.json');
+  if (aimIdentities === 0 && fs.existsSync(globalIdentity)) {
+    aimIdentities++;
+  }
+
+  if (fs.existsSync(opena2aDir)) {
 
     const mcpIdDir = path.join(opena2aDir, 'mcp-identities');
     if (fs.existsSync(mcpIdDir)) {

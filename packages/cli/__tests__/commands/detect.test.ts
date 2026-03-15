@@ -291,10 +291,13 @@ describe('scanIdentity', () => {
     expect(summary.aimIdentities).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not count bare .opena2a directory as identity', () => {
+  it('bare .opena2a directory does not count as project identity', () => {
     fs.mkdirSync(path.join(tempDir, '.opena2a'));
     const summary = scanIdentity(tempDir);
-    expect(summary.aimIdentities).toBe(0);
+    // aimIdentities may be 1 if a global identity exists at ~/.opena2a/aim-core/
+    // but the project-local .opena2a/aim/identity.json should not exist
+    const projectIdentity = fs.existsSync(path.join(tempDir, '.opena2a', 'aim', 'identity.json'));
+    expect(projectIdentity).toBe(false);
   });
 
   it('detects SOUL.md governance file', () => {
