@@ -26,6 +26,7 @@ export interface ScanFinding {
   filePath?: string;
   lineNumber?: number;
   autoFixable?: boolean;
+  attackClass?: string;
 }
 
 export interface ScanReport {
