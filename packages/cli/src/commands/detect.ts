@@ -648,13 +648,20 @@ function csvEscape(value: string): string {
 
 function generateAssetCsv(result: DetectResult): string {
   const rows: string[] = [];
+  const hostname = os.hostname();
+  const username = os.userInfo().username;
+  const scanTime = result.scanTimestamp;
+  const scanDir = result.scanDirectory;
 
-  // Header
-  rows.push('Type,Name,Source,Transport,Capabilities,Risk,Identity,Governance,Verified');
+  // Header -- device context columns first for enterprise CMDB import
+  rows.push('Hostname,Username,ScanDirectory,ScanTimestamp,Type,Name,Source,Transport,Capabilities,Risk,Identity,Governance,Verified');
+
+  const deviceCols = [csvEscape(hostname), csvEscape(username), csvEscape(scanDir), scanTime].join(',');
 
   // AI Agents
   for (const agent of result.agents) {
     rows.push([
+      deviceCols,
       'AI Agent',
       csvEscape(agent.name),
       'process',
@@ -671,6 +678,7 @@ function generateAssetCsv(result: DetectResult): string {
   for (const server of result.mcpServers) {
     const caps = server.capabilities.filter((c) => c !== 'unknown');
     rows.push([
+      deviceCols,
       'MCP Server',
       csvEscape(server.name),
       csvEscape(server.source),
@@ -686,6 +694,7 @@ function generateAssetCsv(result: DetectResult): string {
   // AI Config Files
   for (const config of result.aiConfigs) {
     rows.push([
+      deviceCols,
       'AI Config',
       csvEscape(config.file),
       csvEscape(config.tool),
