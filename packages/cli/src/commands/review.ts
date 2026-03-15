@@ -9,7 +9,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { platform, tmpdir } from 'node:os';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject } from '../util/detect.js';
@@ -21,6 +21,7 @@ import { classifyEvents, type ClassifiedFinding } from '../shield/findings.js';
 import { getARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
 import { createAdapter } from '../adapters/index.js';
+import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
 
@@ -586,30 +587,13 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
     }
   }
 
-  // Calculate governance score using same logic as detect.ts
-  let governanceDeductions = 0;
-  for (const agent of detectedAgents) {
-    if (agent.governanceStatus === 'no governance') governanceDeductions += 15;
-    if (agent.identityStatus === 'no identity') governanceDeductions += 10;
-  }
-  for (const server of detectedMcpServers) {
-    if (server.verified) continue;
-    const isProjectLocal = server.source.includes('(project)');
-    if (!isProjectLocal) continue;
-    if (server.risk === 'critical') governanceDeductions += 20;
-    else if (server.risk === 'high') governanceDeductions += 12;
-    else if (server.risk === 'medium') governanceDeductions += 5;
-    else governanceDeductions += 2;
-  }
-  for (const config of detectedAiConfigs) {
-    if (config.risk === 'critical') governanceDeductions += 25;
-    else if (config.risk === 'high') governanceDeductions += 15;
-    else if (config.risk === 'medium') governanceDeductions += 5;
-  }
-  if (detectedIdentity.aimIdentities === 0 && detectedAgents.length > 0) governanceDeductions += 20;
-  if (detectedIdentity.soulFiles === 0 && detectedAgents.length > 0) governanceDeductions += 10;
-  governanceDeductions = Math.min(Math.round(governanceDeductions), 100);
-  const governanceScore = 100 - governanceDeductions;
+  // Calculate governance score using shared utility
+  const { governanceScore, deductions: governanceDeductions } = calculateGovernanceScore({
+    agents: detectedAgents,
+    mcpServers: detectedMcpServers,
+    aiConfigs: detectedAiConfigs,
+    identity: detectedIdentity,
+  });
 
   // Build detect findings
   const detectFindings: DetectPhaseData['findings'] = [];
@@ -905,7 +889,7 @@ function openInBrowser(filePath: string): void {
   const cmd = platform() === 'darwin' ? 'open'
     : platform() === 'win32' ? 'start'
     : 'xdg-open';
-  exec(`${cmd} "${filePath}"`);
+  spawn(cmd, [filePath], { detached: true, stdio: 'ignore' }).unref();
 }
 
 function formatProjectType(project: ReturnType<typeof detectProject>): string {

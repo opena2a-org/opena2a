@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
+import { calculateGovernanceScore } from '../util/governance-scoring.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -389,6 +390,10 @@ export function scanAiConfigs(targetDir: string): AiConfigFile[] {
       const fullPath = path.join(targetDir, file);
       if (!fs.existsSync(fullPath)) continue;
 
+      // Skip files larger than 1MB to prevent memory exhaustion
+      const stats = fs.statSync(fullPath);
+      if (stats.size > 1024 * 1024) continue;
+
       let details = `${pattern.tool} configuration`;
       let risk: RiskLevel = 'low';
 
@@ -474,53 +479,7 @@ export function scanIdentity(targetDir: string): IdentitySummary {
 // Risk scoring
 // ---------------------------------------------------------------------------
 
-/**
- * Calculate governance score (0-100, where 100 = fully governed).
- *
- * Internally computes deductions for gaps, then inverts:
- *   governanceScore = 100 - deductions
- *
- * This way users see 100 as the goal and the score goes UP as they fix things.
- */
-function calculateGovernanceScore(result: Omit<DetectResult, 'summary' | 'findings'>): { governanceScore: number; deductions: number } {
-  let deductions = 0;
-
-  // Ungoverned agents: 15 points each
-  for (const agent of result.agents) {
-    if (agent.governanceStatus === 'no governance') deductions += 15;
-    if (agent.identityStatus === 'no identity') deductions += 10;
-  }
-
-  // Unverified MCP servers -- only project-local servers affect the score.
-  // Global/machine-wide servers (Claude plugins, ~/.cursor, etc.) are shown
-  // for awareness but don't penalize the project governance score because
-  // the user cannot verify them at the project level.
-  for (const server of result.mcpServers) {
-    if (server.verified) continue;
-    const isProjectLocal = server.source.includes('(project)');
-    if (!isProjectLocal) continue;
-    if (server.risk === 'critical') deductions += 20;
-    else if (server.risk === 'high') deductions += 12;
-    else if (server.risk === 'medium') deductions += 5;
-    else deductions += 2;
-  }
-
-  // AI config risk
-  for (const config of result.aiConfigs) {
-    if (config.risk === 'critical') deductions += 25;
-    else if (config.risk === 'high') deductions += 15;
-    else if (config.risk === 'medium') deductions += 5;
-  }
-
-  // Governance gap: no AIM identity is a multiplier
-  if (result.identity.aimIdentities === 0 && result.agents.length > 0) deductions += 20;
-  if (result.identity.soulFiles === 0 && result.agents.length > 0) deductions += 10;
-
-  // Cap deductions at 100, round
-  deductions = Math.min(Math.round(deductions), 100);
-
-  return { governanceScore: 100 - deductions, deductions };
-}
+// calculateGovernanceScore is imported from ../util/governance-scoring.js
 
 // ---------------------------------------------------------------------------
 // Finding generation
@@ -1073,9 +1032,9 @@ export async function detect(options: DetectOptions): Promise<number> {
     const html = generateDetectHtml(result);
     fs.writeFileSync(options.reportPath, html, 'utf-8');
     if (!options.ci) {
-      const { exec } = await import('node:child_process');
+      const { spawn } = await import('node:child_process');
       const openCmd = os.platform() === 'darwin' ? 'open' : os.platform() === 'win32' ? 'start' : 'xdg-open';
-      exec(`${openCmd} "${options.reportPath}"`);
+      spawn(openCmd, [options.reportPath], { detached: true, stdio: 'ignore' }).unref();
     }
     process.stdout.write(`Report: ${options.reportPath}\n`);
   }
