@@ -882,7 +882,7 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
   } else {
     for (const agent of [...assistants, ...llms]) {
       const nameCol = agent.name.padEnd(22);
-      const idStatus = agent.identityStatus === 'identified' ? green('identified') : yellow('no identity');
+      const idStatus = agent.identityStatus === 'identified' ? green('project registered') : yellow('project not registered');
       const govStatus = agent.governanceStatus === 'governed' ? green('governed') : yellow('ungoverned');
       const pidStr = verbose ? dim(` (PID ${agent.pid})`) : '';
       lines.push(`  ${nameCol}${idStatus}    ${govStatus}${pidStr}`);
