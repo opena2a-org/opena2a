@@ -1087,5 +1087,24 @@ export async function detect(options: DetectOptions): Promise<number> {
     process.stdout.write(`Asset inventory: ${options.exportCsv}\n`);
   }
 
+  // Community contribution: track scan count and submit when opted in.
+  // This lets the registry aggregate shadow AI data across the community:
+  // which agents/MCP servers are in use, common governance gaps, etc.
+  try {
+    const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport, normalizeDetectReport } =
+      await import('../util/report-submission.js');
+    await recordScanAndMaybePrompt();
+
+    if (options.ci !== true && (await isContributeEnabled())) {
+      const registryUrl = await getRegistryUrl();
+      if (registryUrl) {
+        const report = normalizeDetectReport(result);
+        await submitScanReport(registryUrl, report, options.verbose);
+      }
+    }
+  } catch {
+    // Non-critical -- never block on contribution failures
+  }
+
   return 0;
 }
