@@ -874,7 +874,7 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
 
   // Identity & Governance status
   lines.push(bold('Identity & Governance'));
-  lines.push(`  Agent identity:       ${result.identity.aimIdentities > 0 ? green('registered') : yellow('not registered -- agent actions cannot be traced')}`);
+  lines.push(`  Project identity:     ${result.identity.aimIdentities > 0 ? green('initialized (.opena2a/)') : yellow('not initialized')}`);
   if (result.identity.mcpIdentities > 0) {
     lines.push(`  MCP identities:       ${green(`${result.identity.mcpIdentities} server(s) signed`)}`);
   }

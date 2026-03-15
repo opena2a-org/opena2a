@@ -126,7 +126,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 
   var pMcp=report.mcpServers.filter(function(x){return x.source.indexOf('(project)')!==-1;});
   var gMcp=report.mcpServers.filter(function(x){return x.source.indexOf('(project)')===-1;});
-  h+='<h2 class="section-title">MCP Servers ('+report.mcpServers.length+')</h2><div class="card">';
+  h+='<h2 class="section-title">MCP Servers ('+report.mcpServers.length+')</h2>';
+  if(report.mcpServers.length>0){h+='<div style="font-size:12px;color:var(--dim);margin-bottom:8px;">Export full asset list for your CMDB: <span style="color:var(--primary);">opena2a detect --export-csv assets.csv</span></div>';}
+  h+='<div class="card">';
   if(report.mcpServers.length===0){h+='<div style="color:var(--dim);">No MCP servers found</div>';}
   if(pMcp.length>0){h+='<div class="mcp-group"><div class="mcp-group-title">Project-local ('+pMcp.length+')</div>';for(var k=0;k<pMcp.length;k++){var sv=pMcp[k];var caps=(sv.capabilities||[]).filter(function(c){return c!=='unknown';});h+='<div class="mcp-row"><div class="mcp-name">'+esc(sv.name)+(sv.verified?' <span class="status-badge status-pass">verified</span>':'')+'</div>';if(caps.length>0){h+='<div class="mcp-caps">'+caps.map(function(c){return capDescs[c]||c;}).join(' | ')+'</div>';}h+='</div>';}h+='</div>';}
   if(gMcp.length>0){h+='<div class="mcp-group"><div class="mcp-group-title">Machine-wide ('+gMcp.length+')</div>';var sens=gMcp.filter(function(x){return(x.capabilities||[]).some(function(c){return['shell-access','database','payments','cloud-services'].indexOf(c)!==-1;});});if(sens.length>0){for(var m=0;m<sens.length;m++){var sm=sens[m];var sc2=(sm.capabilities||[]).filter(function(c){return c!=='unknown';});h+='<div class="mcp-row"><div class="mcp-name">'+esc(sm.name)+'</div>';if(sc2.length>0){h+='<div class="mcp-caps">'+sc2.map(function(c){return capDescs[c]||c;}).join(' | ')+'</div>';}h+='</div>';}var ot=gMcp.length-sens.length;if(ot>0){h+='<div style="color:var(--dim);font-size:12px;padding:6px 0;">+ '+ot+' more with standard access</div>';}}else{h+='<div style="color:var(--dim);font-size:12px;">'+gMcp.length+' server'+(gMcp.length!==1?'s':'')+' with standard access</div>';}h+='</div>';}
@@ -137,7 +139,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 
   var id=report.identity;
   h+='<h2 class="section-title">Identity &amp; Governance</h2><div class="card">';
-  h+='<div class="identity-row"><span class="identity-label">Agent identity</span><span style="color:'+(id.aimIdentities>0?'var(--green)':'var(--amber)')+';">'+(id.aimIdentities>0?'Registered':'Not registered')+'</span></div>';
+  h+='<div class="identity-row"><span class="identity-label">Project identity (.opena2a/)</span><span style="color:'+(id.aimIdentities>0?'var(--green)':'var(--amber)')+';">'+(id.aimIdentities>0?'Initialized':'Not initialized')+'</span></div>';
   h+='<div class="identity-row"><span class="identity-label">Behavioral rules (SOUL.md)</span><span style="color:'+(id.soulFiles>0?'var(--green)':'var(--amber)')+';">'+(id.soulFiles>0?id.soulFiles+' defined':'None')+'</span></div>';
   if(id.capabilityPolicies>0){h+='<div class="identity-row"><span class="identity-label">Capability policies</span><span style="color:var(--green);">'+id.capabilityPolicies+' policy file(s)</span></div>';}
   if(id.mcpIdentities>0){h+='<div class="identity-row"><span class="identity-label">MCP identities</span><span style="color:var(--green);">'+id.mcpIdentities+' signed</span></div>';}
