@@ -432,22 +432,23 @@ opena2a shield suggest                   # Get policy improvement recommendation
 
 Shield stores events in a local tamper-evident log at `.opena2a/shield/events.jsonl` and policies at `.opena2a/shield/policy.yaml`. No network calls are made unless LLM-powered subcommands are explicitly invoked.
 
-## Adapter Commands
+## Ecosystem Tools
 
-The CLI orchestrates specialized tools through a unified interface. Each command maps to a standalone tool that can also be used independently.
+Each command routes to a specialized tool, installed on first use:
 
 | Command | Tool | Description |
-|---------|---------|-------------|
-| `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 147 security checks, attack simulation, auto-fix |
+|---------|------|-------------|
+| `opena2a detect` | Shadow AI | Discover AI agents, MCP servers, AI configs. Governance scoring. |
+| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
+| `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 163 security checks, attack simulation, auto-fix |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
-| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Identity-aware credential broker daemon |
-| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI tool transcripts |
-| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity and access management |
-| `opena2a benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 222 standardized attack scenarios, compliance scoring (OASB) |
+| `opena2a mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
+| `opena2a benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
+| `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 
-Adapters install tools on first use. Each tool works standalone or through the CLI.
+Each tool works standalone or through the CLI.
 
 **Command-to-tool mapping:**
 
