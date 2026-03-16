@@ -67,6 +67,13 @@ opena2a                             # Interactive guided wizard (no args)
 
 Semantic search uses a local weighted index -- no API calls required. Natural language mode falls back to Claude Haiku when static matching is insufficient (opt-in via `opena2a config llm on`, costs ~$0.0002 per query).
 
+## Use Cases
+
+- [Developer using AI coding tools](../../docs/use-cases/developer.md)
+- [Security team assessing AI risk](../../docs/use-cases/security-team.md)
+- [MCP server author](../../docs/use-cases/mcp-server-author.md)
+- [CI/CD pipeline integration](../../docs/use-cases/ci-cd.md)
+
 ## Commands
 
 ### Shadow AI Detection
