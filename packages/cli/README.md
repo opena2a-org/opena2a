@@ -42,7 +42,7 @@ brew tap opena2a-org/tap && brew install opena2a   # Homebrew
 opena2a detect          # -> 2 agents, 4 MCP servers, governance score 45/100
 ```
 
-**Security Scanning** -- 147 checks for credentials, injection, MCP misconfigurations.
+**Security Scanning** -- 163 checks for credentials, injection, MCP misconfigurations.
 
 ```bash
 opena2a scan            # -> 12 findings (3 critical, 5 high, 4 medium)
