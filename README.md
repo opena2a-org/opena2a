@@ -1,438 +1,142 @@
 > **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) · Registry (April 2026)
+# opena2a
 
-<div align="center">
-
-# OpenA2A CLI
-
-**One CLI for all OpenA2A security tools**
-
-Scan, protect, benchmark, and monitor AI agents from a single command.
-Detect Shadow AI -- unmanaged agents and MCP servers running in your environment.
-This is the unified entry point to the entire [OpenA2A](https://github.com/opena2a-org) ecosystem.
-
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)]()
-
-[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Demos](https://opena2a.org/demos) | [Discord](https://discord.gg/uRZa3KXgEn)
-
-</div>
-
----
-
-## What's Behind the CLI
-
-Every OpenA2A project is accessible through `opena2a <command>`. Each tool also works standalone.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    opena2a-cli  (you are here)                  │
-│                    npm install -g opena2a-cli                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  opena2a scan / benchmark  → HackMyAgent  (security scanner)    │
-│  opena2a secrets / broker  → Secretless AI (credential mgmt)    │
-│  opena2a identity          → AIM  (agent identity & access)     │
-│  opena2a runtime           → ARP  (runtime protection)          │
-│  opena2a scan-soul         → ABGS (behavioral governance)       │
-│  opena2a benchmark oasb-2  → OASB (compliance benchmarks)       │
-│  opena2a train             → DVAA (vulnerable agent training)   │
-│                                                                 │
-│  opena2a detect            → Shadow AI discovery                │
-│  opena2a mcp               → MCP server identity & signing      │
-│  opena2a demo              → Interactive security walkthrough   │
-│                                                                 │
-│  opena2a shield init       → All of the above, one command      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-| CLI Command | Tool | Description |
-|-------------|------|-------------|
-| `scan`, `benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 147 security checks, OASB benchmarks, attack simulation |
-| `secrets`, `broker`, `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for Claude Code, Cursor, Windsurf |
-| `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Ed25519 keypairs, capability policies, audit logging |
-| `runtime` | ARP ([in HMA](https://github.com/opena2a-org/hackmyagent)) | Process, network, filesystem monitoring |
-| `scan-soul`, `harden-soul` | ABGS ([in HMA](https://github.com/opena2a-org/hackmyagent)) | Behavioral governance -- SOUL.md, 68 controls |
-| `benchmark oasb-2` | OASB ([in HMA](https://github.com/opena2a-org/hackmyagent)) | 222 standardized attack scenarios, compliance scoring |
-| `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Deliberately vulnerable AI agents for training |
-| `guard` | ConfigGuard (built-in) | Config file integrity, SHA-256 signing |
-| `detect` | Shadow AI Discovery (built-in) | Find unmanaged AI agents and MCP servers in your environment |
-| `mcp` | MCP Identity (built-in) | Audit, sign, and verify MCP server configs |
-| `demo` | Demo (built-in) | Interactive AIM and DVAA security walkthroughs |
-| `shield` | Shield (built-in) | Unified orchestration across all tools |
-
-Adapters install tools on first use — no manual setup required.
-
-## Install
-
-```bash
-# Try without installing
-npx opena2a-cli init
-
-# Install globally
-npm install -g opena2a-cli
-
-# Homebrew (macOS/Linux)
-brew tap opena2a-org/tap && brew install opena2a
-```
-
-No configuration required. Works with Node.js, Python, Go, and MCP server projects.
-
-**Requirements:** Node.js >= 18. Optional: Docker (for `opena2a train`), Python 3.9+ (for `opena2a crypto`).
+Open-source security platform for AI agents. Detect shadow AI, manage identity, enforce governance, scan for vulnerabilities, and protect credentials.
 
 ## Quick Start
 
-### 1. Assess your project
-
 ```bash
-opena2a init
+npx opena2a-cli review
 ```
 
-<p align="center">
-  <img src="docs/vhs/init.gif" alt="opena2a init demo" width="700" />
-</p>
+```
+  OpenA2A Security Review  v0.7.2
 
-### 2. Fix everything
+  Project      myapp v2.1.0
+  Type         Node.js + MCP server
+  Directory    /home/user/myapp
 
-```bash
-opena2a protect
+  Findings
+  -----------------------------------------------
+  Credential scan        3 hardcoded keys
+  Shadow AI              2 agents, 4 MCP servers
+  Config integrity       unsigned
+  Governance             no SOUL.md
+  -----------------------------------------------
+  Security Score   30 / 100  -> 85 by running opena2a protect
+
+  Run: opena2a protect    (fix all findings)
 ```
 
-<p align="center">
-  <img src="docs/vhs/protect.gif" alt="opena2a protect demo" width="700" />
-</p>
-
-### 3. Full security setup
+Install globally if you prefer:
 
 ```bash
-opena2a shield init
+npm install -g opena2a-cli          # npm
+brew tap opena2a-org/tap && brew install opena2a   # Homebrew
 ```
 
-<p align="center">
-  <img src="docs/vhs/shield-init.gif" alt="opena2a shield init demo" width="700" />
-</p>
+## What It Does
 
-One command sets up credential protection, agent identity, config integrity, runtime monitoring, and AI tool configuration.
+**Shadow AI Detection** -- Find every AI agent and MCP server in your environment.
 
-<p align="center">
-  <img src="docs/vhs/shield-status.gif" alt="opena2a shield status demo" width="700" />
-</p>
+```bash
+opena2a detect          # -> 2 agents, 4 MCP servers, governance score 45/100
+```
+
+**Security Scanning** -- 163 checks for credentials, injection, MCP misconfigurations.
+
+```bash
+opena2a scan            # -> 12 findings (3 critical, 5 high, 4 medium)
+```
+
+**Credential Protection** -- Migrate hardcoded secrets to environment variables.
+
+```bash
+opena2a protect         # -> 3 credentials migrated, score 30 -> 85
+```
+
+## Built-in Help
+
+You do not need this README to use opena2a. The CLI has built-in discovery:
+
+```bash
+opena2a ?                           # Context-aware recommendations for your project
+opena2a ~shadow ai                  # Semantic search across all commands
+opena2a "find leaked credentials"   # Natural language command matching
+opena2a                             # Interactive guided wizard (no args)
+```
+
+Semantic search uses a local weighted index -- no API calls required. Natural language mode falls back to Claude Haiku when static matching is insufficient (opt-in via `opena2a config llm on`, costs ~$0.0002 per query).
+
+## Use Cases
+
+- [Developer using AI coding tools](../../docs/use-cases/developer.md)
+- [Security team assessing AI risk](../../docs/use-cases/security-team.md)
+- [MCP server author](../../docs/use-cases/mcp-server-author.md)
+- [CI/CD pipeline integration](../../docs/use-cases/ci-cd.md)
 
 ## Commands
 
-### Built-in
+### Shadow AI Detection
 
-| Command | What It Does |
+| Command | Description |
 |---------|-------------|
-| [`init`](#opena2a-init) | Assess security posture, calculate trust score (0-100), prioritize next steps |
-| [`protect`](#opena2a-protect) | Fix all auto-fixable findings — credentials, .gitignore, config signing |
-| [`guard`](#opena2a-guard) | Config file integrity — sign, verify, watch, diff, policy, pre-commit hooks |
-| [`shield`](#opena2a-shield) | Unified orchestration — init, status, log, report, monitor, triage |
-| `review` | Unified HTML security dashboard with composite score |
-| [`runtime`](#opena2a-runtime) | Agent Runtime Protection (ARP) — process, network, filesystem monitoring |
-| [`verify`](#opena2a-verify) | Binary integrity verification against Trust Registry |
-| [`detect`](#opena2a-detect----shadow-ai-discovery) | Shadow AI Discovery -- find unmanaged agents and MCP servers, report governance gaps |
-| [`mcp`](#opena2a-mcp) | MCP server identity -- audit configs, Ed25519 signing, trust verification |
-| [`demo`](#opena2a-demo) | Interactive walkthroughs -- AIM lifecycle (22-87 score) and DVAA attack/defend |
-| `config` | Manage user preferences and feature toggles |
-| `baselines` | Behavioral observation collection for crowdsourced agent profiles |
-
-### Adapters (install tools on first use)
-
-| Command | Tool |
-|---------|------|
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — 147 security checks, attack simulation |
-| `benchmark` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) — OASB-1 + OASB-2 compliance scoring |
-| `scan-soul` / `harden-soul` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) -- ABGS behavioral governance, 68 controls |
-| `secrets` / `broker` / `dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) — credential management for AI dev tools |
-| `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) — agent identity and access management |
-| `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) — vulnerable AI agent for security training |
-| `registry` | **Registry** — package verification and trust scores (coming soon) |
-| `crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) — cryptographic inventory, PQC readiness |
-
-## Smart Input Modes
-
-No memorization required:
-
-```bash
-opena2a                           # Interactive guided wizard (no args)
-opena2a ~drift                    # Semantic search -- finds related commands
-opena2a ?                         # Context-aware recommendations for your project
-opena2a "find leaked credentials" # Natural language command matching
-```
-
-## Scope Drift Detection
-
-API keys provisioned for one service often silently grant access to others. A Google Maps key can call Gemini. An AWS S3 key may reach Bedrock.
-
-| Finding | What It Means |
-|---------|---------------|
-| **DRIFT-001** | Google API key can access Gemini AI models beyond intended Maps/Places scope |
-| **DRIFT-002** | AWS access key can invoke Bedrock LLM models beyond intended S3/EC2 scope |
-
-When drift is detected, `opena2a protect` migrates the key to environment variables and creates a deny-all broker policy.
-
-## CI/CD Integration
-
-### `opena2a init`
-
-Assess your project's security posture. Detects project type, scans for credentials, checks hygiene (`.gitignore`, `.env` protection, lock file, security config), calculates a trust score (0-100), and provides prioritized next steps.
-
-```bash
-opena2a init                    # Assess current directory
-opena2a init --dir ./my-agent   # Assess specific directory
-opena2a init --verbose          # Show individual credential details
-opena2a init --format json      # Machine-readable output for CI
-```
-
-### `opena2a protect`
-
-Single command to fix all auto-fixable findings. Migrates credentials, fixes `.gitignore`, excludes AI config files from git, signs config files, and shows before/after security score.
-
-```bash
-opena2a protect                 # Fix everything fixable
-opena2a protect --dry-run       # Preview changes without modifying files
-opena2a protect --skip-liveness # Skip drift liveness verification (offline/CI)
-opena2a protect --skip-verify   # Skip verification re-scan after migration
-opena2a protect --skip-sign     # Skip config signing phase
-opena2a protect --skip-git      # Skip git hygiene fixes
-opena2a protect --report out.html  # Generate interactive HTML report
-opena2a protect --format json   # JSON output for CI pipelines
-```
-
-DRIFT findings (DRIFT-001, DRIFT-002) include liveness verification -- the CLI actually calls the API to check whether a Google Maps key can access Gemini, or an AWS key can reach Bedrock. Use `--skip-liveness` in CI or offline environments.
-
-> See a [sample interactive report](docs/demos/sample-protect-report.html) generated by `opena2a protect --report`.
-
-What protect fixes:
-1. **Credentials** -- Detect, vault, and replace hardcoded secrets with env var references
-2. **`.gitignore`** -- Create or update to exclude `.env` files
-3. **AI config exclusion** -- Add `CLAUDE.md`, `.cursorrules`, etc. to `.git/info/exclude`
-4. **Config signing** -- Sign config files for tamper detection (`.opena2a/guard/signatures.json`)
-5. **Verification** -- Re-scan to confirm all credentials removed, show before/after score
-
-### `opena2a guard`
-
-Config file integrity protection. Sign your config files, detect unauthorized modifications, enforce policies, and manage signature snapshots for rollback.
-
-**Subcommands:**
-
-```bash
-opena2a guard sign              # Sign all detected config files (SHA-256)
-opena2a guard verify            # Check for tampering or unsigned files
-opena2a guard status            # Show signature summary (signed/unsigned/tampered counts)
-opena2a guard watch             # Real-time file monitoring with tamper alerts
-opena2a guard diff              # Show changes since last signing (file-level diffs)
-opena2a guard policy init       # Initialize guard policy for this project
-opena2a guard policy show       # Display current guard policy
-opena2a guard hook install      # Install pre-commit hook (blocks commits when tampered)
-opena2a guard hook uninstall    # Remove pre-commit hook
-opena2a guard hook status       # Check if pre-commit hook is installed
-opena2a guard resign            # Re-sign files after intentional changes (creates safety snapshot first)
-opena2a guard snapshot create   # Create a timestamped signature snapshot
-opena2a guard snapshot list     # List available snapshots
-opena2a guard snapshot restore  # Restore signatures from a snapshot
-```
-
-**Flags:**
-
-```bash
---enforce                       # Quarantine mode: exit code 3 on tampering instead of 1
---skills                        # Include SKILL.md files in signing/verification (HTML comment signature block)
---heartbeats                    # Include HEARTBEAT.md files (includes expires_at)
---files <files...>              # Sign/verify specific files only
---dir <path>                    # Target directory (defaults to current working directory)
---ci                            # CI mode: machine-readable output, non-interactive
-```
-
-**Behaviors:**
-
-- Signatures stored in `.opena2a/guard/signatures.json`
-- Exit codes: `0` = clean, `1` = tampered, `3` = quarantine (`--enforce`)
-- Default files: `mcp.json`, `package.json`, `tsconfig.json`, `arp.yaml`, `go.mod`, `Dockerfile`, and more
-- Policy can require specific files, block on unsigned, and auto-disable heartbeats when tampering is detected
-- Pre-commit hook runs `opena2a guard verify --ci` before each commit
-- Snapshots stored in `.opena2a/guard/snapshots/`, max 20 with auto-prune
-- `resign` creates a safety snapshot before re-signing so you can roll back
-- Shield integration: `opena2a shield status` includes ConfigGuard state
-
-**Example workflow:**
-
-```bash
-opena2a guard sign                       # Sign all config files
-opena2a guard policy init                # Set up integrity policy
-opena2a guard hook install               # Block commits on tampering
-# ... later, after intentional config changes ...
-opena2a guard diff                       # Review what changed
-opena2a guard resign                     # Re-sign (snapshot created automatically)
-opena2a guard snapshot list              # View available snapshots
-opena2a guard snapshot restore <id>      # Roll back if needed
-```
-
-### `opena2a shield`
-
-Unified security orchestration. One command to set up everything -- credential protection, agent identity, config integrity, policy generation, shell hooks, runtime monitoring, and AI tool configuration.
-
-```bash
-opena2a shield init             # Full 11-step security setup
-opena2a shield status           # Unified view across all products
-opena2a shield log              # Query tamper-evident event log
-opena2a shield selfcheck        # Verify integrity
-opena2a shield report           # Generate weekly security report
-opena2a shield session          # Identify current AI assistant session
-```
-
-Shield orchestrates Secretless (credential protection), aim-core (agent identity), ConfigGuard (config integrity), ARP (runtime monitoring), and Browser Guard (browser session protection) into a single workflow. Optional products degrade gracefully when not installed.
-
-<p align="center">
-  <img src="docs/vhs/shield-status.gif" alt="opena2a shield status demo" width="700" />
-</p>
-
-### `opena2a review`
-
-Run all security checks and open a unified HTML dashboard. Combines credential scanning, config integrity verification, and HMA scan results into a single composite score.
-
-```bash
-opena2a review                  # Scan and open HTML dashboard
-opena2a review --format json    # JSON output for CI
-opena2a review --report out.html  # Write to custom path
-opena2a review --no-open        # Generate report without opening browser
-opena2a review --skip-hma       # Skip HMA scan even if available
-```
-
-### `opena2a runtime`
-
-Agent Runtime Protection (ARP) wrapper. Monitor process, network, and filesystem activity.
-
-```bash
-opena2a runtime init            # Generate arp.yaml for your project
-opena2a runtime start           # Start monitoring
-opena2a runtime status          # Show monitor/interceptor status
-opena2a runtime tail            # View recent security events
-```
-
-### `opena2a verify`
-
-Binary integrity verification. Compares installed package hashes against the OpenA2A Trust Registry to detect supply chain tampering.
-
-```bash
-opena2a verify                  # Check all OpenA2A packages
-opena2a verify --package hackmyagent  # Check specific package
-```
-
-### `opena2a self-register`
-
-Register OpenA2A tools in the public Trust Registry with security scan results.
-
-```bash
-opena2a self-register --dry-run   # Preview what would be registered
-opena2a self-register             # Register all 13 tools
-```
-
-### `opena2a baselines`
-
-Collect behavioral observations for crowdsourced agent profiles (opt-in). Monitors a package's runtime behavior to build baseline profiles.
-
-```bash
-opena2a baselines --package hackmyagent          # Observe for 60 seconds (default)
-opena2a baselines --package hackmyagent --duration 120  # Custom duration
-```
-
-### `opena2a detect` -- Shadow AI Discovery
-
-Detect Shadow AI in your environment -- unmanaged AI agents and MCP servers running without identity or governance. Scans processes for 7 AI tools (Claude Code, Cursor, Copilot, Windsurf, Aider, Continue, Cline), discovers MCP server configurations, and reports identity and governance status.
-
-```bash
-opena2a detect                  # Scan current directory
-opena2a detect --dir ./project  # Scan specific directory
-opena2a detect --verbose        # Show detection methods and target dir
-opena2a detect --format json    # Machine-readable output for CI
-```
-
-### `opena2a mcp`
-
-MCP server identity management. Audit discovered MCP server configurations, sign servers with Ed25519 keypairs, and verify signatures with trust scoring.
-
-**Subcommands:**
-
-```bash
-opena2a mcp                     # Alias for `opena2a mcp audit`
-opena2a mcp audit               # Discover MCP configs across Claude, Cursor, Windsurf, project
-opena2a mcp sign <server>       # Create Ed25519 identity for an MCP server
-opena2a mcp verify <server>     # Verify signature and show trust score
-```
-
-### `opena2a demo`
-
-Interactive security walkthroughs that demonstrate AIM value without requiring a live agent deployment.
-
-**Scenarios:**
-
-```bash
-opena2a demo aim                # 8-step AIM lifecycle: trust score rises from 22 to 87
-opena2a demo dvaa               # 5-step attack/defend: 4/4 attacks blocked, score 18 to 91
-opena2a demo aim --keep         # Keep the temporary sandbox directory after demo
-opena2a demo dvaa --format json # JSON output for CI integration
-```
-
-### `opena2a config`
-
-Manage user preferences and feature toggles.
-
-```bash
-opena2a config show               # Display current configuration
-opena2a config contribute on      # Enable community data sharing
-opena2a config llm on             # Enable LLM-powered command matching
-```
-
-### `opena2a shield`
-
-Unified security orchestration. Shield ties together all OpenA2A tools into a single command surface. Run `shield init` to set up your project, then use `shield status` to monitor posture across credentials, config integrity, runtime protection, and policy compliance.
-
-**Subcommands:**
-
-```bash
-opena2a shield init               # Full environment scan, policy generation, shell hooks
-opena2a shield status             # View security posture across all products
-opena2a shield log                # Query the tamper-evident event log
-opena2a shield selfcheck          # Run integrity checks across all subsystems
-opena2a shield policy             # Show loaded policy summary
-opena2a shield evaluate <action>  # Evaluate an action against the active policy
-opena2a shield recover            # Exit lockdown mode after incident resolution
-opena2a shield report             # Generate a security posture report
-opena2a shield monitor            # Continuous security monitoring daemon
-opena2a shield session            # Show current AI coding assistant session identity
-opena2a shield baseline           # View adaptive enforcement baselines for agents
-opena2a shield suggest            # LLM-powered policy suggestions from observed behavior
-opena2a shield explain            # LLM-powered anomaly explanations for events
-opena2a shield triage             # LLM-powered incident classification and response
-```
-
-**Key flags:**
-
-```bash
---analyze                         # Include LLM-powered analysis in reports
---forensic                        # Deep forensic mode for log/report
---since <time>                    # Filter events by time (e.g., "1h", "24h", "7d", "1w", "1m")
---severity <level>                # Filter by severity (info, warning, error, critical)
---ci                              # Machine-readable output for CI pipelines
---format json                     # JSON output
-```
-
-**Example workflow:**
-
-```bash
-opena2a shield init                      # One-command security setup
-opena2a shield status                    # Check posture at a glance
-opena2a shield report --analyze          # Full posture report with LLM analysis
-opena2a shield log --since 1h            # Review recent security events
-opena2a shield triage                    # Classify and prioritize open incidents
-opena2a shield suggest                   # Get policy improvement recommendations
-```
-
-Shield stores events in a local tamper-evident log at `.opena2a/shield/events.jsonl` and policies at `.opena2a/shield/policy.yaml`. No network calls are made unless LLM-powered subcommands are explicitly invoked.
-
-## Ecosystem Tools
+| `opena2a detect` | Discover AI agents, MCP servers, and AI configs on this machine |
+| `opena2a detect --report` | Generate HTML executive report |
+| `opena2a detect --export-csv assets.csv` | Export asset inventory for CMDB |
+
+### Security Assessment
+
+| Command | Description |
+|---------|-------------|
+| `opena2a review` | Full security review with interactive HTML dashboard (6 tabs) |
+| `opena2a init` | Read-only security assessment with trust score |
+| `opena2a protect` | Fix all findings: credentials, .gitignore, config signing |
+| `opena2a protect --dry-run` | Preview changes without modifying files |
+
+### Behavioral Governance
+
+| Command | Description |
+|---------|-------------|
+| `opena2a scan-soul` | Scan SOUL.md against ABGS controls (27-68 checks by tier) |
+| `opena2a harden-soul` | Generate or improve SOUL.md governance file |
+| `opena2a scan-soul --deep` | LLM semantic analysis (requires ANTHROPIC_API_KEY) |
+| `opena2a scan-soul --fail-below 60` | CI gate: exit 1 if score below threshold |
+
+### Config and Runtime Protection
+
+| Command | Description |
+|---------|-------------|
+| `opena2a guard sign` | Sign config files (SHA-256 integrity) |
+| `opena2a guard verify` | Check for tampering or unsigned files |
+| `opena2a runtime init` | Generate arp.yaml for runtime monitoring |
+| `opena2a runtime start` | Start process/network/filesystem monitoring |
+
+### Identity and Trust
+
+| Command | Description |
+|---------|-------------|
+| `opena2a trust express` | Look up trust profile for an npm package |
+| `opena2a trust --source pypi langchain` | Look up PyPI package |
+| `opena2a claim my-agent` | Claim agent ownership via npm/GitHub verification |
+| `opena2a identity list` | Show local Ed25519 agent identity |
+| `opena2a identity trust` | Calculate trust score with factor breakdown |
+| `opena2a verify` | Binary integrity check against Trust Registry |
+
+### Shield: Security Orchestration
+
+| Command | Description |
+|---------|-------------|
+| `opena2a shield init` | Full environment scan + policy generation + shell hooks |
+| `opena2a shield status` | Tool availability and integrity state |
+| `opena2a shield selfcheck` | Run integrity checks across all subsystems |
+| `opena2a shield log` | Query tamper-evident event log |
+| `opena2a shield report` | Generate security posture report (text or HTML) |
+| `opena2a shield evaluate` | Evaluate an action against loaded policy |
+| `opena2a shield session` | Detect current AI coding assistant |
+| `opena2a shield baseline` | View per-agent behavioral baselines |
+
+### Ecosystem Tools
 
 Each command routes to a specialized tool, installed on first use:
 
@@ -448,71 +152,197 @@ Each command routes to a specialized tool, installed on first use:
 | `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
 
-Each tool works standalone or through the CLI.
+---
 
-**Command-to-tool mapping:**
+## Detailed Reference
 
-| Tool | CLI Commands |
-|---------|-------------|
-| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `scan`, `benchmark` |
-| [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `secrets`, `broker`, `dlp` |
-| [AIM](https://github.com/opena2a-org/agent-identity-management) | `identity` |
-| [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `train` |
-| [CryptoServe](https://github.com/ecolibria/crypto-serve) | `crypto` |
-| ConfigGuard (built-in) | `guard` |
-| ARP (included in HackMyAgent) | `runtime` |
-| Shield (built-in) | `shield`, `init`, `review` |
-| Protect (built-in, Secretless for vault) | `protect` |
+### `opena2a review`
 
-## CI/CD Integration
+Run all security checks and generate a unified HTML dashboard. Combines credential scanning, config integrity, Shield posture, shadow AI detection, advisory checks, and optional HMA deep scan into a single interactive report with 6 tabs.
 
-All commands support `--format json` and `--ci` flags for pipeline integration:
+```bash
+opena2a review                     # Scan + open HTML report in browser
+opena2a review --no-open           # Generate report without opening
+opena2a review --report out.html   # Save to custom path
+opena2a review --format json       # JSON output for CI
+```
+
+### `opena2a detect`
+
+Reports a governance score (0-100, where 100 = fully governed) with actionable findings.
+
+What detect finds:
+- **Running AI agents**: Claude Code, Cursor, GitHub Copilot, Windsurf, Aider, Ollama, LM Studio, and more
+- **MCP servers**: Project-local and machine-wide configurations across Claude, Cursor, Windsurf, Cline, and VS Code
+- **AI config files**: `.cursorrules`, `CLAUDE.md`, `.copilot`, `.windsurfrules`, and framework configs
+- **Governance posture**: AIM identity, SOUL.md behavioral rules, capability policies
+
+```bash
+opena2a detect                              # Scan current project
+opena2a detect --report                     # Generate HTML executive report
+opena2a detect --export-csv assets.csv      # Export asset inventory for CMDB
+opena2a detect --format json                # Machine-readable output
+opena2a detect --verbose                    # Show full MCP server list and PIDs
+```
+
+The CSV export includes hostname, username, scan directory, and timestamp on every row for enterprise CMDB import.
+
+### `opena2a init`
+
+Read-only assessment. Detects project type (Node.js, Python, Go), scans for credentials, checks hygiene (.gitignore, .env protection, lock file, security config, MCP config), calculates a trust score (0-100), and provides prioritized next steps. Does not modify any files.
+
+```bash
+opena2a init                    # Assess current directory
+opena2a init --dir ./my-agent   # Assess specific directory
+opena2a init --verbose          # Show individual credential details
+opena2a init --format json      # Machine-readable output for CI
+```
+
+### `opena2a protect`
+
+Single command to fix all auto-fixable findings:
+
+1. **Credentials** -- Detect, vault, and replace hardcoded secrets with env var references
+2. **`.gitignore`** -- Create or update to exclude `.env` files
+3. **AI config exclusion** -- Add `CLAUDE.md`, `.cursorrules`, etc. to `.git/info/exclude`
+4. **Config signing** -- Sign config files for tamper detection
+5. **Verification** -- Re-scan and show before/after security score
+
+```bash
+opena2a protect                 # Fix everything fixable
+opena2a protect --dry-run       # Preview changes without modifying files
+opena2a protect --skip-sign     # Skip config signing phase
+opena2a protect --skip-git      # Skip git hygiene fixes
+opena2a protect --report out.html  # Generate interactive HTML report
+opena2a protect --format json   # JSON output for CI pipelines
+```
+
+### Scope Drift Detection
+
+API keys provisioned for one service often silently grant access to others. A Google Maps key can call Gemini. An AWS S3 key may reach Bedrock.
+
+| Finding | What It Means |
+|---------|---------------|
+| **DRIFT-001** | Google API key can access Gemini AI models beyond intended Maps/Places scope |
+| **DRIFT-002** | AWS access key can invoke Bedrock LLM models beyond intended S3/EC2 scope |
+
+When drift is detected, `opena2a protect` migrates the key to environment variables and creates a deny-all broker policy so you can explicitly control which services each key is allowed to reach.
+
+### Behavioral Governance (ABGS)
+
+The [Agent Behavioral Governance Specification (ABGS)](https://github.com/opena2a-org/agent-governance-spec) defines a tiered behavioral safety framework for AI agents across 8 domains and 68 controls (OASB v2).
+
+```bash
+opena2a scan-soul                          # Scan SOUL.md in current directory
+opena2a scan-soul ./agent/                 # Scan specific directory
+opena2a scan-soul --tier TOOL-USING        # Force tier (27/54/65/68 controls)
+opena2a scan-soul --json                   # Machine-readable output for CI
+opena2a scan-soul --deep                   # LLM semantic analysis
+opena2a scan-soul --fail-below 60          # CI gate
+
+opena2a harden-soul                        # Add missing sections to SOUL.md
+opena2a harden-soul --dry-run              # Preview without writing
+```
+
+| Tier | Controls | Use Case |
+|------|----------|----------|
+| `BASIC` | 27 | Single-turn chatbots, no tool use |
+| `TOOL-USING` | 54 | Agents with tool/function calling |
+| `AGENTIC` | 65 | Long-running, multi-step autonomous agents |
+| `MULTI-AGENT` | 68 | Orchestrators and sub-agent systems |
+
+The 8 ABGS domains: Trust Hierarchy, Capability Boundaries, Injection Hardening, Data Handling, Hardcoded Behaviors, Agentic Safety, Honesty and Transparency, Human Oversight.
+
+### Shield Subcommands
+
+Shield ties all OpenA2A tools into a single security layer. It provides a tamper-evident event log, policy evaluation, runtime monitoring, session identification, integrity verification, and LLM-powered analysis.
+
+| Capability | What it does |
+|-----------|-------------|
+| **Credential scanning** | Detects hardcoded API keys (Anthropic, OpenAI, AWS, Google, GitHub) |
+| **Scope drift detection** | Finds API keys that silently access unintended services |
+| **Tamper-evident event log** | SHA-256 hash-chained log -- any modification breaks the chain |
+| **Policy evaluation** | Allow/deny rules for processes, credentials, network, filesystem, MCP servers |
+| **Session identification** | Detects which AI assistant is running |
+| **Config integrity** | Signs config files and detects unauthorized modifications |
+| **Posture scoring** | 0-100 security score based on active tools, policy, hooks, credentials |
+| **LLM intelligence** | AI-powered policy suggestions, anomaly explanations, incident triage (opt-in) |
+| **Lockdown mode** | Enters lockdown when integrity checks fail; requires explicit recovery |
+| **Adaptive baselines** | Learns per-agent behavior, tracks stability, suggests policies |
+| **Enforcement mode** | Shell hooks block denied commands (exit code 1) |
+
+Shield operates in three modes: **Monitor** (default, logs events), **Enforce** (blocks denied commands), and **Baseline learning** (observes behavior, suggests policies).
+
+```bash
+opena2a shield init                        # Full scan + policy + shell hooks
+opena2a shield status                      # Tool availability and integrity
+opena2a shield selfcheck                   # Five integrity checks
+opena2a shield log                         # Last 20 events
+opena2a shield log --severity high         # Filter by severity
+opena2a shield log --agent claude-code     # Filter by agent
+opena2a shield log --since 7d             # Filter by time
+opena2a shield report                      # Posture report (text)
+opena2a shield report --report posture.html  # Interactive HTML report
+opena2a shield report --analyze            # Include LLM narrative
+opena2a shield evaluate "curl evil.com"    # Evaluate command against policy
+opena2a shield session                     # Detect AI assistant session
+opena2a shield session --verbose           # Show raw detection signals
+opena2a shield baseline                    # List per-agent baselines
+opena2a shield suggest                     # LLM-powered policy suggestions
+opena2a shield explain                     # LLM-powered event explanation
+opena2a shield triage                      # LLM-powered incident classification
+opena2a shield recover                     # Exit lockdown mode
+opena2a shield policy                      # Show loaded security policy
+opena2a shield monitor                     # Import ARP events into log
+```
+
+### CI/CD Integration
 
 ```yaml
-# GitHub Actions
-- name: Security assessment
-  run: npx opena2a-cli init --ci --format json > security-report.json
+# GitHub Actions example
+- name: Security review
+  run: npx opena2a-cli review --format json
 
 - name: Credential check
   run: |
-    npx opena2a-cli protect --dry-run --ci --format json > cred-report.json
+    npx opena2a-cli protect --dry-run --json > cred-report.json
     jq -e '.totalFound == 0' cred-report.json
 
+- name: Behavioral governance gate
+  run: npx opena2a-cli scan-soul --json --fail-below 60
+
 - name: Config integrity
-  run: npx opena2a-cli guard verify --ci --enforce
+  run: npx opena2a-cli guard verify
 ```
 
-Output formats: `--format text` (default), `--format json`, `--format sarif`, `--report <path>` (interactive HTML).
+A copy-paste-ready GitHub Actions workflow is included at `examples/github-actions-shield.yml`.
 
-## Standalone Tools
+### Output Formats
 
-Each tool in the ecosystem can be used independently — the CLI is optional.
+| Format | Flag | Use Case |
+|--------|------|----------|
+| Text | (default) | Human-readable terminal output |
+| JSON | `--json` | CI pipelines, programmatic consumption |
+| HTML | `--report <path>` | Interactive report (protect and shield commands) |
 
-| Tool | Install Standalone | Purpose |
-|------|-------------------|---------|
-| [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | `npx hackmyagent secure` | Security scanner, attack simulation, OASB, ARP, ABGS |
-| [Secretless AI](https://github.com/opena2a-org/secretless-ai) | `npx secretless-ai init` | Credential management for AI coding tools |
-| [AIM](https://github.com/opena2a-org/agent-identity-management) | `pip install aim-sdk` | Agent identity, keypairs, capability policies |
-| [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | `docker pull opena2a/dvaa` | Deliberately vulnerable AI agent for training |
-| [AI Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) | Chrome Web Store | Browser extension for AI agent detection |
-| **Registry** | `registry.opena2a.org` | Coming soon |
+### Credential Patterns
 
-## Upstream Contributions
+| ID | Pattern | Severity |
+|----|---------|----------|
+| CRED-001 | Anthropic API Key (`sk-ant-api*`) | Critical |
+| CRED-002 | OpenAI API Key (`sk-*`, `sk-proj-*`, `sk-test-*`) | Critical |
+| CRED-003 | GitHub Token (`ghp_*`, `ghs_*`) | High |
+| CRED-004 | Generic API Key in assignment | Medium |
+| DRIFT-001 | Google API Key with Gemini drift (`AIza*`) | High |
+| DRIFT-002 | AWS Access Key with Bedrock drift (`AKIA*`) | High |
 
-We contribute security fixes back to the open-source projects we audit.
+Language-aware replacements: JavaScript (`process.env.VAR`), Python (`os.environ.get('VAR')`), Go (`os.Getenv("VAR")`), Ruby (`ENV['VAR']`), Java/Kotlin (`System.getenv("VAR")`), Rust (`std::env::var("VAR")`), YAML/TOML/JSON (`${VAR}`).
 
-**[OpenClaw](https://github.com/openclaw/openclaw)** (245K+ stars) -- 8 security PRs (7 merged, 1 open):
+## Requirements
 
-- Credential redaction in gateway config responses ([#9858](https://github.com/open-webui/open-webui/pull/9858))
-- Skill/plugin code safety scanner ([#9806](https://github.com/open-webui/open-webui/pull/9806))
-- Path traversal prevention in file serving ([#10525](https://github.com/open-webui/open-webui/pull/10525))
-- Security headers for gateway HTTP responses ([#10526](https://github.com/open-webui/open-webui/pull/10526))
-- Timing-safe comparison for hook token auth ([#10527](https://github.com/open-webui/open-webui/pull/10527))
-- Supply chain hardening with --ignore-scripts ([#10528](https://github.com/open-webui/open-webui/pull/10528))
-- File permission enforcement for credential files ([#10529](https://github.com/open-webui/open-webui/pull/10529))
-- Skill scanner false positive reduction ([#10530](https://github.com/open-webui/open-webui/pull/10530))
-
-**[Nanobot](https://github.com/HKUDS/nanobot)** -- Path traversal, XSS, and shell escape fixes ([#472](https://github.com/HKUDS/nanobot/pull/472))
+- Node.js >= 18
+- Optional: Docker (for `opena2a train`)
+- Optional: Python 3.9+ (for `opena2a crypto`)
 
 ## License
 
@@ -521,6 +351,8 @@ Apache-2.0
 ---
 
 <div align="center">
+
+[Website](https://opena2a.org) | [Docs](https://opena2a.org/docs) | [Discord](https://discord.gg/uRZa3KXgEn) | [GitHub](https://github.com/opena2a-org/opena2a)
 
 [Report an Issue](https://github.com/opena2a-org/opena2a/issues) | [Contribute](https://github.com/opena2a-org/opena2a/blob/main/CONTRIBUTING.md)
 
