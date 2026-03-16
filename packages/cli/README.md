@@ -136,21 +136,21 @@ Semantic search uses a local weighted index -- no API calls required. Natural la
 | `opena2a shield session` | Detect current AI coding assistant |
 | `opena2a shield baseline` | View per-agent behavioral baselines |
 
-### Adapter Commands
+### Ecosystem Tools
 
-These route to specialized tools, installed on first use:
+Each command routes to a specialized tool, installed on first use:
 
 | Command | Tool | Description |
 |---------|------|-------------|
+| `opena2a detect` | Shadow AI | Discover AI agents, MCP servers, AI configs. Governance scoring. |
+| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
 | `opena2a scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 163 security checks, attack simulation, auto-fix |
 | `opena2a secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
-| `opena2a broker` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Identity-aware credential broker daemon |
-| `opena2a dlp` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Data loss prevention for AI transcripts |
-| `opena2a benchmark` | [OASB](https://github.com/opena2a-org/oasb) | 222 attack scenarios, compliance scoring |
+| `opena2a mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
+| `opena2a benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
 | `opena2a registry` | [AI Trust](https://github.com/opena2a-org/ai-trust) | Trust Registry queries, package verification |
-| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for training |
+| `opena2a train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
 | `opena2a crypto` | [CryptoServe](https://github.com/ecolibria/crypto-serve) | Cryptographic inventory, PQC readiness |
-| `opena2a identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Agent identity management |
 
 ---
 
