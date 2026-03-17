@@ -10,7 +10,7 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
+import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
 
@@ -717,7 +717,7 @@ function generateAssetCsv(result: DetectResult): string {
 function riskColor(level: RiskLevel): (text: string) => string {
   switch (level) {
     case 'critical': return red;
-    case 'high': return (t: string) => `\x1b[38;5;208m${t}\x1b[39m`; // orange
+    case 'high': return orange;
     case 'medium': return yellow;
     case 'low': return green;
   }
