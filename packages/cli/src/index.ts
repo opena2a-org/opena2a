@@ -268,6 +268,51 @@ Learn more: https://opena2a.org/docs`);
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
+  // Login command (browser-based OAuth device flow)
+  program
+    .command('login')
+    .description('Authenticate with an AIM server via browser login')
+    .option('--server <url>', 'AIM server URL (default: cloud, i.e. aim.opena2a.org)')
+    .option('--json', 'Output as JSON')
+    .action(async (opts) => {
+      const { login } = await import('./commands/login.js');
+      const globalOpts = program.opts();
+      process.exitCode = await login({
+        server: opts.server,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        json: opts.json,
+      });
+    });
+
+  // Logout command
+  program
+    .command('logout')
+    .description('Remove stored authentication credentials')
+    .option('--json', 'Output as JSON')
+    .action(async (opts) => {
+      const { logout } = await import('./commands/login.js');
+      const globalOpts = program.opts();
+      process.exitCode = await logout({
+        format: globalOpts.format,
+        json: opts.json,
+      });
+    });
+
+  // Whoami command
+  program
+    .command('whoami')
+    .description('Show current authentication status')
+    .option('--json', 'Output as JSON')
+    .action(async (opts) => {
+      const { whoami } = await import('./commands/login.js');
+      const globalOpts = program.opts();
+      process.exitCode = await whoami({
+        format: globalOpts.format,
+        json: opts.json,
+      });
+    });
+
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
@@ -289,8 +334,6 @@ Learn more: https://opena2a.org/docs`);
     .option('--tools <list>', 'Comma-separated tools to enable (attach)')
     .option('--all', 'Enable all detected tools (attach)')
     .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
-    .option('--server <url>', 'AIM server URL. Use "cloud" for aim.opena2a.org, or a custom URL for self-hosted servers')
-    .option('--json', 'Output as JSON (alias for --format json)')
     .action(async (subcommand: string | undefined, args: string[], opts) => {
       if (!subcommand) {
         subcommand = 'list';
@@ -768,7 +811,7 @@ Valid actions:
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines', 'benchmark',
     'check', 'status', 'publish', 'detect', 'mcp', 'demo',
-    'trust', 'claim', 'create',
+    'trust', 'claim', 'create', 'login', 'logout', 'whoami',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');

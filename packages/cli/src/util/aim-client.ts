@@ -78,6 +78,27 @@ export interface ServerStatus {
   uptime?: number;
 }
 
+export interface DeviceCodeResponse {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export interface DeviceTokenResponse {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  expiresIn: number;
+}
+
+export interface DeviceTokenError {
+  error: string;  // "authorization_pending", "slow_down", "expired_token", "access_denied"
+  errorDescription?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
@@ -101,12 +122,14 @@ export class AimClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly apiKey?: string;
+  private readonly accessToken?: string;
 
-  constructor(serverUrl: string, options?: { timeoutMs?: number; apiKey?: string }) {
+  constructor(serverUrl: string, options?: { timeoutMs?: number; apiKey?: string; accessToken?: string }) {
     // Normalize: strip trailing slash
     this.baseUrl = serverUrl.replace(/\/+$/, '');
     this.timeoutMs = options?.timeoutMs ?? 10_000;
     this.apiKey = options?.apiKey;
+    this.accessToken = options?.accessToken;
   }
 
   // ---- Health / Status ---------------------------------------------------
@@ -168,11 +191,62 @@ export class AimClient {
     );
   }
 
+  // ---- Device Authorization (OAuth 2.0 Device Flow) -----------------------
+
+  async requestDeviceCode(clientId: string = 'opena2a-cli'): Promise<DeviceCodeResponse> {
+    return this.post('/api/v1/oauth/device/code', { clientId });
+  }
+
+  async pollDeviceToken(deviceCode: string): Promise<DeviceTokenResponse> {
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+
+    const response = await this.fetch('/api/v1/oauth/device/token', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        deviceCode,
+        grantType: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+
+    const text = await response.text();
+    const parsed = JSON.parse(text);
+
+    // Device token polling returns 400 with error field for pending/slow_down
+    if (!response.ok) {
+      if (parsed.error) {
+        const err = new AimServerError(
+          parsed.error,
+          response.status,
+          parsed.errorDescription,
+        );
+        (err as any).oauthError = parsed.error;
+        throw err;
+      }
+      throw new AimServerError(
+        `AIM server returned ${response.status}: ${parsed.error ?? parsed.message ?? text}`,
+        response.status,
+        parsed.error ?? parsed.message,
+      );
+    }
+
+    return parsed as DeviceTokenResponse;
+  }
+
+  async refreshAccessToken(refreshToken: string): Promise<DeviceTokenResponse> {
+    return this.post('/api/v1/auth/refresh', { refreshToken });
+  }
+
   // ---- Generic HTTP helpers -----------------------------------------------
 
   private async get<T>(path: string, token?: string): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+    else if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
     if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
 
     const response = await this.fetch(path, { method: 'GET', headers });
@@ -184,6 +258,7 @@ export class AimClient {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
     if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
     Object.assign(headers, extraHeaders);
 

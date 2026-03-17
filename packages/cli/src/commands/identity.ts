@@ -10,6 +10,7 @@ import {
   removeServerConfig,
   type ServerConfig,
 } from '../util/aim-client.js';
+import { loadAuth, isAuthValid } from '../util/auth.js';
 
 interface PolicyRule {
   capability: string;
@@ -164,12 +165,25 @@ function getServerClient(options: IdentityOptions): AimClient | null {
   const serverFlag = options.server;
   const config = loadServerConfig();
   const apiKey = options.apiKey ?? config?.apiKey;
+
   if (serverFlag) {
     const url = resolveServerUrl(serverFlag);
+    // If no explicit API key, check global auth for matching server
+    if (!apiKey) {
+      const globalAuth = loadAuth();
+      if (globalAuth && isAuthValid(globalAuth) && globalAuth.serverUrl === url) {
+        return new AimClient(url, { accessToken: globalAuth.accessToken });
+      }
+    }
     return new AimClient(url, { apiKey });
   }
   if (config?.serverUrl) {
     return new AimClient(config.serverUrl, { apiKey });
+  }
+  // No server flag and no stored config -- try global auth
+  const globalAuth = loadAuth();
+  if (globalAuth && isAuthValid(globalAuth)) {
+    return new AimClient(globalAuth.serverUrl, { accessToken: globalAuth.accessToken });
   }
   return null;
 }
@@ -198,12 +212,19 @@ async function checkServerHealth(client: AimClient, serverUrl: string): Promise<
  */
 function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string } {
   const config = loadServerConfig();
-  if (!config) return {};
-  return {
-    token: config.accessToken ?? undefined,
-    apiKey: config.apiKey ?? undefined,
-    agentId: config.agentId,
-  };
+  if (config) {
+    return {
+      token: config.accessToken ?? undefined,
+      apiKey: config.apiKey ?? undefined,
+      agentId: config.agentId,
+    };
+  }
+  // Fallback: check global auth credentials from "opena2a login"
+  const globalAuth = loadAuth();
+  if (globalAuth && isAuthValid(globalAuth)) {
+    return { token: globalAuth.accessToken };
+  }
+  return {};
 }
 
 /**
