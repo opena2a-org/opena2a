@@ -9,7 +9,11 @@ import type { DLPPattern } from './types';
  *   partial: Show first 4 and last 4 chars, mask middle with ***
  *   hash:    Replace with SHA-256 hash prefix
  */
-export function mask(value: string, pattern: DLPPattern): string {
+export function mask(value: string, pattern?: DLPPattern): string {
+  if (!pattern) {
+    return '[REDACTED]';
+  }
+
   switch (pattern.maskStrategy) {
     case 'full':
       return `[REDACTED:${pattern.id}]`;
