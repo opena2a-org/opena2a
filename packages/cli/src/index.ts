@@ -672,6 +672,7 @@ Valid actions:
         type,
         name,
         ...opts,
+        noSign: opts.sign === false,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
