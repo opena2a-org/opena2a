@@ -210,19 +210,20 @@ async function checkServerHealth(client: AimClient, serverUrl: string): Promise<
 /**
  * Resolve the auth token from stored config.
  */
-function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string } {
+function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string; serverUrl?: string } {
   const config = loadServerConfig();
   if (config) {
     return {
       token: config.accessToken ?? undefined,
       apiKey: config.apiKey ?? undefined,
       agentId: config.agentId,
+      serverUrl: config.serverUrl,
     };
   }
   // Fallback: check global auth credentials from "opena2a login"
   const globalAuth = loadAuth();
   if (globalAuth && isAuthValid(globalAuth)) {
-    return { token: globalAuth.accessToken };
+    return { token: globalAuth.accessToken, serverUrl: globalAuth.serverUrl };
   }
   return {};
 }
@@ -276,17 +277,20 @@ async function handleList(options: IdentityOptions): Promise<number> {
     // If server is configured, fetch enriched data
     const client = getServerClient(options);
     const serverConfig = loadServerConfig();
+    const auth = getStoredAuth();
     let serverAgent = null;
+    let serverAgentList = null;
+    const effectiveServerUrl = serverConfig?.serverUrl ?? auth.serverUrl;
 
-    if (client && serverConfig?.agentId) {
+    // If we have a server client with auth, try to fetch server data
+    if (client && auth.token) {
       try {
-        const auth = getStoredAuth();
-        if (auth.token) {
+        if (serverConfig?.agentId) {
+          // Fetch specific agent if we have a registered agent ID
           serverAgent = await client.getAgent(auth.token, serverConfig.agentId);
-        } else if (auth.apiKey) {
-          const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
-          serverAgent = await client.getAgent(loginResp.accessToken, serverConfig.agentId);
-          saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+        } else {
+          // No specific agent ID — list all agents from server
+          serverAgentList = await client.listAgents(auth.token);
         }
       } catch (err) {
         if (!isJson) {
@@ -294,6 +298,47 @@ async function handleList(options: IdentityOptions): Promise<number> {
           process.stderr.write(yellow('Showing local identity only.') + '\n\n');
         }
       }
+    } else if (client && serverConfig?.agentId && auth.apiKey) {
+      try {
+        const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
+        serverAgent = await client.getAgent(loginResp.accessToken, serverConfig.agentId);
+        saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+      } catch (err) {
+        if (!isJson) {
+          process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
+          process.stderr.write(yellow('Showing local identity only.') + '\n\n');
+        }
+      }
+    }
+
+    // If server returned a list of agents (from global auth), show them
+    if (serverAgentList && serverAgentList.agents?.length > 0) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          local: { ...id },
+          server: { url: effectiveServerUrl, agents: serverAgentList.agents, total: serverAgentList.total },
+        }, null, 2) + '\n');
+        return 0;
+      }
+
+      process.stdout.write(bold('Local Identity') + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      process.stdout.write(`  Agent ID:    ${cyan(id.agentId)}\n`);
+      process.stdout.write(`  Name:        ${id.agentName}\n`);
+      process.stdout.write(`  Public Key:  ${dim(id.publicKey.slice(0, 32) + '...')}\n`);
+      process.stdout.write(`  Created:     ${id.createdAt}\n`);
+      process.stdout.write(gray('-'.repeat(50)) + '\n\n');
+
+      process.stdout.write(bold(`Server Agents (${effectiveServerUrl})`) + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      for (const agent of serverAgentList.agents) {
+        const statusColor = agent.status === 'verified' ? green : agent.status === 'active' ? cyan : yellow;
+        process.stdout.write(`  ${cyan(agent.name)} (${dim(agent.id)})\n`);
+        process.stdout.write(`    Status: ${statusColor(agent.status)}  Trust: ${agent.trustScore}\n`);
+      }
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      process.stdout.write(dim(`  ${serverAgentList.total} agent(s) total`) + '\n');
+      return 0;
     }
 
     if (isJson) {
@@ -304,7 +349,7 @@ async function handleList(options: IdentityOptions): Promise<number> {
           name: serverAgent.name,
           trustScore: serverAgent.trustScore,
           status: serverAgent.status,
-          serverUrl: serverConfig?.serverUrl,
+          serverUrl: effectiveServerUrl,
         };
       }
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
