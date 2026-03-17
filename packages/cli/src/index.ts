@@ -265,11 +265,12 @@ Learn more: https://opena2a.org/docs`);
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
-    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync)')
+    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync|connect|disconnect)')
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
-    .option('--server <url>', 'AIM server URL (not yet supported)')
+    .option('--server <url>', 'AIM server URL (e.g. localhost:8080, cloud)')
+    .option('--api-key <key>', 'AIM API key for server authentication')
     .option('--json', 'Output as JSON (alias for --format json)')
     .option('--action <action>', 'Audit event action (for log)')
     .option('--target <target>', 'Audit event target (for log)')
@@ -311,7 +312,9 @@ Learn more: https://opena2a.org/docs`);
         all: opts.all,
         autoSync: opts.autoSync,
         server: opts.server,
+        apiKey: opts.apiKey,
         json: opts.json,
+        args,
       });
     });
 
