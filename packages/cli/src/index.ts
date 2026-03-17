@@ -281,6 +281,8 @@ Learn more: https://opena2a.org/docs`);
     .option('--tools <list>', 'Comma-separated tools to enable (attach)')
     .option('--all', 'Enable all detected tools (attach)')
     .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
+    .option('--server <url>', 'AIM server URL. Use "cloud" for aim.opena2a.org, or a custom URL for self-hosted servers')
+    .option('--json', 'Output as JSON (alias for --format json)')
     .action(async (subcommand: string | undefined, args: string[], opts) => {
       if (!subcommand) {
         subcommand = 'list';
@@ -309,6 +311,8 @@ Learn more: https://opena2a.org/docs`);
         tools: opts.tools,
         all: opts.all,
         autoSync: opts.autoSync,
+        server: opts.server,
+        json: opts.json,
       });
     });
 

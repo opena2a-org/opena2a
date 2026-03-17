@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { bold, dim, green, yellow, red, gray, cyan } from '../util/colors.js';
+import { resolveServerUrl } from '../util/server-url.js';
 
 interface PolicyRule {
   capability: string;
@@ -34,6 +35,8 @@ interface IdentityOptions {
   tools?: string;
   all?: boolean;
   autoSync?: boolean;
+  server?: string;
+  json?: boolean;
 }
 
 const USAGE = [
@@ -66,6 +69,22 @@ const USAGE = [
 ].join('\n');
 
 export async function identity(options: IdentityOptions): Promise<number> {
+  // Normalize --json flag to format
+  if (options.json) {
+    options.format = 'json';
+  }
+
+  // Resolve --server URL when provided
+  if (options.server) {
+    options.server = resolveServerUrl(options.server);
+
+    const serverCommands = ['create', 'list', 'show', 'trust'];
+    if (!serverCommands.includes(options.subcommand)) {
+      process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
+      options.server = undefined;
+    }
+  }
+
   const sub = options.subcommand;
   switch (sub) {
     case 'list':
