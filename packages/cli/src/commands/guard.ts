@@ -23,7 +23,7 @@ import { Spinner } from '../util/spinner.js';
 // --- Types ---
 
 export interface GuardOptions {
-  subcommand: 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot';
+  subcommand: 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot' | 'harden';
   files?: string[];
   targetDir?: string;
   ci?: boolean;
@@ -32,6 +32,8 @@ export interface GuardOptions {
   enforce?: boolean;
   skills?: boolean;
   heartbeats?: boolean;
+  fix?: boolean;
+  dryRun?: boolean;
   args?: string[];
 }
 
@@ -152,9 +154,21 @@ export async function guard(options: GuardOptions): Promise<number> {
       const { guardSnapshot: snapshot } = await import('./guard-snapshots.js');
       return snapshot(targetDir, options);
     }
+    case 'harden': {
+      const { guardHarden } = await import('./guard-harden.js');
+      return guardHarden(targetDir, {
+        skills: options.skills,
+        heartbeats: options.heartbeats,
+        fix: options.fix,
+        dryRun: options.dryRun,
+        verbose: options.verbose,
+        ci: options.ci,
+        format: options.format,
+      });
+    }
     default:
       process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n`));
-      process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot>\n');
+      process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden>\n');
       return 1;
   }
 }
