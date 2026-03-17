@@ -99,6 +99,17 @@ describe('Masking', () => {
     expect(result).not.toContain('sensitive');
   });
 
+  it('returns [REDACTED] when pattern is undefined', () => {
+    const result = mask('sensitive-value', undefined);
+    expect(result).toBe('[REDACTED]');
+    expect(result).not.toContain('sensitive');
+  });
+
+  it('returns [REDACTED] when pattern is null', () => {
+    const result = mask('sensitive-value', null as unknown as undefined);
+    expect(result).toBe('[REDACTED]');
+  });
+
   it('partial mask shows first and last 4 chars', () => {
     const partialPattern = { ...testPattern, id: 'test-partial', maskStrategy: 'partial' as const };
     const result = mask('1234567890abcdef', partialPattern);

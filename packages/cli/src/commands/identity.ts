@@ -2,6 +2,14 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { bold, dim, green, yellow, red, gray, cyan } from '../util/colors.js';
 import { resolveServerUrl } from '../util/server-url.js';
+import {
+  AimClient,
+  AimServerError,
+  loadServerConfig,
+  saveServerConfig,
+  removeServerConfig,
+  type ServerConfig,
+} from '../util/aim-client.js';
 
 interface PolicyRule {
   capability: string;
@@ -36,7 +44,10 @@ interface IdentityOptions {
   all?: boolean;
   autoSync?: boolean;
   server?: string;
+  apiKey?: string;
   json?: boolean;
+  /** Positional args passed from Commander (e.g. connect <url>) */
+  args?: string[];
 }
 
 const USAGE = [
@@ -65,6 +76,14 @@ const USAGE = [
   '  attach --all             Enable all detected tools',
   '  detach                   Remove cross-tool wiring',
   '  sync                     Sync events from enabled tools',
+  '',
+  'Server Integration',
+  '  connect <url>            Connect local identity to an AIM server',
+  '  disconnect               Remove server association (keep local identity)',
+  '',
+  'Server Flags (for create, list, trust, audit, log):',
+  '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
+  '  --api-key <key>          AIM API key for authentication',
   '',
 ].join('\n');
 
@@ -112,6 +131,10 @@ export async function identity(options: IdentityOptions): Promise<number> {
       return handleDetach(options);
     case 'sync':
       return handleSync(options);
+    case 'connect':
+      return handleConnect(options);
+    case 'disconnect':
+      return handleDisconnect(options);
     default:
       process.stderr.write(`Unknown identity subcommand: ${sub}\n`);
       process.stderr.write(USAGE + '\n');
@@ -127,6 +150,79 @@ async function loadAimCore(): Promise<typeof import('@opena2a/aim-core') | null>
     process.stderr.write('Install: npm install @opena2a/aim-core\n');
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Server helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an AimClient from options. Returns null if no server is specified
+ * and no stored config exists.
+ */
+function getServerClient(options: IdentityOptions): AimClient | null {
+  const serverFlag = options.server;
+  const config = loadServerConfig();
+  const apiKey = options.apiKey ?? config?.apiKey;
+  if (serverFlag) {
+    const url = resolveServerUrl(serverFlag);
+    return new AimClient(url, { apiKey });
+  }
+  if (config?.serverUrl) {
+    return new AimClient(config.serverUrl, { apiKey });
+  }
+  return null;
+}
+
+/**
+ * Check server health. Returns true if reachable, false otherwise.
+ * On failure, writes a clear error message.
+ */
+async function checkServerHealth(client: AimClient, serverUrl: string): Promise<boolean> {
+  try {
+    await client.health();
+    return true;
+  } catch (err) {
+    if (err instanceof AimServerError && err.serverMessage) {
+      process.stderr.write(`Cannot connect to AIM server at ${serverUrl}. Verify the server is running.\n`);
+      process.stderr.write(`  Detail: ${err.serverMessage}\n`);
+    } else {
+      process.stderr.write(`Cannot connect to AIM server at ${serverUrl}. Verify the server is running.\n`);
+    }
+    return false;
+  }
+}
+
+/**
+ * Resolve the auth token from stored config.
+ */
+function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string } {
+  const config = loadServerConfig();
+  if (!config) return {};
+  return {
+    token: config.accessToken ?? undefined,
+    apiKey: config.apiKey ?? undefined,
+    agentId: config.agentId,
+  };
+}
+
+/**
+ * Format server error for display.
+ */
+function formatServerError(err: unknown): string {
+  if (err instanceof AimServerError) {
+    if (err.statusCode === 401) {
+      return 'Authentication failed. Check your --api-key or run: opena2a identity connect <url>';
+    }
+    if (err.statusCode === 403) {
+      return 'Access denied. Your API key may lack required permissions.';
+    }
+    if (err.statusCode === 404) {
+      return 'Agent not found on server. It may have been deleted or never registered.';
+    }
+    return err.message;
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,8 +252,41 @@ async function handleList(options: IdentityOptions): Promise<number> {
 
     const id = aim.getIdentity();
 
+    // If server is configured, fetch enriched data
+    const client = getServerClient(options);
+    const serverConfig = loadServerConfig();
+    let serverAgent = null;
+
+    if (client && serverConfig?.agentId) {
+      try {
+        const auth = getStoredAuth();
+        if (auth.token) {
+          serverAgent = await client.getAgent(auth.token, serverConfig.agentId);
+        } else if (auth.apiKey) {
+          const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
+          serverAgent = await client.getAgent(loginResp.accessToken, serverConfig.agentId);
+          saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+        }
+      } catch (err) {
+        if (!isJson) {
+          process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
+          process.stderr.write(yellow('Showing local identity only.') + '\n\n');
+        }
+      }
+    }
+
     if (isJson) {
-      process.stdout.write(JSON.stringify(id, null, 2) + '\n');
+      const result: Record<string, unknown> = { ...id };
+      if (serverAgent) {
+        result.server = {
+          id: serverAgent.id,
+          name: serverAgent.name,
+          trustScore: serverAgent.trustScore,
+          status: serverAgent.status,
+          serverUrl: serverConfig?.serverUrl,
+        };
+      }
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       return 0;
     }
 
@@ -168,6 +297,20 @@ async function handleList(options: IdentityOptions): Promise<number> {
     process.stdout.write(`  Public Key:  ${dim(id.publicKey.slice(0, 32) + '...')}\n`);
     process.stdout.write(`  Created:     ${id.createdAt}\n`);
     process.stdout.write(`  Data Dir:    ${dim(aim.getDataDir())}\n`);
+
+    if (serverAgent && serverConfig) {
+      process.stdout.write('\n' + bold('  Server') + '\n');
+      process.stdout.write(`  Server URL:  ${cyan(serverConfig.serverUrl)}\n`);
+      process.stdout.write(`  Server ID:   ${serverAgent.id}\n`);
+      process.stdout.write(`  Status:      ${serverAgent.status === 'verified' ? green(serverAgent.status) : yellow(serverAgent.status)}\n`);
+      process.stdout.write(`  Trust Score: ${serverAgent.trustScore}\n`);
+    } else if (serverConfig) {
+      process.stdout.write('\n' + bold('  Server') + '\n');
+      process.stdout.write(`  Server URL:  ${cyan(serverConfig.serverUrl)}\n`);
+      process.stdout.write(`  Server ID:   ${serverConfig.agentId}\n`);
+      process.stdout.write(`  Status:      ${dim('offline or unreachable')}\n`);
+    }
+
     process.stdout.write(gray('-'.repeat(50)) + '\n');
     return 0;
   } catch (err) {
@@ -188,16 +331,21 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   if (!name) {
     process.stderr.write('Missing required option: --name <name>\n');
     process.stderr.write('Usage: opena2a identity create --name my-agent\n');
+    process.stderr.write('       opena2a identity create --name my-agent --server localhost:8080 --api-key <key>\n');
     return 1;
   }
 
   const isJson = options.format === 'json';
 
   try {
+    // If --server is provided, register on the server
+    if (options.server) {
+      return handleServerCreate(options, name, isJson);
+    }
+
+    // Local-only creation
     const aim = new mod.AIMCore({ agentName: name });
 
-    // Check if identity file already exists BEFORE calling getIdentity
-    // (getIdentity creates one if missing, so we check the file directly)
     const dataDir = aim.getDataDir();
     const identityPath = await import('node:path').then(p => p.join(dataDir, 'identity.json'));
     const { existsSync } = await import('node:fs');
@@ -228,6 +376,90 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   }
 }
 
+/**
+ * Register agent on the AIM server and store the result locally.
+ */
+async function handleServerCreate(options: IdentityOptions, name: string, isJson: boolean): Promise<number> {
+  const serverUrl = resolveServerUrl(options.server!);
+  const apiKey = options.apiKey;
+
+  if (!apiKey) {
+    process.stderr.write('Missing required option: --api-key <key>\n');
+    process.stderr.write('The AIM server requires an API key for agent registration.\n');
+    process.stderr.write(`Usage: opena2a identity create --name ${name} --server ${options.server} --api-key <key>\n`);
+    return 1;
+  }
+
+  const client = new AimClient(serverUrl);
+
+  // 1. Health check
+  if (!(await checkServerHealth(client, serverUrl))) {
+    return 1;
+  }
+
+  try {
+    // 2. Register on server
+    const resp = await client.register({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` }, apiKey);
+
+    // 3. Also create local identity via aim-core
+    const mod = await loadAimCore();
+    let localId = null;
+    if (mod) {
+      const aim = new mod.AIMCore({ agentName: name });
+      localId = aim.getIdentity();
+    }
+
+    // 4. Store server config locally
+    const config: ServerConfig = {
+      serverUrl,
+      agentId: resp.agentId,
+      apiKey,
+      registeredAt: new Date().toISOString(),
+    };
+    saveServerConfig(config);
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        created: true,
+        server: {
+          id: resp.agentId,
+          name: resp.name,
+          displayName: resp.displayName,
+          publicKey: resp.publicKey,
+          trustScore: resp.trustScore,
+          status: resp.status,
+          serverUrl,
+        },
+        local: localId ? {
+          agentId: localId.agentId,
+          agentName: localId.agentName,
+          publicKey: localId.publicKey,
+        } : null,
+      }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(green('Agent registered on AIM server') + '\n');
+    process.stdout.write(gray('-'.repeat(50)) + '\n');
+    process.stdout.write(`  Server ID:    ${cyan(resp.agentId)}\n`);
+    process.stdout.write(`  Name:         ${resp.name}\n`);
+    process.stdout.write(`  Display Name: ${resp.displayName}\n`);
+    process.stdout.write(`  Public Key:   ${dim((resp.publicKey ?? '').slice(0, 32) + '...')}\n`);
+    process.stdout.write(`  Trust Score:  ${resp.trustScore}\n`);
+    process.stdout.write(`  Status:       ${resp.status === 'verified' ? green(resp.status) : yellow(resp.status)}\n`);
+    process.stdout.write(`  Server URL:   ${dim(serverUrl)}\n`);
+    if (localId) {
+      process.stdout.write(`\n  Local ID:     ${dim(localId.agentId)}\n`);
+    }
+    process.stdout.write(gray('-'.repeat(50)) + '\n');
+    process.stdout.write(dim('Server config stored in ~/.opena2a/aim-core/identities/server.json') + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to register on server: ${formatServerError(err)}\n`);
+    return 1;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // trust
 // ---------------------------------------------------------------------------
@@ -242,6 +474,29 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     const aim = new mod.AIMCore({ agentName: 'default' });
     aim.getIdentity(); // ensure identity exists
 
+    // If server is configured, fetch server-side trust data
+    const client = getServerClient(options);
+    const serverConfig = loadServerConfig();
+    let serverAgent = null;
+
+    if (client && serverConfig?.agentId) {
+      try {
+        const auth = getStoredAuth();
+        if (auth.token) {
+          serverAgent = await client.getAgent(auth.token, serverConfig.agentId);
+        } else if (auth.apiKey) {
+          const id = aim.getIdentity();
+          const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
+          serverAgent = await client.getAgent(loginResp.accessToken, serverConfig.agentId);
+          saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+        }
+      } catch (err) {
+        if (!isJson) {
+          process.stderr.write(yellow(`Warning: Could not fetch server trust data: ${formatServerError(err)}`) + '\n\n');
+        }
+      }
+    }
+
     // Auto-sync trust hints if a manifest exists (tools are attached)
     const targetDir = path.resolve(options.dir ?? process.cwd());
     let hasManifest = false;
@@ -255,13 +510,21 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
         (aim as any).setTrustHints(hints);
       }
     } catch {
-      // Identity module not available or manifest missing — that's fine
+      // Identity module not available or manifest missing
     }
 
     const trust = aim.calculateTrust();
 
     if (isJson) {
-      process.stdout.write(JSON.stringify({ ...trust, attached: hasManifest }, null, 2) + '\n');
+      const result: Record<string, unknown> = { ...trust, attached: hasManifest };
+      if (serverAgent) {
+        result.server = {
+          trustScore: serverAgent.trustScore,
+          status: serverAgent.status,
+          serverUrl: serverConfig?.serverUrl,
+        };
+      }
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       return 0;
     }
 
@@ -272,6 +535,14 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     process.stdout.write(bold('Trust Score') + '\n');
     process.stdout.write(gray('-'.repeat(50)) + '\n');
     process.stdout.write(`  Score:  ${gradeColor(bold(String(displayScore) + '/100'))}  (${gradeColor(displayGrade)})\n`);
+
+    // Show server trust score if available
+    if (serverAgent) {
+      const serverScore = serverAgent.trustScore;
+      const serverColor = serverScore >= 80 ? green : serverScore >= 60 ? yellow : red;
+      process.stdout.write(`  Server: ${serverColor(bold(String(serverScore) + '/100'))}  ${dim('(from AIM server)')}\n`);
+    }
+
     process.stdout.write('\n');
     process.stdout.write(bold('  Factors:') + '\n');
     for (const [factor, value] of Object.entries(trust.factors)) {
@@ -286,7 +557,6 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
       if (trust.calculatedAt) {
         process.stdout.write(dim(`  Calculated: ${trust.calculatedAt}`) + '\n');
       }
-      // Show improvement suggestions for factors at 0%
       const zeroFactors = Object.entries(trust.factors).filter(([, v]) => (v as number) === 0);
       if (zeroFactors.length > 0) {
         process.stdout.write('\n' + bold('  How to improve:') + '\n');
@@ -367,6 +637,69 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
   const limit = options.limit ?? 10;
 
+  // If server is configured, fetch server-side audit logs
+  const client = getServerClient(options);
+  const serverConfig = loadServerConfig();
+
+  if (client && serverConfig?.agentId) {
+    try {
+      const auth = getStoredAuth();
+      let token = auth.token;
+
+      if (!token && auth.apiKey) {
+        const aim = new mod.AIMCore({ agentName: 'default' });
+        const id = aim.getIdentity();
+        const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
+        token = loginResp.accessToken;
+        saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+      }
+
+      if (token) {
+        const resp = await client.getAuditLogs(token, serverConfig.agentId, { pageSize: limit });
+
+        if (isJson) {
+          process.stdout.write(JSON.stringify({
+            source: 'server',
+            serverUrl: serverConfig.serverUrl,
+            total: resp.total,
+            auditLogs: resp.auditLogs,
+          }, null, 2) + '\n');
+          return 0;
+        }
+
+        process.stdout.write(bold(`Server Audit Log (${resp.auditLogs.length} of ${resp.total})`) + '\n');
+        process.stdout.write(dim(`  Server: ${serverConfig.serverUrl}`) + '\n');
+        process.stdout.write(gray('-'.repeat(70)) + '\n');
+
+        if (resp.auditLogs.length === 0) {
+          process.stdout.write(dim('  No server audit events recorded yet.') + '\n');
+        } else {
+          for (const e of resp.auditLogs) {
+            const ts = (e.createdAt ?? '').slice(0, 19).replace('T', ' ');
+            process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${(e.resource ?? '').padEnd(16)} ${dim(e.details ?? '')}\n`);
+          }
+        }
+        process.stdout.write(gray('-'.repeat(70)) + '\n');
+
+        // Also show local audit events if --verbose
+        if (options.verbose) {
+          process.stdout.write('\n');
+          return showLocalAudit(mod, limit, isJson);
+        }
+        return 0;
+      }
+    } catch (err) {
+      if (!isJson) {
+        process.stderr.write(yellow(`Warning: Could not fetch server audit logs: ${formatServerError(err)}`) + '\n');
+        process.stderr.write(yellow('Showing local audit log.') + '\n\n');
+      }
+    }
+  }
+
+  return showLocalAudit(mod, limit, isJson);
+}
+
+async function showLocalAudit(mod: typeof import('@opena2a/aim-core'), limit: number, isJson: boolean): Promise<number> {
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
     const events = aim.readAuditLog({ limit });
@@ -449,6 +782,152 @@ async function handleLog(options: IdentityOptions): Promise<number> {
     process.stderr.write(`Failed to log event: ${err instanceof Error ? err.message : String(err)}\n`);
     return 1;
   }
+}
+
+// ---------------------------------------------------------------------------
+// connect -- connect existing local identity to an AIM server
+// ---------------------------------------------------------------------------
+
+async function handleConnect(options: IdentityOptions): Promise<number> {
+  const mod = await loadAimCore();
+  if (!mod) return 1;
+
+  // The URL comes from the positional arg or --server flag
+  const rawUrl = options.args?.[0] ?? options.server;
+  if (!rawUrl) {
+    process.stderr.write('Missing server URL.\n');
+    process.stderr.write('Usage: opena2a identity connect <url> --api-key <key>\n');
+    process.stderr.write('       opena2a identity connect localhost:8080 --api-key <key>\n');
+    return 1;
+  }
+
+  const apiKey = options.apiKey;
+  if (!apiKey) {
+    process.stderr.write('Missing required option: --api-key <key>\n');
+    process.stderr.write('The AIM server requires an API key for agent registration.\n');
+    return 1;
+  }
+
+  const serverUrl = resolveServerUrl(rawUrl);
+  const client = new AimClient(serverUrl);
+  const isJson = options.format === 'json';
+
+  // 1. Health check
+  if (!(await checkServerHealth(client, serverUrl))) {
+    return 1;
+  }
+
+  try {
+    // 2. Load local identity
+    const aim = new mod.AIMCore({ agentName: 'default' });
+    const identityFile = path.join(aim.getDataDir(), 'identity.json');
+    if (!fs.existsSync(identityFile)) {
+      process.stderr.write('No local identity found. Create one first: opena2a identity create --name my-agent\n');
+      return 1;
+    }
+    const id = aim.getIdentity();
+
+    // 3. Register on server
+    const resp = await client.register(
+      { name: id.agentName, displayName: id.agentName, description: `Agent ${id.agentName} registered via OpenA2A CLI` },
+      apiKey,
+    );
+
+    // 4. Store server config
+    const config: ServerConfig = {
+      serverUrl,
+      agentId: resp.agentId,
+      apiKey,
+      registeredAt: new Date().toISOString(),
+    };
+    saveServerConfig(config);
+
+    // 5. Log the connect event
+    aim.logEvent({
+      action: 'identity.connect',
+      target: serverUrl,
+      result: 'allowed',
+      plugin: 'opena2a-cli',
+    });
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        connected: true,
+        localAgentId: id.agentId,
+        serverAgentId: resp.agentId,
+        serverUrl,
+        trustScore: resp.trustScore,
+        status: resp.status,
+      }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(green('Connected to AIM server') + '\n');
+    process.stdout.write(gray('-'.repeat(50)) + '\n');
+    process.stdout.write(`  Local ID:    ${cyan(id.agentId)}\n`);
+    process.stdout.write(`  Server ID:   ${cyan(resp.agentId)}\n`);
+    process.stdout.write(`  Server URL:  ${dim(serverUrl)}\n`);
+    process.stdout.write(`  Trust Score: ${resp.trustScore}\n`);
+    process.stdout.write(`  Status:      ${resp.status === 'verified' ? green(resp.status) : yellow(resp.status)}\n`);
+    process.stdout.write(gray('-'.repeat(50)) + '\n');
+    process.stdout.write(dim('Future commands will automatically use this server.') + '\n');
+    process.stdout.write(dim('Disconnect with: opena2a identity disconnect') + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to connect to server: ${formatServerError(err)}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// disconnect -- remove server association
+// ---------------------------------------------------------------------------
+
+async function handleDisconnect(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+  const config = loadServerConfig();
+
+  if (!config) {
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ disconnected: false, reason: 'no server configured' }, null, 2) + '\n');
+    } else {
+      process.stdout.write('No server connection configured.\n');
+    }
+    return 0;
+  }
+
+  const removed = removeServerConfig();
+
+  // Log the disconnect event
+  try {
+    const mod = await loadAimCore();
+    if (mod) {
+      const aim = new mod.AIMCore({ agentName: 'default' });
+      aim.logEvent({
+        action: 'identity.disconnect',
+        target: config.serverUrl,
+        result: 'allowed',
+        plugin: 'opena2a-cli',
+      });
+    }
+  } catch {
+    // Non-critical
+  }
+
+  if (isJson) {
+    process.stdout.write(JSON.stringify({
+      disconnected: removed,
+      serverUrl: config.serverUrl,
+      agentId: config.agentId,
+    }, null, 2) + '\n');
+  } else {
+    process.stdout.write(green('Disconnected from AIM server') + '\n');
+    process.stdout.write(`  Server URL: ${dim(config.serverUrl)}\n`);
+    process.stdout.write(`  Server ID:  ${dim(config.agentId)}\n`);
+    process.stdout.write(dim('\n  Local identity and audit log are preserved.') + '\n');
+    process.stdout.write(dim('  Only the server association was removed.') + '\n');
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -737,10 +1216,8 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
     };
 
     if (options.all) {
-      // Enable all
       enabledTools = { secretless: true, configguard: true, arp: true, hma: true, shield: true };
     } else if (options.tools) {
-      // Enable specific tools, merge with existing
       const requested = options.tools.split(',').map(t => t.trim().toLowerCase());
       const knownTools = ['secretless', 'configguard', 'guard', 'arp', 'hma', 'hackmyagent', 'shield'];
       const unknown = requested.filter(t => !knownTools.includes(t));
@@ -760,10 +1237,8 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
         if (tool === 'shield') enabledTools.shield = true;
       }
     } else if (existing) {
-      // Re-attach with existing config
       enabledTools = existing.tools;
     } else {
-      // First attach with no flags — enable all by default
       enabledTools = { secretless: true, configguard: true, arp: true, hma: true, shield: true };
     }
 
@@ -784,7 +1259,6 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
       }
       process.stdout.write(bold('  Tool Detection:') + '\n');
 
-      // Show all tools (not just enabled ones) so user sees the full picture
       const allToolNames = [
         { key: 'secretless' as const, label: 'Secretless' },
         { key: 'configguard' as const, label: 'ConfigGuard' },
