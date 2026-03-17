@@ -13,6 +13,8 @@ export interface AdapterConfig {
   pythonModule?: string;
   /** Subcommand to prepend to args (e.g. broker/dlp share secretless-ai but differ by subcommand) */
   subcommand?: string;
+  /** Port mappings for docker() adapters (e.g. ['3001-3008:3001-3008']) */
+  ports?: string[];
   /** Description shown in help text */
   description: string;
 }

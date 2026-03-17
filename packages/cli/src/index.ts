@@ -657,6 +657,27 @@ Valid actions:
       }
     });
 
+  // Create command (secure skill/component scaffolding)
+  program
+    .command('create <type> [name]')
+    .description('Create secure skill or component (type: skill)')
+    .option('--template <name>', 'Template: basic, mcp-tool, data-processor')
+    .option('--output <dir>', 'Output directory')
+    .option('--no-sign', 'Skip auto-signing')
+    .action(async (type: string, name: string | undefined, opts) => {
+      const { create } = await import('./commands/create/index.js');
+      const globalOpts = program.opts();
+      process.exitCode = await create({
+        type,
+        name,
+        ...opts,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+      });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+    });
+
   // MCP command (MCP server identity management)
   program
     .command('mcp [subcommand] [server]')
@@ -735,7 +756,7 @@ Valid actions:
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines', 'benchmark',
     'check', 'status', 'publish', 'detect', 'mcp', 'demo',
-    'trust', 'claim',
+    'trust', 'claim', 'create',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');

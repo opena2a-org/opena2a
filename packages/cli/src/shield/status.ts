@@ -275,7 +275,27 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
 
   const inactiveTools = status.tools.filter(p => !p.active && p.name !== 'Registry');
   if (inactiveTools.length > 0) {
-    recs.push(`Inactive tools: ${inactiveTools.map(p => p.name).join(', ')}`);
+    const toolInfo: Record<string, { desc: string; setup: string }> = {
+      'Secretless':          { desc: 'credential protection',    setup: 'npx secretless-ai init' },
+      'Runtime Guard (ARP)': { desc: 'runtime monitoring',       setup: 'opena2a runtime init' },
+      'Browser Guard':       { desc: 'browser extension',        setup: 'Install from opena2a.org' },
+      'ConfigGuard':         { desc: 'config file integrity',    setup: 'opena2a guard init' },
+      'AIM Core (Identity)': { desc: 'agent identity',           setup: 'opena2a identity init' },
+      'HackMyAgent':         { desc: 'security scanning',        setup: 'npx hackmyagent secure' },
+    };
+    // Build per-tool lines with description and setup command
+    const toolLines: string[] = ['Inactive tools:'];
+    for (const tool of inactiveTools) {
+      const info = toolInfo[tool.name];
+      if (info) {
+        const name = tool.name.padEnd(22);
+        const desc = info.desc.padEnd(28);
+        toolLines.push(`    ${name}${desc}${info.setup}`);
+      } else {
+        toolLines.push(`    ${tool.name}`);
+      }
+    }
+    recs.push(toolLines.join('\n'));
   }
 
   if (recs.length > 0) {
