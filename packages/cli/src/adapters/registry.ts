@@ -29,6 +29,7 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     name: 'train',
     method: 'docker',
     image: 'opena2a/dvaa',
+    ports: ['3001-3008:3001-3008', '3010-3013:3010-3013', '3020-3021:3020-3021', '9000:9000'],
     description: 'Launch vulnerable AI agent for training (DVAA)',
   },
   crypto: {

@@ -20,8 +20,11 @@ export class DockerAdapter implements Adapter {
       dockerArgs.push('-it');
     }
 
-    // Map common port ranges for training environments
-    dockerArgs.push('-p', '3000:3000');
+    // Map port ranges from adapter config, or fall back to a default
+    const ports = this.config.ports ?? ['3000:3000'];
+    for (const mapping of ports) {
+      dockerArgs.push('-p', mapping);
+    }
     dockerArgs.push(image);
     dockerArgs.push(...options.args.filter(a => a !== '--interactive' && a !== '-it'));
 
