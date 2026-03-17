@@ -100,11 +100,13 @@ export class AimServerError extends Error {
 export class AimClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly apiKey?: string;
 
-  constructor(serverUrl: string, options?: { timeoutMs?: number }) {
+  constructor(serverUrl: string, options?: { timeoutMs?: number; apiKey?: string }) {
     // Normalize: strip trailing slash
     this.baseUrl = serverUrl.replace(/\/+$/, '');
     this.timeoutMs = options?.timeoutMs ?? 10_000;
+    this.apiKey = options?.apiKey;
   }
 
   // ---- Health / Status ---------------------------------------------------
@@ -171,6 +173,7 @@ export class AimClient {
   private async get<T>(path: string, token?: string): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
 
     const response = await this.fetch(path, { method: 'GET', headers });
     return this.parseResponse<T>(response);
@@ -180,8 +183,9 @@ export class AimClient {
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      ...extraHeaders,
     };
+    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    Object.assign(headers, extraHeaders);
 
     const response = await this.fetch(path, {
       method: 'POST',
