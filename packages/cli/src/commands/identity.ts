@@ -34,6 +34,8 @@ interface IdentityOptions {
   tools?: string;
   all?: boolean;
   autoSync?: boolean;
+  server?: string;
+  json?: boolean;
 }
 
 const USAGE = [
@@ -66,6 +68,22 @@ const USAGE = [
 ].join('\n');
 
 export async function identity(options: IdentityOptions): Promise<number> {
+  // Normalize --json flag to format
+  if (options.json) {
+    options.format = 'json';
+  }
+
+  // Warn when --server is provided: server mode is not yet implemented
+  if (options.server) {
+    const serverCommands = ['create', 'list', 'show', 'trust'];
+    if (serverCommands.includes(options.subcommand)) {
+      process.stderr.write(yellow('Warning: --server is not yet supported for identity commands.') + '\n');
+      process.stderr.write(yellow(`Operating in local mode. The --server flag was ignored.`) + '\n\n');
+    } else {
+      process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}".`) + '\n\n');
+    }
+  }
+
   const sub = options.subcommand;
   switch (sub) {
     case 'list':
