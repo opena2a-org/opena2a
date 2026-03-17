@@ -56,6 +56,8 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a scan` | 163 security checks via HackMyAgent |
 | `opena2a mcp audit` | Audit MCP server configurations with trust scores |
 | `opena2a guard sign` | Sign config files for tamper detection |
+| `opena2a guard harden` | Scan skills for security issues, auto-fix with `--fix` |
+| `opena2a create skill` | Scaffold a secure skill with signing, heartbeat, tests |
 | `opena2a shield init` | Full security setup — all of the above, one command |
 
 ## Ecosystem
@@ -71,6 +73,8 @@ Each command routes to a specialized tool, installed on first use:
 | `mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
 | `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
+| `create` | Skill Scaffolding | Secure skill templates with signing and heartbeat |
+| `guard harden` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Scan skills for hardening issues, auto-fix |
 
 ## Use Cases
 
