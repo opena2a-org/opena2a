@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+- `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing, heartbeat, tests, and GitHub Action template
+- `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
+- Docker adapter configurable port mapping for `train` command (full DVAA port range)
+
 ## 0.6.3
 
 ### Breaking Changes
