@@ -266,10 +266,11 @@ Learn more: https://opena2a.org/docs`);
   program
     .command('identity [subcommand] [args...]')
     .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync)')
-    .allowUnknownOption(true)
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
+    .option('--server <url>', 'AIM server URL (not yet supported)')
+    .option('--json', 'Output as JSON (alias for --format json)')
     .option('--action <action>', 'Audit event action (for log)')
     .option('--target <target>', 'Audit event target (for log)')
     .option('--result <result>', 'Audit event result: allowed|denied|error (for log)')
@@ -309,6 +310,8 @@ Learn more: https://opena2a.org/docs`);
         tools: opts.tools,
         all: opts.all,
         autoSync: opts.autoSync,
+        server: opts.server,
+        json: opts.json,
       });
     });
 
