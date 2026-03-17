@@ -151,13 +151,14 @@ async function loadAimCore(): Promise<typeof import('@opena2a/aim-core') | null>
  */
 function getServerClient(options: IdentityOptions): AimClient | null {
   const serverFlag = options.server;
+  const config = loadServerConfig();
+  const apiKey = options.apiKey ?? config?.apiKey;
   if (serverFlag) {
     const url = resolveServerUrl(serverFlag);
-    return new AimClient(url);
+    return new AimClient(url, { apiKey });
   }
-  const config = loadServerConfig();
   if (config?.serverUrl) {
-    return new AimClient(config.serverUrl);
+    return new AimClient(config.serverUrl, { apiKey });
   }
   return null;
 }
