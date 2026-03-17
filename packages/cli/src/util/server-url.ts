@@ -2,6 +2,10 @@
  * Resolve a user-provided --server value into a full URL.
  *
  * Shortcuts:
+ *   "cloud"             → https://aim.opena2a.org
+ *   "aim.opena2a.org"   → https://aim.opena2a.org
+ *   "localhost:8080"    → http://localhost:8080
+ *   "http://..." / "https://..." → used as-is
  *   "cloud"             -> https://aim.opena2a.org
  *   "aim.opena2a.org"   -> https://aim.opena2a.org
  *   "localhost:8080"    -> http://localhost:8080
@@ -15,6 +19,7 @@ export function resolveServerUrl(input: string): string {
     return 'https://aim.opena2a.org';
   }
 
+  // Already a full URL — use as-is
   // Already a full URL -- use as-is
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     // Strip trailing slash for consistency
@@ -26,11 +31,13 @@ export function resolveServerUrl(input: string): string {
     return `https://${trimmed}`.replace(/\/+$/, '');
   }
 
+  // localhost / 127.0.0.1 / [::1] → default to http
   // localhost / 127.0.0.1 / [::1] -- default to http
   if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(trimmed)) {
     return `http://${trimmed}`.replace(/\/+$/, '');
   }
 
+  // Any other hostname — default to https
   // Any other hostname -- default to https
   return `https://${trimmed}`.replace(/\/+$/, '');
 }

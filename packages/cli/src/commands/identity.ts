@@ -93,6 +93,17 @@ export async function identity(options: IdentityOptions): Promise<number> {
     options.format = 'json';
   }
 
+  // Resolve --server URL when provided
+  if (options.server) {
+    options.server = resolveServerUrl(options.server);
+
+    const serverCommands = ['create', 'list', 'show', 'trust'];
+    if (!serverCommands.includes(options.subcommand)) {
+      process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
+      options.server = undefined;
+    }
+  }
+
   const sub = options.subcommand;
   switch (sub) {
     case 'list':

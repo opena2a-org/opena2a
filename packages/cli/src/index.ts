@@ -204,15 +204,17 @@ Learn more: https://opena2a.org/docs`);
   // Guard command (ConfigGuard)
   program
     .command('guard [subcommand] [args...]')
-    .description('Config file integrity signing and verification (sign|verify|status|watch|diff|policy|hook|resign|snapshot)')
+    .description('Config file integrity signing and verification (sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden)')
     .option('--files <files...>', 'Specific files to guard')
     .option('--dir <path>', 'Target directory')
     .option('--enforce', 'Quarantine on tampering (exit code 3)')
     .option('--skills', 'Include SKILL.md files in signing/verification')
     .option('--heartbeats', 'Include HEARTBEAT.md files in signing/verification')
+    .option('--fix', 'Auto-fix fixable issues (harden subcommand)')
+    .option('--dry-run', 'Preview fixes without applying (harden subcommand)')
     .action(async (subcommand: string | undefined, args: string[], opts) => {
       if (!subcommand) {
-        process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot>\n');
+        process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden>\n');
         process.exitCode = 1;
         return;
       }
@@ -224,7 +226,7 @@ Learn more: https://opena2a.org/docs`);
       // Extract directory from positional args only for non-action subcommands
       const dirFromArgs = !isActionSub && args.length > 0 && !args[0]?.startsWith('-') ? args.shift() : undefined;
       process.exitCode = await guard({
-        subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot',
+        subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot' | 'harden',
         files: opts.files,
         targetDir: opts.dir ?? dirFromArgs,
         ci: globalOpts.ci,
@@ -233,6 +235,8 @@ Learn more: https://opena2a.org/docs`);
         enforce: opts.enforce,
         skills: opts.skills,
         heartbeats: opts.heartbeats,
+        fix: opts.fix,
+        dryRun: opts.dryRun,
         args,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
@@ -283,6 +287,8 @@ Learn more: https://opena2a.org/docs`);
     .option('--tools <list>', 'Comma-separated tools to enable (attach)')
     .option('--all', 'Enable all detected tools (attach)')
     .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
+    .option('--server <url>', 'AIM server URL. Use "cloud" for aim.opena2a.org, or a custom URL for self-hosted servers')
+    .option('--json', 'Output as JSON (alias for --format json)')
     .action(async (subcommand: string | undefined, args: string[], opts) => {
       if (!subcommand) {
         subcommand = 'list';
@@ -674,6 +680,7 @@ Valid actions:
         type,
         name,
         ...opts,
+        noSign: opts.sign === false,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
