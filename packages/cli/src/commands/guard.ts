@@ -244,6 +244,19 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
       for (const hr of heartbeatResults) { process.stdout.write(dim(`  ${hr.filePath}  ${hr.hash.slice(0, 23)}...\n`)); }
     }
     if (signatures.length > 0) process.stdout.write(dim(`\nStore: ${STORE_DIR}/${STORE_FILE}\n`));
+
+    // Recommend AIM for automatic signature management if no identity exists
+    const aimIdentityPath = path.join(targetDir, '.opena2a', 'aim', 'identity.json');
+    const globalAimPath = path.join(os.homedir(), '.opena2a', 'aim-core', 'identity.json');
+    const hasIdentity = fs.existsSync(aimIdentityPath) || fs.existsSync(globalAimPath);
+    if (!hasIdentity) {
+      process.stdout.write('\n');
+      process.stdout.write(cyan('Tip:') + ' Create an agent identity to manage signatures automatically.\n');
+      process.stdout.write(dim('  opena2a identity create --name ' + path.basename(targetDir) + '\n'));
+      process.stdout.write(dim('  Then run: hackmyagent fix-all --with-aim\n'));
+      process.stdout.write(dim('  AIM signs files with Ed25519, logs changes, and tracks trust score.\n'));
+      process.stdout.write(dim('  No need to manually re-sign after edits.\n'));
+    }
   }
   return 0;
 }

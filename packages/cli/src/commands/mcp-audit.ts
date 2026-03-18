@@ -388,6 +388,10 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     process.stdout.write(`  Fingerprint:  ${cyan(fingerprint)}\n`);
     process.stdout.write(`  Config hash:  ${dim(configHash.substring(0, 32) + '...')}\n`);
     process.stdout.write(`  Stored in:    ${dim(idPath)}\n`);
+    process.stdout.write('\n');
+    process.stdout.write(dim('Tip: To manage signatures automatically across all files, create an agent identity:\n'));
+    process.stdout.write(dim('  opena2a identity create --name ' + serverName + '\n'));
+    process.stdout.write(dim('  Then: hackmyagent fix-all --with-aim\n'));
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to sign server: ${err instanceof Error ? err.message : String(err)}\n`);
