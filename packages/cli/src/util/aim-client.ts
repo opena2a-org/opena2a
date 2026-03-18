@@ -287,6 +287,26 @@ export class AimClient {
     return this.del(`/api/v1/agents/${encodeURIComponent(agentId)}/mcp-servers/${encodeURIComponent(mcpId)}`);
   }
 
+  // ---- Lifecycle ----------------------------------------------------------
+
+  async suspendAgent(agentId: string): Promise<any> {
+    return this.post(`/api/v1/agents/${encodeURIComponent(agentId)}/suspend`, {});
+  }
+
+  async reactivateAgent(agentId: string): Promise<any> {
+    return this.post(`/api/v1/agents/${encodeURIComponent(agentId)}/reactivate`, {});
+  }
+
+  // ---- Server Policies (admin) -------------------------------------------
+
+  async listPolicies(): Promise<{ policies: any[] }> {
+    return this.get('/api/v1/admin/security-policies');
+  }
+
+  async getPolicy(policyId: string): Promise<any> {
+    return this.get(`/api/v1/admin/security-policies/${encodeURIComponent(policyId)}`);
+  }
+
   // ---- Activity -----------------------------------------------------------
 
   async getAgentActivity(agentId: string, params?: { page?: number; pageSize?: number }): Promise<any> {

@@ -70,6 +70,7 @@ const USAGE = [
   'Policy',
   '  policy             Show current capability policy',
   '  policy load <file> Load a YAML capability policy',
+  '  policy --server    List server security policies',
   '  check <capability> Check if a capability is allowed',
   '',
   'Cross-Tool Integration',
@@ -92,10 +93,14 @@ const USAGE = [
   '  mcp add <id>             Add an MCP server to agent',
   '  mcp remove <id>          Remove an MCP server from agent',
   '',
+  'Lifecycle',
+  '  suspend                  Suspend agent on server (stops all operations)',
+  '  reactivate               Reactivate a suspended agent',
+  '',
   'Activity',
   '  activity [--limit N]     View recent agent activity events',
   '',
-  'Server Flags (for create, list, trust, audit, log, tag, mcp, activity):',
+  'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate):',
   '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
   '  --api-key <key>          AIM API key for authentication',
   '',
@@ -111,7 +116,7 @@ export async function identity(options: IdentityOptions): Promise<number> {
   if (options.server) {
     options.server = resolveServerUrl(options.server);
 
-    const serverCommands = ['create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity'];
+    const serverCommands = ['create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate'];
     if (!serverCommands.includes(options.subcommand)) {
       process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
       options.server = undefined;
@@ -155,6 +160,10 @@ export async function identity(options: IdentityOptions): Promise<number> {
       return handleMcp(options);
     case 'activity':
       return handleActivity(options);
+    case 'suspend':
+      return handleSuspend(options);
+    case 'reactivate':
+      return handleReactivate(options);
     default:
       process.stderr.write(`Unknown identity subcommand: ${sub}\n`);
       process.stderr.write(USAGE + '\n');
@@ -1042,10 +1051,16 @@ async function handleDisconnect(options: IdentityOptions): Promise<number> {
 // ---------------------------------------------------------------------------
 
 async function handlePolicy(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+
+  // When --server is specified, fetch server security policies
+  if (options.server) {
+    return handleServerPolicies(options);
+  }
+
   const mod = await loadAimCore();
   if (!mod) return 1;
 
-  const isJson = options.format === 'json';
   const args = options.file ? ['load', options.file] : [];
 
   // If first positional arg is "load", load a YAML policy
@@ -1053,7 +1068,7 @@ async function handlePolicy(options: IdentityOptions): Promise<number> {
     return handlePolicyLoad(mod, options);
   }
 
-  // Otherwise show the current policy
+  // Otherwise show the current local policy
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
     const p = aim.loadPolicy() as Policy;
@@ -1083,6 +1098,60 @@ async function handlePolicy(options: IdentityOptions): Promise<number> {
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to read policy: ${err instanceof Error ? err.message : String(err)}\n`);
+    return 1;
+  }
+}
+
+async function handleServerPolicies(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  try {
+    const resp = await authedClient.listPolicies();
+    const policies = resp.policies ?? [];
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ policies }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(bold(`Server Policies (${serverUrl})`) + '\n');
+    process.stdout.write(gray('-'.repeat(50)) + '\n');
+
+    if (policies.length === 0) {
+      process.stdout.write(dim('  No policies found.') + '\n');
+    } else {
+      for (const p of policies) {
+        const name = p.name ?? 'unnamed';
+        const id = p.id ?? '';
+        const pType = p.type ?? p.policyType ?? 'unknown';
+        const status = p.enabled !== undefined
+          ? (p.enabled ? 'active' : 'inactive')
+          : (p.status ?? 'unknown');
+        const statusColor = status === 'active' ? green : status === 'inactive' ? dim : yellow;
+        const rules = p.rules ?? [];
+        const allowCount = rules.filter((r: any) => r.action === 'allow').length;
+        const denyCount = rules.filter((r: any) => r.action === 'deny').length;
+
+        process.stdout.write(`  ${bold(name)} ${dim(`(id: ${id})`)}\n`);
+        process.stdout.write(`    Type: ${pType} | Status: ${statusColor(status)}\n`);
+        process.stdout.write(`    Rules: ${allowCount} allow, ${denyCount} deny\n`);
+      }
+    }
+
+    process.stdout.write(gray('-'.repeat(50)) + '\n');
+    process.stdout.write(dim(`  ${policies.length} ${policies.length === 1 ? 'policy' : 'policies'} total`) + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to list server policies: ${formatServerError(err)}\n`);
     return 1;
   }
 }
@@ -2016,6 +2085,85 @@ async function handleActivity(options: IdentityOptions): Promise<number> {
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to fetch activity: ${formatServerError(err)}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// suspend -- suspend agent on server
+// ---------------------------------------------------------------------------
+
+async function handleSuspend(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
+  if (!agentId) {
+    process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
+    return 1;
+  }
+
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  try {
+    const resp = await authedClient.suspendAgent(agentId);
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ action: 'suspended', agentId, ...resp }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(green(`Agent ${agentId} suspended.`) + '\n');
+    process.stdout.write(dim('  All operations for this agent are now paused.') + '\n');
+    process.stdout.write(dim('  To reactivate: opena2a identity reactivate --server cloud') + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to suspend agent: ${formatServerError(err)}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// reactivate -- reactivate a suspended agent on server
+// ---------------------------------------------------------------------------
+
+async function handleReactivate(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
+  if (!agentId) {
+    process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
+    return 1;
+  }
+
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  try {
+    const resp = await authedClient.reactivateAgent(agentId);
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ action: 'reactivated', agentId, ...resp }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(green(`Agent ${agentId} reactivated.`) + '\n');
+    process.stdout.write(dim('  Agent operations have been resumed.') + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to reactivate agent: ${formatServerError(err)}\n`);
     return 1;
   }
 }
