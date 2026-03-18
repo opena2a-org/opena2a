@@ -202,6 +202,8 @@ export async function dispatchCommand(
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,
+      registry: args.includes('--registry'),
+      autoScan: args.includes('--auto-scan'),
     });
   }
 
