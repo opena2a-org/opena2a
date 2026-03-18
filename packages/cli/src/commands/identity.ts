@@ -397,15 +397,16 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   if (!name) {
     process.stderr.write('Missing required option: --name <name>\n');
     process.stderr.write('Usage: opena2a identity create --name my-agent\n');
-    process.stderr.write('       opena2a identity create --name my-agent --server localhost:8080 --api-key <key>\n');
+    process.stderr.write('       opena2a identity create --name my-agent --server cloud\n');
     return 1;
   }
 
   const isJson = options.format === 'json';
 
   try {
-    // If --server is provided, register on the server
-    if (options.server) {
+    // If --server is provided or global auth exists, register on the server
+    const globalAuth = loadAuth();
+    if (options.server || (globalAuth && isAuthValid(globalAuth))) {
       return handleServerCreate(options, name, isJson);
     }
 
@@ -446,17 +447,29 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
  * Register agent on the AIM server and store the result locally.
  */
 async function handleServerCreate(options: IdentityOptions, name: string, isJson: boolean): Promise<number> {
-  const serverUrl = resolveServerUrl(options.server!);
+  // Resolve server URL from flag or stored auth
+  const globalAuth = loadAuth();
+  const hasOAuth = globalAuth && isAuthValid(globalAuth);
+  const serverUrl = options.server
+    ? resolveServerUrl(options.server)
+    : hasOAuth ? globalAuth!.serverUrl : '';
   const apiKey = options.apiKey;
 
-  if (!apiKey) {
-    process.stderr.write('Missing required option: --api-key <key>\n');
-    process.stderr.write('The AIM server requires an API key for agent registration.\n');
-    process.stderr.write(`Usage: opena2a identity create --name ${name} --server ${options.server} --api-key <key>\n`);
+  if (!serverUrl) {
+    process.stderr.write('No server specified. Use --server <url> or run: opena2a login\n');
     return 1;
   }
 
-  const client = new AimClient(serverUrl);
+  if (!apiKey && !hasOAuth) {
+    process.stderr.write('Authentication required.\n');
+    process.stderr.write('Run "opena2a login" first, or use --api-key <key>.\n');
+    return 1;
+  }
+
+  // Build client with OAuth token or API key
+  const client = hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl)
+    ? new AimClient(serverUrl, { accessToken: globalAuth!.accessToken })
+    : new AimClient(serverUrl, { apiKey });
 
   // 1. Health check
   if (!(await checkServerHealth(client, serverUrl))) {
@@ -464,8 +477,17 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
   }
 
   try {
-    // 2. Register on server
-    const resp = await client.register({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` }, apiKey);
+    // 2. Register on server (use authenticated endpoint if OAuth, public endpoint if API key)
+    let resp: any;
+    if (hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl)) {
+      resp = await client.createAgent({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` });
+    } else {
+      resp = await client.register({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` }, apiKey!);
+    }
+
+    // Normalize response - server may return different shapes
+    const agentId = resp.agentId ?? resp.id ?? resp.agent?.id;
+    const agentName = resp.name ?? resp.agent?.name ?? name;
 
     // 3. Also create local identity via aim-core
     const mod = await loadAimCore();
@@ -478,7 +500,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
     // 4. Store server config locally
     const config: ServerConfig = {
       serverUrl,
-      agentId: resp.agentId,
+      agentId: agentId,
       apiKey,
       registeredAt: new Date().toISOString(),
     };
@@ -488,9 +510,9 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
       process.stdout.write(JSON.stringify({
         created: true,
         server: {
-          id: resp.agentId,
-          name: resp.name,
-          displayName: resp.displayName,
+          id: agentId,
+          name: agentName,
+          displayName: resp.displayName ?? agentName,
           publicKey: resp.publicKey,
           trustScore: resp.trustScore,
           status: resp.status,
@@ -507,12 +529,12 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
 
     process.stdout.write(green('Agent registered on AIM server') + '\n');
     process.stdout.write(gray('-'.repeat(50)) + '\n');
-    process.stdout.write(`  Server ID:    ${cyan(resp.agentId)}\n`);
-    process.stdout.write(`  Name:         ${resp.name}\n`);
-    process.stdout.write(`  Display Name: ${resp.displayName}\n`);
+    process.stdout.write(`  Server ID:    ${cyan(agentId)}\n`);
+    process.stdout.write(`  Name:         ${agentName}\n`);
+    process.stdout.write(`  Display Name: ${resp.displayName ?? agentName}\n`);
     process.stdout.write(`  Public Key:   ${dim((resp.publicKey ?? '').slice(0, 32) + '...')}\n`);
-    process.stdout.write(`  Trust Score:  ${resp.trustScore}\n`);
-    process.stdout.write(`  Status:       ${resp.status === 'verified' ? green(resp.status) : yellow(resp.status)}\n`);
+    process.stdout.write(`  Trust Score:  ${resp.trustScore ?? 'pending'}\n`);
+    process.stdout.write(`  Status:       ${(resp.status === 'verified' ? green(resp.status) : yellow(resp.status ?? 'pending'))}\n`);
     process.stdout.write(`  Server URL:   ${dim(serverUrl)}\n`);
     if (localId) {
       process.stdout.write(`\n  Local ID:     ${dim(localId.agentId)}\n`);

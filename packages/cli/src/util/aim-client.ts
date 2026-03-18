@@ -164,6 +164,16 @@ export class AimClient {
 
   // ---- Agent CRUD (requires Bearer token) --------------------------------
 
+  async createAgent(body: RegisterRequest): Promise<RegisterResponse> {
+    const serverBody = {
+      name: body.name,
+      displayName: body.displayName ?? body.name,
+      description: body.description ?? '',
+      agentType: body.agentType ?? 'custom',
+    };
+    return this.post('/api/v1/agents', serverBody);
+  }
+
   async listAgents(token: string, params?: { page?: number; pageSize?: number }): Promise<AgentListResponse> {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
