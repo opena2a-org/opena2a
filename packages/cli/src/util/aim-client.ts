@@ -251,6 +251,52 @@ export class AimClient {
     return this.post('/api/v1/auth/refresh', { refreshToken });
   }
 
+  // ---- Tags ---------------------------------------------------------------
+
+  async listTags(): Promise<{ tags: any[] }> {
+    return this.get('/api/v1/tags');
+  }
+
+  async createTag(name: string, color?: string): Promise<any> {
+    return this.post('/api/v1/tags', { name, color: color ?? '#06b6d4' });
+  }
+
+  async addTagsToAgent(agentId: string, tagIds: string[]): Promise<any> {
+    return this.post(`/api/v1/agents/${encodeURIComponent(agentId)}/tags`, { tagIds });
+  }
+
+  async removeTagFromAgent(agentId: string, tagId: string): Promise<any> {
+    return this.del(`/api/v1/agents/${encodeURIComponent(agentId)}/tags/${encodeURIComponent(tagId)}`);
+  }
+
+  async getAgentTags(agentId: string): Promise<{ tags: any[] }> {
+    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}/tags`);
+  }
+
+  // ---- MCPs ---------------------------------------------------------------
+
+  async getAgentMCPs(agentId: string): Promise<{ mcpServers: any[] }> {
+    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}/mcp-servers`);
+  }
+
+  async addMCPsToAgent(agentId: string, mcpServerIds: string[]): Promise<any> {
+    return this.put(`/api/v1/agents/${encodeURIComponent(agentId)}/mcp-servers`, { mcpServerIds });
+  }
+
+  async removeMCPFromAgent(agentId: string, mcpId: string): Promise<any> {
+    return this.del(`/api/v1/agents/${encodeURIComponent(agentId)}/mcp-servers/${encodeURIComponent(mcpId)}`);
+  }
+
+  // ---- Activity -----------------------------------------------------------
+
+  async getAgentActivity(agentId: string, params?: { page?: number; pageSize?: number }): Promise<any> {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.pageSize) qs.set('pageSize', String(params.pageSize));
+    const query = qs.toString();
+    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}/activity${query ? '?' + query : ''}`);
+  }
+
   // ---- Generic HTTP helpers -----------------------------------------------
 
   private async get<T>(path: string, token?: string): Promise<T> {
@@ -277,6 +323,31 @@ export class AimClient {
       headers,
       body: JSON.stringify(body),
     });
+    return this.parseResponse<T>(response);
+  }
+
+  private async put<T>(path: string, body: unknown): Promise<T> {
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
+    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+
+    const response = await this.fetch(path, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+    return this.parseResponse<T>(response);
+  }
+
+  private async del<T>(path: string): Promise<T> {
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
+    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+
+    const response = await this.fetch(path, { method: 'DELETE', headers });
     return this.parseResponse<T>(response);
   }
 

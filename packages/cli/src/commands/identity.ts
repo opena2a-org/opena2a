@@ -82,7 +82,20 @@ const USAGE = [
   '  connect <url>            Connect local identity to an AIM server',
   '  disconnect               Remove server association (keep local identity)',
   '',
-  'Server Flags (for create, list, trust, audit, log):',
+  'Tags',
+  '  tag list                 List all tags in organization',
+  '  tag add <name>           Create a tag and add to current agent',
+  '  tag remove <name>        Remove a tag from current agent',
+  '',
+  'MCPs',
+  '  mcp list                 List agent MCP server connections',
+  '  mcp add <id>             Add an MCP server to agent',
+  '  mcp remove <id>          Remove an MCP server from agent',
+  '',
+  'Activity',
+  '  activity [--limit N]     View recent agent activity events',
+  '',
+  'Server Flags (for create, list, trust, audit, log, tag, mcp, activity):',
   '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
   '  --api-key <key>          AIM API key for authentication',
   '',
@@ -98,7 +111,7 @@ export async function identity(options: IdentityOptions): Promise<number> {
   if (options.server) {
     options.server = resolveServerUrl(options.server);
 
-    const serverCommands = ['create', 'list', 'show', 'trust'];
+    const serverCommands = ['create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity'];
     if (!serverCommands.includes(options.subcommand)) {
       process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
       options.server = undefined;
@@ -136,6 +149,12 @@ export async function identity(options: IdentityOptions): Promise<number> {
       return handleConnect(options);
     case 'disconnect':
       return handleDisconnect(options);
+    case 'tag':
+      return handleTag(options);
+    case 'mcp':
+      return handleMcp(options);
+    case 'activity':
+      return handleActivity(options);
     default:
       process.stderr.write(`Unknown identity subcommand: ${sub}\n`);
       process.stderr.write(USAGE + '\n');
@@ -1710,4 +1729,293 @@ function parseSimpleYamlPolicy(content: string): Policy {
   }
 
   return { version, defaultAction, rules };
+}
+
+// ---------------------------------------------------------------------------
+// tag
+// ---------------------------------------------------------------------------
+
+async function handleTag(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+  const args = options.args ?? [];
+  const sub = args[0];
+
+  if (!sub || !['list', 'add', 'remove'].includes(sub)) {
+    process.stderr.write('Usage: opena2a identity tag <list|add|remove> [name]\n');
+    process.stderr.write('\n');
+    process.stderr.write('  list               List all tags in organization\n');
+    process.stderr.write('  add <name>         Create a tag and add to current agent\n');
+    process.stderr.write('  remove <name>      Remove a tag from current agent\n');
+    return 1;
+  }
+
+  const client = getServerClient(options);
+  if (!client) {
+    process.stderr.write('No server configured. Run: opena2a login\n');
+    return 1;
+  }
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
+
+  // Temporarily create an authenticated client
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  if (sub === 'list') {
+    try {
+      const resp = await authedClient.listTags();
+      const tags = resp.tags ?? [];
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ tags }, null, 2) + '\n');
+        return 0;
+      }
+      process.stdout.write(bold('Organization Tags') + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      if (tags.length === 0) {
+        process.stdout.write(dim('  No tags found.') + '\n');
+      } else {
+        for (const tag of tags) {
+          const color = tag.color ? dim(` (${tag.color})`) : '';
+          process.stdout.write(`  ${cyan(tag.name)}${color}  ${dim(tag.id)}\n`);
+        }
+      }
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      process.stdout.write(dim(`  ${tags.length} tag(s)`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to list tags: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  const tagName = args[1];
+  if (!tagName) {
+    process.stderr.write(`Usage: opena2a identity tag ${sub} <name>\n`);
+    return 1;
+  }
+
+  if (sub === 'add') {
+    if (!agentId) {
+      process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+      return 1;
+    }
+    try {
+      // List existing tags to check if one with this name already exists
+      const existing = await authedClient.listTags();
+      let tag = (existing.tags ?? []).find((t: any) => t.name === tagName);
+      if (!tag) {
+        tag = await authedClient.createTag(tagName);
+      }
+      await authedClient.addTagsToAgent(agentId, [tag.id]);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ action: 'added', tag, agentId }, null, 2) + '\n');
+        return 0;
+      }
+      process.stdout.write(green(`Tag "${tagName}" added to agent ${agentId}.`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to add tag: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  if (sub === 'remove') {
+    if (!agentId) {
+      process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+      return 1;
+    }
+    try {
+      // Find tag by name from agent's current tags
+      const agentTags = await authedClient.getAgentTags(agentId);
+      const tag = (agentTags.tags ?? []).find((t: any) => t.name === tagName);
+      if (!tag) {
+        process.stderr.write(`Tag "${tagName}" not found on this agent.\n`);
+        return 1;
+      }
+      await authedClient.removeTagFromAgent(agentId, tag.id);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ action: 'removed', tagName, tagId: tag.id, agentId }, null, 2) + '\n');
+        return 0;
+      }
+      process.stdout.write(green(`Tag "${tagName}" removed from agent ${agentId}.`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to remove tag: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// mcp
+// ---------------------------------------------------------------------------
+
+async function handleMcp(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+  const args = options.args ?? [];
+  const sub = args[0];
+
+  if (!sub || !['list', 'add', 'remove'].includes(sub)) {
+    process.stderr.write('Usage: opena2a identity mcp <list|add|remove> [id]\n');
+    process.stderr.write('\n');
+    process.stderr.write('  list               List agent MCP server connections\n');
+    process.stderr.write('  add <id>           Add an MCP server to agent\n');
+    process.stderr.write('  remove <id>        Remove an MCP server from agent\n');
+    return 1;
+  }
+
+  const client = getServerClient(options);
+  if (!client) {
+    process.stderr.write('No server configured. Run: opena2a login\n');
+    return 1;
+  }
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
+  if (!agentId) {
+    process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+    return 1;
+  }
+
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  if (sub === 'list') {
+    try {
+      const resp = await authedClient.getAgentMCPs(agentId);
+      const mcps = resp.mcpServers ?? [];
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ agentId, mcpServers: mcps }, null, 2) + '\n');
+        return 0;
+      }
+      process.stdout.write(bold('Agent MCP Servers') + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      if (mcps.length === 0) {
+        process.stdout.write(dim('  No MCP servers connected.') + '\n');
+      } else {
+        for (const mcp of mcps) {
+          const name = mcp.name ? `  ${cyan(mcp.name)}` : '';
+          process.stdout.write(`  ${dim(mcp.id)}${name}\n`);
+        }
+      }
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      process.stdout.write(dim(`  ${mcps.length} MCP server(s)`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to list MCP servers: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  const mcpId = args[1];
+  if (!mcpId) {
+    process.stderr.write(`Usage: opena2a identity mcp ${sub} <id>\n`);
+    return 1;
+  }
+
+  if (sub === 'add') {
+    try {
+      await authedClient.addMCPsToAgent(agentId, [mcpId]);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ action: 'added', mcpServerId: mcpId, agentId }, null, 2) + '\n');
+        return 0;
+      }
+      process.stdout.write(green(`MCP server "${mcpId}" added to agent ${agentId}.`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to add MCP server: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  if (sub === 'remove') {
+    try {
+      await authedClient.removeMCPFromAgent(agentId, mcpId);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ action: 'removed', mcpServerId: mcpId, agentId }, null, 2) + '\n');
+        return 0;
+      }
+      process.stdout.write(green(`MCP server "${mcpId}" removed from agent ${agentId}.`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to remove MCP server: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// activity
+// ---------------------------------------------------------------------------
+
+async function handleActivity(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+  const limit = options.limit ?? 10;
+
+  const client = getServerClient(options);
+  if (!client) {
+    process.stderr.write('No server configured. Run: opena2a login\n');
+    return 1;
+  }
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
+  if (!agentId) {
+    process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+    return 1;
+  }
+
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  try {
+    const resp = await authedClient.getAgentActivity(agentId, { pageSize: limit });
+    const events = resp.events ?? resp.activity ?? [];
+    const total = resp.total ?? events.length;
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ agentId, total, events }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(bold(`Agent Activity (${events.length} of ${total})`) + '\n');
+    process.stdout.write(dim(`  Agent: ${agentId}`) + '\n');
+    process.stdout.write(gray('-'.repeat(70)) + '\n');
+
+    if (events.length === 0) {
+      process.stdout.write(dim('  No activity events recorded.') + '\n');
+    } else {
+      for (const e of events) {
+        const ts = (e.createdAt ?? e.timestamp ?? '').slice(0, 19).replace('T', ' ');
+        const action = (e.action ?? e.type ?? '').padEnd(20);
+        const detail = e.details ?? e.description ?? '';
+        process.stdout.write(`  ${dim(ts)}  ${action} ${dim(detail)}\n`);
+      }
+    }
+    process.stdout.write(gray('-'.repeat(70)) + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to fetch activity: ${formatServerError(err)}\n`);
+    return 1;
+  }
 }

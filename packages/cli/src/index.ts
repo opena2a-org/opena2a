@@ -332,7 +332,7 @@ Learn more: https://opena2a.org/docs`);
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
-    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync|connect|disconnect)')
+    .description('Agent identity management (list|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync|connect|disconnect|tag|mcp|activity)')
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
