@@ -22,7 +22,15 @@ export async function login(options: LoginOptions): Promise<number> {
   const isJson = options.json || options.format === 'json';
 
   // Determine server URL
-  const serverInput = options.server ?? 'cloud';
+  const serverInput = (options.server ?? 'cloud').trim();
+  if (!serverInput) {
+    if (isJson) {
+      console.log(JSON.stringify({ error: 'invalid_server', message: 'Server URL is required.' }));
+    } else {
+      console.error('Server URL is required. Use --server <url> or omit for aim.opena2a.org.');
+    }
+    return 1;
+  }
   const serverUrl = resolveServerUrl(serverInput);
 
   // Check if already authenticated
@@ -47,8 +55,10 @@ export async function login(options: LoginOptions): Promise<number> {
       console.log(JSON.stringify({ error: 'server_unreachable', serverUrl }));
     } else {
       console.error(`Cannot reach AIM server at ${serverUrl}`);
-      if (serverUrl.includes('localhost')) {
+      if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
         console.error('Is the AIM server running? Start it with: docker compose up');
+      } else {
+        console.error('Check your network connection and try again.');
       }
     }
     return 1;
@@ -202,9 +212,9 @@ export async function whoami(options: { format?: string; json?: boolean }): Prom
 
   if (isJson) {
     console.log(JSON.stringify({
-      authenticated: true,
+      authenticated: valid,
+      tokenExpired: !valid,
       serverUrl: auth.serverUrl,
-      tokenValid: valid,
       authenticatedAt: auth.authenticatedAt,
       expiresAt: auth.expiresAt,
     }));
