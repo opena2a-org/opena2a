@@ -96,11 +96,12 @@ const USAGE = [
   'Lifecycle',
   '  suspend                  Suspend agent on server (stops all operations)',
   '  reactivate               Reactivate a suspended agent',
+  '  revoke                   Permanently delete agent from server (irreversible)',
   '',
   'Activity',
   '  activity [--limit N]     View recent agent activity events',
   '',
-  'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate):',
+  'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate, revoke):',
   '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
   '  --api-key <key>          AIM API key for authentication',
   '',
@@ -116,7 +117,7 @@ export async function identity(options: IdentityOptions): Promise<number> {
   if (options.server) {
     options.server = resolveServerUrl(options.server);
 
-    const serverCommands = ['create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate'];
+    const serverCommands = ['create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate', 'revoke'];
     if (!serverCommands.includes(options.subcommand)) {
       process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
       options.server = undefined;
@@ -164,6 +165,8 @@ export async function identity(options: IdentityOptions): Promise<number> {
       return handleSuspend(options);
     case 'reactivate':
       return handleReactivate(options);
+    case 'revoke':
+      return handleRevoke(options);
     default:
       process.stderr.write(`Unknown identity subcommand: ${sub}\n`);
       process.stderr.write(USAGE + '\n');
@@ -2164,6 +2167,60 @@ async function handleReactivate(options: IdentityOptions): Promise<number> {
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to reactivate agent: ${formatServerError(err)}\n`);
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// revoke -- permanently delete agent from server (irreversible)
+// ---------------------------------------------------------------------------
+
+async function handleRevoke(options: IdentityOptions): Promise<number> {
+  const isJson = options.format === 'json';
+
+  const auth = getStoredAuth();
+  if (!auth.token) {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
+    return 1;
+  }
+
+  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
+  if (!agentId) {
+    process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
+    return 1;
+  }
+
+  // Require --ci or explicit confirmation via --name matching
+  if (!options.ci && !isJson) {
+    process.stderr.write(red('WARNING: This permanently deletes the agent from the server.') + '\n');
+    process.stderr.write(red('This action is irreversible. All keys, audit logs, and trust history will be lost.') + '\n');
+    process.stderr.write('\n');
+    process.stderr.write(`To confirm, run: opena2a identity revoke --server cloud --ci\n`);
+    process.stderr.write(`To temporarily disable instead: opena2a identity suspend --server cloud\n`);
+    return 1;
+  }
+
+  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
+  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+
+  try {
+    await authedClient.deleteAgent(agentId);
+
+    // Remove local server config since agent no longer exists
+    removeServerConfig();
+
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ action: 'revoked', agentId, deleted: true }, null, 2) + '\n');
+      return 0;
+    }
+
+    process.stdout.write(red(`Agent ${agentId} permanently deleted.`) + '\n');
+    process.stdout.write(dim('  Server config removed from ~/.opena2a/aim-core/identities/server.json') + '\n');
+    process.stdout.write(dim('  Local identity still exists. To create a new server agent:') + '\n');
+    process.stdout.write(dim('    opena2a identity create --name <name> --server cloud') + '\n');
+    return 0;
+  } catch (err) {
+    process.stderr.write(`Failed to revoke agent: ${formatServerError(err)}\n`);
     return 1;
   }
 }
