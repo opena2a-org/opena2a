@@ -1,0 +1,23 @@
+{
+  "name": "@opena2a/contribute",
+  "version": "0.1.0",
+  "description": "Shared community trust data contribution client for OpenA2A tools",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@opena2a/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "files": ["dist"],
+  "license": "Apache-2.0"
+}
