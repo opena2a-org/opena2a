@@ -28,6 +28,22 @@ async function main(): Promise<void> {
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
+    .addHelpText('beforeAll', `
+Quick start:
+  $ opena2a init                    Security assessment (30 seconds)
+  $ opena2a detect                  Discover AI agents on this machine
+  $ opena2a protect                 Migrate credentials to secure vault
+  $ opena2a shield init             Full 11-step security setup
+
+Commands by category:
+  Scan & Harden:  init, scan, check, detect, protect, benchmark
+  Identity:       identity, skill, mcp, trust, claim
+  Governance:     scan-soul, harden-soul, guard, shield
+  Runtime:        runtime, review, status, baselines
+  Secrets:        secrets, broker
+  Training:       train, demo
+  Smart input:    ? (advisor)  ~query (search)  "natural language"
+`)
     .addHelpText('after', `
 Quick Start:
   $ opena2a shield init          Full 11-step security setup (scan, protect, sign, policy, hooks)
@@ -35,7 +51,7 @@ Quick Start:
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
   $ opena2a scan secure          Run 147 security checks on your AI agent
-  $ opena2a create skill         Scaffold a secure skill (SKILL.md, heartbeat, tests)
+  $ opena2a skill create         Scaffold a secure skill (SKILL.md, heartbeat, tests)
   $ opena2a guard harden         Scan skills for security issues (--fix to auto-fix)
   $ opena2a scan-soul            Scan governance file for behavioral safety (AGS)
   $ opena2a harden-soul          Generate or improve SOUL.md governance file
@@ -711,9 +727,37 @@ Valid actions:
       }
     });
 
-  // Create command (secure skill/component scaffolding)
+  // Skill command (noun-verb: skill create)
   program
-    .command('create <type> [name]')
+    .command('skill <subcommand> [name]')
+    .description('Skill management: create secure skills with signing and heartbeat')
+    .option('--template <name>', 'Template: basic, mcp-tool, data-processor (default: basic)')
+    .option('--output <dir>', 'Output directory (default: current)')
+    .option('--no-sign', 'Skip auto-signing of skill files')
+    .action(async (subcommand: string, name: string | undefined, opts) => {
+      if (subcommand === 'create') {
+        const { create } = await import('./commands/create/index.js');
+        const globalOpts = program.opts();
+        process.exitCode = await create({
+          type: 'skill',
+          name,
+          ...opts,
+          noSign: opts.sign === false,
+          ci: globalOpts.ci,
+          format: globalOpts.format,
+          verbose: globalOpts.verbose,
+        });
+        printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+      } else {
+        process.stderr.write(`Unknown skill subcommand: ${subcommand}\n`);
+        process.stderr.write('Available: create\n');
+        process.exitCode = 1;
+      }
+    });
+
+  // Backwards-compatible alias: `create skill` still works
+  program
+    .command('create <type> [name]', { hidden: true })
     .description('Create secure skill or component (type: skill)')
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor')
     .option('--output <dir>', 'Output directory')
