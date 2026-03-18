@@ -26,6 +26,7 @@ export interface DetectOptions {
   reportPath?: string;
   exportCsv?: string;
   registry?: boolean;
+  autoScan?: boolean;
 }
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
@@ -47,6 +48,15 @@ export interface McpRegistryData {
   verified: boolean;
 }
 
+export interface McpScanResult {
+  score: number;
+  maxScore: number;
+  criticalCount: number;
+  highCount: number;
+  mediumCount: number;
+  contributed: boolean;
+}
+
 export interface DetectedMcpServer {
   name: string;
   transport: 'stdio' | 'sse' | 'unknown';
@@ -55,6 +65,8 @@ export interface DetectedMcpServer {
   capabilities: string[];
   risk: RiskLevel;
   registryData?: McpRegistryData;
+  scanResult?: McpScanResult;
+  scanSuggestion?: string;
 }
 
 export interface AiConfigFile {
@@ -727,15 +739,38 @@ function riskLabel(level: RiskLevel): string {
   return riskColor(level)(level.toUpperCase());
 }
 
-/** Format a compact trust label for an MCP server row. Empty string if no registry data. */
+/** Format a compact trust label for an MCP server row. Handles three states:
+ *  1. Registry data exists -> "Trust: 92/100 | 45 community scans"
+ *  2. Scan result exists   -> "Scanned: 95/100 | 0 critical | contributed"
+ *  3. Neither              -> "No trust data | scan: opena2a detect --registry --auto-scan"
+ */
 function formatMcpTrustLabel(server: DetectedMcpServer): string {
-  if (!server.registryData) return '';
-  const score = Math.round(server.registryData.trustScore * 100);
-  const parts = [`Trust: ${score}/100`];
-  if (server.registryData.communityScans > 0) {
-    parts.push(`${server.registryData.communityScans} community scan${server.registryData.communityScans !== 1 ? 's' : ''}`);
+  // State 1: Registry data available
+  if (server.registryData) {
+    const score = Math.round(server.registryData.trustScore * 100);
+    const parts = [`Trust: ${score}/100`];
+    if (server.registryData.communityScans > 0) {
+      parts.push(`${server.registryData.communityScans} community scan${server.registryData.communityScans !== 1 ? 's' : ''}`);
+    }
+    return cyan(` ${parts.join(' | ')}`);
   }
-  return cyan(` ${parts.join(' | ')}`);
+
+  // State 2: Just scanned with HMA
+  if (server.scanResult) {
+    const parts = [`Scanned: ${server.scanResult.score}/${server.scanResult.maxScore}`];
+    parts.push(`${server.scanResult.criticalCount} critical`);
+    if (server.scanResult.contributed) {
+      parts.push('contributed');
+    }
+    return cyan(` ${parts.join(' | ')}`);
+  }
+
+  // State 3: No data at all -- show actionable suggestion
+  if (server.scanSuggestion) {
+    return dim(` No trust data | scan: ${server.scanSuggestion}`);
+  }
+
+  return '';
 }
 
 function buildSummaryLine(result: DetectResult): string {
@@ -986,6 +1021,162 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
 }
 
 // ---------------------------------------------------------------------------
+// Auto-scan unknown MCP servers with HMA
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the filesystem path for an MCP server from its command field.
+ * Handles common patterns: npx <pkg>, node <path>, direct paths.
+ */
+function resolveMcpServerPath(server: DetectedMcpServer, projectDir: string): string | null {
+  // The source field contains info like "claude_desktop (project)" or "vscode (global)"
+  // The name is typically the package name or server identifier
+  // Try common resolution paths
+
+  // Check if it exists as a direct path in the project
+  const directPath = path.join(projectDir, 'node_modules', server.name);
+  if (fs.existsSync(directPath)) return directPath;
+
+  // Check scoped package patterns (e.g., @playwright/mcp -> node_modules/@playwright/mcp)
+  if (server.name.includes('/')) {
+    const scopedPath = path.join(projectDir, 'node_modules', server.name);
+    if (fs.existsSync(scopedPath)) return scopedPath;
+  }
+
+  // Try global node_modules
+  try {
+    const globalPrefix = execSync('npm prefix -g', { encoding: 'utf-8' }).trim();
+    const globalPath = path.join(globalPrefix, 'lib', 'node_modules', server.name);
+    if (fs.existsSync(globalPath)) return globalPath;
+  } catch {
+    // npm not available
+  }
+
+  // Fall back to the project directory itself (scan around the MCP config context)
+  return projectDir;
+}
+
+/**
+ * Scan unenriched MCP servers using HackMyAgent.
+ * Returns a map of server name -> scan result.
+ */
+async function scanUnknownAssets(
+  servers: DetectedMcpServer[],
+  projectDir: string,
+  verbose?: boolean,
+): Promise<Map<string, McpScanResult>> {
+  const results = new Map<string, McpScanResult>();
+
+  // Try to import HMA
+  let HardeningScanner: any;
+  try {
+    const hma = await (Function('return import("hackmyagent")')() as Promise<any>);
+    HardeningScanner = hma.HardeningScanner ?? hma.default?.HardeningScanner;
+  } catch {
+    // HMA not installed -- caller handles the fallback message
+    return results;
+  }
+
+  if (!HardeningScanner) return results;
+
+  // Check contribute status for submission
+  let contributeEnabled = false;
+  let registryUrl = '';
+  try {
+    const { isContributeEnabled, getRegistryUrl } = await import('../util/report-submission.js');
+    contributeEnabled = await isContributeEnabled();
+    registryUrl = await getRegistryUrl();
+  } catch {
+    // Non-critical
+  }
+
+  for (const server of servers) {
+    const targetPath = resolveMcpServerPath(server, projectDir);
+    if (!targetPath) continue;
+
+    try {
+      if (verbose) {
+        process.stderr.write(dim(`  Scanning ${server.name}...\n`));
+      }
+
+      const scanner = new HardeningScanner();
+      const scanResult = await Promise.race([
+        scanner.scan({ targetDir: targetPath, ci: true }),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
+      ]);
+
+      if (!scanResult) continue;
+
+      const score = scanResult.overallScore ?? scanResult.score ?? 0;
+      const maxScore = scanResult.maxScore ?? 100;
+      const criticalCount = scanResult.criticalCount ?? scanResult.findings?.filter((f: any) => f.severity === 'critical').length ?? 0;
+      const highCount = scanResult.highCount ?? scanResult.findings?.filter((f: any) => f.severity === 'high').length ?? 0;
+      const mediumCount = scanResult.mediumCount ?? scanResult.findings?.filter((f: any) => f.severity === 'medium').length ?? 0;
+
+      let contributed = false;
+
+      // Submit to registry if contribute is enabled
+      if (contributeEnabled && registryUrl) {
+        try {
+          const { submitScanReport } = await import('../util/report-submission.js');
+          const report = {
+            packageName: server.name,
+            packageType: 'mcp_server',
+            scannerName: 'HackMyAgent',
+            scannerVersion: scanResult.scannerVersion ?? '1.0.0',
+            overallScore: score,
+            scanDurationMs: scanResult.scanDurationMs ?? 0,
+            criticalCount,
+            highCount,
+            mediumCount,
+            lowCount: scanResult.lowCount ?? 0,
+            infoCount: scanResult.infoCount ?? 0,
+            verdict: score >= 80 ? 'pass' : score >= 50 ? 'warnings' : 'fail',
+            findings: scanResult.findings ?? [],
+          };
+          contributed = await submitScanReport(registryUrl, report, verbose);
+        } catch {
+          // Non-critical
+        }
+      }
+
+      results.set(server.name, {
+        score,
+        maxScore,
+        criticalCount,
+        highCount,
+        mediumCount,
+        contributed,
+      });
+    } catch (err: any) {
+      if (verbose) {
+        process.stderr.write(dim(`  Failed to scan ${server.name}: ${err.message}\n`));
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Prompt the user to scan unknown MCP servers (interactive, non-CI only).
+ * Returns true if the user agrees.
+ */
+async function promptForScan(count: number): Promise<boolean> {
+  const readline = await import('node:readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+
+  return new Promise((resolve) => {
+    process.stderr.write('\n');
+    process.stderr.write(yellow(`${count} MCP server${count !== 1 ? 's have' : ' has'} no trust data in the registry.\n`));
+    rl.question(`Scan them now with HackMyAgent to contribute trust data? [y/N] `, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
@@ -1067,6 +1258,50 @@ export async function detect(options: DetectOptions): Promise<number> {
       // Registry enrichment is non-critical -- never block the scan
       if (options.verbose) {
         process.stderr.write(dim('Registry: enrichment skipped (unavailable or timed out)\n'));
+      }
+    }
+  }
+
+  // Auto-scan unknown MCP servers (after registry enrichment, before output)
+  if (options.registry && mcpServers.length > 0) {
+    const unenriched = mcpServers.filter((s) => !s.registryData);
+
+    if (unenriched.length > 0) {
+      let shouldScan = false;
+
+      if (options.autoScan) {
+        // --auto-scan: scan without prompting
+        shouldScan = true;
+      } else if (!options.ci && process.stdin.isTTY) {
+        // Interactive mode: prompt the user
+        shouldScan = await promptForScan(unenriched.length);
+      }
+      // CI mode without --auto-scan: skip silently
+
+      if (shouldScan) {
+        const scanResults = await scanUnknownAssets(unenriched, dir, options.verbose);
+
+        if (scanResults.size > 0) {
+          for (const server of unenriched) {
+            const result = scanResults.get(server.name);
+            if (result) {
+              server.scanResult = result;
+            }
+          }
+        } else if (scanResults.size === 0 && unenriched.length > 0) {
+          // HMA not installed -- add suggestions
+          for (const server of unenriched) {
+            server.scanSuggestion = `npm i -g hackmyagent && opena2a scan secure .`;
+          }
+          if (!options.ci) {
+            process.stderr.write(dim('Install hackmyagent to scan unknown packages: npm i -g hackmyagent\n'));
+          }
+        }
+      } else {
+        // User declined or CI mode -- add actionable suggestions
+        for (const server of unenriched) {
+          server.scanSuggestion = `opena2a detect --registry --auto-scan`;
+        }
       }
     }
   }

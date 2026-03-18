@@ -2192,8 +2192,9 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
 
   // Require --ci or explicit confirmation via --name matching
   if (!options.ci && !isJson) {
-    process.stderr.write(red('WARNING: This permanently deletes the agent from the server.') + '\n');
-    process.stderr.write(red('This action is irreversible. All keys, audit logs, and trust history will be lost.') + '\n');
+    process.stderr.write(red('WARNING: This will revoke the agent on the server.') + '\n');
+    process.stderr.write('Data is retained for 30 days. You can reactivate within that window.\n');
+    process.stderr.write('After 30 days, all data will be permanently deleted.\n');
     process.stderr.write('\n');
     process.stderr.write(`To confirm, run: opena2a identity revoke --server cloud --ci\n`);
     process.stderr.write(`To temporarily disable instead: opena2a identity suspend --server cloud\n`);
@@ -2204,20 +2205,17 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
   const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   try {
-    await authedClient.deleteAgent(agentId);
-
-    // Remove local server config since agent no longer exists
-    removeServerConfig();
+    await authedClient.revokeAgent(agentId);
 
     if (isJson) {
-      process.stdout.write(JSON.stringify({ action: 'revoked', agentId, deleted: true }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ action: 'revoked', agentId, retentionDays: 30 }, null, 2) + '\n');
       return 0;
     }
 
-    process.stdout.write(red(`Agent ${agentId} permanently deleted.`) + '\n');
-    process.stdout.write(dim('  Server config removed from ~/.opena2a/aim-core/identities/server.json') + '\n');
-    process.stdout.write(dim('  Local identity still exists. To create a new server agent:') + '\n');
-    process.stdout.write(dim('    opena2a identity create --name <name> --server cloud') + '\n');
+    process.stdout.write(red(`Agent ${agentId} revoked.`) + '\n');
+    process.stdout.write('  Data retained for 30 days.\n');
+    process.stdout.write('  To restore within 30 days: opena2a identity reactivate --server cloud\n');
+    process.stdout.write(dim('  After 30 days, all data will be permanently deleted.') + '\n');
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to revoke agent: ${formatServerError(err)}\n`);
