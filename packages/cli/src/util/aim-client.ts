@@ -297,6 +297,10 @@ export class AimClient {
     return this.post(`/api/v1/agents/${encodeURIComponent(agentId)}/reactivate`, {});
   }
 
+  async revokeAgent(agentId: string): Promise<any> {
+    return this.post(`/api/v1/agents/${encodeURIComponent(agentId)}/revoke`, {});
+  }
+
   async deleteAgent(agentId: string): Promise<void> {
     await this.del(`/api/v1/agents/${encodeURIComponent(agentId)}`);
   }
