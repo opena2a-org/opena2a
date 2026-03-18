@@ -2,16 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { resolveServerUrl } from '../../src/util/server-url.js';
 
 describe('resolveServerUrl', () => {
-  it('resolves "cloud" to https://aim.opena2a.org', () => {
-    expect(resolveServerUrl('cloud')).toBe('https://aim.opena2a.org');
+  it('resolves "cloud" to https://api.aim.opena2a.org', () => {
+    expect(resolveServerUrl('cloud')).toBe('https://api.aim.opena2a.org');
   });
 
-  it('resolves bare "aim.opena2a.org" to https://aim.opena2a.org', () => {
-    expect(resolveServerUrl('aim.opena2a.org')).toBe('https://aim.opena2a.org');
+  it('resolves bare "aim.opena2a.org" to https://api.aim.opena2a.org', () => {
+    expect(resolveServerUrl('aim.opena2a.org')).toBe('https://api.aim.opena2a.org');
   });
 
   it('resolves "aim.opena2a.org/" with trailing slash', () => {
-    expect(resolveServerUrl('aim.opena2a.org/')).toBe('https://aim.opena2a.org');
+    expect(resolveServerUrl('aim.opena2a.org/')).toBe('https://api.aim.opena2a.org');
+  });
+
+  it('resolves "api.aim.opena2a.org" directly', () => {
+    expect(resolveServerUrl('api.aim.opena2a.org')).toBe('https://api.aim.opena2a.org');
   });
 
   it('passes through full https:// URLs as-is', () => {
@@ -47,7 +51,7 @@ describe('resolveServerUrl', () => {
   });
 
   it('trims whitespace', () => {
-    expect(resolveServerUrl('  cloud  ')).toBe('https://aim.opena2a.org');
+    expect(resolveServerUrl('  cloud  ')).toBe('https://api.aim.opena2a.org');
     expect(resolveServerUrl('  localhost:8080  ')).toBe('http://localhost:8080');
   });
 });

@@ -14,9 +14,9 @@
 export function resolveServerUrl(input: string): string {
   const trimmed = input.trim();
 
-  // Shorthand for the hosted AIM service
+  // Shorthand for the hosted AIM service (API endpoint, not the dashboard)
   if (trimmed === 'cloud') {
-    return 'https://aim.opena2a.org';
+    return 'https://api.aim.opena2a.org';
   }
 
   // Already a full URL — use as-is
@@ -26,8 +26,11 @@ export function resolveServerUrl(input: string): string {
     return trimmed.replace(/\/+$/, '');
   }
 
-  // Bare hostname that matches the cloud service
+  // Bare hostname that matches the cloud service — route to API endpoint
   if (trimmed === 'aim.opena2a.org' || trimmed.startsWith('aim.opena2a.org/')) {
+    return 'https://api.aim.opena2a.org';
+  }
+  if (trimmed === 'api.aim.opena2a.org' || trimmed.startsWith('api.aim.opena2a.org/')) {
     return `https://${trimmed}`.replace(/\/+$/, '');
   }
 
