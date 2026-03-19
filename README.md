@@ -67,7 +67,7 @@ Each command routes to a specialized tool, installed on first use:
 |---------|------|-------------|
 | `detect` | Shadow AI | Discover AI agents, MCP servers, AI configs |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 163 security checks, attack simulation, auto-fix |
+| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 187 security checks, attack simulation, auto-fix |
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
 | `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |

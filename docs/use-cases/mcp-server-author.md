@@ -140,7 +140,7 @@ Expected output:
   HackMyAgent  v0.10.4
 
   Scanning /home/dev/mcp-server-tools...
-  163 checks across 12 categories
+  187 checks across 39 categories
 
   Results
   -----------------------------------------------

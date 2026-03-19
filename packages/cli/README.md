@@ -52,7 +52,7 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a protect` | Fix everything — credentials, .gitignore, config signing |
 | `opena2a identity create` | Cryptographic identity for your project |
 | `opena2a harden-soul` | Generate SOUL.md governance rules |
-| `opena2a scan` | 163 security checks via HackMyAgent |
+| `opena2a scan` | 187 security checks via HackMyAgent |
 | `opena2a mcp audit` | Audit MCP server configurations with trust scores |
 | `opena2a guard sign` | Sign config files for tamper detection |
 | `opena2a shield init` | Full security setup — all of the above, one command |
@@ -65,7 +65,7 @@ Each command routes to a specialized tool, installed on first use:
 |---------|------|-------------|
 | `detect` | Shadow AI | Discover AI agents, MCP servers, AI configs |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 163 security checks, attack simulation, auto-fix |
+| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 187 security checks, attack simulation, auto-fix |
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
 | `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
