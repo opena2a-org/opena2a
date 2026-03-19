@@ -52,7 +52,7 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a protect` | Fix everything — credentials, .gitignore, config signing |
 | `opena2a identity create` | Cryptographic identity for your project |
 | `opena2a harden-soul` | Generate SOUL.md governance rules |
-| `opena2a scan` | 163 security checks via HackMyAgent |
+| `opena2a scan` | 187 security checks via HackMyAgent |
 | `opena2a mcp audit` | Audit MCP server configurations with trust scores |
 | `opena2a guard sign` | Sign config files for tamper detection |
 | `opena2a guard harden` | Scan skills for security issues, auto-fix with `--fix` |
