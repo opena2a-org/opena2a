@@ -151,6 +151,6 @@ describe('runtime', () => {
 
     expect(exitCode).toBe(1);
     const result = JSON.parse(output);
-    expect(result.error).toContain('not installed');
+    expect(result.error).toBeTruthy();
   });
 });

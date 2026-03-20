@@ -20,7 +20,6 @@ import { readEvents } from '../shield/events.js';
 import { classifyEvents, type ClassifiedFinding } from '../shield/findings.js';
 import { getARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
-import { createAdapter } from '../adapters/index.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -127,10 +126,30 @@ export interface ShieldPhaseData {
   integrityStatus: string;
 }
 
+export interface HmaFinding {
+  checkId: string;
+  name: string;
+  description: string;
+  category: string;
+  severity: string;
+  passed: boolean;
+  message: string;
+  file?: string;
+  line?: number;
+  fixable: boolean;
+  fix: string;
+}
+
 export interface HmaPhaseData {
   available: boolean;
-  results: Record<string, unknown> | null;
   score: number;
+  maxScore: number;
+  totalChecks: number;
+  passed: number;
+  failed: number;
+  bySeverity: Record<string, number>;
+  byCategory: Record<string, number>;
+  topFindings: HmaFinding[];
 }
 
 export interface DetectPhaseData {
@@ -267,7 +286,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   progress(5, 'Running HMA security scan...');
   let hmaData: HmaPhaseData | null = null;
   if (!options.skipHma) {
-    hmaData = await runHmaPhase();
+    hmaData = await runHmaPhase(targetDir);
   }
   const phase5Ms = Date.now() - phase5Start;
   if (hmaData && hmaData.available) {
@@ -276,7 +295,7 @@ export async function review(options: ReviewOptions): Promise<number> {
       status: hmaData.score >= 70 ? 'pass' : hmaData.score >= 40 ? 'warn' : 'fail',
       score: hmaData.score,
       durationMs: phase5Ms,
-      detail: `Score: ${hmaData.score}/100`,
+      detail: `${hmaData.score}/${hmaData.maxScore} (${hmaData.failed} issues)`,
     });
     progressDone(5, 'Running HMA security scan... ', formatMs(phase5Ms));
   } else {
@@ -572,23 +591,75 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
   };
 }
 
-async function runHmaPhase(): Promise<HmaPhaseData> {
+async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
+  const emptyResult: HmaPhaseData = {
+    available: false, score: 0, maxScore: 100,
+    totalChecks: 0, passed: 0, failed: 0,
+    bySeverity: {}, byCategory: {}, topFindings: [],
+  };
+
   try {
-    const adapter = createAdapter('scan');
-    if (!adapter) {
-      return { available: false, results: null, score: 0 };
+    const versionCheck = await new Promise<boolean>((resolve) => {
+      const proc = spawn('npx', ['hackmyagent', '--version'], { stdio: 'pipe' });
+      proc.on('close', (code) => resolve(code === 0));
+      proc.on('error', () => resolve(false));
+    });
+    if (!versionCheck) return emptyResult;
+
+    const output = await new Promise<string>((resolve, reject) => {
+      const proc = spawn('npx', ['hackmyagent', 'secure', '--format', 'json', targetDir], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 120_000,
+      });
+      let stdout = '';
+      proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+      proc.on('close', () => resolve(stdout));
+      proc.on('error', reject);
+    });
+
+    const parsed = JSON.parse(output);
+    const allFindings: HmaFinding[] = (parsed.findings || []).map((f: Record<string, unknown>) => ({
+      checkId: (f.checkId as string) ?? '',
+      name: (f.name as string) ?? '',
+      description: (f.description as string) ?? '',
+      category: (f.category as string) ?? '',
+      severity: (f.severity as string) ?? 'medium',
+      passed: (f.passed as boolean) ?? false,
+      message: (f.message as string) ?? '',
+      file: f.file as string | undefined,
+      line: f.line as number | undefined,
+      fixable: (f.fixable as boolean) ?? false,
+      fix: (f.fix as string) ?? '',
+    }));
+
+    const failedFindings = allFindings.filter(f => !f.passed);
+    const passedFindings = allFindings.filter(f => f.passed);
+
+    const bySeverity: Record<string, number> = {};
+    const byCategory: Record<string, number> = {};
+    for (const f of failedFindings) {
+      bySeverity[f.severity] = (bySeverity[f.severity] || 0) + 1;
+      byCategory[f.category] = (byCategory[f.category] || 0) + 1;
     }
 
-    const available = await adapter.isAvailable();
-    if (!available) {
-      return { available: false, results: null, score: 0 };
-    }
+    const sevOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    const topFindings = failedFindings
+      .sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9))
+      .slice(0, 50);
 
-    // HMA is available but we just check availability, not run a full scan
-    // Full scans are expensive; the review surfaces availability status
-    return { available: true, results: null, score: 70 };
+    return {
+      available: true,
+      score: (parsed.score as number) ?? 0,
+      maxScore: (parsed.maxScore as number) ?? 100,
+      totalChecks: allFindings.length,
+      passed: passedFindings.length,
+      failed: failedFindings.length,
+      bySeverity,
+      byCategory,
+      topFindings,
+    };
   } catch {
-    return { available: false, results: null, score: 0 };
+    return emptyResult;
   }
 }
 
