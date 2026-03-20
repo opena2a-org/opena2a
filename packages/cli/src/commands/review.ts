@@ -138,6 +138,8 @@ export interface HmaFinding {
   line?: number;
   fixable: boolean;
   fix: string;
+  count: number;
+  sampleFiles: string[];
 }
 
 export interface HmaPhaseData {
@@ -630,6 +632,8 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       line: f.line as number | undefined,
       fixable: (f.fixable as boolean) ?? false,
       fix: (f.fix as string) ?? '',
+      count: 1,
+      sampleFiles: [],
     }));
 
     const failedFindings = allFindings.filter(f => !f.passed);
@@ -642,10 +646,28 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       byCategory[f.category] = (byCategory[f.category] || 0) + 1;
     }
 
+    // Deduplicate by checkId — one entry per unique check with occurrence count
+    const byCheck = new Map<string, { finding: HmaFinding; files: string[] }>();
+    for (const f of failedFindings) {
+      const existing = byCheck.get(f.checkId);
+      if (existing) {
+        existing.files.push(f.file ? `${f.file}${f.line ? ':' + f.line : ''}` : '');
+      } else {
+        byCheck.set(f.checkId, {
+          finding: { ...f },
+          files: [f.file ? `${f.file}${f.line ? ':' + f.line : ''}` : ''],
+        });
+      }
+    }
     const sevOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-    const topFindings = failedFindings
+    const topFindings = Array.from(byCheck.values())
+      .map(({ finding, files }) => ({
+        ...finding,
+        count: files.length,
+        sampleFiles: files.filter(Boolean).slice(0, 5),
+      }))
       .sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9))
-      .slice(0, 50);
+      .slice(0, 30);
 
     return {
       available: true,
