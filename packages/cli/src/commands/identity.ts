@@ -10,7 +10,7 @@ import {
   removeServerConfig,
   type ServerConfig,
 } from '../util/aim-client.js';
-import { loadAuth, isAuthValid } from '../util/auth.js';
+import { loadAuth, saveAuth, isAuthValid } from '../util/auth.js';
 
 interface PolicyRule {
   capability: string;
@@ -57,7 +57,7 @@ const USAGE = [
   '',
   'Identity & Keys',
   '  list               Show local agent identity',
-  '  create --name <n>  Create a new agent identity',
+  '  create --name <n>  Create a new agent identity (alias: init)',
   '  sign --data <d>    Sign a string with agent private key',
   '  sign --file <f>    Sign a file with agent private key',
   '  verify             Verify a signature against a public key',
@@ -107,17 +107,56 @@ const USAGE = [
   '',
 ].join('\n');
 
+/**
+ * Attempt to refresh expired OAuth credentials using the stored refresh token.
+ * If the access token is still valid, this is a no-op.
+ * If refresh succeeds, the new tokens are saved to ~/.opena2a/auth.json.
+ * Returns true if auth is now valid (was valid or refreshed), false otherwise.
+ */
+async function tryRefreshAuth(): Promise<boolean> {
+  const auth = loadAuth();
+  if (!auth) return false;
+
+  // Token still valid -- nothing to do
+  if (isAuthValid(auth)) return true;
+
+  // Token expired -- attempt refresh if we have a refresh token
+  if (!auth.refreshToken) return false;
+
+  try {
+    const client = new AimClient(auth.serverUrl);
+    const refreshed = await client.refreshAccessToken(auth.refreshToken);
+    // Save the new credentials
+    const expiresAt = new Date(Date.now() + (refreshed.expiresIn ?? 7200) * 1000).toISOString();
+    saveAuth({
+      serverUrl: auth.serverUrl,
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken ?? auth.refreshToken,
+      expiresAt,
+      tokenType: refreshed.tokenType ?? 'Bearer',
+      authenticatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch {
+    // Refresh failed -- caller should prompt for re-login
+    return false;
+  }
+}
+
 export async function identity(options: IdentityOptions): Promise<number> {
   // Normalize --json flag to format
   if (options.json) {
     options.format = 'json';
   }
 
+  // Auto-refresh expired OAuth tokens before dispatching subcommands
+  await tryRefreshAuth();
+
   // Resolve --server URL when provided
   if (options.server) {
     options.server = resolveServerUrl(options.server);
 
-    const serverCommands = ['create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate', 'revoke'];
+    const serverCommands = ['init', 'create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate', 'revoke'];
     if (!serverCommands.includes(options.subcommand)) {
       process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
       options.server = undefined;
@@ -129,6 +168,7 @@ export async function identity(options: IdentityOptions): Promise<number> {
     case 'list':
     case 'show':
       return handleList(options);
+    case 'init':
     case 'create':
       return handleCreate(options);
     case 'trust':
