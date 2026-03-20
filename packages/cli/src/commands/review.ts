@@ -138,6 +138,7 @@ export interface HmaFinding {
   line?: number;
   fixable: boolean;
   fix: string;
+  guidance: string;
   count: number;
   sampleFiles: string[];
 }
@@ -632,6 +633,7 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       line: f.line as number | undefined,
       fixable: (f.fixable as boolean) ?? false,
       fix: (f.fix as string) ?? '',
+      guidance: (f.guidance as string) ?? '',
       count: 1,
       sampleFiles: [],
     }));
