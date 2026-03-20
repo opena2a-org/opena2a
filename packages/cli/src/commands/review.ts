@@ -967,7 +967,7 @@ function generateActionItems(
       severity: 'high',
       description: `${guardData.tamperedFiles.length} config file(s) tampered since signing`,
       command: 'opena2a guard diff && opena2a guard resign',
-      tab: 'integrity',
+      tab: 'hygiene',
     });
   }
 
@@ -977,7 +977,7 @@ function generateActionItems(
       severity: 'medium',
       description: 'Sign config files for tamper detection',
       command: 'opena2a guard sign',
-      tab: 'integrity',
+      tab: 'hygiene',
     });
   }
 
