@@ -67,6 +67,27 @@ export const _internals = {
     const data = (await response.json()) as TrustLookupResponse;
     return { ok: true, status: response.status, data };
   },
+
+  async fetchRegistrySearch(
+    registryUrl: string,
+    query: string,
+  ): Promise<{ ok: boolean; status: number; data?: any }> {
+    const params = new URLSearchParams({ q: query });
+    const url = `${registryUrl}/api/v1/registry/search?${params}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      return { ok: false, status: response.status };
+    }
+
+    const data = await response.json();
+    return { ok: true, status: response.status, data };
+  },
 };
 
 // --- Core ---
@@ -136,7 +157,48 @@ export async function trust(options: TrustOptions): Promise<number> {
 
   try {
     const startTime = Date.now();
-    const result = await _internals.fetchTrustLookup(registryUrl, packageName, source);
+
+    // Try primary lookup with specified/default source
+    let result = await _internals.fetchTrustLookup(registryUrl, packageName, source);
+
+    // If not found and source was defaulted (not user-specified), try alternate sources
+    if ((!result.ok || !result.data) && !options.source) {
+      const alternateSources = VALID_SOURCES.filter(s => s !== source);
+      for (const altSource of alternateSources) {
+        const altResult = await _internals.fetchTrustLookup(registryUrl, packageName, altSource);
+        if (altResult.ok && altResult.data) {
+          result = altResult;
+          break;
+        }
+      }
+    }
+
+    // If still not found, try the registry search API as fallback
+    let searchResults: any[] | undefined;
+    if (!result.ok || !result.data) {
+      const searchResult = await _internals.fetchRegistrySearch(registryUrl, packageName);
+      if (searchResult.ok && searchResult.data?.packages?.length > 0) {
+        const packages = searchResult.data.packages;
+        // Check for an exact name match first
+        const exactMatch = packages.find((p: any) => p.name === packageName);
+        if (exactMatch) {
+          // Re-lookup using the exact package name and its source info
+          const lookupName = exactMatch.name;
+          for (const trySource of VALID_SOURCES) {
+            const retryResult = await _internals.fetchTrustLookup(registryUrl, lookupName, trySource);
+            if (retryResult.ok && retryResult.data) {
+              result = retryResult;
+              break;
+            }
+          }
+        }
+        // If still no direct match, save search results to show suggestions
+        if (!result.ok || !result.data) {
+          searchResults = packages.slice(0, 5);
+        }
+      }
+    }
+
     const elapsed = Date.now() - startTime;
 
     if (!isCi && !isJson) {
@@ -147,14 +209,31 @@ export async function trust(options: TrustOptions): Promise<number> {
       const notFoundMsg = `No trust profile found for ${packageName}. It may not have been discovered yet.`;
       const registerHint = `To add this package, run: opena2a self-register ${packageName}`;
       if (isJson) {
-        process.stdout.write(JSON.stringify({
+        const jsonOut: any = {
           error: 'not_found',
           package: packageName,
           message: notFoundMsg,
           hint: registerHint,
-        }) + '\n');
+        };
+        if (searchResults && searchResults.length > 0) {
+          jsonOut.suggestions = searchResults.map((p: any) => ({
+            name: p.name,
+            version: p.latestVersion,
+            description: p.description,
+          }));
+        }
+        process.stdout.write(JSON.stringify(jsonOut) + '\n');
       } else {
         process.stdout.write(yellow(notFoundMsg) + '\n');
+        if (searchResults && searchResults.length > 0) {
+          process.stdout.write('\n');
+          process.stdout.write(bold('Similar packages in registry:') + '\n');
+          for (const pkg of searchResults) {
+            const desc = pkg.description ? dim(` - ${pkg.description.slice(0, 60)}`) : '';
+            process.stdout.write(`  ${cyan(pkg.name)} v${pkg.latestVersion}${desc}\n`);
+          }
+          process.stdout.write('\n');
+        }
         process.stdout.write(dim(registerHint) + '\n');
         process.stdout.write(dim('Learn more: https://opena2a.org/docs/cli/trust') + '\n');
         if (options.verbose) {
@@ -235,6 +314,17 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
       : data.posture.attackSurfaceRisk === 'medium' ? yellow
       : red;
     process.stdout.write(`  Attack Risk:  ${riskColor(data.posture.attackSurfaceRisk)}\n`);
+  } else if (data.scanSummary) {
+    const scan = data.scanSummary;
+    const statusColor = scan.status === 'clean' ? green
+      : scan.status === 'warnings' ? yellow
+      : red;
+    process.stdout.write(`  Scan Status:  ${statusColor(scan.status)}\n`);
+    process.stdout.write(`  Findings:     ${scan.findingsCount} (${scan.highCount} high)\n`);
+    if (scan.actionRequired) {
+      process.stdout.write(`  Action:       ${yellow(scan.actionRequired)}\n`);
+    }
+    process.stdout.write(`  Last Scanned: ${formatRelativeTime(scan.lastScannedAt)}\n`);
   } else {
     process.stdout.write(dim('  No scan data yet. Run: opena2a scan') + '\n');
   }
@@ -251,9 +341,24 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     const highLabel = sc.highVulnerabilities === 0
       ? green('0 high')
       : yellow(`${sc.highVulnerabilities} high`);
-    process.stdout.write(`  Dependencies: ${sc.totalDependencies} (${critLabel}, ${highLabel} CVE)\n`);
+    const medLabel = (sc.mediumVulnerabilities ?? 0) === 0
+      ? '0 medium'
+      : `${sc.mediumVulnerabilities} medium`;
+    const lowLabel = (sc.lowVulnerabilities ?? 0) === 0
+      ? '0 low'
+      : `${sc.lowVulnerabilities} low`;
+
+    if (sc.totalDependencies !== undefined && sc.totalDependencies !== null) {
+      process.stdout.write(`  Dependencies: ${sc.totalDependencies}\n`);
+    }
+    process.stdout.write(`  Vulns:        ${critLabel}, ${highLabel}, ${medLabel}, ${lowLabel}\n`);
     process.stdout.write(`  Published:    ${formatRelativeTime(sc.lastPublished)}\n`);
-    process.stdout.write(`  Maintainers:  ${sc.maintainerCount}\n`);
+    if (sc.maintainerCount > 0) {
+      process.stdout.write(`  Maintainers:  ${sc.maintainerCount}\n`);
+    }
+    if (sc.weeklyDownloads !== undefined && sc.weeklyDownloads !== null) {
+      process.stdout.write(`  Downloads:    ${formatNumber(sc.weeklyDownloads)}/week\n`);
+    }
   } else {
     process.stdout.write(dim('  No supply chain data yet') + '\n');
   }
@@ -315,6 +420,11 @@ function formatRelativeTime(isoDate: string): string {
 }
 
 // --- Helpers ---
+
+/** Format large numbers with commas for readability. */
+function formatNumber(n: number): string {
+  return n.toLocaleString('en-US');
+}
 
 /** Map raw packageType slugs to human-friendly labels. */
 function formatPackageType(packageType?: string): string | undefined {

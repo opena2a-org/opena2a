@@ -29,11 +29,22 @@ export interface TrustFactors {
 export type TrustLevel = 'discovered' | 'scanned' | 'claimed' | 'verified' | 'certified';
 
 export interface SupplyChainInfo {
-  totalDependencies: number;
+  totalDependencies?: number;
   criticalVulnerabilities: number;
   highVulnerabilities: number;
+  mediumVulnerabilities?: number;
+  lowVulnerabilities?: number;
   lastPublished: string;
   maintainerCount: number;
+  weeklyDownloads?: number;
+}
+
+export interface ScanSummary {
+  status: string;
+  lastScannedAt: string;
+  findingsCount: number;
+  highCount: number;
+  actionRequired?: string;
 }
 
 export interface TrustLookupResponse {
@@ -53,6 +64,7 @@ export interface TrustLookupResponse {
   factors?: TrustFactors;
   capabilities?: string[];
   supplyChain?: SupplyChainInfo;
+  scanSummary?: ScanSummary;
   lastScanned: string;
   profileUrl: string;
 }

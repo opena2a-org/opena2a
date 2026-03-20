@@ -103,6 +103,11 @@ describe('trust', () => {
       ok: false,
       status: 404,
     });
+    vi.spyOn(_internals, 'fetchRegistrySearch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { packages: [], total: 0 },
+    });
 
     const options: TrustOptions = {
       packageName: 'nonexistent-package',
