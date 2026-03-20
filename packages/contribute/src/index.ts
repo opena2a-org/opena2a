@@ -2,8 +2,9 @@ export type { ContributionEvent, ContributionBatch } from './types.js';
 export { getContributorToken } from './contributor.js';
 export { queueEvent, getQueuedEvents, clearQueue, shouldFlush, buildBatch } from './queue.js';
 export { submitBatch } from './client.js';
+export { isContributeEnabled } from './config.js';
 
-import { isContributeEnabled } from '@opena2a/shared';
+import { isContributeEnabled } from './config.js';
 import { ContributionEvent } from './types.js';
 import { queueEvent, shouldFlush, buildBatch, clearQueue } from './queue.js';
 import { submitBatch } from './client.js';

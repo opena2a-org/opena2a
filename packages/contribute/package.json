@@ -11,9 +11,6 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "@opena2a/shared": "0.1.0"
-  },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

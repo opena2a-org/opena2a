@@ -140,6 +140,31 @@ export async function submitScanReport(
   report: ScanReport,
   verbose?: boolean,
 ): Promise<boolean> {
+  // Also queue via @opena2a/contribute for buffered submission
+  try {
+    const { contribute } = await import('@opena2a/contribute');
+    await contribute.scanResult({
+      tool: report.scannerName ?? 'opena2a-cli',
+      toolVersion: report.scannerVersion ?? '0.1.0',
+      packageName: report.packageName,
+      packageVersion: report.packageVersion,
+      ecosystem: report.packageType,
+      totalChecks: (report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount) || 0,
+      passed: 0, // not available from ScanReport shape
+      critical: report.criticalCount,
+      high: report.highCount,
+      medium: report.mediumCount,
+      low: report.lowCount,
+      score: report.overallScore,
+      verdict: report.verdict,
+      durationMs: report.scanDurationMs,
+      registryUrl,
+      verbose,
+    });
+  } catch {
+    // @opena2a/contribute not available or errored -- non-critical
+  }
+
   try {
     validateRegistryUrl(registryUrl);
     const url = `${registryUrl}/api/v1/trust/scan-report`;
@@ -293,7 +318,7 @@ function printContributePrompt(): void {
   process.stderr.write('\n');
   process.stderr.write(cyan('  Your scans help the community detect unsafe tools.\n'));
   process.stderr.write(dim('  Share anonymized scan reports with the OpenA2A registry?\n'));
-  process.stderr.write(dim('  Enable:  ') + yellow('opena2a config contribute on') + '\n');
+  process.stderr.write(dim('  Enable:  ') + yellow('opena2a config contribute --enable') + '\n');
   process.stderr.write(dim('  Details: https://opena2a.org/telemetry\n'));
   process.stderr.write('\n');
 }

@@ -679,20 +679,25 @@ Examples:
   program
     .command('config <action> [key] [value]')
     .description('Manage OpenA2A configuration')
+    .option('--enable', 'Enable the feature (alias for "on")')
+    .option('--disable', 'Disable the feature (alias for "off")')
     .addHelpText('after', `
 Valid actions:
-  show                  Display current configuration
-  contribute [on|off]   Enable or disable community data contributions
-  llm [on|off]          Enable or disable LLM-powered features`)
-    .action(async (action: string, key?: string, value?: string) => {
+  show                             Display current configuration
+  contribute [on|off|--enable|--disable]  Enable or disable community data contributions
+  llm [on|off|--enable|--disable]         Enable or disable LLM-powered features`)
+    .action(async (action: string, key: string | undefined, _value: string | undefined, opts: { enable?: boolean; disable?: boolean }) => {
       const shared = await import('@opena2a/shared');
       const { loadUserConfig, saveUserConfig, setContributeEnabled } = 'default' in shared ? (shared as any).default : shared;
 
+      // Resolve --enable/--disable flags as aliases for on/off
+      const resolvedKey = opts.enable ? 'on' : opts.disable ? 'off' : key;
+
       if (action === 'contribute') {
-        if (key === 'on') {
+        if (resolvedKey === 'on') {
           setContributeEnabled(true);
           process.stdout.write('Community contributions enabled.\n');
-        } else if (key === 'off') {
+        } else if (resolvedKey === 'off') {
           setContributeEnabled(false);
           process.stdout.write('Community contributions disabled.\n');
         } else {
@@ -704,10 +709,10 @@ Valid actions:
         }
       } else if (action === 'llm') {
         const { setLlmEnabled: setLlm } = 'default' in shared ? (shared as any).default : shared;
-        if (key === 'on') {
+        if (resolvedKey === 'on') {
           setLlm(true);
           process.stdout.write('LLM features enabled.\n');
-        } else if (key === 'off') {
+        } else if (resolvedKey === 'off') {
           setLlm(false);
           process.stdout.write('LLM features disabled.\n');
         } else {
@@ -722,8 +727,8 @@ Valid actions:
         process.stdout.write(JSON.stringify(config, null, 2) + '\n');
       } else {
         process.stderr.write(`Unknown config action: ${action}\n`);
-        process.stderr.write('Usage: opena2a config contribute on|off\n');
-        process.stderr.write('       opena2a config llm on|off\n');
+        process.stderr.write('Usage: opena2a config contribute on|off|--enable|--disable\n');
+        process.stderr.write('       opena2a config llm on|off|--enable|--disable\n');
         process.stderr.write('       opena2a config show\n');
         process.exitCode = 1;
       }
