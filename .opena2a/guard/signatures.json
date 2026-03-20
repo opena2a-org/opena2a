@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "signatures": [
+    {
+      "filePath": ".claude/settings.json",
+      "hash": "sha256:19fa877b990d31a77bb7457e96335ff6d939eb8bd5bf1e3c0fc58e8e18f177e7",
+      "signedAt": "2026-03-20T19:10:42.554Z",
+      "signedBy": "ecolibria@opena2a-cli",
+      "fileSize": 897
+    },
+    {
+      "filePath": "package.json",
+      "hash": "sha256:2330fe8f08876b9c92932f426fa4be581198a1c4216eb626d7210a55b530cd24",
+      "signedAt": "2026-03-20T19:10:42.556Z",
+      "signedBy": "ecolibria@opena2a-cli",
+      "fileSize": 507
+    },
+    {
+      "filePath": "package-lock.json",
+      "hash": "sha256:90df1d302b114912a6168b38c675f1e43a0086ff6ba3d9658415b584376ea8a5",
+      "signedAt": "2026-03-20T19:10:42.556Z",
+      "signedBy": "ecolibria@opena2a-cli",
+      "fileSize": 117669
+    },
+    {
+      "filePath": "arp.yaml",
+      "hash": "sha256:a3a6d3e74256f22b23f579c341c21876b000c07257749c27e8936057bd099caf",
+      "signedAt": "2026-03-20T19:10:42.556Z",
+      "signedBy": "ecolibria@opena2a-cli",
+      "fileSize": 288
+    }
+  ],
+  "updatedAt": "2026-03-20T19:10:42.556Z"
+}
