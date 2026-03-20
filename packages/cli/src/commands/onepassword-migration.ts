@@ -151,7 +151,7 @@ export async function offer1PasswordMigration(ctx: MigrationContext): Promise<bo
   spinner.start();
 
   try {
-    const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+    const secretless = await import('secretless-ai') as any;
     const mod = 'default' in secretless ? secretless.default : secretless;
 
     // Attempt migration

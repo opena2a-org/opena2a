@@ -183,7 +183,7 @@ export async function offerGCPSMMigration(ctx: GCPSMMigrationContext): Promise<b
   spinner.start();
 
   try {
-    const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+    const secretless = await import('secretless-ai') as any;
     const mod = 'default' in secretless ? secretless.default : secretless;
 
     if (!mod.createBackend) {

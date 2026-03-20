@@ -6,6 +6,7 @@
 import { bold, green, yellow, red, dim, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { table } from '../util/format.js';
+import { validateRegistryUrl } from '../util/validate-registry-url.js';
 
 // --- Types ---
 
@@ -184,7 +185,7 @@ export async function baselines(options: BaselinesOptions): Promise<number> {
 
 async function checkOptIn(): Promise<boolean> {
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+    const shared = await import('@opena2a/shared') as any;
     const mod = 'default' in shared ? shared.default : shared;
     const config = mod.loadUserConfig();
     return config.contribute?.enabled === true;
@@ -194,16 +195,24 @@ async function checkOptIn(): Promise<boolean> {
 }
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
-  if (override) return override.replace(/\/$/, '');
+  if (override) {
+    const url = override.replace(/\/$/, '');
+    validateRegistryUrl(url);
+    return url;
+  }
 
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+    const shared = await import('@opena2a/shared') as any;
     const mod = 'default' in shared ? shared.default : shared;
     const config = mod.loadUserConfig();
-    return config.registry.url;
+    if (config.registry.url) {
+      validateRegistryUrl(config.registry.url);
+      return config.registry.url;
+    }
   } catch {
-    return ''; // registry not yet available
+    // not available
   }
+  return ''; // registry not yet available
 }
 
 interface ResolvedPackageInfo {

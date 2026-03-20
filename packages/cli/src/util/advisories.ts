@@ -9,6 +9,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bold, red, yellow, dim, cyan, orange } from './colors.js';
+import { validateRegistryUrl } from './validate-registry-url.js';
 
 // --- Types ---
 
@@ -100,6 +101,7 @@ function writeCache(dir: string, data: AdvisoryResponse): void {
 
 async function fetchAdvisories(registryUrl: string): Promise<AdvisoryResponse | null> {
   try {
+    validateRegistryUrl(registryUrl);
     // Fetch advisories from the last 30 days
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const url = `${registryUrl}/api/v1/trust/advisories?since=${since}&limit=100`;

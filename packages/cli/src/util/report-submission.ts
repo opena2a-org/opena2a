@@ -13,6 +13,7 @@
  */
 
 import { dim, yellow, cyan } from './colors.js';
+import { validateRegistryUrl } from './validate-registry-url.js';
 
 // --- Types ---
 
@@ -140,6 +141,7 @@ export async function submitScanReport(
   verbose?: boolean,
 ): Promise<boolean> {
   try {
+    validateRegistryUrl(registryUrl);
     const url = `${registryUrl}/api/v1/trust/scan-report`;
     const response = await fetch(url, {
       method: 'POST',
@@ -180,7 +182,7 @@ export async function submitScanReport(
 // --- Config helpers (dynamic import to avoid circular deps) ---
 
 async function loadShared(): Promise<any> {
-  const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+  const shared = await import('@opena2a/shared') as any;
   return 'default' in shared ? shared.default : shared;
 }
 
@@ -197,7 +199,9 @@ export async function getRegistryUrl(): Promise<string> {
   try {
     const mod = await loadShared();
     const config = mod.loadUserConfig();
-    return config.registry?.url ?? '';
+    const url = config.registry?.url ?? '';
+    if (url) validateRegistryUrl(url);
+    return url;
   } catch {
     return ''; // registry not yet available
   }

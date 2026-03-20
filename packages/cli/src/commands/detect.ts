@@ -1070,7 +1070,7 @@ async function scanUnknownAssets(
   // Try to import HMA
   let HardeningScanner: any;
   try {
-    const hma = await (Function('return import("hackmyagent")')() as Promise<any>);
+    const hma = await import('hackmyagent') as any;
     HardeningScanner = hma.HardeningScanner ?? hma.default?.HardeningScanner;
   } catch {
     // HMA not installed -- caller handles the fallback message

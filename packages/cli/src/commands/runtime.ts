@@ -64,7 +64,7 @@ async function runtimeStart(targetDir: string, options: RuntimeOptions): Promise
   // Check for ARP installation
   let arp: any;
   try {
-    arp = await (Function('return import("hackmyagent/arp")')() as Promise<any>);
+    arp = await import('hackmyagent/arp') as any;
   } catch {
     if (isJson) {
       process.stdout.write(JSON.stringify({ error: 'hackmyagent not installed' }, null, 2) + '\n');

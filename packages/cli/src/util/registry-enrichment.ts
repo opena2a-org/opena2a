@@ -6,6 +6,8 @@
  * community scan counts, and verification status from the public registry.
  */
 
+import { validateRegistryUrl } from './validate-registry-url.js';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -72,6 +74,7 @@ export async function enrichFromRegistry(
   }
 
   const baseUrl = (registryBaseUrl || DEFAULT_REGISTRY_BASE).replace(/\/+$/, '');
+  validateRegistryUrl(baseUrl);
   const batchUrl = `${baseUrl}/api/v1/trust/batch`;
 
   try {
