@@ -57,7 +57,7 @@ const USAGE = [
   '',
   'Identity & Keys',
   '  list               Show local agent identity',
-  '  create --name <n>  Create a new agent identity (alias: init)',
+  '  create <name>      Create a new agent identity (alias: init)',
   '  sign --data <d>    Sign a string with agent private key',
   '  sign --file <f>    Sign a file with agent private key',
   '  verify             Verify a signature against a public key',
@@ -464,10 +464,11 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   const mod = await loadAimCore();
   if (!mod) return 1;
 
-  const name = options.name;
+  const name = options.name ?? options.args?.[0];
   if (!name) {
     process.stderr.write('Missing required option: --name <name>\n');
     process.stderr.write('Usage: opena2a identity create --name my-agent\n');
+    process.stderr.write('       opena2a identity create my-agent\n');
     process.stderr.write('       opena2a identity create --name my-agent --server cloud\n');
     return 1;
   }
