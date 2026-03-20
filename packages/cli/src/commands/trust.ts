@@ -11,6 +11,7 @@
 
 import { bold, green, yellow, red, dim, cyan, gray } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
+import { validateRegistryUrl } from '../util/validate-registry-url.js';
 import type { TrustLookupResponse } from './atp-types.js';
 
 // --- Types ---
@@ -440,17 +441,28 @@ function formatPackageType(packageType?: string): string | undefined {
 }
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
-  if (override) return override.replace(/\/$/, '');
+  if (override) {
+    const url = override.replace(/\/$/, '');
+    validateRegistryUrl(url);
+    return url;
+  }
 
   // Check environment variable
   const envUrl = process.env.OPENA2A_REGISTRY_URL;
-  if (envUrl) return envUrl.replace(/\/$/, '');
+  if (envUrl) {
+    const url = envUrl.replace(/\/$/, '');
+    validateRegistryUrl(url);
+    return url;
+  }
 
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+    const shared = await import('@opena2a/shared') as any;
     const mod = 'default' in shared ? shared.default : shared;
     const config = mod.loadUserConfig();
-    if (config.registry.url) return config.registry.url;
+    if (config.registry.url) {
+      validateRegistryUrl(config.registry.url);
+      return config.registry.url;
+    }
   } catch { /* not available */ }
 
   return DEFAULT_REGISTRY_URL;

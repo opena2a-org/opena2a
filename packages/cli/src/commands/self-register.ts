@@ -11,6 +11,7 @@
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { table, formatDuration } from '../util/format.js';
+import { validateRegistryUrl } from '../util/validate-registry-url.js';
 
 // --- Types ---
 
@@ -353,7 +354,7 @@ interface ScanFinding {
 async function scanWithHma(tool: ToolManifest): Promise<ScanFinding[]> {
   try {
     // Dynamic import of hackmyagent
-    const hma = await (Function('return import("hackmyagent")')() as Promise<any>);
+    const hma = await import('hackmyagent') as any;
     const mod = 'default' in hma ? hma.default : hma;
 
     // Resolve project path
@@ -534,16 +535,24 @@ function filterTools(only?: string[]): ToolManifest[] {
 }
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
-  if (override) return override.replace(/\/$/, '');
+  if (override) {
+    const url = override.replace(/\/$/, '');
+    validateRegistryUrl(url);
+    return url;
+  }
 
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+    const shared = await import('@opena2a/shared') as any;
     const mod = 'default' in shared ? shared.default : shared;
     const config = mod.loadUserConfig();
-    return config.registry.url;
+    if (config.registry.url) {
+      validateRegistryUrl(config.registry.url);
+      return config.registry.url;
+    }
   } catch {
-    return ''; // registry not yet available
+    // not available
   }
+  return ''; // registry not yet available
 }
 
 // --- Output ---

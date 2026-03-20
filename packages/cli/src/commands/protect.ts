@@ -527,7 +527,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
         // Read current backend -- skip upgrade offer if already on a team vault
         let currentBackend = 'local';
         try {
-          const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+          const secretless = await import('secretless-ai') as any;
           const mod = 'default' in secretless ? secretless.default : secretless;
           currentBackend = mod.readBackendConfig?.() ?? mod.getBackend?.() ?? 'local';
         } catch {
@@ -573,7 +573,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
           if (backendChoice === 'keychain') {
             try {
-              const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+              const secretless = await import('secretless-ai') as any;
               const mod = 'default' in secretless ? secretless.default : secretless;
               if (typeof mod.setBackend === 'function') {
                 mod.setBackend('keychain');
@@ -753,7 +753,7 @@ async function storeInVault(credential: CredentialMatch): Promise<{ stored: bool
   try {
     // Dynamic import -- secretless-ai may not be installed
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const secretless = await (Function('return import("secretless-ai")')() as Promise<any>);
+    const secretless = await import('secretless-ai') as any;
     const mod = 'default' in secretless ? secretless.default : secretless;
 
     // Pre-flight check: if backend is 1password, verify `op` CLI is installed

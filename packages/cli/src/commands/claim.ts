@@ -11,6 +11,7 @@
 
 import { bold, green, yellow, red, dim, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
+import { validateRegistryUrl } from '../util/validate-registry-url.js';
 import type {
   TrustLookupResponse,
   OwnershipProof,
@@ -135,7 +136,8 @@ export const _internals = {
       }
 
       // Verify repo access via gh CLI
-      const repoData = execSync(`gh api repos/${owner}/${repo} --jq '.permissions.push'`, {
+      const { execFileSync } = require('node:child_process');
+      const repoData = execFileSync('gh', ['api', `repos/${owner}/${repo}`, '--jq', '.permissions.push'], {
         encoding: 'utf-8',
         timeout: 10_000,
       }).trim();
@@ -481,16 +483,27 @@ export async function claim(options: ClaimOptions): Promise<number> {
 // --- Helpers ---
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
-  if (override) return override.replace(/\/$/, '');
+  if (override) {
+    const url = override.replace(/\/$/, '');
+    validateRegistryUrl(url);
+    return url;
+  }
 
   const envUrl = process.env.OPENA2A_REGISTRY_URL;
-  if (envUrl) return envUrl.replace(/\/$/, '');
+  if (envUrl) {
+    const url = envUrl.replace(/\/$/, '');
+    validateRegistryUrl(url);
+    return url;
+  }
 
   try {
-    const shared = await (Function('return import("@opena2a/shared")')() as Promise<any>);
+    const shared = await import('@opena2a/shared') as any;
     const mod = 'default' in shared ? shared.default : shared;
     const config = mod.loadUserConfig();
-    if (config.registry.url) return config.registry.url;
+    if (config.registry.url) {
+      validateRegistryUrl(config.registry.url);
+      return config.registry.url;
+    }
   } catch { /* not available */ }
 
   return DEFAULT_REGISTRY_URL;
