@@ -332,7 +332,7 @@ Learn more: https://opena2a.org/docs`);
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
-    .description('Agent identity management (list|init|create|trust|audit|log|policy|check|sign|verify|attach|detach|sync|connect|disconnect|tag|mcp|activity|suspend|reactivate)')
+    .description('Agent identity management (list|init|create|trust|audit|log|policy|check|sign|verify|integrate|detach|sync|connect|disconnect|tag|mcp|activity|suspend|reactivate)')
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
@@ -654,6 +654,44 @@ Examples:
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
+  // Setup command (one-command AIM onboarding)
+  program
+    .command('setup [directory]')
+    .description('One-command agent setup: authenticate, create identity, discover MCPs, show trust score')
+    .option('--dir <path>', 'Target directory')
+    .option('--name <name>', 'Override auto-detected agent name')
+    .option('--json', 'Output as JSON')
+    .action(async (directory: string | undefined, opts) => {
+      const { setup: runSetup } = await import('./commands/setup.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runSetup({
+        targetDir: opts.dir ?? directory ?? process.cwd(),
+        name: opts.name,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        json: opts.json,
+      });
+    });
+
+  // Watch command (live agent activity tail)
+  program
+    .command('watch')
+    .description('Live tail of agent activity events (like kubectl logs)')
+    .option('--json', 'Output as NDJSON (one JSON object per line)')
+    .option('--interval <seconds>', 'Poll interval in seconds', '3')
+    .action(async (opts) => {
+      const { watch: runWatch } = await import('./commands/watch.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runWatch({
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
+        json: opts.json,
+        interval: opts.interval ? parseInt(opts.interval, 10) : undefined,
+      });
+    });
+
   // Demo command (interactive AIM demonstration)
   program
     .command('demo [scenario]')
@@ -861,7 +899,7 @@ Valid actions:
     ...Object.keys(ADAPTER_REGISTRY),
     'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
     'config', 'self-register', 'verify', 'baselines', 'benchmark',
-    'check', 'status', 'publish', 'detect', 'mcp', 'demo',
+    'check', 'status', 'publish', 'detect', 'mcp', 'demo', 'setup', 'watch',
     'trust', 'claim', 'create', 'login', 'logout', 'whoami',
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {

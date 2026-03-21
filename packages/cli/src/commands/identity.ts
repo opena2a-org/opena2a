@@ -74,10 +74,10 @@ const USAGE = [
   '  check <capability> Check if a capability is allowed',
   '',
   'Cross-Tool Integration',
-  '  attach [--tools <list>]  Wire tools to identity (audit + trust)',
-  '  attach --all             Enable all detected tools',
-  '  detach                   Remove cross-tool wiring',
-  '  sync                     Sync events from enabled tools',
+  '  integrate [--tools <list>]  Wire tools to identity (audit + trust)',
+  '  integrate --all             Enable all detected tools',
+  '  detach                      Remove cross-tool wiring',
+  '  sync                        Sync events from enabled tools',
   '',
   'Server Integration',
   '  connect <url>            Connect local identity to an AIM server',
@@ -92,6 +92,7 @@ const USAGE = [
   '  mcp list                 List agent MCP server connections',
   '  mcp add <id>             Add an MCP server to agent',
   '  mcp remove <id>          Remove an MCP server from agent',
+  '  mcp attach               Auto-discover and attach all MCP servers',
   '',
   'Lifecycle',
   '  suspend                  Suspend agent on server (stops all operations)',
@@ -185,7 +186,8 @@ export async function identity(options: IdentityOptions): Promise<number> {
       return handleSign(options);
     case 'verify':
       return handleVerify(options);
-    case 'attach':
+    case 'integrate':
+    case 'attach':  // backwards-compatible alias
       return handleAttach(options);
     case 'detach':
       return handleDetach(options);
@@ -835,8 +837,10 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
           process.stdout.write(dim('  No server audit events recorded yet.') + '\n');
         } else {
           for (const e of resp.auditLogs) {
-            const ts = (e.createdAt ?? '').slice(0, 19).replace('T', ' ');
-            process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${(e.resource ?? '').padEnd(16)} ${dim(e.details ?? '')}\n`);
+            const ts = (e.createdAt ?? e.timestamp ?? '').slice(0, 19).replace('T', ' ');
+            const resource = e.resource ?? (e.resourceType ? `${e.resourceType}:${(e.resourceId ?? '').slice(0, 8)}` : '');
+            const details = e.details ?? (e.metadata?.action ? `[${e.metadata.action}]` : '');
+            process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${resource.padEnd(20)} ${dim(details)}\n`);
           }
         }
         process.stdout.write(gray('-'.repeat(70)) + '\n');
@@ -1895,7 +1899,8 @@ async function handleTag(options: IdentityOptions): Promise<number> {
       } else {
         for (const tag of tags) {
           const color = tag.color ? dim(` (${tag.color})`) : '';
-          process.stdout.write(`  ${cyan(tag.name)}${color}  ${dim(tag.id)}\n`);
+          const label = tag.key ? `${tag.key}=${tag.value}` : (tag.name ?? tag.id);
+          process.stdout.write(`  ${cyan(label)}${color}  ${dim(tag.id)}\n`);
         }
       }
       process.stdout.write(gray('-'.repeat(50)) + '\n');
@@ -1907,11 +1912,19 @@ async function handleTag(options: IdentityOptions): Promise<number> {
     }
   }
 
-  const tagName = args[1];
-  if (!tagName) {
-    process.stderr.write(`Usage: opena2a identity tag ${sub} <name>\n`);
+  const tagArg = args[1];
+  if (!tagArg) {
+    process.stderr.write(`Usage: opena2a identity tag ${sub} <key=value>\n`);
+    process.stderr.write('  Examples: tag add environment=production\n');
+    process.stderr.write('           tag add security    (shorthand for security=true)\n');
     return 1;
   }
+
+  // Parse key=value format; bare name becomes key=true
+  const eqIdx = tagArg.indexOf('=');
+  const tagKey = eqIdx > 0 ? tagArg.slice(0, eqIdx) : tagArg;
+  const tagValue = eqIdx > 0 ? tagArg.slice(eqIdx + 1) : 'true';
+  const tagName = tagArg; // for display / matching
 
   if (sub === 'add') {
     if (!agentId) {
@@ -1919,11 +1932,13 @@ async function handleTag(options: IdentityOptions): Promise<number> {
       return 1;
     }
     try {
-      // List existing tags to check if one with this name already exists
+      // List existing tags to check if one with this key+value already exists
       const existing = await authedClient.listTags();
-      let tag = (existing.tags ?? []).find((t: any) => t.name === tagName);
+      let tag = (existing.tags ?? []).find((t: any) =>
+        (t.key === tagKey && t.value === tagValue) || t.name === tagName
+      );
       if (!tag) {
-        tag = await authedClient.createTag(tagName);
+        tag = await authedClient.createTag(tagKey, tagValue);
       }
       await authedClient.addTagsToAgent(agentId, [tag.id]);
       if (isJson) {
@@ -1944,9 +1959,11 @@ async function handleTag(options: IdentityOptions): Promise<number> {
       return 1;
     }
     try {
-      // Find tag by name from agent's current tags
+      // Find tag by key+value or name from agent's current tags
       const agentTags = await authedClient.getAgentTags(agentId);
-      const tag = (agentTags.tags ?? []).find((t: any) => t.name === tagName);
+      const tag = (agentTags.tags ?? []).find((t: any) =>
+        (t.key === tagKey && t.value === tagValue) || t.name === tagName
+      );
       if (!tag) {
         process.stderr.write(`Tag "${tagName}" not found on this agent.\n`);
         return 1;
@@ -1976,12 +1993,13 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
   const args = options.args ?? [];
   const sub = args[0];
 
-  if (!sub || !['list', 'add', 'remove'].includes(sub)) {
-    process.stderr.write('Usage: opena2a identity mcp <list|add|remove> [id]\n');
+  if (!sub || !['list', 'add', 'remove', 'attach'].includes(sub)) {
+    process.stderr.write('Usage: opena2a identity mcp <list|add|remove|attach> [id]\n');
     process.stderr.write('\n');
     process.stderr.write('  list               List agent MCP server connections\n');
     process.stderr.write('  add <id>           Add an MCP server to agent\n');
     process.stderr.write('  remove <id>        Remove an MCP server from agent\n');
+    process.stderr.write('  attach             Auto-discover and attach all MCP servers\n');
     return 1;
   }
 
@@ -2029,6 +2047,99 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
       return 0;
     } catch (err) {
       process.stderr.write(`Failed to list MCP servers: ${formatServerError(err)}\n`);
+      return 1;
+    }
+  }
+
+  if (sub === 'attach') {
+    try {
+      // Import scanMcpServers from detect module
+      const { scanMcpServers } = await import('./detect.js');
+      const targetDir = options.dir ?? process.cwd();
+      const discovered = scanMcpServers(targetDir);
+
+      if (discovered.length === 0) {
+        if (isJson) {
+          process.stdout.write(JSON.stringify({ agentId, discovered: 0, attached: 0, servers: [] }, null, 2) + '\n');
+        } else {
+          process.stdout.write(dim('  No MCP servers discovered.') + '\n');
+        }
+        return 0;
+      }
+
+      // Get already-attached MCPs to deduplicate
+      let existingNames: Set<string> = new Set();
+      try {
+        const existing = await authedClient.getAgentMCPs(agentId);
+        existingNames = new Set((existing.mcpServers ?? []).map((m: any) => m.name));
+      } catch { /* ignore */ }
+
+      // Get existing org-level MCP server entities for name→ID lookup
+      let orgMcpMap: Map<string, string> = new Map();
+      try {
+        const orgMcps = await authedClient.listOrgMcpServers();
+        for (const m of orgMcps.mcpServers ?? []) {
+          orgMcpMap.set(m.name, m.id);
+        }
+      } catch { /* ignore */ }
+
+      const results: { name: string; status: string }[] = [];
+
+      for (const server of discovered) {
+        if (existingNames.has(server.name)) {
+          results.push({ name: server.name, status: 'already attached' });
+          continue;
+        }
+
+        // Ensure MCP exists as org-level entity, then attach by ID
+        let mcpEntityId = orgMcpMap.get(server.name);
+        if (!mcpEntityId) {
+          try {
+            const created = await authedClient.createOrgMcpServer({
+              name: server.name,
+              description: `${server.name} (discovered by opena2a)`,
+              url: `${server.transport ?? 'stdio'}://${server.name}`,
+              transport: server.transport ?? 'stdio',
+            });
+            mcpEntityId = created.id;
+          } catch {
+            results.push({ name: server.name, status: 'failed' });
+            continue;
+          }
+        }
+
+        try {
+          await authedClient.addMCPsToAgent(agentId, [mcpEntityId!]);
+          results.push({ name: server.name, status: 'attached' });
+        } catch {
+          results.push({ name: server.name, status: 'failed' });
+        }
+      }
+
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          agentId,
+          discovered: discovered.length,
+          attached: results.filter(r => r.status === 'attached').length,
+          servers: results,
+        }, null, 2) + '\n');
+        return 0;
+      }
+
+      process.stdout.write(bold('MCP Server Discovery') + '\n');
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      for (const r of results) {
+        const icon = r.status === 'attached' ? green('attached')
+          : r.status === 'already attached' ? dim('already attached')
+          : red('failed');
+        process.stdout.write(`  ${cyan(r.name)} (${icon})\n`);
+      }
+      process.stdout.write(gray('-'.repeat(50)) + '\n');
+      const newCount = results.filter(r => r.status === 'attached').length;
+      process.stdout.write(dim(`  ${discovered.length} discovered, ${newCount} newly attached`) + '\n');
+      return 0;
+    } catch (err) {
+      process.stderr.write(`Failed to discover MCP servers: ${err instanceof Error ? err.message : String(err)}\n`);
       return 1;
     }
   }

@@ -60,9 +60,13 @@ export interface AuditLogEntry {
   agentId: string;
   action: string;
   resource?: string;
+  resourceType?: string;
+  resourceId?: string;
   details?: string;
   ipAddress?: string;
   createdAt: string;
+  timestamp?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface AuditLogResponse {
@@ -195,10 +199,17 @@ export class AimClient {
     if (params?.page) qs.set('page', String(params.page));
     if (params?.pageSize) qs.set('pageSize', String(params.pageSize));
     const query = qs.toString();
-    return this.get(
+    const result = await this.get<any>(
       `/api/v1/agents/${encodeURIComponent(agentId)}/audit-logs${query ? '?' + query : ''}`,
       token,
     );
+    // Normalize server response: server returns { logs } but client expects { auditLogs }
+    return {
+      auditLogs: result.auditLogs ?? result.logs ?? [],
+      total: result.total ?? (result.auditLogs ?? result.logs ?? []).length,
+      page: result.page ?? 1,
+      pageSize: result.pageSize ?? result.limit ?? params?.pageSize ?? 50,
+    };
   }
 
   // ---- Device Authorization (OAuth 2.0 Device Flow) -----------------------
@@ -254,11 +265,19 @@ export class AimClient {
   // ---- Tags ---------------------------------------------------------------
 
   async listTags(): Promise<{ tags: any[] }> {
-    return this.get('/api/v1/tags');
+    const result = await this.get<any>('/api/v1/tags');
+    // Server may return array directly or { tags: [...] }
+    if (Array.isArray(result)) return { tags: result };
+    return result;
   }
 
-  async createTag(name: string, color?: string): Promise<any> {
-    return this.post('/api/v1/tags', { name, color: color ?? '#06b6d4' });
+  async createTag(key: string, value: string, category?: string, color?: string): Promise<any> {
+    return this.post('/api/v1/tags', {
+      key,
+      value,
+      category: category ?? 'custom',
+      color: color ?? '#06b6d4',
+    });
   }
 
   async addTagsToAgent(agentId: string, tagIds: string[]): Promise<any> {
@@ -270,7 +289,9 @@ export class AimClient {
   }
 
   async getAgentTags(agentId: string): Promise<{ tags: any[] }> {
-    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}/tags`);
+    const result = await this.get<any>(`/api/v1/agents/${encodeURIComponent(agentId)}/tags`);
+    if (Array.isArray(result)) return { tags: result };
+    return result;
   }
 
   // ---- MCPs ---------------------------------------------------------------
@@ -285,6 +306,16 @@ export class AimClient {
 
   async removeMCPFromAgent(agentId: string, mcpId: string): Promise<any> {
     return this.del(`/api/v1/agents/${encodeURIComponent(agentId)}/mcp-servers/${encodeURIComponent(mcpId)}`);
+  }
+
+  // ---- Org-level MCP Server Registry ------------------------------------
+
+  async listOrgMcpServers(): Promise<{ mcpServers: any[]; total: number }> {
+    return this.get('/api/v1/mcp-servers');
+  }
+
+  async createOrgMcpServer(body: { name: string; description?: string; url?: string; transport?: string }): Promise<any> {
+    return this.post('/api/v1/mcp-servers', body);
   }
 
   // ---- Lifecycle ----------------------------------------------------------
@@ -406,7 +437,13 @@ export class AimClient {
   }
 
   private async parseResponse<T>(response: Response): Promise<T> {
+    // Handle 204 No Content (and other empty-body success responses)
+    if (response.status === 204) return {} as T;
+
     const text = await response.text();
+
+    // Handle empty body on success (some endpoints return 200/201 with no body)
+    if (!text.trim() && response.ok) return {} as T;
 
     if (!response.ok) {
       let serverMsg: string | undefined;
