@@ -12,6 +12,7 @@ export interface SoulOptions {
   tier?: string;
   deep?: boolean;
   dryRun?: boolean;
+  strict?: boolean;
 }
 
 async function getSoulScanner(): Promise<any> {
@@ -47,7 +48,22 @@ export async function scanSoul(options: SoulOptions): Promise<number> {
     if (options.format === 'json') {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } else {
-      formatScanResult(result, options.verbose ?? false);
+      formatScanResult(result, options.verbose ?? false, options.strict ?? false);
+    }
+
+    // In strict mode, fail if ANY critical SOUL control is missing
+    if (options.strict) {
+      const missingCritical = findMissingCriticalControls(result);
+      if (missingCritical.length > 0) {
+        if (options.format !== 'json') {
+          process.stderr.write(`\n[strict] Failed: ${missingCritical.length} critical control(s) missing:\n`);
+          for (const id of missingCritical) {
+            process.stderr.write(`  - ${id}\n`);
+          }
+          process.stderr.write('\n');
+        }
+        return 1;
+      }
     }
 
     // Exit 1 if score is below threshold (no governance or low score)
@@ -87,7 +103,39 @@ export async function hardenSoul(options: SoulOptions): Promise<number> {
   }
 }
 
-function formatScanResult(result: any, verbose: boolean): void {
+// Critical SOUL controls that must pass in --strict mode
+const CRITICAL_SOUL_CONTROLS = [
+  'SOUL-IH-003', // Role-play refusal
+  'SOUL-HB-001', // Safety immutables
+];
+
+/**
+ * Find critical SOUL controls that are missing (not passing) in scan results.
+ */
+function findMissingCriticalControls(result: any): string[] {
+  const missing: string[] = [];
+  const domains = result.domains ?? [];
+
+  // Build a set of all passing control IDs
+  const passingIds = new Set<string>();
+  for (const domain of domains) {
+    for (const control of (domain.controls ?? [])) {
+      if (control.passed) {
+        passingIds.add(control.id ?? control.controlId ?? '');
+      }
+    }
+  }
+
+  for (const criticalId of CRITICAL_SOUL_CONTROLS) {
+    if (!passingIds.has(criticalId)) {
+      missing.push(criticalId);
+    }
+  }
+
+  return missing;
+}
+
+function formatScanResult(result: any, verbose: boolean, strict = false): void {
   const score = result.score ?? result.overallScore ?? 0;
   const level = result.level ?? result.grade ?? 'unknown';
   const file = result.file ?? 'not found';

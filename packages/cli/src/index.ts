@@ -36,7 +36,7 @@ Quick start:
   $ opena2a shield init             Full 11-step security setup
 
 Commands by category:
-  Scan & Harden:  init, scan, check, detect, protect, benchmark
+  Scan & Harden:  init, scan, check, detect, protect, benchmark, harden-skill
   Identity:       identity, skill, mcp, trust, claim
   Governance:     scan-soul, harden-soul, guard, shield
   Runtime:        runtime, review, status, baselines
@@ -53,7 +53,9 @@ Quick Start:
   $ opena2a scan secure          Run 147 security checks on your AI agent
   $ opena2a skill create         Scaffold a secure skill (SKILL.md, heartbeat, tests)
   $ opena2a guard harden         Scan skills for security issues (--fix to auto-fix)
+  $ opena2a harden-skill         Harden a skill file (frontmatter, permissions, integrity pin)
   $ opena2a scan-soul            Scan governance file for behavioral safety (AGS)
+  $ opena2a scan-soul --strict   Fail if critical SOUL controls are missing
   $ opena2a harden-soul          Generate or improve SOUL.md governance file
 
 Smart Features:
@@ -449,6 +451,7 @@ Learn more: https://opena2a.org/docs`);
     .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
     .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
     .option('--deep', 'Enable LLM-assisted deep analysis')
+    .option('--strict', 'Fail if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)')
     .action(async (directory: string | undefined, opts) => {
       const { scanSoul } = await import('./commands/soul.js');
       const globalOpts = program.opts();
@@ -460,6 +463,7 @@ Learn more: https://opena2a.org/docs`);
         profile: opts.profile,
         tier: opts.tier,
         deep: opts.deep,
+        strict: opts.strict,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
@@ -482,6 +486,25 @@ Learn more: https://opena2a.org/docs`);
         verbose: globalOpts.verbose,
         profile: opts.profile,
         tier: opts.tier,
+        dryRun: opts.dryRun,
+      });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+    });
+
+  // Harden-skill command (skill hardening with frontmatter validation and permission boundaries)
+  program
+    .command('harden-skill [file]')
+    .description('Harden a skill file: add frontmatter, permission boundaries, and integrity pin')
+    .option('--file <path>', 'Skill file to harden')
+    .option('--dry-run', 'Show what would be changed without writing')
+    .action(async (file: string | undefined, opts) => {
+      const { hardenSkill } = await import('./commands/harden-skill.js');
+      const globalOpts = program.opts();
+      process.exitCode = await hardenSkill({
+        file: opts.file ?? file,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        verbose: globalOpts.verbose,
         dryRun: opts.dryRun,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
