@@ -95,12 +95,22 @@ export async function setup(options: SetupOptions): Promise<number> {
   // Step 3: Create identity on server
   const client = new AimClient(auth.serverUrl, { accessToken: auth.accessToken });
 
-  let agentId: string;
-  let trustScore: number;
+  let agentId = '';
+  let trustScore = 0;
   try {
-    const resp = await client.createAgent({ name, displayName: name });
-    agentId = resp.agentId;
-    trustScore = resp.trustScore ?? 0;
+    const resp: any = await client.createAgent({ name, displayName: name });
+    // Normalize response — server returns `id`, typed interface says `agentId`
+    agentId = resp.agentId ?? resp.id ?? resp.agent?.id ?? '';
+    trustScore = resp.trustScore ?? resp.agent?.trustScore ?? 0;
+
+    if (!agentId) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({ error: 'create_failed', message: 'Server returned no agent ID' }, null, 2) + '\n');
+      } else {
+        process.stderr.write(red('  Failed to create identity: server returned no agent ID') + '\n');
+      }
+      return 1;
+    }
 
     // Save server config locally
     saveServerConfig({
@@ -118,18 +128,45 @@ export async function setup(options: SetupOptions): Promise<number> {
     const msg = err instanceof Error ? err.message : String(err);
     // Check if it's a "already exists" error - try to load existing
     if (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('conflict')) {
-      const config = loadServerConfig();
-      if (config?.agentId) {
-        agentId = config.agentId;
-        trustScore = 0;
+      // Agent already registered — resolve its ID from the server
+      let found = false;
+      try {
+        const listResp = await client.listAgents(auth.accessToken);
+        const match = (listResp.agents ?? []).find((a: any) => a.name === name);
+        if (match) {
+          agentId = match.id;
+          trustScore = match.trustScore ?? 0;
+          found = true;
+          saveServerConfig({
+            serverUrl: auth.serverUrl,
+            agentId,
+            accessToken: auth.accessToken,
+            refreshToken: auth.refreshToken ?? undefined,
+            registeredAt: new Date().toISOString(),
+          });
+        }
+      } catch { /* server lookup failed */ }
+
+      // Fallback: local config
+      if (!found) {
+        const config = loadServerConfig();
+        if (config?.agentId) {
+          agentId = config.agentId;
+          trustScore = 0;
+          found = true;
+        }
+      }
+
+      if (found) {
         if (!isJson) {
           process.stdout.write(yellow('  Identity exists...') + ` using ${cyan(agentId.slice(0, 8))}\n`);
         }
       } else {
         if (isJson) {
-          process.stdout.write(JSON.stringify({ error: 'create_failed', message: msg }, null, 2) + '\n');
+          process.stdout.write(JSON.stringify({ error: 'create_failed', message: 'Agent exists but could not resolve ID' }, null, 2) + '\n');
         } else {
-          process.stderr.write(red(`  Failed to create identity: ${msg}`) + '\n');
+          process.stderr.write(red('  Agent exists but could not resolve ID from server.') + '\n');
+          process.stderr.write(dim('  Try: opena2a identity list --server cloud') + '\n');
         }
         return 1;
       }
