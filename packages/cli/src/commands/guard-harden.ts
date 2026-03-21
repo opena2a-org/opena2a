@@ -5,6 +5,7 @@
 
 import * as path from 'node:path';
 import { bold, green, yellow, red, dim, cyan } from '../util/colors.js';
+import { scanSkillDirectory, type SkillFinding } from '../scanners/skillguard-checks.js';
 
 // --- Types ---
 
@@ -111,6 +112,34 @@ export async function guardHarden(targetDir: string, options: HardenOptions): Pr
       process.stderr.write(red(msg));
     }
     return 1;
+  }
+
+  // Run extended skill checks (SKILL-001, 003, 007, 009, 010)
+  if (includeSkills) {
+    try {
+      const extendedFindings = scanSkillDirectory(resolvedDir);
+      for (const ef of extendedFindings) {
+        // Avoid duplicates if HMA already reported the same check ID for same file
+        const isDuplicate = (scanResult.findings ?? []).some(
+          (f: any) => f.checkId === ef.id && f.file === ef.filePath
+        );
+        if (!isDuplicate) {
+          scanResult.findings = scanResult.findings ?? [];
+          scanResult.findings.push({
+            checkId: ef.id,
+            severity: ef.severity,
+            name: ef.title,
+            description: ef.description,
+            fixable: ef.autoFixable,
+            passed: false,
+            message: ef.description,
+            file: ef.filePath,
+          });
+        }
+      }
+    } catch {
+      // Extended checks are best-effort; failures do not block the scan
+    }
   }
 
   // Filter findings to only SKILL-* and HEARTBEAT-* checks

@@ -54,7 +54,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'identity', 'registry', 'train',
     'guard', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
-    'scan-soul', 'harden-soul', 'detect', 'mcp', 'demo',
+    'scan-soul', 'harden-soul', 'harden-skill', 'detect', 'mcp', 'demo',
     'trust', 'claim',
   ];
 
@@ -166,6 +166,7 @@ export async function dispatchCommand(
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,
+      strict: args.includes('--strict'),
     });
   }
 
@@ -174,6 +175,18 @@ export async function dispatchCommand(
     const { hardenSoul } = await import('./commands/soul.js');
     return hardenSoul({
       targetDir: args[0] && !args[0].startsWith('-') ? args[0] : process.cwd(),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+      dryRun: args.includes('--dry-run'),
+    });
+  }
+
+  // Handle 'harden-skill' directly (skill hardening)
+  if (command === 'harden-skill') {
+    const { hardenSkill } = await import('./commands/harden-skill.js');
+    return hardenSkill({
+      file: args[0] && !args[0].startsWith('-') ? args[0] : undefined,
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,
