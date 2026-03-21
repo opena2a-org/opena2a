@@ -189,19 +189,46 @@ export async function setup(options: SetupOptions): Promise<number> {
 
     if (mcpCount > 0) {
       // Get already-attached MCPs to deduplicate
-      let existingIds: Set<string> = new Set();
+      let existingNames: Set<string> = new Set();
       try {
         const existing = await client.getAgentMCPs(agentId);
-        existingIds = new Set((existing.mcpServers ?? []).map((m: any) => m.name ?? m.id));
-      } catch { /* ignore - may not have any yet */ }
+        existingNames = new Set((existing.mcpServers ?? []).map((m: any) => m.name));
+      } catch { /* ignore */ }
 
-      const newMcpIds = mcpServers
-        .map(s => s.name)
-        .filter(n => !existingIds.has(n));
+      // Get existing org-level MCP server entities for name→ID lookup
+      let orgMcpMap: Map<string, string> = new Map();
+      try {
+        const orgMcps = await client.listOrgMcpServers();
+        for (const m of orgMcps.mcpServers ?? []) {
+          orgMcpMap.set(m.name, m.id);
+        }
+      } catch { /* ignore */ }
 
-      if (newMcpIds.length > 0) {
-        await client.addMCPsToAgent(agentId, newMcpIds);
-        mcpAttached = newMcpIds.length;
+      const idsToAttach: string[] = [];
+      for (const server of mcpServers) {
+        if (existingNames.has(server.name)) continue;
+
+        // Ensure MCP exists as org-level entity
+        let mcpEntityId = orgMcpMap.get(server.name);
+        if (!mcpEntityId) {
+          try {
+            const created = await client.createOrgMcpServer({
+              name: server.name,
+              description: `${server.name} (discovered by opena2a setup)`,
+              url: `${server.transport}://${server.name}`,
+              transport: server.transport ?? 'stdio',
+            });
+            mcpEntityId = created.id;
+          } catch { continue; /* skip if creation fails (e.g. duplicate) */ }
+        }
+        if (mcpEntityId) {
+          idsToAttach.push(mcpEntityId);
+        }
+      }
+
+      if (idsToAttach.length > 0) {
+        await client.addMCPsToAgent(agentId, idsToAttach);
+        mcpAttached = idsToAttach.length;
       }
     }
 

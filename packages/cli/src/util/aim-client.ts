@@ -287,6 +287,16 @@ export class AimClient {
     return this.del(`/api/v1/agents/${encodeURIComponent(agentId)}/mcp-servers/${encodeURIComponent(mcpId)}`);
   }
 
+  // ---- Org-level MCP Server Registry ------------------------------------
+
+  async listOrgMcpServers(): Promise<{ mcpServers: any[]; total: number }> {
+    return this.get('/api/v1/mcp-servers');
+  }
+
+  async createOrgMcpServer(body: { name: string; description?: string; url?: string; transport?: string }): Promise<any> {
+    return this.post('/api/v1/mcp-servers', body);
+  }
+
   // ---- Lifecycle ----------------------------------------------------------
 
   async suspendAgent(agentId: string): Promise<any> {

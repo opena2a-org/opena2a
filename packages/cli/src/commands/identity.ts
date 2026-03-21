@@ -2056,7 +2056,16 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
       let existingNames: Set<string> = new Set();
       try {
         const existing = await authedClient.getAgentMCPs(agentId);
-        existingNames = new Set((existing.mcpServers ?? []).map((m: any) => m.name ?? m.id));
+        existingNames = new Set((existing.mcpServers ?? []).map((m: any) => m.name));
+      } catch { /* ignore */ }
+
+      // Get existing org-level MCP server entities for name→ID lookup
+      let orgMcpMap: Map<string, string> = new Map();
+      try {
+        const orgMcps = await authedClient.listOrgMcpServers();
+        for (const m of orgMcps.mcpServers ?? []) {
+          orgMcpMap.set(m.name, m.id);
+        }
       } catch { /* ignore */ }
 
       const results: { name: string; status: string }[] = [];
@@ -2066,8 +2075,26 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
           results.push({ name: server.name, status: 'already attached' });
           continue;
         }
+
+        // Ensure MCP exists as org-level entity, then attach by ID
+        let mcpEntityId = orgMcpMap.get(server.name);
+        if (!mcpEntityId) {
+          try {
+            const created = await authedClient.createOrgMcpServer({
+              name: server.name,
+              description: `${server.name} (discovered by opena2a)`,
+              url: `${server.transport ?? 'stdio'}://${server.name}`,
+              transport: server.transport ?? 'stdio',
+            });
+            mcpEntityId = created.id;
+          } catch {
+            results.push({ name: server.name, status: 'failed' });
+            continue;
+          }
+        }
+
         try {
-          await authedClient.addMCPsToAgent(agentId, [server.name]);
+          await authedClient.addMCPsToAgent(agentId, [mcpEntityId!]);
           results.push({ name: server.name, status: 'attached' });
         } catch {
           results.push({ name: server.name, status: 'failed' });
