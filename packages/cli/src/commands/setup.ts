@@ -233,7 +233,9 @@ export async function setup(options: SetupOptions): Promise<number> {
       dashboard: dashboardUrl,
     }, null, 2) + '\n');
   } else {
-    process.stdout.write(green('  Trust score:') + ` ${trustScore}/100\n`);
+    // Server returns 0-1 scale; display as percentage
+    const displayScore = trustScore <= 1 ? Math.round(trustScore * 100) : Math.round(trustScore);
+    process.stdout.write(green('  Trust score:') + ` ${displayScore}/100\n`);
     process.stdout.write(green('  Dashboard:') + ` ${cyan(dashboardUrl)}\n`);
     process.stdout.write('\n' + dim('  Agent is registered and monitored.') + '\n');
   }
