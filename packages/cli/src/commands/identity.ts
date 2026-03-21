@@ -837,8 +837,10 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
           process.stdout.write(dim('  No server audit events recorded yet.') + '\n');
         } else {
           for (const e of resp.auditLogs) {
-            const ts = (e.createdAt ?? '').slice(0, 19).replace('T', ' ');
-            process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${(e.resource ?? '').padEnd(16)} ${dim(e.details ?? '')}\n`);
+            const ts = (e.createdAt ?? e.timestamp ?? '').slice(0, 19).replace('T', ' ');
+            const resource = e.resource ?? (e.resourceType ? `${e.resourceType}:${(e.resourceId ?? '').slice(0, 8)}` : '');
+            const details = e.details ?? (e.metadata?.action ? `[${e.metadata.action}]` : '');
+            process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${resource.padEnd(20)} ${dim(details)}\n`);
           }
         }
         process.stdout.write(gray('-'.repeat(70)) + '\n');
@@ -1897,7 +1899,8 @@ async function handleTag(options: IdentityOptions): Promise<number> {
       } else {
         for (const tag of tags) {
           const color = tag.color ? dim(` (${tag.color})`) : '';
-          process.stdout.write(`  ${cyan(tag.name)}${color}  ${dim(tag.id)}\n`);
+          const label = tag.key ? `${tag.key}=${tag.value}` : (tag.name ?? tag.id);
+          process.stdout.write(`  ${cyan(label)}${color}  ${dim(tag.id)}\n`);
         }
       }
       process.stdout.write(gray('-'.repeat(50)) + '\n');
@@ -1909,11 +1912,19 @@ async function handleTag(options: IdentityOptions): Promise<number> {
     }
   }
 
-  const tagName = args[1];
-  if (!tagName) {
-    process.stderr.write(`Usage: opena2a identity tag ${sub} <name>\n`);
+  const tagArg = args[1];
+  if (!tagArg) {
+    process.stderr.write(`Usage: opena2a identity tag ${sub} <key=value>\n`);
+    process.stderr.write('  Examples: tag add environment=production\n');
+    process.stderr.write('           tag add security    (shorthand for security=true)\n');
     return 1;
   }
+
+  // Parse key=value format; bare name becomes key=true
+  const eqIdx = tagArg.indexOf('=');
+  const tagKey = eqIdx > 0 ? tagArg.slice(0, eqIdx) : tagArg;
+  const tagValue = eqIdx > 0 ? tagArg.slice(eqIdx + 1) : 'true';
+  const tagName = tagArg; // for display / matching
 
   if (sub === 'add') {
     if (!agentId) {
@@ -1921,11 +1932,13 @@ async function handleTag(options: IdentityOptions): Promise<number> {
       return 1;
     }
     try {
-      // List existing tags to check if one with this name already exists
+      // List existing tags to check if one with this key+value already exists
       const existing = await authedClient.listTags();
-      let tag = (existing.tags ?? []).find((t: any) => t.name === tagName);
+      let tag = (existing.tags ?? []).find((t: any) =>
+        (t.key === tagKey && t.value === tagValue) || t.name === tagName
+      );
       if (!tag) {
-        tag = await authedClient.createTag(tagName);
+        tag = await authedClient.createTag(tagKey, tagValue);
       }
       await authedClient.addTagsToAgent(agentId, [tag.id]);
       if (isJson) {
@@ -1946,9 +1959,11 @@ async function handleTag(options: IdentityOptions): Promise<number> {
       return 1;
     }
     try {
-      // Find tag by name from agent's current tags
+      // Find tag by key+value or name from agent's current tags
       const agentTags = await authedClient.getAgentTags(agentId);
-      const tag = (agentTags.tags ?? []).find((t: any) => t.name === tagName);
+      const tag = (agentTags.tags ?? []).find((t: any) =>
+        (t.key === tagKey && t.value === tagValue) || t.name === tagName
+      );
       if (!tag) {
         process.stderr.write(`Tag "${tagName}" not found on this agent.\n`);
         return 1;
