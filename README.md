@@ -52,7 +52,10 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a protect` | Fix everything — credentials, .gitignore, config signing |
 | `opena2a identity create` | Cryptographic identity for your project |
 | `opena2a harden-soul` | Generate SOUL.md governance rules |
-| `opena2a scan` | 187 security checks via HackMyAgent |
+| `opena2a scan` | 147 security checks via HackMyAgent |
+| `opena2a scan-soul` | Validate SOUL.md governance (72 controls, 9 domains) |
+| `opena2a scan-soul --strict` | Fail on missing critical controls (IH-003, HB-001) |
+| `opena2a harden-skill` | Analyze and harden skill files (frontmatter, permissions, pinning) |
 | `opena2a mcp audit` | Audit MCP server configurations with trust scores |
 | `opena2a guard sign` | Sign config files for tamper detection |
 | `opena2a guard harden` | Scan skills for security issues, auto-fix with `--fix` |
@@ -67,13 +70,34 @@ Each command routes to a specialized tool, installed on first use:
 |---------|------|-------------|
 | `detect` | Shadow AI | Discover AI agents, MCP servers, AI configs |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 187 security checks, attack simulation, auto-fix |
+| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 147 security checks, 55+ attack payloads, auto-fix |
+| `scan-soul` | SOUL Scanner | 72 governance controls, 9 domains, 6 profiles |
+| `harden-skill` | Skill Hardener | Frontmatter validation, permission scoping, integrity pinning |
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
 | `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
 | `create` | Skill Scaffolding | Secure skill templates with signing and heartbeat |
 | `guard harden` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | Scan skills for hardening issues, auto-fix |
+
+## Skill Security Checks
+
+12 checks for skill file integrity and dangerous patterns:
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| SKILL-001 | High | Missing or invalid YAML frontmatter |
+| SKILL-002 | Critical | Remote fetch and execute (`curl \| sh`) |
+| SKILL-003 | High | Overprivileged permission combos |
+| SKILL-004 | High | Filesystem write outside sandbox |
+| SKILL-005 | Critical | Credential file access patterns |
+| SKILL-006 | Critical | Data exfiltration to external endpoints |
+| SKILL-007 | Critical | Environment variable exfiltration |
+| SKILL-008 | Critical | Reverse shell patterns |
+| SKILL-009 | High | Obfuscated code (base64+eval, hex encoding) |
+| SKILL-010 | Medium | Unbounded tool chaining |
+| SKILL-TAMPER | Critical | Integrity hash mismatch |
+| SKILL-UNPIN | Medium | Unpinned skill file (auto-fixable) |
 
 ## Use Cases
 
