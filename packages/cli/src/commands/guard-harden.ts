@@ -114,7 +114,7 @@ export async function guardHarden(targetDir: string, options: HardenOptions): Pr
     return 1;
   }
 
-  // Run extended skill checks (SKILL-001, 003, 007, 009, 010)
+  // Run extended skill checks (SKILL-020 through SKILL-024)
   if (includeSkills) {
     try {
       const extendedFindings = scanSkillDirectory(resolvedDir);

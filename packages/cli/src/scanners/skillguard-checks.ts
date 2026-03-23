@@ -1,9 +1,16 @@
 /**
- * Extended SkillGuard checks (SKILL-001, SKILL-003, SKILL-007, SKILL-009, SKILL-010).
+ * Extended SkillGuard checks (SKILL-020 through SKILL-024).
  *
- * These complement the base SkillGuard plugin in hackmyagent, adding checks for
- * frontmatter validation, overprivileged permissions, env exfiltration,
- * obfuscated code, and unbounded tool chaining.
+ * These complement the base SkillGuard plugin in hackmyagent (SKILL-001 through
+ * SKILL-019), adding checks for frontmatter validation, overprivileged permissions,
+ * env exfiltration, obfuscated code, and unbounded tool chaining.
+ *
+ * IDs start at 020 to avoid collision with HMA's existing SKILL checks:
+ *   HMA SKILL-001 = Unsigned Skill
+ *   HMA SKILL-003 = Heartbeat Installation
+ *   HMA SKILL-007 = ClickFix Social Engineering
+ *   HMA SKILL-009 = Typosquatting Name
+ *   HMA SKILL-010 = Env File Exfiltration
  */
 
 import * as fs from 'node:fs';
@@ -156,14 +163,14 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
 
 // --- Check implementations ---
 
-/** SKILL-001: Missing/invalid frontmatter */
+/** SKILL-020: Missing/invalid frontmatter */
 function checkFrontmatter(filePath: string, content: string, relativePath: string): SkillFinding[] {
   const findings: SkillFinding[] = [];
   const fm = parseFrontmatter(content);
 
   if (!fm.valid) {
     findings.push({
-      id: 'SKILL-001',
+      id: 'SKILL-020',
       title: 'Missing YAML frontmatter',
       description: `${relativePath}: Skill file lacks required YAML frontmatter (---). Add frontmatter with name, version, and capabilities fields.`,
       severity: 'high',
@@ -176,7 +183,7 @@ function checkFrontmatter(filePath: string, content: string, relativePath: strin
   const missing = REQUIRED_FRONTMATTER_FIELDS.filter(f => !(f in fm.fields));
   if (missing.length > 0) {
     findings.push({
-      id: 'SKILL-001',
+      id: 'SKILL-020',
       title: 'Incomplete frontmatter',
       description: `${relativePath}: Missing required frontmatter fields: ${missing.join(', ')}. These are needed for capability declaration and version tracking.`,
       severity: 'high',
@@ -188,7 +195,7 @@ function checkFrontmatter(filePath: string, content: string, relativePath: strin
   return findings;
 }
 
-/** SKILL-003: Overprivileged permissions (dangerous combos) */
+/** SKILL-021: Overprivileged permissions (dangerous combos) */
 function checkOverprivileged(filePath: string, content: string, relativePath: string): SkillFinding[] {
   const findings: SkillFinding[] = [];
   const fm = parseFrontmatter(content);
@@ -202,7 +209,7 @@ function checkOverprivileged(filePath: string, content: string, relativePath: st
 
     if (hasFirst && hasSecond) {
       findings.push({
-        id: 'SKILL-003',
+        id: 'SKILL-021',
         title: 'Overprivileged permissions',
         description: `${relativePath}: ${reason}. Restrict filesystem access to specific paths or remove outbound network access.`,
         severity: 'high',
@@ -215,7 +222,7 @@ function checkOverprivileged(filePath: string, content: string, relativePath: st
   return findings;
 }
 
-/** SKILL-007: Environment variable exfiltration */
+/** SKILL-022: Environment variable exfiltration */
 function checkEnvExfiltration(filePath: string, content: string, relativePath: string): SkillFinding[] {
   const findings: SkillFinding[] = [];
 
@@ -224,7 +231,7 @@ function checkEnvExfiltration(filePath: string, content: string, relativePath: s
 
   if (hasEnvAccess && hasOutbound) {
     findings.push({
-      id: 'SKILL-007',
+      id: 'SKILL-022',
       title: 'Environment variable exfiltration risk',
       description: `${relativePath}: Skill accesses environment variables AND has outbound network capability. This combination can exfiltrate secrets via network requests.`,
       severity: 'critical',
@@ -236,14 +243,14 @@ function checkEnvExfiltration(filePath: string, content: string, relativePath: s
   return findings;
 }
 
-/** SKILL-009: Obfuscated code patterns */
+/** SKILL-023: Obfuscated code patterns */
 function checkObfuscation(filePath: string, content: string, relativePath: string): SkillFinding[] {
   const findings: SkillFinding[] = [];
 
   for (const { pattern, label } of OBFUSCATION_PATTERNS) {
     if (pattern.test(content)) {
       findings.push({
-        id: 'SKILL-009',
+        id: 'SKILL-023',
         title: 'Obfuscated code pattern',
         description: `${relativePath}: Detected ${label}. Obfuscated code in skills can hide malicious behavior and should be reviewed.`,
         severity: 'high',
@@ -257,7 +264,7 @@ function checkObfuscation(filePath: string, content: string, relativePath: strin
   return findings;
 }
 
-/** SKILL-010: Unbounded tool chaining */
+/** SKILL-024: Unbounded tool chaining */
 function checkUnboundedChaining(filePath: string, content: string, relativePath: string): SkillFinding[] {
   const findings: SkillFinding[] = [];
   const fm = parseFrontmatter(content);
@@ -276,7 +283,7 @@ function checkUnboundedChaining(filePath: string, content: string, relativePath:
 
   if (!hasMaxIterations) {
     findings.push({
-      id: 'SKILL-010',
+      id: 'SKILL-024',
       title: 'Unbounded tool chaining',
       description: `${relativePath}: Skill declares tool:chain capability without maxIterations or iterationLimit. Unbounded chaining can lead to infinite loops or resource exhaustion.`,
       severity: 'medium',
@@ -367,9 +374,9 @@ export function scanSkillDirectory(agentDir: string): SkillFinding[] {
  * IDs of all checks implemented in this module.
  */
 export const EXTENDED_SKILL_CHECK_IDS = [
-  'SKILL-001',
-  'SKILL-003',
-  'SKILL-007',
-  'SKILL-009',
-  'SKILL-010',
+  'SKILL-020',
+  'SKILL-021',
+  'SKILL-022',
+  'SKILL-023',
+  'SKILL-024',
 ] as const;

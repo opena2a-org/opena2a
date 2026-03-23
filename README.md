@@ -52,7 +52,7 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a protect` | Fix everything — credentials, .gitignore, config signing |
 | `opena2a identity create` | Cryptographic identity for your project |
 | `opena2a harden-soul` | Generate SOUL.md governance rules |
-| `opena2a scan` | 147 security checks via HackMyAgent |
+| `opena2a scan` | 199 security checks via HackMyAgent |
 | `opena2a scan-soul` | Validate SOUL.md governance (72 controls, 9 domains) |
 | `opena2a scan-soul --strict` | Fail on missing critical controls (IH-003, HB-001) |
 | `opena2a harden-skill` | Analyze and harden skill files (frontmatter, permissions, pinning) |
@@ -70,7 +70,7 @@ Each command routes to a specialized tool, installed on first use:
 |---------|------|-------------|
 | `detect` | Shadow AI | Discover AI agents, MCP servers, AI configs |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 147 security checks, 55+ attack payloads, auto-fix |
+| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 199 security checks, 115 attack payloads, auto-fix |
 | `scan-soul` | SOUL Scanner | 72 governance controls, 9 domains, 6 profiles |
 | `harden-skill` | Skill Hardener | Frontmatter validation, permission scoping, integrity pinning |
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
@@ -82,22 +82,28 @@ Each command routes to a specialized tool, installed on first use:
 
 ## Skill Security Checks
 
-12 checks for skill file integrity and dangerous patterns:
+HMA scans skill files for dangerous patterns (SKILL-001 through SKILL-019), and the CLI adds extended frontmatter/permission analysis (SKILL-020 through SKILL-024):
 
-| Check | Severity | Description |
-|-------|----------|-------------|
-| SKILL-001 | High | Missing or invalid YAML frontmatter |
-| SKILL-002 | Critical | Remote fetch and execute (`curl \| sh`) |
-| SKILL-003 | High | Overprivileged permission combos |
-| SKILL-004 | High | Filesystem write outside sandbox |
-| SKILL-005 | Critical | Credential file access patterns |
-| SKILL-006 | Critical | Data exfiltration to external endpoints |
-| SKILL-007 | Critical | Environment variable exfiltration |
-| SKILL-008 | Critical | Reverse shell patterns |
-| SKILL-009 | High | Obfuscated code (base64+eval, hex encoding) |
-| SKILL-010 | Medium | Unbounded tool chaining |
-| SKILL-TAMPER | Critical | Integrity hash mismatch |
-| SKILL-UNPIN | Medium | Unpinned skill file (auto-fixable) |
+| Check | Severity | Description | Source |
+|-------|----------|-------------|--------|
+| SKILL-001 | High | Unsigned skill | HMA |
+| SKILL-002 | Critical | Remote fetch and execute (`curl \| sh`) | HMA |
+| SKILL-003 | High | Heartbeat installation risk | HMA |
+| SKILL-004 | High | Filesystem write outside sandbox | HMA |
+| SKILL-005 | Critical | Credential file access | HMA |
+| SKILL-006 | Critical | Data exfiltration patterns | HMA |
+| SKILL-007 | Critical | ClickFix social engineering | HMA |
+| SKILL-008 | Critical | Reverse shell patterns | HMA |
+| SKILL-009 | High | Typosquatting name | HMA |
+| SKILL-010 | High | Env file exfiltration | HMA |
+| SKILL-011 | High | Browser data access | HMA |
+| SKILL-012 | Critical | Crypto wallet access | HMA |
+| SKILL-019 | Medium | Stale skill signature | HMA |
+| SKILL-020 | High | Missing/invalid YAML frontmatter | CLI |
+| SKILL-021 | High | Overprivileged permission combos | CLI |
+| SKILL-022 | Critical | Environment variable exfiltration via network | CLI |
+| SKILL-023 | High | Obfuscated code (base64+eval, hex) | CLI |
+| SKILL-024 | Medium | Unbounded tool chaining | CLI |
 
 ## Use Cases
 
