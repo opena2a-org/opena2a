@@ -1,14 +1,14 @@
-# opena2a init demo — security assessment with project detection, findings, and score
+# opena2a init — security assessment with project detection, findings, and score
 # Run: vhs docs/images/review-demo.tape
 
 Output docs/images/review-demo.gif
 
 Set Width 880
-Set Height 700
+Set Height 620
 Set FontSize 15
 Set FontFamily "JetBrains Mono"
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 30ms
+Set TypingSpeed 50ms
 Set Padding 15
 
 Hide
@@ -17,8 +17,9 @@ Enter
 Sleep 500ms
 Show
 
-Type "npx opena2a-cli init --ci"
+Sleep 1s
+Type "npx opena2a-cli init 2>&1 | head -35"
 Enter
-Sleep 6s
+Sleep 8s
 
-Sleep 5s
+Sleep 6s
