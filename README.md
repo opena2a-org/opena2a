@@ -22,18 +22,9 @@ npx opena2a-cli review
   Run: opena2a protect    (fix all findings)
 ```
 
-<details>
-<summary>See it in action</summary>
+![opena2a review](docs/images/review-demo.gif)
 
-![Shield Init](docs/images/shield-init-demo.png)
-*`opena2a shield init` — 11-step security orchestration in one command*
-
-![Shadow AI Detection](docs/images/detect-demo.png)
-*`opena2a mcp` — MCP server signing and identity verification*
-
-</details>
-
-[All demos with terminal recordings](https://opena2a.org/demos)
+[All demos](https://opena2a.org/demos)
 
 Install globally if you prefer:
 
