@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/contribute",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared community trust data contribution client for OpenA2A tools",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,6 +15,15 @@
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/opena2a.git",
+    "directory": "packages/contribute"
+  },
+  "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/contribute",
   "license": "Apache-2.0"
 }

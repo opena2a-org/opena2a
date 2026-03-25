@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/shared",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared types, config schema, and utilities for the OpenA2A platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,6 +18,15 @@
   "dependencies": {
     "zod": "^3.24.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/opena2a.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/shared",
   "license": "Apache-2.0"
 }
