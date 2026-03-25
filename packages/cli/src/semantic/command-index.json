@@ -2,7 +2,7 @@
   {
     "id": "scan",
     "path": "opena2a scan",
-    "description": "Scan AI agent for security vulnerabilities using 147 checks",
+    "description": "Scan AI agent for security vulnerabilities using 204 checks",
     "tags": ["security", "scan", "vulnerability", "hardening", "audit"],
     "synonyms": ["check", "test", "analyze", "inspect", "review"],
     "domains": ["mcp", "agent", "llm", "ai"],

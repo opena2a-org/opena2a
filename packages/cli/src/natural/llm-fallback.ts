@@ -3,7 +3,7 @@ import { bold, cyan, yellow, gray, dim, green } from '../util/colors.js';
 const SYSTEM_PROMPT = `You are OpenA2A CLI, an AI agent security platform. Given a user's natural language query, suggest the most appropriate CLI command.
 
 Available commands:
-- opena2a scan secure -- Full security scan (147 checks)
+- opena2a scan secure -- Full security scan (204 checks)
 - opena2a scan attack -- Attack mode (adversarial testing)
 - opena2a protect -- Detect and migrate credentials to vault
 - opena2a secrets init -- Set up credential protection

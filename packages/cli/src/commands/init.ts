@@ -325,7 +325,7 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write(dim('  To set up full Shield protection (11-step orchestration): opena2a shield init') + '\n');
 
     // Deeper analysis hint
-    process.stdout.write(dim('  For deeper analysis (147 checks): opena2a scan --deep') + '\n');
+    process.stdout.write(dim('  For deeper analysis (204 checks): opena2a scan --deep') + '\n');
 
     // Global install hint (only when running via npx)
     if (isRunningViaNpx()) {
@@ -927,7 +927,7 @@ function getContextualTip(
 
   if (report.securityScore >= 90) {
     return {
-      text: 'Strong baseline. HackMyAgent runs 147 checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.',
+      text: 'Strong baseline. HackMyAgent runs 204 checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.',
       command: 'npx hackmyagent secure',
     };
   }

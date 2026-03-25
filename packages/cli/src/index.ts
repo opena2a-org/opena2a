@@ -50,7 +50,7 @@ Quick Start:
   $ opena2a init                 Read-only security assessment (no changes to your project)
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
-  $ opena2a scan secure          Run 147 security checks on your AI agent
+  $ opena2a scan secure          Run 204 security checks on your AI agent
   $ opena2a skill create         Scaffold a secure skill (SKILL.md, heartbeat, tests)
   $ opena2a guard harden         Scan skills for security issues (--fix to auto-fix)
   $ opena2a harden-skill         Harden a skill file (frontmatter, permissions, integrity pin)
