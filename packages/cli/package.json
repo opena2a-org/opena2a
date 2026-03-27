@@ -19,7 +19,7 @@
     "@inquirer/prompts": "^7.0.0",
     "@opena2a/contribute": "0.1.0",
     "@opena2a/shared": "0.1.0",
-    "ai-trust": "^0.1.1",
+    "ai-trust": "^0.2.6",
     "commander": "^13.1.0",
     "hackmyagent": "^0.9.8",
     "secretless-ai": "^0.11.4"
