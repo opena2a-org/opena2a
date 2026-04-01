@@ -27,6 +27,8 @@ export interface RunOptions {
   format?: 'text' | 'json' | 'sarif';
   contribute?: boolean;
   cwd?: string;
+  deep?: boolean;
+  staticOnly?: boolean;
 }
 
 export interface RunResult {

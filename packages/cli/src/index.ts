@@ -28,6 +28,8 @@ async function main(): Promise<void> {
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
+    .option('--deep', 'Enable NanoMind semantic analysis')
+    .option('--static-only', 'Static checks only (fast, no NanoMind)')
     .addHelpText('beforeAll', `
 Quick start:
   $ opena2a init                    Security assessment (30 seconds)
@@ -91,6 +93,8 @@ Learn more: https://opena2a.org/docs`);
             ci: globalOpts.ci,
             format: globalOpts.format,
             contribute: globalOpts.contribute,
+            deep: globalOpts.deep,
+            staticOnly: globalOpts.staticOnly,
           });
           process.exitCode = exitCode;
           return;
@@ -114,6 +118,8 @@ Learn more: https://opena2a.org/docs`);
           ci: globalOpts.ci,
           format: globalOpts.format,
           contribute: globalOpts.contribute,
+          deep: globalOpts.deep,
+          staticOnly: globalOpts.staticOnly,
         });
         process.exitCode = exitCode;
       });
@@ -164,6 +170,8 @@ Learn more: https://opena2a.org/docs`);
           ci: globalOpts.ci,
           format: globalOpts.format,
           contribute: globalOpts.contribute,
+          deep: globalOpts.deep,
+          staticOnly: globalOpts.staticOnly,
         });
         process.exitCode = exitCode;
       });
@@ -200,6 +208,8 @@ Learn more: https://opena2a.org/docs`);
           ci: globalOpts.ci,
           format: globalOpts.format,
           contribute: globalOpts.contribute,
+          deep: globalOpts.deep,
+          staticOnly: globalOpts.staticOnly,
         });
         process.exitCode = exitCode;
       });
