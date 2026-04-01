@@ -167,6 +167,7 @@ export async function dispatchCommand(
       format: (globalOptions.format as string) ?? 'text',
       verbose: globalOptions.verbose ?? false,
       strict: args.includes('--strict'),
+      deep: globalOptions.deep ?? false,
     });
   }
 
@@ -315,6 +316,14 @@ export async function dispatchCommand(
     const installHint = getInstallHint(adapter.config);
     process.stderr.write(`Install: ${installHint}\n`);
     return 1;
+  }
+
+  // Inject --deep / --static-only flags into adapter args so downstream tools receive them
+  if (globalOptions.deep && !adapterArgs.includes('--deep')) {
+    adapterArgs.push('--deep');
+  }
+  if (globalOptions.staticOnly && !adapterArgs.includes('--static-only')) {
+    adapterArgs.push('--static-only');
   }
 
   const result = await adapter.run({
