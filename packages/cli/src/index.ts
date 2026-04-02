@@ -28,7 +28,9 @@ async function main(): Promise<void> {
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
-    .option('--deep', 'Enable NanoMind semantic analysis')
+    .option('--deep', 'Enable semantic analysis (ML-enhanced)')
+    .option('--static-only', 'Disable semantic analysis (static checks only, fast)')
+    .showHelpAfterError('Run opena2a --help for available commands.')
     .addHelpText('beforeAll', `
 Quick start:
   $ opena2a init                    Security assessment (30 seconds)
@@ -792,7 +794,7 @@ Valid actions:
             process.stdout.write(`Consented: ${config.llm.consentedAt}\n`);
           }
         }
-      } else if (action === 'show') {
+      } else if (action === 'show' || action === 'get') {
         const config = loadUserConfig();
         process.stdout.write(JSON.stringify(config, null, 2) + '\n');
       } else {
