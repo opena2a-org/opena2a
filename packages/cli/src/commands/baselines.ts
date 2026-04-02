@@ -62,6 +62,7 @@ export async function baselines(options: BaselinesOptions): Promise<number> {
       }) + '\n');
     } else {
       process.stderr.write(yellow('Community contributions are not enabled.\n'));
+      process.stderr.write(dim('Baselines compares your package against community security data.\n'));
       process.stderr.write(dim('Enable with: opena2a config contribute on\n'));
     }
     return 1;
