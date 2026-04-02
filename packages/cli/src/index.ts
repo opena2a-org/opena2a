@@ -30,6 +30,7 @@ async function main(): Promise<void> {
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
     .option('--static-only', 'Disable semantic analysis (static checks only, fast)')
+    .showHelpAfterError('Run opena2a --help for available commands.')
     .addHelpText('beforeAll', `
 Quick start:
   $ opena2a init                    Security assessment (30 seconds)
