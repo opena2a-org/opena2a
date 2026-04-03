@@ -253,7 +253,18 @@ Learn more: https://opena2a.org/docs`);
     .action(async (subcommand: string | undefined, args: string[], opts) => {
       const validSubs = ['sign', 'verify', 'status', 'watch', 'diff', 'policy', 'hook', 'resign', 'snapshot', 'harden'];
       if (!subcommand) {
-        process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden>\n');
+        process.stderr.write('Usage: opena2a guard <subcommand> [directory]\n\n');
+        process.stderr.write('Subcommands:\n');
+        process.stderr.write('  sign       Sign config files for integrity verification\n');
+        process.stderr.write('  verify     Verify config file signatures\n');
+        process.stderr.write('  status     Show current guard status\n');
+        process.stderr.write('  watch      Watch for config file changes\n');
+        process.stderr.write('  diff       Show changes since last signing\n');
+        process.stderr.write('  policy     Manage guard policies\n');
+        process.stderr.write('  hook       Install/manage git hooks\n');
+        process.stderr.write('  resign     Re-sign after intentional changes\n');
+        process.stderr.write('  snapshot   Take a config snapshot\n');
+        process.stderr.write('  harden     Auto-fix config security issues\n');
         process.exitCode = 1;
         return;
       }
