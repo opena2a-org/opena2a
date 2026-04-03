@@ -1381,7 +1381,8 @@ async function handleVerify(options: IdentityOptions): Promise<number> {
     const aim = new mod.AIMCore({ agentName: 'default' });
     const dataBytes = new TextEncoder().encode(data);
     const sigBytes = new Uint8Array(Buffer.from(signature, 'base64'));
-    const valid = aim.verify(dataBytes, sigBytes, publicKey);
+    const pkBytes = new Uint8Array(Buffer.from(publicKey, 'base64'));
+    const valid = aim.verify(dataBytes, sigBytes, pkBytes);
 
     if (isJson) {
       process.stdout.write(JSON.stringify({ valid, data, publicKey }, null, 2) + '\n');
