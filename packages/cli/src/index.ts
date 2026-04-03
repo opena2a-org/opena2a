@@ -27,9 +27,16 @@ async function main(): Promise<void> {
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
+    .option('--json', 'Shorthand for --format json')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
     .option('--static-only', 'Disable semantic analysis (static checks only, fast)')
+    .hook('preAction', (thisCommand) => {
+      const opts = thisCommand.opts();
+      if (opts.json) {
+        thisCommand.setOptionValue('format', 'json');
+      }
+    })
     .showHelpAfterError('Run opena2a --help for available commands.')
     .addHelpText('beforeAll', `
 Quick start:
@@ -244,22 +251,35 @@ Learn more: https://opena2a.org/docs`);
     .option('--fix', 'Auto-fix fixable issues (harden subcommand)')
     .option('--dry-run', 'Preview fixes without applying (harden subcommand)')
     .action(async (subcommand: string | undefined, args: string[], opts) => {
+      const validSubs = ['sign', 'verify', 'status', 'watch', 'diff', 'policy', 'hook', 'resign', 'snapshot', 'harden'];
       if (!subcommand) {
         process.stderr.write('Usage: opena2a guard <sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden>\n');
         process.exitCode = 1;
         return;
       }
+      // If the "subcommand" looks like a directory path, treat it as a directory and default to "status"
+      let resolvedSub = subcommand;
+      let dirOverride: string | undefined;
+      if (!validSubs.includes(subcommand)) {
+        // Check if it's a path (starts with /, ./, ../, is ".", or contains path separators)
+        if (subcommand === '.' || subcommand.startsWith('/') || subcommand.startsWith('./') || subcommand.startsWith('..') || subcommand.includes('/')) {
+          dirOverride = subcommand;
+          resolvedSub = 'status';
+        } else {
+          // Not a valid subcommand and not a path -- let guard() handle the error
+        }
+      }
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
       // Subcommands that take action args (not directory) as first positional
       const actionSubs = ['hook', 'policy', 'snapshot'];
-      const isActionSub = actionSubs.includes(subcommand ?? '');
+      const isActionSub = actionSubs.includes(resolvedSub);
       // Extract directory from positional args only for non-action subcommands
       const dirFromArgs = !isActionSub && args.length > 0 && !args[0]?.startsWith('-') ? args.shift() : undefined;
       process.exitCode = await guard({
-        subcommand: subcommand as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot' | 'harden',
+        subcommand: resolvedSub as 'sign' | 'verify' | 'status' | 'watch' | 'diff' | 'policy' | 'hook' | 'resign' | 'snapshot' | 'harden',
         files: opts.files,
-        targetDir: opts.dir ?? dirFromArgs,
+        targetDir: opts.dir ?? dirOverride ?? dirFromArgs,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -275,13 +295,23 @@ Learn more: https://opena2a.org/docs`);
 
   // Runtime command (ARP wrapper)
   program
-    .command('runtime <subcommand> [directory]')
+    .command('runtime [subcommand] [directory]')
     .description('Agent runtime protection (start|status|tail|init)')
     .option('--config <path>', 'Path to ARP config file')
     .option('--count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
-    .action(async (subcommand: string, directory: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, directory: string | undefined, opts) => {
+      if (!subcommand) {
+        process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
+        process.stderr.write('Subcommands:\n');
+        process.stderr.write('  start   Start ARP monitoring\n');
+        process.stderr.write('  status  Show protection status, monitors, budget\n');
+        process.stderr.write('  tail    Read last N events from event log\n');
+        process.stderr.write('  init    Auto-generate arp.yaml from detected project type\n');
+        process.exitCode = 1;
+        return;
+      }
       const { runtime } = await import('./commands/runtime.js');
       const globalOpts = program.opts();
       process.exitCode = await runtime({
@@ -400,7 +430,7 @@ Learn more: https://opena2a.org/docs`);
 
   // Shield command (unified security orchestration)
   program
-    .command('shield <subcommand> [args...]')
+    .command('shield [subcommand] [args...]')
     .description('Unified security orchestration ("shield init" runs full 11-step setup; also:|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage)')
     .allowUnknownOption(true)
     .option('--dir <path>', 'Target directory')
@@ -417,7 +447,26 @@ Learn more: https://opena2a.org/docs`);
     .option('--report <path>', 'Write HTML posture report to file')
     .option('--shell-hook', 'Install shell preexec hook (shield init only)')
     .option('--ai-tools', 'Configure AI tool settings (shield init only)')
-    .action(async (subcommand: string, args: string[], opts) => {
+    .action(async (subcommand: string | undefined, args: string[], opts) => {
+      if (!subcommand) {
+        process.stderr.write('Usage: opena2a shield <subcommand>\n\n');
+        process.stderr.write('Subcommands:\n');
+        process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
+        process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
+        process.stderr.write('  log        Query the tamper-evident event log\n');
+        process.stderr.write('  selfcheck  Run integrity checks\n');
+        process.stderr.write('  policy     Show loaded policy summary\n');
+        process.stderr.write('  evaluate   Evaluate an action against the policy\n');
+        process.stderr.write('  recover    Exit lockdown mode\n');
+        process.stderr.write('  report     Generate a security posture report\n');
+        process.stderr.write('  session    Show current AI coding assistant session identity\n');
+        process.stderr.write('  baseline   View adaptive enforcement baselines for agents\n');
+        process.stderr.write('  suggest    LLM-powered policy suggestions from observed behavior\n');
+        process.stderr.write('  explain    LLM-powered anomaly explanations for events\n');
+        process.stderr.write('  triage     LLM-powered incident classification and response\n');
+        process.exitCode = 1;
+        return;
+      }
       const { shield } = await import('./commands/shield.js');
       const globalOpts = program.opts();
       process.exitCode = await shield({
