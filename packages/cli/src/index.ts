@@ -701,10 +701,19 @@ Examples:
   program
     .command('baselines')
     .description('Collect behavioral observations for crowdsourced agent profiles (opt-in)')
-    .requiredOption('--package <name>', 'Package to observe')
+    .option('--package <name>', 'Package to observe')
     .option('--duration <seconds>', 'Observation duration', '60')
     .option('--registry-url <url>', 'Registry URL')
     .action(async (opts) => {
+      if (!opts.package) {
+        process.stderr.write('Usage: opena2a baselines --package <name>\n\n');
+        process.stderr.write('Observe an AI agent package and contribute behavioral data\n');
+        process.stderr.write('to crowdsourced security profiles (opt-in, anonymized).\n\n');
+        process.stderr.write('Example: opena2a baselines --package langchain\n');
+        process.stderr.write('         opena2a baselines --package crewai --duration 120\n');
+        process.exitCode = 1;
+        return;
+      }
       const { baselines } = await import('./commands/baselines.js');
       const globalOpts = program.opts();
       process.exitCode = await baselines({
@@ -868,12 +877,19 @@ Valid actions:
 
   // Skill command (noun-verb: skill create)
   program
-    .command('skill <subcommand> [name]')
+    .command('skill [subcommand] [name]')
     .description('Skill management: create secure skills with signing and heartbeat')
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor (default: basic)')
     .option('--output <dir>', 'Output directory (default: current)')
     .option('--no-sign', 'Skip auto-signing of skill files')
-    .action(async (subcommand: string, name: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, name: string | undefined, opts) => {
+      if (!subcommand) {
+        process.stderr.write('Usage: opena2a skill <subcommand> [name]\n\n');
+        process.stderr.write('Subcommands:\n');
+        process.stderr.write('  create   Create a secure skill with signing and heartbeat\n');
+        process.exitCode = 1;
+        return;
+      }
       if (subcommand === 'create') {
         const { create } = await import('./commands/create/index.js');
         const globalOpts = program.opts();
