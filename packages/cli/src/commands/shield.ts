@@ -81,8 +81,22 @@ export async function shield(options: ShieldOptions): Promise<number> {
     case 'monitor':
       return handleMonitor(options);
     default:
-      process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n`));
-      process.stderr.write('Usage: opena2a shield <init|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage>\n');
+      process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n\n`));
+      process.stderr.write('Usage: opena2a shield <subcommand>\n\n');
+      process.stderr.write('Subcommands:\n');
+      process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
+      process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
+      process.stderr.write('  log        Query the tamper-evident event log\n');
+      process.stderr.write('  selfcheck  Run integrity checks\n');
+      process.stderr.write('  policy     Show loaded policy summary\n');
+      process.stderr.write('  evaluate   Evaluate an action against the policy\n');
+      process.stderr.write('  recover    Exit lockdown mode\n');
+      process.stderr.write('  report     Generate a security posture report\n');
+      process.stderr.write('  session    Show current AI coding assistant session identity\n');
+      process.stderr.write('  baseline   View adaptive enforcement baselines for agents\n');
+      process.stderr.write('  suggest    LLM-powered policy suggestions from observed behavior\n');
+      process.stderr.write('  explain    LLM-powered anomaly explanations for events\n');
+      process.stderr.write('  triage     LLM-powered incident classification and response\n');
       return 1;
   }
 }
