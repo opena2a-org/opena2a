@@ -207,7 +207,7 @@ Learn more: https://opena2a.org/docs`);
       .command('publish')
       .description('Verify package trust score before publishing')
       .allowUnknownOption(true)
-      .action(async (_opts, cmd) => {
+      .action(async (_opts: unknown, cmd: { args?: string[] }) => {
         const args = cmd.args ?? [];
         const globalOpts = program.opts();
         const exitCode = await dispatchCommand('publish', args, {

@@ -50,8 +50,13 @@ export async function runtime(options: RuntimeOptions): Promise<number> {
     case 'init':
       return runtimeInit(targetDir, options);
     default:
-      process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n`));
-      process.stderr.write('Usage: opena2a runtime <start|status|tail|init>\n');
+      process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n\n`));
+      process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
+      process.stderr.write('Subcommands:\n');
+      process.stderr.write('  start   Start ARP monitoring\n');
+      process.stderr.write('  status  Show protection status, monitors, budget\n');
+      process.stderr.write('  tail    Read last N events from event log\n');
+      process.stderr.write('  init    Auto-generate arp.yaml from detected project type\n');
       return 1;
   }
 }

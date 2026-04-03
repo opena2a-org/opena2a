@@ -322,9 +322,6 @@ export async function dispatchCommand(
   if (globalOptions.format && globalOptions.format !== 'text' && !adapterArgs.includes('--format') && !adapterArgs.includes('--json')) {
     adapterArgs.push('--format', globalOptions.format);
   }
-  if (globalOptions.ci && !adapterArgs.includes('--ci')) {
-    adapterArgs.push('--ci');
-  }
   if (globalOptions.deep && !adapterArgs.includes('--deep')) {
     adapterArgs.push('--deep');
   }
