@@ -27,9 +27,16 @@ async function main(): Promise<void> {
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
+    .option('--json', 'Shorthand for --format json')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
     .option('--static-only', 'Disable semantic analysis (static checks only, fast)')
+    .hook('preAction', (thisCommand) => {
+      const opts = thisCommand.opts();
+      if (opts.json) {
+        thisCommand.setOptionValue('format', 'json');
+      }
+    })
     .showHelpAfterError('Run opena2a --help for available commands.')
     .addHelpText('beforeAll', `
 Quick start:
@@ -288,13 +295,23 @@ Learn more: https://opena2a.org/docs`);
 
   // Runtime command (ARP wrapper)
   program
-    .command('runtime <subcommand> [directory]')
+    .command('runtime [subcommand] [directory]')
     .description('Agent runtime protection (start|status|tail|init)')
     .option('--config <path>', 'Path to ARP config file')
     .option('--count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
-    .action(async (subcommand: string, directory: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, directory: string | undefined, opts) => {
+      if (!subcommand) {
+        process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
+        process.stderr.write('Subcommands:\n');
+        process.stderr.write('  start   Start ARP monitoring\n');
+        process.stderr.write('  status  Show protection status, monitors, budget\n');
+        process.stderr.write('  tail    Read last N events from event log\n');
+        process.stderr.write('  init    Auto-generate arp.yaml from detected project type\n');
+        process.exitCode = 1;
+        return;
+      }
       const { runtime } = await import('./commands/runtime.js');
       const globalOpts = program.opts();
       process.exitCode = await runtime({
