@@ -3,6 +3,7 @@ import { createAdapter } from './adapters/index.js';
 import type { AdapterConfig, RunOptions } from './adapters/types.js';
 import { protect } from './commands/protect.js';
 import { isContributeEnabled, getRegistryUrl, submitScanReport, normalizeGovernanceReport, recordScanAndMaybePrompt } from './util/report-submission.js';
+import { checkMinHmaVersion } from './util/hma-version.js';
 
 export type InputType = 'subcommand' | 'search' | 'context' | 'natural' | 'guided';
 
@@ -413,6 +414,7 @@ function spawnHmaCheckFromRouter(
   extraArgs: string[],
   globalOptions: Record<string, unknown>,
 ): Promise<number> {
+  checkMinHmaVersion();
   return new Promise<number>((resolve) => {
     const args = ['check', packageName, ...extraArgs];
 

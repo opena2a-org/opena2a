@@ -11,6 +11,7 @@ import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY } from './adapters/registry.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
+import { checkMinHmaVersion } from './util/hma-version.js';
 
 const VERSION = getVersion();
 
@@ -1121,6 +1122,7 @@ function spawnHmaCheck(
   extraArgs: string[],
   globalOpts: Record<string, unknown>,
 ): Promise<number> {
+  checkMinHmaVersion();
   return new Promise<number>((resolve) => {
     const args = ['check', packageName, ...extraArgs];
 
