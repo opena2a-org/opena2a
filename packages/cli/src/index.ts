@@ -168,17 +168,19 @@ Learn more: https://opena2a.org/docs`);
   if (!ADAPTER_REGISTRY['check']) {
     program
       .command('check [target]')
-      .description('Security check for npm packages or local directories')
+      .description('Security check for npm packages, GitHub repos, or local directories')
       .allowUnknownOption(true)
       .addHelpText('after', `
 Examples:
   $ opena2a check @modelcontextprotocol/server-filesystem   Check npm package via Registry + HMA
   $ opena2a check express                                    Check npm package
+  $ opena2a check modelcontextprotocol/servers               Check GitHub repo (shorthand)
+  $ opena2a check https://github.com/org/repo               Check GitHub repo (full URL)
   $ opena2a check .                                          Scan local directory
   $ opena2a check /path/to/project                           Scan local directory
   $ opena2a check                                            Scan current directory
 
-npm packages are checked against the OpenA2A Registry first. If fresh data
+Packages and repos are checked against the OpenA2A Registry first. If fresh data
 exists (< 3 days), it is shown immediately. Otherwise a full HMA + NanoMind
 analysis runs and results can be shared with the community.
 `)
@@ -186,12 +188,13 @@ analysis runs and results can be shared with the community.
         const globalOpts = program.opts();
         const extraArgs = cmd.args?.filter((a: string) => a !== target) ?? [];
 
-        // Detect npm package names:
+        // Detect npm package names and GitHub repos — both delegate to HMA check:
         //   - Scoped packages (@scope/name) are always npm
         //   - Bare names without . / are npm (e.g. express, langchain)
+        //   - GitHub URLs (github.com/org/repo) and shorthand (org/repo) → HMA
         //   - Paths starting with . or / are local directories
         //   - Names with dots are hostnames, not npm packages
-        if (target && isNpmPackageName(target)) {
+        if (target && (isNpmPackageName(target) || isGitHubTarget(target))) {
           const exitCode = await spawnHmaCheck(target, extraArgs, globalOpts);
           process.exitCode = exitCode;
           return;
@@ -1077,6 +1080,26 @@ function getIntentDescription(intent: string): string {
  *   - Names with dots are treated as hostnames (not npm)
  *   - Paths starting with . or / or ~ are local directories
  */
+/**
+ * Detect whether a string looks like a GitHub repository target.
+ *
+ * Matches:
+ * - Full URLs: https://github.com/org/repo
+ * - Shorthand: org/repo (exactly one slash, no dots, not scoped npm)
+ */
+function isGitHubTarget(target: string): boolean {
+  // Full GitHub URLs
+  if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/.test(target)) return true;
+  // Shorthand: org/repo — exactly one slash, no dots, no @, no protocol, no path separators
+  if (!target.includes(':') && !target.includes('.') && !target.startsWith('@') && !target.startsWith('/') && !target.startsWith('~')) {
+    const parts = target.split('/');
+    if (parts.length === 2 && parts[0].length > 0 && parts[1].length > 0) {
+      return /^[a-zA-Z0-9_-]+$/.test(parts[0]) && /^[a-zA-Z0-9._-]+$/.test(parts[1]);
+    }
+  }
+  return false;
+}
+
 function isNpmPackageName(target: string): boolean {
   // Scoped packages are always npm
   if (target.startsWith('@') && target.includes('/')) return true;
