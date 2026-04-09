@@ -8,7 +8,7 @@ npx opena2a-cli review
 ```
 
 ```
-  OpenA2A Security Review  v0.8.11
+  OpenA2A Security Review  v0.8.19
 
   Findings
   -----------------------------------------------

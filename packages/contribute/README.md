@@ -28,7 +28,7 @@ import { contribute } from '@opena2a/contribute';
 // Record a scan result (no-op if contribution is disabled)
 await contribute.scanResult({
   tool: 'hackmyagent',
-  toolVersion: '0.11.12',
+  toolVersion: '0.15.7',
   packageName: 'my-mcp-server',
   packageVersion: '1.0.0',
   ecosystem: 'npm',
@@ -46,7 +46,7 @@ await contribute.scanResult({
 // Record a detection event
 await contribute.detection({
   tool: 'opena2a-cli',
-  toolVersion: '0.8.11',
+  toolVersion: '0.8.19',
   agentsFound: 3,
   mcpServersFound: 5,
   frameworkTypes: ['claude', 'openai'],
