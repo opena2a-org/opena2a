@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-export const MIN_HMA_VERSION = '0.15.6';
+export const MIN_HMA_VERSION = '0.15.7';
 
 let versionChecked = false;
 
