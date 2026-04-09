@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { createAdapter } from './adapters/index.js';
 import type { AdapterConfig, RunOptions } from './adapters/types.js';
 import { protect } from './commands/protect.js';
@@ -288,6 +289,14 @@ export async function dispatchCommand(
     });
   }
 
+  // check + npm package name → delegate to hackmyagent check
+  if (command === 'check' && args.length > 0) {
+    const target = args[0];
+    if (target && !target.startsWith('-') && isNpmTarget(target)) {
+      return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
+    }
+  }
+
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
     check: { adapter: 'scan', defaultArgs: [] },
@@ -383,4 +392,66 @@ function getInstallHint(config: AdapterConfig): string {
     default:
       return `npm install -g ${config.packageName ?? config.name}`;
   }
+}
+
+/**
+ * Detect whether a target looks like an npm package name (matches HMA logic).
+ */
+function isNpmTarget(target: string): boolean {
+  if (target.startsWith('@') && target.includes('/')) return true;
+  if (target.startsWith('.') || target.startsWith('/') || target.startsWith('~')) return false;
+  if (target.includes('.')) return false;
+  if (target.includes('/') || target.includes('\\')) return false;
+  return true;
+}
+
+/**
+ * Spawn hackmyagent check from the router path.
+ */
+function spawnHmaCheckFromRouter(
+  packageName: string,
+  extraArgs: string[],
+  globalOptions: Record<string, unknown>,
+): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const args = ['check', packageName, ...extraArgs];
+
+    if (globalOptions.format === 'json' && !args.includes('--json') && !args.includes('--format')) {
+      args.push('--json');
+    }
+    if (globalOptions.verbose && !args.includes('--verbose')) {
+      args.push('--verbose');
+    }
+    if (globalOptions.ci && !args.includes('--ci')) {
+      args.push('--ci');
+    }
+
+    const child = spawn('hackmyagent', args, {
+      cwd: (globalOptions.cwd as string) ?? process.cwd(),
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        HMA_CLI_PREFIX: 'opena2a check',
+      },
+    });
+
+    child.on('error', () => {
+      const npxChild = spawn('npx', ['hackmyagent', ...args], {
+        cwd: (globalOptions.cwd as string) ?? process.cwd(),
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          HMA_CLI_PREFIX: 'opena2a check',
+        },
+      });
+      npxChild.on('error', () => {
+        process.stderr.write(`hackmyagent is not installed.\n`);
+        process.stderr.write(`Install: npm install -g hackmyagent\n`);
+        resolve(1);
+      });
+      npxChild.on('close', (code) => resolve(code ?? 1));
+    });
+
+    child.on('close', (code) => resolve(code ?? 1));
+  });
 }

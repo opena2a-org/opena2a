@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process';
 import { Command } from 'commander';
 import { printBanner, printCompact } from './branding.js';
 import { classifyInput, dispatchCommand } from './router.js';
@@ -60,6 +61,7 @@ Quick Start:
   $ opena2a init                 Read-only security assessment (no changes to your project)
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
+  $ opena2a check express        Check npm package against Registry + HMA
   $ opena2a scan secure          Run 204 security checks on your AI agent
   $ opena2a skill create         Scaffold a secure skill (SKILL.md, heartbeat, tests)
   $ opena2a guard harden         Scan skills for security issues (--fix to auto-fix)
@@ -162,16 +164,42 @@ Learn more: https://opena2a.org/docs`);
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
-  // Check command (alias for scan secure, supports [directory])
+  // Check command: npm packages delegate to HMA check, local paths use scan secure
   if (!ADAPTER_REGISTRY['check']) {
     program
-      .command('check [directory]')
-      .description('Quick security check (alias for scan secure)')
+      .command('check [target]')
+      .description('Security check for npm packages or local directories')
       .allowUnknownOption(true)
-      .action(async (directory: string | undefined, _opts, cmd) => {
-        const args = cmd.args ?? [];
-        if (directory) args.unshift(directory);
+      .addHelpText('after', `
+Examples:
+  $ opena2a check @modelcontextprotocol/server-filesystem   Check npm package via Registry + HMA
+  $ opena2a check express                                    Check npm package
+  $ opena2a check .                                          Scan local directory
+  $ opena2a check /path/to/project                           Scan local directory
+  $ opena2a check                                            Scan current directory
+
+npm packages are checked against the OpenA2A Registry first. If fresh data
+exists (< 3 days), it is shown immediately. Otherwise a full HMA + NanoMind
+analysis runs and results can be shared with the community.
+`)
+      .action(async (target: string | undefined, _opts, cmd) => {
         const globalOpts = program.opts();
+        const extraArgs = cmd.args?.filter((a: string) => a !== target) ?? [];
+
+        // Detect npm package names:
+        //   - Scoped packages (@scope/name) are always npm
+        //   - Bare names without . / are npm (e.g. express, langchain)
+        //   - Paths starting with . or / are local directories
+        //   - Names with dots are hostnames, not npm packages
+        if (target && isNpmPackageName(target)) {
+          const exitCode = await spawnHmaCheck(target, extraArgs, globalOpts);
+          process.exitCode = exitCode;
+          return;
+        }
+
+        // Local path or no target: fall through to scan secure
+        const args = [...extraArgs];
+        if (target) args.unshift(target);
         const exitCode = await dispatchCommand('check', args, {
           verbose: globalOpts.verbose,
           quiet: globalOpts.quiet,
@@ -1033,12 +1061,88 @@ Valid actions:
 function getIntentDescription(intent: string): string {
   switch (intent) {
     case 'init': return 'Assess your project security posture (read-only scan)';
-    case 'check': return 'Quick security check (alias for scan secure)';
+    case 'check': return 'Security check for npm packages or local directories';
     case 'protect': return 'Detect and migrate credentials to encrypted vault';
     case 'status': return 'Show security status of current project';
     case 'publish': return 'Verify package trust score before publishing';
     default: return '';
   }
+}
+
+/**
+ * Detect whether a target string looks like an npm package name.
+ * Matches HMA's detection logic:
+ *   - Scoped packages (@scope/name) are always npm
+ *   - Bare names without dots, slashes, or path separators are npm
+ *   - Names with dots are treated as hostnames (not npm)
+ *   - Paths starting with . or / or ~ are local directories
+ */
+function isNpmPackageName(target: string): boolean {
+  // Scoped packages are always npm
+  if (target.startsWith('@') && target.includes('/')) return true;
+  // Local paths
+  if (target.startsWith('.') || target.startsWith('/') || target.startsWith('~')) return false;
+  // Names with dots are hostnames
+  if (target.includes('.')) return false;
+  // Names with path separators are local paths
+  if (target.includes('/') || target.includes('\\')) return false;
+  // Bare name like "express", "langchain" -- treat as npm
+  return true;
+}
+
+/**
+ * Spawn `hackmyagent check <package>` with the correct env vars and flags.
+ */
+function spawnHmaCheck(
+  packageName: string,
+  extraArgs: string[],
+  globalOpts: Record<string, unknown>,
+): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const args = ['check', packageName, ...extraArgs];
+
+    // Forward global flags
+    if (globalOpts.json || globalOpts.format === 'json') {
+      if (!args.includes('--json') && !args.includes('--format')) {
+        args.push('--json');
+      }
+    }
+    if (globalOpts.verbose && !args.includes('--verbose')) {
+      args.push('--verbose');
+    }
+    if (globalOpts.ci && !args.includes('--ci')) {
+      args.push('--ci');
+    }
+
+    const child = spawn('hackmyagent', args, {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        HMA_CLI_PREFIX: 'opena2a check',
+      },
+    });
+
+    child.on('error', (err) => {
+      // hackmyagent not found -- try npx
+      const npxChild = spawn('npx', ['hackmyagent', ...args], {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          HMA_CLI_PREFIX: 'opena2a check',
+        },
+      });
+      npxChild.on('error', () => {
+        process.stderr.write(`hackmyagent is not installed.\n`);
+        process.stderr.write(`Install: npm install -g hackmyagent\n`);
+        resolve(1);
+      });
+      npxChild.on('close', (code) => resolve(code ?? 1));
+    });
+
+    child.on('close', (code) => resolve(code ?? 1));
+  });
 }
 
 main().catch((err) => {
