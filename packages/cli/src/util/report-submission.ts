@@ -165,36 +165,55 @@ export async function submitScanReport(
     // @opena2a/contribute not available or errored -- non-critical
   }
 
+  // Publish via unified /api/v1/trust/publish endpoint
   try {
     validateRegistryUrl(registryUrl);
-    const url = `${registryUrl}/api/v1/trust/scan-report`;
+
+    // Map ScanReport to unified publish format
+    const unifiedPayload = {
+      name: report.packageName,
+      type: report.packageType,
+      score: report.overallScore,
+      maxScore: 100,
+      tool: report.scannerName || 'opena2a-cli',
+      toolVersion: report.scannerVersion || '0.1.0',
+      findings: report.findings.map(f => ({
+        checkId: f.findingId,
+        name: f.title,
+        severity: f.severity,
+        passed: false, // ScanReport only includes failed findings
+        message: f.description || f.title,
+        category: f.category,
+        attackClass: f.attackClass,
+      })),
+      scanTimestamp: new Date().toISOString(),
+      verdict: report.verdict === 'fail' ? 'fail' : report.verdict === 'warnings' ? 'warn' : 'pass',
+    };
+
+    const url = `${registryUrl}/api/v1/trust/publish`;
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        ...report,
-        submittedAt: new Date().toISOString(),
-        clientVersion: '0.1.0',
-      }),
+      body: JSON.stringify(unifiedPayload),
       signal: AbortSignal.timeout(10_000),
     });
 
     if (response.ok) {
-      if (verbose) {
+      const result = await response.json() as Record<string, unknown>;
+      if (verbose && result.publishId) {
+        process.stderr.write(dim(`Published to registry (${(result.publishId as string).slice(0, 8)})\n`));
+      } else if (verbose) {
         process.stderr.write(dim('Scan report shared with OpenA2A community.\n'));
       }
       return true;
     }
 
-    // If the endpoint doesn't exist yet (404), that's fine
+    // Fall back to legacy endpoint on 404
     if (response.status === 404) {
-      if (verbose) {
-        process.stderr.write(dim('Registry scan-report endpoint not available yet.\n'));
-      }
-      return false;
+      return submitLegacyScanReport(registryUrl, report, verbose);
     }
 
     return false;
@@ -312,6 +331,42 @@ export function normalizeDetectReport(result: {
     findings,
     mcpTools: mcpTools.length > 0 ? mcpTools : undefined,
   };
+}
+
+/**
+ * Legacy fallback: POST to /api/v1/trust/scan-report when unified endpoint returns 404.
+ */
+async function submitLegacyScanReport(
+  registryUrl: string,
+  report: ScanReport,
+  verbose?: boolean,
+): Promise<boolean> {
+  try {
+    const url = `${registryUrl}/api/v1/trust/scan-report`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        ...report,
+        submittedAt: new Date().toISOString(),
+        clientVersion: '0.1.0',
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (response.ok) {
+      if (verbose) {
+        process.stderr.write(dim('Scan report shared with OpenA2A community (legacy).\n'));
+      }
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 function printContributePrompt(): void {
