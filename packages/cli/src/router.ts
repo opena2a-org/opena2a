@@ -301,7 +301,7 @@ export async function dispatchCommand(
   // Intent commands map to adapters
   const INTENT_MAP: Record<string, { adapter: string; defaultArgs: string[] }> = {
     check: { adapter: 'scan', defaultArgs: [] },
-    publish: { adapter: 'registry', defaultArgs: ['check'] },
+    publish: { adapter: 'registry', defaultArgs: [] },
   };
 
   const intent = INTENT_MAP[command];

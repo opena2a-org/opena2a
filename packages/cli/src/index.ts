@@ -90,13 +90,18 @@ Learn more: https://opena2a.org/docs`);
       .helpOption(false); // Disable Commander's --help interception so it passes through to the adapter
 
     adapterCmd.action(async (args: string[], _opts: unknown, _cmd: unknown) => {
-        // Handle --help / -h: show adapter info and try to delegate to the underlying tool
+        // Handle --help / -h: show adapter info without delegating to Docker/external tools
         if (args.includes('--help') || args.includes('-h')) {
           const pkgLabel = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
           process.stdout.write(`${name} - ${config.description}\n\n`);
           process.stdout.write(`This command delegates to ${pkgLabel}.\n`);
           process.stdout.write(`Run \`npx ${pkgLabel} --help\` for full subcommand documentation.\n\n`);
-          // Try to pass --help through to the adapter for real help output
+          // For Docker/Python adapters, don't delegate --help (would launch containers)
+          if (config.method === 'docker' || config.method === 'python') {
+            process.exitCode = 0;
+            return;
+          }
+          // For spawn/import adapters, try to pass --help through for real help output
           const globalOpts = program.opts();
           const exitCode = await dispatchCommand(name, args, {
             verbose: globalOpts.verbose,
@@ -236,11 +241,11 @@ analysis runs and results can be shared with the community.
   // Publish intent command
   if (!ADAPTER_REGISTRY['publish']) {
     program
-      .command('publish')
+      .command('publish [name]')
       .description('Verify package trust score before publishing')
       .allowUnknownOption(true)
-      .action(async (_opts: unknown, cmd: { args?: string[] }) => {
-        const args = cmd.args ?? [];
+      .action(async (name: string | undefined, _opts: unknown, cmd: { args?: string[] }) => {
+        const args = [...(name ? [name] : []), ...(cmd.args ?? [])];
         const globalOpts = program.opts();
         const exitCode = await dispatchCommand('publish', args, {
           verbose: globalOpts.verbose,
