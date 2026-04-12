@@ -19,10 +19,10 @@
     "@inquirer/prompts": "^7.0.0",
     "@opena2a/contribute": "0.1.0",
     "@opena2a/shared": "0.1.0",
-    "ai-trust": "^0.2.6",
+    "ai-trust": "^0.2.23",
     "commander": "^13.1.0",
-    "hackmyagent": "^0.15.7",
-    "secretless-ai": "^0.14.0"
+    "hackmyagent": "^0.17.0",
+    "secretless-ai": "^0.14.1"
   },
   "optionalDependencies": {
     "@opena2a/aim-core": "*"
