@@ -46,7 +46,7 @@ await contribute.scanResult({
 // Record a detection event
 await contribute.detection({
   tool: 'opena2a-cli',
-  toolVersion: '0.8.19',
+  toolVersion: '0.8.21',
   agentsFound: 3,
   mcpServersFound: 5,
   frameworkTypes: ['claude', 'openai'],
