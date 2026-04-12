@@ -1,6 +1,9 @@
 import { execFileSync } from 'node:child_process';
 
-export const MIN_HMA_VERSION = '0.15.7';
+// 0.16.7 ships the HMA_CHECK_COMMAND / HMA_FULL_SCAN_HINT env var contract
+// that opena2a-cli's router sets when spawning HMA for the check footer.
+// 0.16.6 was never published to npm (batched with 0.16.7).
+export const MIN_HMA_VERSION = '0.16.7';
 
 let versionChecked = false;
 
