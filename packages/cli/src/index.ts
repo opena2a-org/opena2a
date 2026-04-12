@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   program
     .name('opena2a')
     .description('Open-source security platform for AI agents')
-    .version(VERSION, '-v, --version')
+    .version(`opena2a ${VERSION} \u2014 security platform for AI agents`, '-v, --version')
     .option('--ci', 'CI mode (no interactive prompts, machine-readable output)')
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
@@ -42,8 +42,8 @@ async function main(): Promise<void> {
     .showHelpAfterError('Run opena2a --help for available commands.')
     .addHelpText('beforeAll', `
 Quick start:
+  $ opena2a check <package>         Is this safe to install?
   $ opena2a init                    Security assessment (30 seconds)
-  $ opena2a detect                  Discover AI agents on this machine
   $ opena2a protect                 Migrate credentials to secure vault
   $ opena2a shield init             Full 11-step security setup
 
