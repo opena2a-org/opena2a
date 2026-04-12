@@ -254,6 +254,7 @@ export async function trust(options: TrustOptions): Promise<number> {
       process.stdout.write(JSON.stringify(output, null, 2) + '\n');
     } else {
       printTrustProfile(result.data, options.verbose ?? false, requestUrl, elapsed);
+      printTrustNextSteps(packageName);
     }
 
     return 0;
@@ -321,7 +322,7 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
       : scan.status === 'warnings' ? yellow
       : red;
     process.stdout.write(`  Scan Status:  ${statusColor(scan.status)}\n`);
-    process.stdout.write(`  Findings:     ${scan.findingsCount} (${scan.highCount} high)\n`);
+    process.stdout.write(`  Findings:     ${scan.findingsCount ?? 0} (${scan.highCount ?? 0} high)\n`);
     if (scan.actionRequired) {
       process.stdout.write(`  Action:       ${yellow(scan.actionRequired)}\n`);
     }
@@ -392,10 +393,51 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     if (data.lastScanned) process.stdout.write(`  Scanned:  ${dim(data.lastScanned)}\n`);
   }
 
-  // Links
+  // Links — the Registry website is not live yet (launches April 2026) and
+  // some responses embed legacy hostnames. Suppress the Profile/Badge lines
+  // when the host is known-dead so users don't see broken URLs, and show a
+  // dim placeholder instead.
   process.stdout.write('\n');
-  process.stdout.write(`Profile: ${cyan(data.profileUrl)}\n`);
-  process.stdout.write(`Badge:   ${dim(`${data.profileUrl.replace('/agents/', '/v1/trust/')}/badge.svg`)}\n`);
+  if (isDeadProfileHost(data.profileUrl)) {
+    process.stdout.write(dim('Profile: (Registry launches soon — opena2a.org)') + '\n');
+  } else {
+    process.stdout.write(`Profile: ${cyan(data.profileUrl)}\n`);
+    process.stdout.write(`Badge:   ${dim(`${data.profileUrl.replace('/agents/', '/v1/trust/')}/badge.svg`)}\n`);
+  }
+  process.stdout.write('\n');
+}
+
+/**
+ * Return true when a profile URL uses a hostname that is known not to resolve.
+ * The Registry backend currently returns URLs under `registry.opena2a.org` and
+ * `registry.oa2a.org`, neither of which has a live public endpoint. Until the
+ * Registry website ships, we suppress those links client-side. Known-good
+ * hosts (opena2a.org, www.opena2a.org, api.oa2a.org) are not considered dead.
+ */
+function isDeadProfileHost(url: string | undefined | null): boolean {
+  if (!url) return true;
+  const DEAD_HOSTS = [
+    'registry.opena2a.org',
+    'registry.oa2a.org',
+    'api.opena2a.org',
+  ];
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return DEAD_HOSTS.includes(host);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Print a next-steps footer after the trust profile. Teaches users that
+ * `trust` is a registry-only lookup and that `check` / `review` are the
+ * scanning commands — a distinction that is not obvious from the verb alone.
+ */
+function printTrustNextSteps(packageName: string): void {
+  process.stdout.write(`  ${dim(`Run a local scan:      opena2a check ${packageName} --rescan`)}\n`);
+  process.stdout.write(`  ${dim('Full security review:  opena2a review')}\n`);
+  process.stdout.write(`  ${dim("Note: 'trust' returns registry data only. For a real scan, use 'check'.")}\n`);
   process.stdout.write('\n');
 }
 

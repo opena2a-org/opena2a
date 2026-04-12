@@ -66,13 +66,59 @@ export function getUserConfigPath(): string {
   return join(getUserConfigDir(), 'config.json');
 }
 
+/**
+ * Registry host names that were in use before the migration to oa2a.org.
+ * Any config pointing at one of these is silently rewritten on load to the
+ * current canonical URL so existing users do not have to edit their config
+ * manually after an upstream URL change.
+ */
+export const STALE_REGISTRY_HOSTS: readonly string[] = [
+  'https://registry.opena2a.org',
+  'http://registry.opena2a.org',
+  'https://api.opena2a.org',
+  'http://api.opena2a.org',
+];
+
+export const CANONICAL_REGISTRY_URL = 'https://api.oa2a.org';
+
+/**
+ * Pure helper: returns true if the given URL matches a known-stale registry host.
+ * Exported for testing.
+ */
+export function isStaleRegistryUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  const normalized = url.trim().replace(/\/+$/, '').toLowerCase();
+  if (!normalized) return false;
+  return STALE_REGISTRY_HOSTS.some(
+    host => normalized === host.toLowerCase() || normalized.startsWith(host.toLowerCase() + '/'),
+  );
+}
+
+/**
+ * If the user's config points at a registry host that no longer exists,
+ * rewrite it to the canonical URL and persist the change. Returns true if
+ * a migration was performed. Callers may use the return value to emit a
+ * one-time notice; failures to persist are swallowed so a broken home
+ * directory never blocks CLI startup.
+ */
+function migrateStaleRegistryUrl(config: UserConfig): boolean {
+  if (!isStaleRegistryUrl(config.registry?.url)) return false;
+  config.registry.url = CANONICAL_REGISTRY_URL;
+  try {
+    saveUserConfig(config);
+  } catch {
+    // Non-fatal: in-memory value is correct even if we cannot persist.
+  }
+  return true;
+}
+
 export function loadUserConfig(): UserConfig {
   const configPath = getUserConfigPath();
   try {
     const raw = readFileSync(configPath, 'utf-8');
     const parsed = JSON.parse(raw);
 
-    return {
+    const merged: UserConfig = {
       ...DEFAULT_CONFIG,
       ...parsed,
       contribute: { ...DEFAULT_CONFIG.contribute, ...parsed.contribute },
@@ -88,6 +134,20 @@ export function loadUserConfig(): UserConfig {
       },
       telemetry: { ...DEFAULT_CONFIG.telemetry, ...parsed.telemetry },
     };
+
+    if (migrateStaleRegistryUrl(merged)) {
+      // Print to stderr so JSON-formatted stdout stays clean. One-time per
+      // invocation; subsequent loads see the already-migrated config.
+      try {
+        process.stderr.write(
+          `opena2a: migrated stale registry URL to ${CANONICAL_REGISTRY_URL}\n`,
+        );
+      } catch {
+        // stderr unavailable in some sandboxed runtimes — ignore.
+      }
+    }
+
+    return merged;
   } catch {
     return { ...DEFAULT_CONFIG };
   }

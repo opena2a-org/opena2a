@@ -428,23 +428,38 @@ function spawnHmaCheckFromRouter(
       args.push('--ci');
     }
 
+    // Environment contract with hackmyagent >= 0.16.6:
+    //   HMA_CLI_PREFIX     — binary-level prefix (used for messages that append
+    //                        a verb, e.g. "${prefix} rollback <dir>"). Set to
+    //                        "opena2a" so any such message reads naturally for
+    //                        opena2a users. Messages referring to verbs opena2a
+    //                        does not expose (e.g. "opena2a secure") are not
+    //                        reached via the check-delegation path and so do
+    //                        not surface to users.
+    //   HMA_CHECK_COMMAND  — full command string for "run a single-target
+    //                        check" hints. Avoids the duplicated-verb bug that
+    //                        results from using HMA_CLI_PREFIX="opena2a check".
+    //   HMA_FULL_SCAN_HINT — full command string shown in place of HMA's
+    //                        default "hackmyagent secure <dir>" recommendation,
+    //                        so opena2a users are pointed at `opena2a review`.
+    const hmaEnv = {
+      ...process.env,
+      HMA_CLI_PREFIX: 'opena2a',
+      HMA_CHECK_COMMAND: 'opena2a check',
+      HMA_FULL_SCAN_HINT: 'opena2a review',
+    };
+
     const child = spawn('hackmyagent', args, {
       cwd: (globalOptions.cwd as string) ?? process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        HMA_CLI_PREFIX: 'opena2a check',
-      },
+      env: hmaEnv,
     });
 
     child.on('error', () => {
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: (globalOptions.cwd as string) ?? process.cwd(),
         stdio: 'inherit',
-        env: {
-          ...process.env,
-          HMA_CLI_PREFIX: 'opena2a check',
-        },
+        env: hmaEnv,
       });
       npxChild.on('error', () => {
         process.stderr.write(`hackmyagent is not installed.\n`);
