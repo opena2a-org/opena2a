@@ -45,6 +45,9 @@ export { AIMServerReporter, type ReporterOptions } from './reporter';
 // Event aggregation
 export { EventAggregator } from './aggregator';
 
+// Vault module — identity-native encrypted credential storage
+export * as vault from './vault';
+
 // --- Imports for AIMCore ---
 import type {
   AIMCoreOptions,
@@ -64,6 +67,7 @@ import * as trust from './trust';
 import * as crypto from './crypto';
 import { AIMServerReporter } from './reporter';
 import { EventAggregator } from './aggregator';
+import { VaultStore } from './vault/store';
 
 /**
  * Main entry point for aim-core.
@@ -230,6 +234,15 @@ export class AIMCore {
   /** Get the data directory path */
   getDataDir(): string {
     return this.dataDir;
+  }
+
+  /**
+   * Get a VaultStore instance for this agent's vault.
+   * The vault directory is at ~/.aim/vault/ (separate from the data dir).
+   */
+  getVault(): VaultStore {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
+    return new VaultStore(`${home}/.aim/vault`);
   }
 
   private defaultDataDir(): string {
