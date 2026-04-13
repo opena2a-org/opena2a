@@ -15,8 +15,12 @@ import { checkMinHmaVersion } from './util/hma-version.js';
 
 const VERSION = getVersion();
 
-// Tell downstream tools (hackmyagent, secretless) to use 'opena2a' in user-facing messages
-process.env.HMA_CLI_PREFIX = 'opena2a scan';
+// Tell downstream tools (hackmyagent, secretless) to use 'opena2a' in user-facing messages.
+// HMA_CLI_PREFIX is the *binary-level* prefix — HMA appends verbs to it
+// ("${prefix} rollback <dir>"), so it must be just "opena2a" here. The full
+// command strings for the `check` next-steps footer (HMA_CHECK_COMMAND,
+// HMA_FULL_SCAN_HINT) are set per-spawn in spawnHmaCheck / spawnHmaCheckFromRouter.
+process.env.HMA_CLI_PREFIX = 'opena2a';
 
 async function main(): Promise<void> {
   const program = new Command();
@@ -680,17 +684,25 @@ analysis runs and results can be shared with the community.
   // Trust command (ATP trust lookup)
   program
     .command('trust [package]')
-    .description('Look up the trust profile for an AI agent or MCP server')
+    .description('Look up the registry trust profile for a package (read-only)')
     .option('--source <source>', 'Package source (npm, pypi, github)')
     .option('--registry-url <url>', 'Registry URL')
     .option('--json', 'Output as JSON (alias for --format json)')
     .addHelpText('after', `
+'trust' is a read-only registry lookup. For a real local scan of the package,
+use 'opena2a check <package>'. For a full project-level security review with
+a composite score and HTML report, use 'opena2a review'.
+
 Examples:
   $ opena2a trust express                    Look up npm package
   $ opena2a trust langchain --source pypi    Look up PyPI package
   $ opena2a trust                            Auto-detect from package.json
   $ opena2a trust express --json             JSON output
-  $ opena2a trust https://github.com/org/repo   GitHub URL (auto-detected)`)
+  $ opena2a trust https://github.com/org/repo   GitHub URL (auto-detected)
+
+See also:
+  $ opena2a check <package>                  Full local security scan (via hackmyagent)
+  $ opena2a review                           Full project security review`)
     .action(async (packageArg: string | undefined, opts) => {
       const { trust: runTrust } = await import('./commands/trust.js');
       const globalOpts = program.opts();
@@ -1144,13 +1156,18 @@ function spawnHmaCheck(
       args.push('--ci');
     }
 
+    // See router.ts:spawnHmaCheckFromRouter for the env var contract docs.
+    const hmaEnv = {
+      ...process.env,
+      HMA_CLI_PREFIX: 'opena2a',
+      HMA_CHECK_COMMAND: 'opena2a check',
+      HMA_FULL_SCAN_HINT: 'opena2a review',
+    };
+
     const child = spawn('hackmyagent', args, {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        HMA_CLI_PREFIX: 'opena2a check',
-      },
+      env: hmaEnv,
     });
 
     child.on('error', (err) => {
@@ -1158,10 +1175,7 @@ function spawnHmaCheck(
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: process.cwd(),
         stdio: 'inherit',
-        env: {
-          ...process.env,
-          HMA_CLI_PREFIX: 'opena2a check',
-        },
+        env: hmaEnv,
       });
       npxChild.on('error', () => {
         process.stderr.write(`hackmyagent is not installed.\n`);

@@ -42,7 +42,10 @@ function makeTrustResponse(overrides?: Partial<TrustLookupResponse>): TrustLooku
       maintainerCount: 3,
     },
     lastScanned: '2026-03-10T00:00:00Z',
-    profileUrl: 'https://registry.opena2a.org/agents/test-agent-uuid',
+    // Default uses a placeholder domain so tests exercise the normal render
+    // path. Tests covering the dead-host suppression override this with a
+    // known-dead host (registry.opena2a.org) explicitly.
+    profileUrl: 'https://test-registry.example.com/agents/test-agent-uuid',
     ...overrides,
   };
 }
@@ -234,6 +237,31 @@ describe('trust', () => {
     expect(output).toContain('web:read');
     expect(output).toContain('Profile:');
     expect(output).toContain('Badge:');
+  });
+
+  it('suppresses Profile/Badge lines for known-dead registry hosts', async () => {
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({
+      ok: true,
+      status: 200,
+      // Registry backend still returns this dead hostname in some responses —
+      // the CLI should hide the link entirely and show a placeholder instead.
+      data: makeTrustResponse({
+        profileUrl: 'https://registry.opena2a.org/agents/test-agent-uuid',
+      }),
+    });
+
+    const options: TrustOptions = {
+      packageName: '@anthropic/mcp-server-fetch',
+      registryUrl: 'https://test-registry.example.com',
+      ci: true,
+      format: 'text',
+    };
+
+    const { output } = await captureStdout(() => trust(options));
+
+    expect(output).not.toContain('https://registry.opena2a.org');
+    expect(output).not.toContain('Badge:');
+    expect(output).toContain('Registry launches soon');
   });
 
   it('falls back to formatted packageType when displayType is absent', async () => {
