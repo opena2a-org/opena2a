@@ -403,8 +403,8 @@ describe('detect command', () => {
     const { output } = await captureStdout(() =>
       detect({ targetDir: tempDir, format: 'text', verbose: true })
     );
-    // Verbose mode shows PIDs inline with agents
-    expect(output).toContain('PID');
+    // Verbose mode shows Identity & Governance section
+    expect(output).toContain('Identity & Governance');
   });
 
   it('returns exit code 1 for inaccessible directory', async () => {
