@@ -293,8 +293,19 @@ export async function dispatchCommand(
   // check + npm package name → delegate to hackmyagent check
   if (command === 'check' && args.length > 0) {
     const target = args[0];
-    if (target && !target.startsWith('-') && isNpmTarget(target)) {
-      return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
+    if (target && !target.startsWith('-')) {
+      if (isNpmTarget(target)) {
+        return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
+      }
+      // Unrecognized target format -- show helpful error
+      process.stderr.write(`Unknown target: ${target}\n`);
+      process.stderr.write(`Accepted formats:\n`);
+      process.stderr.write(`  opena2a check express           npm package\n`);
+      process.stderr.write(`  opena2a check @scope/pkg        scoped npm package\n`);
+      process.stderr.write(`  opena2a check pip:requests      PyPI package\n`);
+      process.stderr.write(`  opena2a check owner/repo        GitHub repository\n`);
+      process.stderr.write(`  opena2a check ./path            local directory\n`);
+      return 1;
     }
   }
 
@@ -315,9 +326,15 @@ export async function dispatchCommand(
     return 1;
   }
 
-  // Prepend subcommand if the adapter config specifies one (e.g. broker, dlp)
+  // Prepend subcommand if the adapter config specifies one (e.g. broker, dlp).
+  // Strip it from user args if they typed it explicitly (e.g. "scan secure ."
+  // should not produce "secure secure .").
   if (adapter.config.subcommand) {
-    adapterArgs = [adapter.config.subcommand, ...adapterArgs];
+    if (adapterArgs[0] === adapter.config.subcommand) {
+      adapterArgs = [adapter.config.subcommand, ...adapterArgs.slice(1)];
+    } else {
+      adapterArgs = [adapter.config.subcommand, ...adapterArgs];
+    }
   }
 
   const available = await adapter.isAvailable();
