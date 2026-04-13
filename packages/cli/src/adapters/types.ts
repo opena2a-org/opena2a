@@ -28,6 +28,7 @@ export interface RunOptions {
   contribute?: boolean;
   cwd?: string;
   deep?: boolean;
+  analm?: boolean;
   staticOnly?: boolean;
 }
 
