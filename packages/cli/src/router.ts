@@ -335,6 +335,9 @@ export async function dispatchCommand(
   if (globalOptions.deep && !adapterArgs.includes('--deep')) {
     adapterArgs.push('--deep');
   }
+  if (globalOptions.analm && !adapterArgs.includes('--analm')) {
+    adapterArgs.push('--analm');
+  }
   if (globalOptions.staticOnly && !adapterArgs.includes('--static-only')) {
     adapterArgs.push('--static-only');
   }

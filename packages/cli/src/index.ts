@@ -36,6 +36,7 @@ async function main(): Promise<void> {
     .option('--json', 'Shorthand for --format json')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
+    .option('--analm', 'AI-powered threat analysis using AnaLM')
     .option('--static-only', 'Disable semantic analysis (static checks only, fast)')
     .hook('preAction', (thisCommand) => {
       const opts = thisCommand.opts();
@@ -114,6 +115,7 @@ Learn more: https://opena2a.org/docs`);
             format: globalOpts.format,
             contribute: globalOpts.contribute,
             deep: globalOpts.deep,
+            analm: globalOpts.analm,
             staticOnly: globalOpts.staticOnly,
           });
           process.exitCode = exitCode;
