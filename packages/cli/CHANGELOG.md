@@ -7,6 +7,11 @@
 - `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
 - Docker adapter configurable port mapping for `train` command (full DVAA port range)
 
+## 0.8.23
+
+### Bug Fixes
+- `--server cloud` now resolves to `https://aim.oa2a.org` (AIM Cloud backend). Previously pointed to `api.aim.opena2a.org`, which serves a different product (community). Bare `aim.opena2a.org` still routes to `api.aim.opena2a.org` for community users.
+
 ## 0.6.3
 
 ### Breaking Changes
