@@ -718,7 +718,7 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
           // expected-format prefixes (e.g. AKIA+16 = 20 chars), but actual tokens
           // in source may be longer (test fixtures, non-standard keys). Vault
           // value MUST equal source value exactly, or the app breaks at runtime.
-          const fullValue = expandValueToFullToken(line, match.index, value);
+          const fullValue = expandValueToFullToken(line, match.index, value, pattern.tailChars);
 
           const envVar = deriveEnvVarName(pattern, filePath, matches);
 
@@ -785,12 +785,14 @@ async function migrateCredentials(
         const rel = path.relative(targetDir, filePath).replace(/\//g, '__');
         fs.copyFileSync(filePath, path.join(backupDir, rel));
       }
-      // Keep backup dir out of git
+      // Keep the entire .opena2a/ tree out of git. Excluding only backup/
+      // would leak protect-rollback.json (envVar names + relative file paths)
+      // through commits — low-sensitivity but reveals attack surface.
       const excludePath = path.join(targetDir, '.git', 'info', 'exclude');
       if (fs.existsSync(path.join(targetDir, '.git'))) {
         const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf-8') : '';
-        if (!existing.includes('.opena2a/backup')) {
-          fs.appendFileSync(excludePath, '\n.opena2a/backup/\n');
+        if (!existing.includes('.opena2a/')) {
+          fs.appendFileSync(excludePath, '\n.opena2a/\n');
         }
       }
     } catch {
@@ -882,10 +884,12 @@ async function storeInVault(credential: CredentialMatch): Promise<{ stored: bool
     const store = new SecretStore();
     await store.setSecret(credential.envVar, credential.value);
 
-    // Read back to verify the value actually landed before we wipe source
+    // Read back to verify the value actually landed before we wipe source.
+    // Strict byte-equality — a vault that returned a stale-but-non-empty
+    // value would pass a truthy check and lose the new secret silently.
     const verified = await store.getSecret(credential.envVar);
-    if (!verified) {
-      throw new Error(`Read-back verification failed: ${credential.envVar} was written but could not be retrieved from vault`);
+    if (verified !== credential.value) {
+      throw new Error(`Read-back verification failed: ${credential.envVar} written to vault but readback returned a different value`);
     }
 
     return { stored: true, location: 'vault' };

@@ -15,6 +15,17 @@ export interface CredentialPattern {
   severity: string;
   explanation: string;
   businessImpact: string;
+  /**
+   * Character class regex (anchored, character-class form e.g. `[A-Z0-9]`)
+   * describing valid trailing chars for this token type. Used by
+   * expandValueToFullToken to extend a fixed-length match into the source
+   * token (a 21-char AWS key in a fixture, etc.) WITHOUT overshooting into
+   * adjacent unrelated text (e.g. `AKIA1234567890123456.invalid` where `.`
+   * is not part of an AWS key).
+   *
+   * If undefined, no expansion is performed — the regex match is used as-is.
+   */
+  tailChars?: RegExp;
 }
 
 export interface CredentialMatch {
@@ -76,6 +87,8 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     severity: 'high',
     explanation: 'AWS access key may grant Bedrock LLM access beyond its intended S3/EC2 scope. IAM policies often over-provision.',
     businessImpact: 'Key may access more AWS services than intended. Review IAM policies and restrict to required services.',
+    // AWS keys are uppercase alnum only — stop at lowercase, dot, slash, etc.
+    tailChars: /[0-9A-Z]/,
   },
   {
     id: 'CRED-005',
@@ -89,6 +102,8 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
     severity: 'critical',
     explanation: 'AWS Secret Access Key hardcoded in source. Combined with an Access Key ID, this grants full programmatic AWS access to all authorized services.',
     businessImpact: 'Full AWS API access. Migrate to environment variables and rotate the key pair immediately.',
+    // base64-ish; stop at quote, dot, equals (last two are delimiters in JSON/YAML).
+    tailChars: /[A-Za-z0-9+/]/,
   },
   {
     id: 'CRED-003',
@@ -212,21 +227,33 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
  * Expand a regex-captured credential value to the full token in source.
  *
  * Patterns capture expected-format prefixes (e.g. AWS access key is AKIA+16
- * chars = exactly 20). When a real token in the file is longer, the captured
- * value is a truncated prefix. Returning the truncated value lets dedup,
- * vault-store, and source-replace paths drift apart — same credential can be
- * counted twice or replaced partially.
+ * chars = exactly 20). When a real token in the file is longer (test fixture
+ * with one extra char, custom prefix), the captured value is a truncated
+ * prefix. Returning the truncated value lets dedup, vault-store, and
+ * source-replace paths drift apart.
  *
- * Walks forward from the match through token-safe chars (letters, digits,
- * underscore, hyphen, plus, slash, dot, equals) until a delimiter (quote,
- * whitespace, comma, etc).
+ * `tailChars` constrains expansion to the same character class the pattern's
+ * trailing repeater allowed. Without it, expansion would consume `.` `/` `=`
+ * etc. and overshoot into hostnames or URL paths (e.g.
+ * `AKIA1234567890123456.amazonaws.com` would yield the whole hostname). When
+ * `tailChars` is undefined, no expansion is performed.
  */
-export function expandValueToFullToken(line: string, matchIndex: number, capturedValue: string): string {
+export function expandValueToFullToken(
+  line: string,
+  matchIndex: number,
+  capturedValue: string,
+  tailChars?: RegExp
+): string {
+  if (!tailChars) return capturedValue;
   const valueStart = line.indexOf(capturedValue, matchIndex);
   if (valueStart === -1) return capturedValue;
   const afterValue = line.slice(valueStart + capturedValue.length);
-  const extraMatch = afterValue.match(/^[A-Za-z0-9_\-+/.=]*/);
-  return capturedValue + (extraMatch ? extraMatch[0] : '');
+  let extra = '';
+  for (const ch of afterValue) {
+    if (tailChars.test(ch)) extra += ch;
+    else break;
+  }
+  return capturedValue + extra;
 }
 
 // --- Quick scan (used by init) ---
@@ -253,7 +280,7 @@ export function quickCredentialScan(targetDir: string): CredentialMatch[] {
         while ((match = re.exec(line)) !== null) {
           // Expand to full token so dedup against other scanners (e.g.
           // scanMcpCredentials, which uses the full env value) is consistent.
-          const value = expandValueToFullToken(line, match.index, match[1] ?? match[0]);
+          const value = expandValueToFullToken(line, match.index, match[1] ?? match[0], pattern.tailChars);
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;

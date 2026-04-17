@@ -82,6 +82,32 @@ describe('protect — vault read-back verification (bug #2)', () => {
     expect(mockGetSecret).toHaveBeenCalledWith('GOOGLE_API_KEY');
   });
 
+  it('does NOT replace source when vault returns a different non-empty value (F1)', async () => {
+    // A buggy backend could resolve setSecret successfully but return a
+    // stale or wrong value on getSecret. The readback must enforce strict
+    // byte-equality, otherwise the credential is wiped from source while
+    // the wrong value sits in vault.
+    const fakeKey = 'AIza' + 'V'.repeat(35);
+    mockSetSecret.mockResolvedValue(undefined);
+    mockGetSecret.mockResolvedValue('a-different-but-non-empty-value');
+
+    const sourcePath = path.join(tempDir, 'app.ts');
+    const original = `const k = "${fakeKey}";\n`;
+    fs.writeFileSync(sourcePath, original);
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+      skipLiveness: true,
+    });
+
+    const after = fs.readFileSync(sourcePath, 'utf-8');
+    expect(after).toBe(original);
+  });
+
   it('DOES replace source when vault read-back confirms the value', async () => {
     // Happy path: setSecret resolves, getSecret returns the same value.
     const fakeKey = 'AIza' + 'W'.repeat(35);

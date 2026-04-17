@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CREDENTIAL_PATTERNS } from '../../src/util/credential-patterns.js';
+import { CREDENTIAL_PATTERNS, expandValueToFullToken } from '../../src/util/credential-patterns.js';
 
 function findPattern(id: string) {
   const p = CREDENTIAL_PATTERNS.find(p => p.id === id);
@@ -183,6 +183,41 @@ describe('credential patterns', () => {
       const match = fresh(pattern()).exec(line);
       expect(match).not.toBeNull();
       expect(match![1]).toBe(secret);
+    });
+  });
+
+  describe('expandValueToFullToken (F2: per-pattern tail-class restriction)', () => {
+    const awsTail = /[0-9A-Z]/;
+
+    it('extends a 20-char AWS match to a 21-char source token (original bug #7/#12)', () => {
+      const line = 'AKIAFAKE000TESTONLY11';
+      // simulated regex match captured 20 chars
+      expect(expandValueToFullToken(line, 0, 'AKIAFAKE000TESTONLY1', awsTail)).toBe('AKIAFAKE000TESTONLY11');
+    });
+
+    it('does NOT overshoot into a hostname after an AWS-shaped token (F2 regression)', () => {
+      // Without tail-class: would consume `.amazonaws.com/path` because the
+      // old class included `.` and `/`. With per-pattern uppercase-alnum:
+      // expansion stops at `.`.
+      const line = '"url": "https://AKIA1234567890ABCDEF.amazonaws.com/path"';
+      const start = line.indexOf('AKIA');
+      expect(expandValueToFullToken(line, start, 'AKIA1234567890ABCDEF', awsTail)).toBe('AKIA1234567890ABCDEF');
+    });
+
+    it('does NOT overshoot into a URL path after an AWS key', () => {
+      const line = 'export AWS_KEY=AKIA1234567890ABCDEF/extra';
+      const start = line.indexOf('AKIA');
+      expect(expandValueToFullToken(line, start, 'AKIA1234567890ABCDEF', awsTail)).toBe('AKIA1234567890ABCDEF');
+    });
+
+    it('returns capture unchanged when tailChars is undefined', () => {
+      // Variable-length patterns are already greedy in the regex itself —
+      // expansion must be opt-in via tailChars to avoid overshoot.
+      expect(expandValueToFullToken('foo123/bar', 0, 'foo', undefined)).toBe('foo');
+    });
+
+    it('returns capture unchanged when capturedValue is not found in line', () => {
+      expect(expandValueToFullToken('hello', 0, 'world', awsTail)).toBe('world');
     });
   });
 });
