@@ -175,7 +175,11 @@ export function scanMcpCredentials(dir: string): CredentialMatch[] {
           const match = re.exec(strVal);
           if (!match) continue;
 
-          const value = match[1] ?? match[0];
+          // In parsed JSON, the env value IS the credential. Use the full
+          // string, not the regex-matched prefix — patterns often capture
+          // less than the full token (e.g. AKIA+16 = 20 chars) and storing
+          // the prefix in vault while source has the full value breaks runtime.
+          const value = strVal;
           const dedupKey = `${value}:${fullPath}`;
           if (seen.has(dedupKey)) continue;
           seen.add(dedupKey);

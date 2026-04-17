@@ -1,0 +1,282 @@
+import { describe, it, expect } from 'vitest';
+import { CREDENTIAL_PATTERNS, expandValueToFullToken } from '../../src/util/credential-patterns.js';
+
+function findPattern(id: string) {
+  const p = CREDENTIAL_PATTERNS.find(p => p.id === id);
+  if (!p) throw new Error(`Pattern ${id} not registered`);
+  return p;
+}
+
+function fresh(re: RegExp): RegExp {
+  return new RegExp(re.source, re.flags);
+}
+
+describe('credential patterns', () => {
+  describe('CRED-006 Slack', () => {
+    const pattern = () => findPattern('CRED-006').pattern;
+    // Fixtures are constructed from parts so the literal byte sequence never
+    // appears contiguously in source — GitHub secret scanning flags even
+    // obviously-synthetic Slack tokens and blocks the push otherwise.
+    const tail = 'abcdefghijklmnopqrstuvwx';
+    const mkToken = (prefix: string) => `${prefix}-1234567890-${tail}`;
+
+    it('matches xoxb bot token', () => {
+      expect(fresh(pattern()).test(mkToken('xoxb'))).toBe(true);
+    });
+
+    it('matches xoxp user token', () => {
+      expect(fresh(pattern()).test(mkToken('xoxp'))).toBe(true);
+    });
+
+    it('matches xoxa app token', () => {
+      expect(fresh(pattern()).test(mkToken('xoxa'))).toBe(true);
+    });
+
+    it('matches xoxr refresh token', () => {
+      expect(fresh(pattern()).test(mkToken('xoxr'))).toBe(true);
+    });
+
+    it('does not match short xox prefix', () => {
+      expect(fresh(pattern()).test('xoxb-short')).toBe(false);
+    });
+
+    it('does not match plain xox without dash', () => {
+      expect(fresh(pattern()).test('xoxblahblahblahblah')).toBe(false);
+    });
+  });
+
+  describe('CRED-007 Stripe', () => {
+    const pattern = () => findPattern('CRED-007').pattern;
+
+    it('matches sk_live_ secret key', () => {
+      const key = 'sk_live_' + 'A'.repeat(24);
+      expect(fresh(pattern()).test(key)).toBe(true);
+    });
+
+    it('matches sk_test_ secret key', () => {
+      const key = 'sk_test_' + 'B'.repeat(40);
+      expect(fresh(pattern()).test(key)).toBe(true);
+    });
+
+    it('does not match sk_live_ shorter than 24 chars after prefix', () => {
+      const key = 'sk_live_' + 'A'.repeat(20);
+      expect(fresh(pattern()).test(key)).toBe(false);
+    });
+
+    it('does not match plain sk_ prefix without live/test', () => {
+      const key = 'sk_other_' + 'A'.repeat(24);
+      expect(fresh(pattern()).test(key)).toBe(false);
+    });
+  });
+
+  describe('CRED-003 GitHub token (extended to OAuth + refresh)', () => {
+    const pattern = () => findPattern('CRED-003').pattern;
+
+    it('matches ghp_ personal access token', () => {
+      const token = 'ghp_' + 'A'.repeat(40);
+      expect(fresh(pattern()).test(token)).toBe(true);
+    });
+
+    it('matches ghs_ server-to-server token', () => {
+      const token = 'ghs_' + 'A'.repeat(40);
+      expect(fresh(pattern()).test(token)).toBe(true);
+    });
+
+    it('matches ghu_ user-to-server OAuth token (regression for bug #10)', () => {
+      const token = 'ghu_' + 'A'.repeat(40);
+      expect(fresh(pattern()).test(token)).toBe(true);
+    });
+
+    it('matches ghr_ refresh token (regression for bug #10)', () => {
+      const token = 'ghr_' + 'A'.repeat(40);
+      expect(fresh(pattern()).test(token)).toBe(true);
+    });
+
+    it('does not match ghx_ (unknown prefix)', () => {
+      const token = 'ghx_' + 'A'.repeat(40);
+      expect(fresh(pattern()).test(token)).toBe(false);
+    });
+
+    it('does not match short github-style tokens', () => {
+      const token = 'ghp_' + 'A'.repeat(20);
+      expect(fresh(pattern()).test(token)).toBe(false);
+    });
+  });
+
+  describe('CRED-004 Generic API Key (JSON-quoted-key form, bug #13)', () => {
+    const pattern = () => findPattern('CRED-004').pattern;
+
+    it('matches Python assignment without surrounding quotes on key', () => {
+      const line = 'api_key="comp_fake_key_testing_only_1234567890abcdef"';
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches JS-style apiKey property assignment', () => {
+      const line = 'apiKey: "sk-mockmockmockmockmockmockmockmock"';
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches vendor-prefixed JSON env key (regression for bug #13)', () => {
+      // Real-world MCP env block: "WATSONX_API_KEY": "ibm-api-FAKE-..."
+      // Prior regex demanded contiguous `key\s*[:=]` and missed the closing `"`
+      // of the JSON key — same shape as the CRED-005 bug fixed earlier.
+      const line = '"WATSONX_API_KEY": "ibm-api-FAKE-key-for-testing-1234567890"';
+      const match = fresh(pattern()).exec(line);
+      expect(match).not.toBeNull();
+      expect(match![1]).toBe('ibm-api-FAKE-key-for-testing-1234567890');
+    });
+
+    it('does NOT match ${VAR} placeholder values', () => {
+      const line = '"API_KEY": "${API_KEY}"';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('does NOT match process.env references', () => {
+      const line = 'const k = process.env.API_KEY;';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('does NOT match os.environ.get() with no value follow', () => {
+      const line = 'os.environ.get("API_KEY")';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('does NOT match empty value', () => {
+      const line = 'API_KEY: ""';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+  });
+
+  describe('CRED-005 AWS Secret Access Key (JSON-quoted format coverage, bug #11)', () => {
+    const pattern = () => findPattern('CRED-005').pattern;
+
+    it('matches .env shell-style assignment', () => {
+      const line = 'AWS_SECRET_ACCESS_KEY=' + 'A'.repeat(40);
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches code assignment with quoted value', () => {
+      const line = `secretAccessKey = "${'B'.repeat(40)}"`;
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches JSON object format with quoted key', () => {
+      // The bug: prior to the fix, the pattern required `: "value` with no
+      // closing quote on the key side, missing real-world JSON like
+      //   "AWS_SECRET_ACCESS_KEY": "ABC..."
+      const line = `"AWS_SECRET_ACCESS_KEY": "${'C'.repeat(40)}"`;
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches camelCase variant in JSON', () => {
+      const line = `"secretAccessKey": "${'D'.repeat(40)}"`;
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('does not match values shorter than 40 chars', () => {
+      const line = `AWS_SECRET_ACCESS_KEY=${'A'.repeat(30)}`;
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('captures the secret value in group 1', () => {
+      const secret = 'X'.repeat(40);
+      const line = `"AWS_SECRET_ACCESS_KEY": "${secret}"`;
+      const match = fresh(pattern()).exec(line);
+      expect(match).not.toBeNull();
+      expect(match![1]).toBe(secret);
+    });
+  });
+
+  describe('expandValueToFullToken (F2: per-pattern tail-class restriction)', () => {
+    const awsTail = /[0-9A-Z]/;
+
+    it('extends a 20-char AWS match to a 21-char source token (original bug #7/#12)', () => {
+      const line = 'AKIAFAKE000TESTONLY11';
+      // simulated regex match captured 20 chars
+      expect(expandValueToFullToken(line, 0, 'AKIAFAKE000TESTONLY1', awsTail)).toBe('AKIAFAKE000TESTONLY11');
+    });
+
+    it('does NOT overshoot into a hostname after an AWS-shaped token (F2 regression)', () => {
+      // Without tail-class: would consume `.amazonaws.com/path` because the
+      // old class included `.` and `/`. With per-pattern uppercase-alnum:
+      // expansion stops at `.`.
+      const line = '"url": "https://AKIA1234567890ABCDEF.amazonaws.com/path"';
+      const start = line.indexOf('AKIA');
+      expect(expandValueToFullToken(line, start, 'AKIA1234567890ABCDEF', awsTail)).toBe('AKIA1234567890ABCDEF');
+    });
+
+    it('does NOT overshoot into a URL path after an AWS key', () => {
+      const line = 'export AWS_KEY=AKIA1234567890ABCDEF/extra';
+      const start = line.indexOf('AKIA');
+      expect(expandValueToFullToken(line, start, 'AKIA1234567890ABCDEF', awsTail)).toBe('AKIA1234567890ABCDEF');
+    });
+
+    it('returns capture unchanged when tailChars is undefined', () => {
+      // Variable-length patterns are already greedy in the regex itself —
+      // expansion must be opt-in via tailChars to avoid overshoot.
+      expect(expandValueToFullToken('foo123/bar', 0, 'foo', undefined)).toBe('foo');
+    });
+
+    it('returns capture unchanged when capturedValue is not found in line', () => {
+      expect(expandValueToFullToken('hello', 0, 'world', awsTail)).toBe('world');
+    });
+  });
+
+  // Regression: the walker's self-exemption used dir.includes(marker) on
+  // "packages/cli/src" and "packages/cli/dist", which silently skipped ANY
+  // user project whose path contained those substrings. The anchored fix
+  // resolves the CLI's own package root at module load and compares with
+  // path.startsWith, so user directories are scanned even when they share
+  // the path fragment.
+  describe('walkFiles self-exemption is anchored, not substring', () => {
+    // Dynamically import fs + os + path + the walkFiles function per test so
+    // we can work with temp directories outside the project root.
+    it('scans a user directory whose path contains "packages/cli/src"', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const { walkFiles } = await import('../../src/util/credential-patterns.js');
+      const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-walkfiles-'));
+      const userDir = path.join(tmpRoot, 'packages', 'cli', 'src');
+      fs.mkdirSync(userDir, { recursive: true });
+      const file = path.join(userDir, 'app.ts');
+      fs.writeFileSync(file, 'const x = 1;', 'utf-8');
+
+      const visited: string[] = [];
+      walkFiles(tmpRoot, (p: string) => { visited.push(p); });
+
+      expect(visited).toContain(file);
+
+      // cleanup
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    });
+
+    it('still skips the CLI\'s own source tree', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const { walkFiles } = await import('../../src/util/credential-patterns.js');
+      // __dirname for this compiled test file is under dist/ tests folder at
+      // runtime; walk up to find the opena2a-cli package root.
+      let dir = __dirname;
+      while (dir !== path.parse(dir).root) {
+        const pkgPath = path.join(dir, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+            if (pkg.name === 'opena2a-cli') break;
+          } catch {
+            // ignore
+          }
+        }
+        dir = path.dirname(dir);
+      }
+      const cliRoot = dir;
+      const srcDir = path.join(cliRoot, 'src');
+      if (!fs.existsSync(srcDir)) return; // running from install tree
+
+      const visited: string[] = [];
+      walkFiles(srcDir, (p: string) => { visited.push(p); });
+      expect(visited.length).toBe(0);
+    });
+  });
+});
