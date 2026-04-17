@@ -753,7 +753,9 @@ const tail = "tail";
   });
 
   it('bug #8: detects Slack tokens', async () => {
-    const token = 'xoxb-1234567890-abcdefghijklmnopqrstuvwx';
+    // Constructed from parts so the literal byte sequence never appears
+    // contiguously in source — see CRED-006 test rationale.
+    const token = 'xox' + 'b-1234567890-' + 'abcdefghijklmnopqrstuvwx';
     fs.writeFileSync(
       path.join(tempDir, 'slack.ts'),
       `const t = "${token}";\n`
