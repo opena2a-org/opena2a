@@ -2,12 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { baselines } from '../../src/commands/baselines.js';
 import type { BaselinesOptions } from '../../src/commands/baselines.js';
 
-// Mock global fetch
+const sharedMock = vi.hoisted(() => ({
+  loadUserConfig: vi.fn(() => ({ contribute: { enabled: false } })),
+}));
+vi.mock('@opena2a/shared', () => ({
+  default: sharedMock,
+  ...sharedMock,
+}));
+
 const mockFetch = vi.fn();
 
 beforeEach(() => {
   vi.stubGlobal('fetch', mockFetch);
   mockFetch.mockReset();
+  sharedMock.loadUserConfig.mockReset();
+  sharedMock.loadUserConfig.mockReturnValue({ contribute: { enabled: false } });
 });
 
 afterEach(() => {
@@ -55,8 +64,22 @@ function captureStderr(fn: () => Promise<number>): Promise<{ exitCode: number; s
 
 describe('baselines', () => {
   it('returns 1 when contribute is not enabled', async () => {
-    // By default, @opena2a/shared will either not be loadable or return disabled
-    // The dynamic import of @opena2a/shared may fail, which means checkOptIn returns false
+    const origFunction = global.Function;
+    const mockFunction = vi.fn().mockImplementation((...args: any[]) => {
+      const body = args[args.length - 1];
+      if (typeof body === 'string' && body.includes('@opena2a/shared')) {
+        return () => Promise.resolve({
+          default: {
+            loadUserConfig: () => ({
+              contribute: { enabled: false },
+            }),
+          },
+        });
+      }
+      return origFunction(...args);
+    });
+    vi.stubGlobal('Function', mockFunction);
+
     const options: BaselinesOptions = {
       packageName: 'hackmyagent',
       ci: true,

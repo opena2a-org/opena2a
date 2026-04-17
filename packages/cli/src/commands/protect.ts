@@ -714,6 +714,12 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
           // Skip if it looks like an env var reference already
           if (isEnvVarReference(line, match.index)) continue;
 
+          // Skip unquoted dotted-identifier captures. CRED-004's regex allows
+          // unquoted values so it can match .env bare assignments, but that
+          // also admits source-code lookups like `api_key = config.creds.apiKey`
+          // where rewriting the RHS to process.env.API_KEY would break the app.
+          if (pattern.id === 'CRED-004' && isDottedIdentifier(line, match.index, value)) continue;
+
           // Expand captured value to the full token in source. Patterns capture
           // expected-format prefixes (e.g. AKIA+16 = 20 chars), but actual tokens
           // in source may be longer (test fixtures, non-standard keys). Vault
@@ -750,6 +756,28 @@ function isEnvVarReference(line: string, matchIndex: number): boolean {
     /getenv\(['"]?\w*$/.test(before);
 }
 
+/**
+ * Detects when a captured value is a JS/Python dotted identifier lookup rather
+ * than a literal secret. CRED-004's regex allows unquoted values (needed for
+ * `.env` bare assignments), which also admits source-code references like
+ * `const api_key = config.secrets.myKey`. Rewriting the RHS to `process.env.API_KEY`
+ * would break working code.
+ *
+ * Rejection criteria: the capture is NOT preceded by a quote character AND the
+ * value is a dotted identifier path (two or more identifier components joined
+ * by `.`). Quoted values are always treated as literal secrets; genuine
+ * credential values rarely look like `foo.bar.baz`.
+ */
+function isDottedIdentifier(line: string, matchIndex: number, value: string): boolean {
+  // If the value is immediately preceded by a quote, treat as a literal secret.
+  const valueIdx = line.indexOf(value, matchIndex);
+  if (valueIdx > 0) {
+    const prevChar = line[valueIdx - 1];
+    if (prevChar === '"' || prevChar === '\'' || prevChar === '`') return false;
+  }
+  return /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(value);
+}
+
 function deriveEnvVarName(
   pattern: CredentialPattern,
   _filePath: string,
@@ -776,18 +804,38 @@ async function migrateCredentials(
 
   // Pre-pass: back up every file we're about to modify so rollback works even
   // if the files have never been committed (git checkout would fail silently).
+  // Each backup is attempted independently; any failure aborts migration of
+  // the affected file (its finding is returned as an error in the report).
+  // This prevents the partial-backup + source-rewrite data-loss path where
+  // the user has no way to restore originals after vault store succeeds.
   const backupDir = path.join(targetDir, '.opena2a', 'backup');
   const filesToModify = [...new Set(matches.map(m => m.filePath))];
+  const backedUpFiles = new Set<string>();
+  const backupFailures = new Map<string, string>(); // filePath -> error message
   if (!options.dryRun) {
     try {
       fs.mkdirSync(backupDir, { recursive: true });
+    } catch (err) {
+      // If the backup directory itself can't be created, record failure for
+      // every file — no migration can proceed without a rollback path.
+      const msg = `backup dir unavailable: ${err instanceof Error ? err.message : String(err)}`;
+      for (const filePath of filesToModify) backupFailures.set(filePath, msg);
+    }
+    if (backupFailures.size === 0) {
       for (const filePath of filesToModify) {
-        const rel = path.relative(targetDir, filePath).replace(/\//g, '__');
-        fs.copyFileSync(filePath, path.join(backupDir, rel));
+        try {
+          const rel = path.relative(targetDir, filePath).replace(/\//g, '__');
+          fs.copyFileSync(filePath, path.join(backupDir, rel));
+          backedUpFiles.add(filePath);
+        } catch (err) {
+          backupFailures.set(filePath, err instanceof Error ? err.message : String(err));
+        }
       }
-      // Keep the entire .opena2a/ tree out of git. Excluding only backup/
-      // would leak protect-rollback.json (envVar names + relative file paths)
-      // through commits — low-sensitivity but reveals attack surface.
+    }
+    // Keep the entire .opena2a/ tree out of git. Excluding only backup/
+    // would leak protect-rollback.json (envVar names + relative file paths)
+    // through commits — low-sensitivity but reveals attack surface.
+    try {
       const excludePath = path.join(targetDir, '.git', 'info', 'exclude');
       if (fs.existsSync(path.join(targetDir, '.git'))) {
         const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf-8') : '';
@@ -796,13 +844,36 @@ async function migrateCredentials(
         }
       }
     } catch {
-      // Non-fatal — backup is best-effort; vault read-back verification is the primary guard
+      // git exclude is a convenience — not required for correctness
+    }
+    // Warn the user about any backup failures so they see the blast radius
+    // even when the JSON report isn't read.
+    if (backupFailures.size > 0) {
+      for (const [filePath, msg] of backupFailures) {
+        process.stderr.write(red(
+          `Backup failed for ${path.relative(targetDir, filePath)}: ${msg}. ` +
+          `Migration of this file will be skipped.\n`
+        ));
+      }
     }
   }
 
   for (let i = 0; i < total; i++) {
     const credential = matches[i];
     onProgress?.(i + 1, total, credential.envVar);
+
+    // Skip migration for any file whose backup failed — rewriting source
+    // without a restore path risks silent data loss on uncommitted files.
+    if (!options.dryRun && backupFailures.has(credential.filePath)) {
+      results.push({
+        credential,
+        stored: false,
+        replaced: false,
+        policyCreated: false,
+        error: `Skipped — backup failed: ${backupFailures.get(credential.filePath)}`,
+      });
+      continue;
+    }
 
     try {
       // Step 1: Store in Secretless vault with read-back verification

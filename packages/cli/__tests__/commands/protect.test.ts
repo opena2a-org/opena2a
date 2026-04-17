@@ -906,6 +906,88 @@ const tail = "tail";
     expect(fs.existsSync(manifestPath)).toBe(true);
   });
 
+  // Regression: CRED-004's regex allows unquoted values so it can match
+  // .env-style bare assignments, but that also admits source-code identifier
+  // lookups like `const api_key = config.credentials.apiKeyRef`. Rewriting
+  // the RHS to process.env.API_KEY would break working code.
+  it('does NOT flag unquoted dotted-identifier assignments (CRED-004 FP fix)', async () => {
+    const originalContent = 'const api_key = config.credentials.apiKeyValue_xxxxxxxxx;\n';
+    const targetFile = path.join(tempDir, 'identifier-lookup.js');
+    fs.writeFileSync(targetFile, originalContent);
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    // Source must be untouched — this is a reference, not a literal secret.
+    expect(fs.readFileSync(targetFile, 'utf-8')).toBe(originalContent);
+  });
+
+  it('still flags quoted CRED-004 values (positive control for identifier FP fix)', async () => {
+    const fakeKey = 'Z'.repeat(32);
+    const targetFile = path.join(tempDir, 'quoted-key.py');
+    fs.writeFileSync(targetFile, `api_key = "${fakeKey}"\n`);
+
+    await protect({
+      targetDir: tempDir,
+      dryRun: true,
+      ci: true,
+      format: 'json',
+      skipLiveness: true,
+    });
+
+    // Dry run: file unmodified but a finding should exist. The JSON output
+    // contains totalFound > 0 — we can't easily assert on captured stdout
+    // here so verify indirectly by running a second live scan that would
+    // rewrite the file.
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(targetFile, 'utf-8');
+    // Quoted value should be rewritten to a bare env-var reference
+    expect(after).not.toContain(fakeKey);
+    expect(after).toMatch(/os\.environ\.get\(['"]API_KEY['"]\)/);
+  });
+
+  // Regression: the pre-pass backup loop previously wrapped every copyFileSync
+  // in one try/catch with an empty handler. If backup failed mid-loop, some
+  // files were backed up and some weren't, but migration proceeded — source
+  // files got rewritten with no restore path. Now each backup is attempted
+  // independently and any failure skips migration of that file.
+  it('skips migration and preserves source when backup fails', async () => {
+    const fakeKey = 'sk-ant-api03-' + 'A'.repeat(80);
+    const originalContent = `const key = "${fakeKey}";\n`;
+    const targetFile = path.join(tempDir, 'config.ts');
+    fs.writeFileSync(targetFile, originalContent);
+
+    // Seed a file where mkdir expects a directory — this makes mkdirSync
+    // fail with EEXIST (file already exists), which is the failure path.
+    fs.mkdirSync(path.join(tempDir, '.opena2a'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.opena2a', 'backup'), 'blocker');
+
+    const exitCode = await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    // Source file must remain unchanged — no silent data loss.
+    expect(fs.readFileSync(targetFile, 'utf-8')).toBe(originalContent);
+    // Migration should report failure (non-zero exit).
+    expect(exitCode).toBe(1);
+  });
+
   it('skips test-fixtures/ and __fixtures__/ directories (regression for bug #5)', async () => {
     fs.mkdirSync(path.join(tempDir, 'test-fixtures'), { recursive: true });
     fs.mkdirSync(path.join(tempDir, '__fixtures__'), { recursive: true });

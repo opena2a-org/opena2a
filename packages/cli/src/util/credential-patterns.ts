@@ -20,8 +20,8 @@ export interface CredentialPattern {
    * describing valid trailing chars for this token type. Used by
    * expandValueToFullToken to extend a fixed-length match into the source
    * token (a 21-char AWS key in a fixture, etc.) WITHOUT overshooting into
-   * adjacent unrelated text (e.g. `AKIA1234567890123456.invalid` where `.`
-   * is not part of an AWS key).
+   * adjacent unrelated text (e.g. an AWS-style token immediately followed by
+   * a `.hostname` suffix, where `.` is not part of the key).
    *
    * If undefined, no expansion is performed — the regex match is used as-is.
    */
@@ -161,16 +161,36 @@ export const SKIP_DIRS = new Set([
 ]);
 
 /**
- * Path segments that identify the CLI's own source files.
- * These are excluded from credential scanning to prevent false positives
- * caused by the scanner's own code containing credential pattern examples
- * in comments, docstrings, and replacement logic.
+ * Absolute path of the opena2a-cli package root, resolved at module load.
+ * Used to skip the CLI's own source tree during scanning so that regex
+ * pattern examples and replacement templates don't trigger self-scan findings.
+ *
+ * Resolved by walking up from this file's __dirname looking for a package.json
+ * whose name is "opena2a-cli". Returns null if the walk fails, in which case
+ * no self-exemption is applied (false positives on dev scans are preferable
+ * to a silent substring-match bypass that skips user code sharing the path).
  */
-const SELF_SOURCE_MARKERS = [
-  // Matches the CLI source tree (both src/ and compiled dist/)
-  path.join('packages', 'cli', 'src'),
-  path.join('packages', 'cli', 'dist'),
-];
+const CLI_SELF_ROOT: string | null = (() => {
+  try {
+    let dir = __dirname;
+    const root = path.parse(dir).root;
+    while (dir && dir !== root) {
+      const pkgPath = path.join(dir, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+          if (pkg && pkg.name === 'opena2a-cli') return dir;
+        } catch {
+          // unreadable package.json — keep walking
+        }
+      }
+      dir = path.dirname(dir);
+    }
+  } catch {
+    // __dirname unavailable or fs error — fall through
+  }
+  return null;
+})();
 
 export const SKIP_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp',
@@ -192,11 +212,14 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
     return;
   }
 
-  // Skip the CLI's own source/dist directories to prevent false positives.
-  // The scanner's source code contains credential pattern examples in comments,
-  // docstrings, and replacement templates that would otherwise trigger findings.
-  for (const marker of SELF_SOURCE_MARKERS) {
-    if (dir.includes(marker)) return;
+  // Skip the CLI's own source/dist tree to prevent false positives from
+  // regex pattern examples and replacement templates. The exemption matches
+  // only when `dir` is physically inside the opena2a-cli install directory
+  // (anchored absolute-path prefix), not via substring — a substring check
+  // would silently skip any user project whose path contains "packages/cli/src".
+  if (CLI_SELF_ROOT) {
+    const abs = path.resolve(dir);
+    if (abs === CLI_SELF_ROOT || abs.startsWith(CLI_SELF_ROOT + path.sep)) return;
   }
 
   // Dot-files to scan (credential sources)
@@ -234,9 +257,9 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
  *
  * `tailChars` constrains expansion to the same character class the pattern's
  * trailing repeater allowed. Without it, expansion would consume `.` `/` `=`
- * etc. and overshoot into hostnames or URL paths (e.g.
- * `AKIA1234567890123456.amazonaws.com` would yield the whole hostname). When
- * `tailChars` is undefined, no expansion is performed.
+ * etc. and overshoot into hostnames or URL paths (e.g. an AWS-style token
+ * immediately followed by `.amazonaws.com` would yield the whole hostname).
+ * When `tailChars` is undefined, no expansion is performed.
  */
 export function expandValueToFullToken(
   line: string,

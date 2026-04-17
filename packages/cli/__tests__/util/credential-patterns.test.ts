@@ -220,4 +220,62 @@ describe('credential patterns', () => {
       expect(expandValueToFullToken('hello', 0, 'world', awsTail)).toBe('world');
     });
   });
+
+  // Regression: the walker's self-exemption used dir.includes(marker) on
+  // "packages/cli/src" and "packages/cli/dist", which silently skipped ANY
+  // user project whose path contained those substrings. The anchored fix
+  // resolves the CLI's own package root at module load and compares with
+  // path.startsWith, so user directories are scanned even when they share
+  // the path fragment.
+  describe('walkFiles self-exemption is anchored, not substring', () => {
+    // Dynamically import fs + os + path + the walkFiles function per test so
+    // we can work with temp directories outside the project root.
+    it('scans a user directory whose path contains "packages/cli/src"', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const { walkFiles } = await import('../../src/util/credential-patterns.js');
+      const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-walkfiles-'));
+      const userDir = path.join(tmpRoot, 'packages', 'cli', 'src');
+      fs.mkdirSync(userDir, { recursive: true });
+      const file = path.join(userDir, 'app.ts');
+      fs.writeFileSync(file, 'const x = 1;', 'utf-8');
+
+      const visited: string[] = [];
+      walkFiles(tmpRoot, (p: string) => { visited.push(p); });
+
+      expect(visited).toContain(file);
+
+      // cleanup
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    });
+
+    it('still skips the CLI\'s own source tree', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const { walkFiles } = await import('../../src/util/credential-patterns.js');
+      // __dirname for this compiled test file is under dist/ tests folder at
+      // runtime; walk up to find the opena2a-cli package root.
+      let dir = __dirname;
+      while (dir !== path.parse(dir).root) {
+        const pkgPath = path.join(dir, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+            if (pkg.name === 'opena2a-cli') break;
+          } catch {
+            // ignore
+          }
+        }
+        dir = path.dirname(dir);
+      }
+      const cliRoot = dir;
+      const srcDir = path.join(cliRoot, 'src');
+      if (!fs.existsSync(srcDir)) return; // running from install tree
+
+      const visited: string[] = [];
+      walkFiles(srcDir, (p: string) => { visited.push(p); });
+      expect(visited.length).toBe(0);
+    });
+  });
 });
