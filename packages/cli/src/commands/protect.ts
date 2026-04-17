@@ -176,6 +176,16 @@ export async function protect(options: ProtectOptions): Promise<number> {
       process.stdout.write(dim('protect also applies git hygiene and config signing.\n'));
     }
 
+    // Clean up any stale rollback manifest from a prior run. Leaving it would
+    // tell the user secrets are still in vault when they have already been
+    // rolled back or never existed in this state.
+    if (!options.dryRun) {
+      const staleManifest = path.join(targetDir, '.opena2a', 'protect-rollback.json');
+      if (fs.existsSync(staleManifest)) {
+        try { fs.unlinkSync(staleManifest); } catch { /* best-effort */ }
+      }
+    }
+
     // Even without credentials, apply git hygiene and config signing fixes
     const noCredFixes: AdditionalFixes = {};
     let anyFix = false;
@@ -465,38 +475,49 @@ export async function protect(options: ProtectOptions): Promise<number> {
     // Score calculation is best-effort
   }
 
-  // Write rollback manifest so users can undo vault storage
+  // Write rollback manifest so users can undo vault storage. When this run
+  // migrated zero credentials, delete any stale manifest from a prior run —
+  // leaving it in place would mislead the user into thinking secrets are
+  // still in vault when they have already been rolled back or never existed.
   let rollbackManifestPath: string | undefined;
   const vaultStored = results.filter(r => r.storageLocation === 'vault' && r.stored);
-  if (vaultStored.length > 0 && !options.dryRun) {
-    try {
-      const openaDir = path.join(targetDir, '.opena2a');
-      if (!fs.existsSync(openaDir)) fs.mkdirSync(openaDir, { recursive: true });
-      const manifestPath = path.join(openaDir, 'protect-rollback.json');
-      const backupDir = path.join(openaDir, 'backup');
-      const manifest = {
-        timestamp: new Date().toISOString(),
-        credentials: vaultStored.map(r => ({
-          envVar: r.credential.envVar,
-          filePath: r.credential.filePath,
-          line: r.credential.line,
-          storageLocation: r.storageLocation,
-        })),
-        backups: fs.existsSync(backupDir)
-          ? [...new Set(vaultStored.map(r => r.credential.filePath))].map(fp => {
-              const rel = path.relative(targetDir, fp);
-              const backupName = rel.replace(/\//g, '__');
-              const backupPath = path.join(backupDir, backupName);
-              return fs.existsSync(backupPath)
-                ? { original: rel, backup: path.relative(targetDir, backupPath) }
-                : null;
-            }).filter(Boolean)
-          : [],
-      };
-      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-      rollbackManifestPath = manifestPath;
-    } catch {
-      // Non-fatal -- rollback manifest is a convenience, not required
+  if (!options.dryRun) {
+    const openaDir = path.join(targetDir, '.opena2a');
+    const manifestPath = path.join(openaDir, 'protect-rollback.json');
+    if (vaultStored.length > 0) {
+      try {
+        if (!fs.existsSync(openaDir)) fs.mkdirSync(openaDir, { recursive: true });
+        const backupDir = path.join(openaDir, 'backup');
+        const manifest = {
+          timestamp: new Date().toISOString(),
+          credentials: vaultStored.map(r => ({
+            envVar: r.credential.envVar,
+            filePath: r.credential.filePath,
+            line: r.credential.line,
+            storageLocation: r.storageLocation,
+          })),
+          backups: fs.existsSync(backupDir)
+            ? [...new Set(vaultStored.map(r => r.credential.filePath))].map(fp => {
+                const rel = path.relative(targetDir, fp);
+                const backupName = rel.replace(/\//g, '__');
+                const backupPath = path.join(backupDir, backupName);
+                return fs.existsSync(backupPath)
+                  ? { original: rel, backup: path.relative(targetDir, backupPath) }
+                  : null;
+              }).filter(Boolean)
+            : [],
+        };
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+        rollbackManifestPath = manifestPath;
+      } catch {
+        // Non-fatal -- rollback manifest is a convenience, not required
+      }
+    } else if (fs.existsSync(manifestPath)) {
+      try {
+        fs.unlinkSync(manifestPath);
+      } catch {
+        // Non-fatal -- best-effort cleanup
+      }
     }
   }
 

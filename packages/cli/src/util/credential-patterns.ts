@@ -121,7 +121,13 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-004',
     title: 'Generic API Key in Assignment',
-    pattern: /(?:api[_-]?key|apikey|secret[_-]?key)\s*[:=]\s*['"]([A-Za-z0-9_\-/.]{20,})['"]/gi,
+    // ['"]{0,2} around the separator handles JSON-quoted keys:
+    //   .py / .js: api_key = "value"             (no quotes around key)
+    //   JSON:      "WATSONX_API_KEY": "value"    (closing key-quote then colon then opening value-quote)
+    // Vendor-prefixed env-var names like WATSONX_API_KEY contain "api_key"
+    // case-insensitively, so `api_key` in the alternation still matches the
+    // tail of the longer name.
+    pattern: /(?:api[_-]?key|apikey|secret[_-]?key)['"]{0,2}\s*[:=]\s*['"]{0,2}([A-Za-z0-9_\-/.]{20,})['"]?/gi,
     envVarPrefix: 'API_KEY',
     severity: 'medium',
     explanation: 'Generic API key found in a variable assignment. The pattern suggests a secret intended for environment variables, not source code.',

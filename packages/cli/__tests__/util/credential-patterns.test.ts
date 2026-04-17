@@ -102,6 +102,50 @@ describe('credential patterns', () => {
     });
   });
 
+  describe('CRED-004 Generic API Key (JSON-quoted-key form, bug #13)', () => {
+    const pattern = () => findPattern('CRED-004').pattern;
+
+    it('matches Python assignment without surrounding quotes on key', () => {
+      const line = 'api_key="comp_fake_key_testing_only_1234567890abcdef"';
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches JS-style apiKey property assignment', () => {
+      const line = 'apiKey: "sk-mockmockmockmockmockmockmockmock"';
+      expect(fresh(pattern()).test(line)).toBe(true);
+    });
+
+    it('matches vendor-prefixed JSON env key (regression for bug #13)', () => {
+      // Real-world MCP env block: "WATSONX_API_KEY": "ibm-api-FAKE-..."
+      // Prior regex demanded contiguous `key\s*[:=]` and missed the closing `"`
+      // of the JSON key — same shape as the CRED-005 bug fixed earlier.
+      const line = '"WATSONX_API_KEY": "ibm-api-FAKE-key-for-testing-1234567890"';
+      const match = fresh(pattern()).exec(line);
+      expect(match).not.toBeNull();
+      expect(match![1]).toBe('ibm-api-FAKE-key-for-testing-1234567890');
+    });
+
+    it('does NOT match ${VAR} placeholder values', () => {
+      const line = '"API_KEY": "${API_KEY}"';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('does NOT match process.env references', () => {
+      const line = 'const k = process.env.API_KEY;';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('does NOT match os.environ.get() with no value follow', () => {
+      const line = 'os.environ.get("API_KEY")';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+
+    it('does NOT match empty value', () => {
+      const line = 'API_KEY: ""';
+      expect(fresh(pattern()).test(line)).toBe(false);
+    });
+  });
+
   describe('CRED-005 AWS Secret Access Key (JSON-quoted format coverage, bug #11)', () => {
     const pattern = () => findPattern('CRED-005').pattern;
 

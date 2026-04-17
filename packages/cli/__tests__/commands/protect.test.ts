@@ -814,6 +814,98 @@ const tail = "tail";
     expect(after).toContain('GITHUB_TOKEN');
   });
 
+  it('bug #13: detects vendor-prefixed key in JSON env value (CRED-004 JSON-quoted-key form)', async () => {
+    // Real-world reproducer from /tmp/hma-real-world/ibm-mcp/mcp.json: protect
+    // previously printed "No hardcoded credentials detected" because CRED-004
+    // required contiguous `key\s*[:=]` and missed the closing `"` of the JSON
+    // key. Same shape as CRED-005 bug #11.
+    fs.writeFileSync(
+      path.join(tempDir, 'mcp.json'),
+      JSON.stringify({
+        mcpServers: {
+          'ibm-watsonx': {
+            command: 'npx',
+            args: ['@ibm/watsonx-mcp-server'],
+            env: {
+              WATSONX_API_KEY: 'ibm-api-FAKE-key-for-testing-1234567890',
+              WATSONX_URL: 'https://us-south.ml.cloud.ibm.com',
+            },
+          },
+        },
+      }, null, 2)
+    );
+
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+    try {
+      await protect({
+        targetDir: tempDir,
+        ci: true,
+        format: 'json',
+        skipVerify: true,
+        skipSign: true,
+        skipGit: true,
+        skipLiveness: true,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const report = JSON.parse(chunks.join(''));
+    expect(report.totalFound).toBeGreaterThanOrEqual(1);
+    const watsonx = report.results.find(
+      (r: any) => r.credential.value === 'ibm-api-FAKE-key-for-testing-1234567890'
+    );
+    expect(watsonx).toBeDefined();
+  });
+
+  it('bug #14: stale rollback manifest is removed on a no-credential run', async () => {
+    // Pre-seed a stale manifest as if a prior run had migrated credentials.
+    // This run finds none, so the manifest must be cleaned up — leaving it
+    // would tell the user secrets are still in vault when they are not.
+    const opDir = path.join(tempDir, '.opena2a');
+    fs.mkdirSync(opDir, { recursive: true });
+    const manifestPath = path.join(opDir, 'protect-rollback.json');
+    fs.writeFileSync(manifestPath, JSON.stringify({
+      timestamp: new Date().toISOString(),
+      credentials: [{ envVar: 'OLD_KEY', filePath: 'app.ts', line: 1, storageLocation: 'vault' }],
+      backups: [],
+    }));
+
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+      skipLiveness: true,
+    });
+
+    expect(fs.existsSync(manifestPath)).toBe(false);
+  });
+
+  it('bug #14: dry-run does not delete an existing rollback manifest', async () => {
+    const opDir = path.join(tempDir, '.opena2a');
+    fs.mkdirSync(opDir, { recursive: true });
+    const manifestPath = path.join(opDir, 'protect-rollback.json');
+    fs.writeFileSync(manifestPath, '{"credentials": []}');
+
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      dryRun: true,
+      skipLiveness: true,
+    });
+
+    // Dry-run guarantees no filesystem mutations, including manifest cleanup.
+    expect(fs.existsSync(manifestPath)).toBe(true);
+  });
+
   it('skips test-fixtures/ and __fixtures__/ directories (regression for bug #5)', async () => {
     fs.mkdirSync(path.join(tempDir, 'test-fixtures'), { recursive: true });
     fs.mkdirSync(path.join(tempDir, '__fixtures__'), { recursive: true });
