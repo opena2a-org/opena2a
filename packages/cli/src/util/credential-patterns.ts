@@ -80,7 +80,11 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-005',
     title: 'AWS Secret Access Key',
-    pattern: /(?:AWS_SECRET_ACCESS_KEY|aws[_-]?secret[_-]?access[_-]?key|secretAccessKey|SecretAccessKey)\s*[:=]\s*['"]?([A-Za-z0-9+\/]{40})['"]?/g,
+    // ['"]{0,2} handles all three formats:
+    //   .env:  AWS_SECRET_ACCESS_KEY=value          (no quotes around key or value)
+    //   code:  secretAccessKey = "value"            (quote on value side only)
+    //   JSON:  "AWS_SECRET_ACCESS_KEY": "value"     (closing key-quote + colon + opening value-quote)
+    pattern: /(?:AWS_SECRET_ACCESS_KEY|aws[_-]?secret[_-]?access[_-]?key|secretAccessKey|SecretAccessKey)['"]{0,2}\s*[:=]\s*['"]{0,2}([A-Za-z0-9+\/]{40})/g,
     envVarPrefix: 'AWS_SECRET_ACCESS_KEY',
     severity: 'critical',
     explanation: 'AWS Secret Access Key hardcoded in source. Combined with an Access Key ID, this grants full programmatic AWS access to all authorized services.',
@@ -89,11 +93,30 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-003',
     title: 'GitHub Token',
-    pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g,
+    // gh[psur]: p=PAT, s=server-to-server, u=user-to-server OAuth, r=refresh token
+    pattern: /gh[psur]_[A-Za-z0-9_]{36,}/g,
     envVarPrefix: 'GITHUB_TOKEN',
     severity: 'high',
     explanation: 'GitHub token hardcoded in source. Grants repository access, potentially including private repos and org resources.',
     businessImpact: 'Grants repository access. Migrate to environment variables and rotate the token.',
+  },
+  {
+    id: 'CRED-006',
+    title: 'Slack Token',
+    pattern: /xox[bpra]-[0-9A-Za-z-]{30,}/g,
+    envVarPrefix: 'SLACK_TOKEN',
+    severity: 'high',
+    explanation: 'Slack token hardcoded in source. Grants access to Slack workspaces, channels, and messages.',
+    businessImpact: 'Grants Slack workspace access. Migrate to environment variables and rotate the token.',
+  },
+  {
+    id: 'CRED-007',
+    title: 'Stripe Secret Key',
+    pattern: /sk_(?:live|test)_[A-Za-z0-9]{24,}/g,
+    envVarPrefix: 'STRIPE_SECRET_KEY',
+    severity: 'critical',
+    explanation: 'Stripe secret key hardcoded in source. Grants full access to your Stripe account including charges, refunds, and customer data.',
+    businessImpact: 'Full Stripe account access. Migrate to environment variables and rotate the key immediately.',
   },
   {
     id: 'CRED-004',
@@ -112,7 +135,7 @@ export const SKIP_DIRS = new Set([
   '.next', '.nuxt', '__pycache__', '.venv', 'venv',
   '.tox', '.mypy_cache', '.pytest_cache',
   '__tests__', 'test', 'tests', 'spec', 'specs',
-  'fixtures', 'testdata', 'test-data',
+  'fixtures', '__fixtures__', 'test-fixtures', 'testdata', 'test-data',
   'e2e',
 ]);
 
@@ -179,6 +202,27 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
   }
 }
 
+/**
+ * Expand a regex-captured credential value to the full token in source.
+ *
+ * Patterns capture expected-format prefixes (e.g. AWS access key is AKIA+16
+ * chars = exactly 20). When a real token in the file is longer, the captured
+ * value is a truncated prefix. Returning the truncated value lets dedup,
+ * vault-store, and source-replace paths drift apart — same credential can be
+ * counted twice or replaced partially.
+ *
+ * Walks forward from the match through token-safe chars (letters, digits,
+ * underscore, hyphen, plus, slash, dot, equals) until a delimiter (quote,
+ * whitespace, comma, etc).
+ */
+export function expandValueToFullToken(line: string, matchIndex: number, capturedValue: string): string {
+  const valueStart = line.indexOf(capturedValue, matchIndex);
+  if (valueStart === -1) return capturedValue;
+  const afterValue = line.slice(valueStart + capturedValue.length);
+  const extraMatch = afterValue.match(/^[A-Za-z0-9_\-+/.=]*/);
+  return capturedValue + (extraMatch ? extraMatch[0] : '');
+}
+
 // --- Quick scan (used by init) ---
 
 export function quickCredentialScan(targetDir: string): CredentialMatch[] {
@@ -201,7 +245,9 @@ export function quickCredentialScan(targetDir: string): CredentialMatch[] {
         const re = new RegExp(pattern.pattern.source, pattern.pattern.flags);
         let match: RegExpExecArray | null;
         while ((match = re.exec(line)) !== null) {
-          const value = match[1] ?? match[0];
+          // Expand to full token so dedup against other scanners (e.g.
+          // scanMcpCredentials, which uses the full env value) is consistent.
+          const value = expandValueToFullToken(line, match.index, match[1] ?? match[0]);
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;

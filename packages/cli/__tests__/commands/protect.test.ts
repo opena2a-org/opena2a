@@ -665,4 +665,175 @@ describe('protect command', () => {
     expect(report.scoreAfter).toBeDefined();
     expect(report.scoreAfter).toBeGreaterThanOrEqual(report.scoreBefore);
   });
+
+  // --- Regression tests for credential-migration bugs (2026-04-17) ---
+
+  it('bug #6: replace does not span lines when source has unbalanced quotes in template literals', async () => {
+    // Old regex `"[^"]*${escVal}[^"]*"` could greedily span across newlines,
+    // matching from a stray `"` on one line through the credential to a `"`
+    // many lines later — corrupting unrelated content. New regex uses
+    // `[^"\n]*` so matches are line-bounded.
+    const fakeKey = 'AIza' + 'X'.repeat(35);
+    const source = `const help = \`
+  Example: "first quoted fragment"
+  Paste your key: ${fakeKey}
+  Or use "second quoted fragment"
+\`;
+const tail = "tail";
+`;
+    fs.writeFileSync(path.join(tempDir, 'app.ts'), source);
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(path.join(tempDir, 'app.ts'), 'utf-8');
+    // Both quoted fragments must survive untouched.
+    expect(after).toContain('"first quoted fragment"');
+    expect(after).toContain('"second quoted fragment"');
+    expect(after).toContain('"tail"');
+    // The credential must be gone, replaced by an env var reference.
+    expect(after).not.toContain(fakeKey);
+    expect(after).toContain('GOOGLE_API_KEY');
+  });
+
+  it('bug #7 + #12: AWS key longer than 20 chars is stored byte-equal in source replacement (JSON)', async () => {
+    // DRIFT-002 regex captures AKIA+16 = 20 chars exactly. If the source
+    // has a 21-char token (test fixture, malformed key, custom key prefix),
+    // the original code replaced only the 20-char prefix — leaving a stray
+    // trailing char and storing a vault value that did not match source.
+    const realKey = 'AKIAFAKE000TESTONLY1';     // 20-char standard
+    const longKey = 'AKIAFAKE000TESTONLY11';    // 21-char (one extra)
+    fs.writeFileSync(
+      path.join(tempDir, 'config.json'),
+      JSON.stringify({ AWS_ACCESS_KEY_ID: longKey, OTHER: realKey }, null, 2)
+    );
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(path.join(tempDir, 'config.json'), 'utf-8');
+    // No fragment of the long key should remain — neither the 21-char form
+    // nor the 20-char prefix `longKey.slice(0, 20)` followed by a stray `1`.
+    expect(after).not.toContain(longKey);
+    // Stray trailing char from a partial replacement would look like `}1"`
+    // or `"}1` — verify nothing of the sort survives.
+    expect(after).not.toMatch(/[}"\s]1["}]/);
+  });
+
+  it('bug #7 + #12: scan extends captured value to the full token in source (JS)', async () => {
+    // Same as above but in a .ts file so the strip-quotes branch runs.
+    const longKey = 'AKIAFAKE000TESTONLY11'; // 21 chars
+    fs.writeFileSync(
+      path.join(tempDir, 'aws.ts'),
+      `const k = "${longKey}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(path.join(tempDir, 'aws.ts'), 'utf-8');
+    expect(after).not.toContain(longKey);
+    expect(after).not.toContain(longKey.slice(0, 20)); // not even the prefix should remain
+    expect(after).toContain('process.env.AWS_ACCESS_KEY_ID');
+  });
+
+  it('bug #8: detects Slack tokens', async () => {
+    const token = 'xoxb-1234567890-abcdefghijklmnopqrstuvwx';
+    fs.writeFileSync(
+      path.join(tempDir, 'slack.ts'),
+      `const t = "${token}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(path.join(tempDir, 'slack.ts'), 'utf-8');
+    expect(after).not.toContain(token);
+    expect(after).toContain('SLACK_TOKEN');
+  });
+
+  it('bug #9: detects Stripe secret keys', async () => {
+    const key = 'sk_live_' + 'A'.repeat(24);
+    fs.writeFileSync(
+      path.join(tempDir, 'pay.ts'),
+      `const stripe = "${key}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(path.join(tempDir, 'pay.ts'), 'utf-8');
+    expect(after).not.toContain(key);
+    expect(after).toContain('STRIPE_SECRET_KEY');
+  });
+
+  it('bug #10: detects ghu_ OAuth and ghr_ refresh GitHub tokens', async () => {
+    const oauth = 'ghu_' + 'A'.repeat(40);
+    const refresh = 'ghr_' + 'B'.repeat(40);
+    fs.writeFileSync(
+      path.join(tempDir, 'gh.ts'),
+      `const o = "${oauth}";\nconst r = "${refresh}";\n`
+    );
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    const after = fs.readFileSync(path.join(tempDir, 'gh.ts'), 'utf-8');
+    expect(after).not.toContain(oauth);
+    expect(after).not.toContain(refresh);
+    expect(after).toContain('GITHUB_TOKEN');
+  });
+
+  it('skips test-fixtures/ and __fixtures__/ directories (regression for bug #5)', async () => {
+    fs.mkdirSync(path.join(tempDir, 'test-fixtures'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, '__fixtures__'), { recursive: true });
+    const fakeKey = 'AIza' + 'Z'.repeat(35);
+    const fixtureContent = `const k = "${fakeKey}";\n`;
+    fs.writeFileSync(path.join(tempDir, 'test-fixtures', 'cred.ts'), fixtureContent);
+    fs.writeFileSync(path.join(tempDir, '__fixtures__', 'cred.ts'), fixtureContent);
+
+    await protect({
+      targetDir: tempDir,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    // Fixture files must remain untouched — scanner must skip these dirs.
+    const fixA = fs.readFileSync(path.join(tempDir, 'test-fixtures', 'cred.ts'), 'utf-8');
+    const fixB = fs.readFileSync(path.join(tempDir, '__fixtures__', 'cred.ts'), 'utf-8');
+    expect(fixA).toBe(fixtureContent);
+    expect(fixB).toBe(fixtureContent);
+  });
 });

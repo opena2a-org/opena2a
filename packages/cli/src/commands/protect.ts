@@ -62,6 +62,10 @@ interface ProtectReport {
   scoreBefore?: number;
   /** Security score after fixes */
   scoreAfter?: number;
+  /** Path to rollback manifest written after migration */
+  rollbackManifestPath?: string;
+  /** Env vars stored in vault (for rollback commands) */
+  vaultStoredEnvVars?: string[];
 }
 
 interface AdditionalFixes {
@@ -101,6 +105,7 @@ import {
   SKIP_DIRS,
   SKIP_EXTENSIONS,
   walkFiles,
+  expandValueToFullToken,
   type CredentialPattern,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
@@ -359,11 +364,15 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
   // Phase 2: Migrate credentials
   if (!isJson) {
-    spinner.update('Migrating credentials to Secretless vault...');
+    spinner.update(`Migrating credentials to Secretless vault...`);
     spinner.start();
   }
 
-  const results = await migrateCredentials(matches, targetDir, options);
+  const onProgress = isJson ? undefined : (current: number, total: number, envVar: string) => {
+    spinner.update(`[${current}/${total}] Storing ${envVar}...`);
+  };
+
+  const results = await migrateCredentials(matches, targetDir, options, onProgress);
   if (!isJson) spinner.stop();
 
   const migrated = results.filter(r => r.stored && r.replaced).length;
@@ -456,6 +465,41 @@ export async function protect(options: ProtectOptions): Promise<number> {
     // Score calculation is best-effort
   }
 
+  // Write rollback manifest so users can undo vault storage
+  let rollbackManifestPath: string | undefined;
+  const vaultStored = results.filter(r => r.storageLocation === 'vault' && r.stored);
+  if (vaultStored.length > 0 && !options.dryRun) {
+    try {
+      const openaDir = path.join(targetDir, '.opena2a');
+      if (!fs.existsSync(openaDir)) fs.mkdirSync(openaDir, { recursive: true });
+      const manifestPath = path.join(openaDir, 'protect-rollback.json');
+      const backupDir = path.join(openaDir, 'backup');
+      const manifest = {
+        timestamp: new Date().toISOString(),
+        credentials: vaultStored.map(r => ({
+          envVar: r.credential.envVar,
+          filePath: r.credential.filePath,
+          line: r.credential.line,
+          storageLocation: r.storageLocation,
+        })),
+        backups: fs.existsSync(backupDir)
+          ? [...new Set(vaultStored.map(r => r.credential.filePath))].map(fp => {
+              const rel = path.relative(targetDir, fp);
+              const backupName = rel.replace(/\//g, '__');
+              const backupPath = path.join(backupDir, backupName);
+              return fs.existsSync(backupPath)
+                ? { original: rel, backup: path.relative(targetDir, backupPath) }
+                : null;
+            }).filter(Boolean)
+          : [],
+      };
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+      rollbackManifestPath = manifestPath;
+    } catch {
+      // Non-fatal -- rollback manifest is a convenience, not required
+    }
+  }
+
   // Verification re-scan
   let verificationPassed = true;
   if (!options.skipVerify && migrated > 0) {
@@ -514,6 +558,8 @@ export async function protect(options: ProtectOptions): Promise<number> {
     ...(hasAdditionalFixes ? { additionalFixes } : {}),
     ...(scoreBefore !== undefined ? { scoreBefore } : {}),
     ...(scoreAfter !== undefined ? { scoreAfter } : {}),
+    ...(rollbackManifestPath ? { rollbackManifestPath } : {}),
+    ...(vaultStored.length > 0 ? { vaultStoredEnvVars: vaultStored.map(r => r.credential.envVar) } : {}),
   };
 
   if (options.format === 'json') {
@@ -647,10 +693,16 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
           // Skip if it looks like an env var reference already
           if (isEnvVarReference(line, match.index)) continue;
 
+          // Expand captured value to the full token in source. Patterns capture
+          // expected-format prefixes (e.g. AKIA+16 = 20 chars), but actual tokens
+          // in source may be longer (test fixtures, non-standard keys). Vault
+          // value MUST equal source value exactly, or the app breaks at runtime.
+          const fullValue = expandValueToFullToken(line, match.index, value);
+
           const envVar = deriveEnvVarName(pattern, filePath, matches);
 
           matches.push({
-            value,
+            value: fullValue,
             filePath,
             line: i + 1,
             findingId: pattern.id,
@@ -695,16 +747,45 @@ function deriveEnvVarName(
 async function migrateCredentials(
   matches: CredentialMatch[],
   targetDir: string,
-  options: ProtectOptions
+  options: ProtectOptions,
+  onProgress?: (current: number, total: number, envVar: string) => void
 ): Promise<MigrationResult[]> {
   const results: MigrationResult[] = [];
+  const total = matches.length;
 
-  for (const credential of matches) {
+  // Pre-pass: back up every file we're about to modify so rollback works even
+  // if the files have never been committed (git checkout would fail silently).
+  const backupDir = path.join(targetDir, '.opena2a', 'backup');
+  const filesToModify = [...new Set(matches.map(m => m.filePath))];
+  if (!options.dryRun) {
     try {
-      // Step 1: Store in Secretless vault
+      fs.mkdirSync(backupDir, { recursive: true });
+      for (const filePath of filesToModify) {
+        const rel = path.relative(targetDir, filePath).replace(/\//g, '__');
+        fs.copyFileSync(filePath, path.join(backupDir, rel));
+      }
+      // Keep backup dir out of git
+      const excludePath = path.join(targetDir, '.git', 'info', 'exclude');
+      if (fs.existsSync(path.join(targetDir, '.git'))) {
+        const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf-8') : '';
+        if (!existing.includes('.opena2a/backup')) {
+          fs.appendFileSync(excludePath, '\n.opena2a/backup/\n');
+        }
+      }
+    } catch {
+      // Non-fatal — backup is best-effort; vault read-back verification is the primary guard
+    }
+  }
+
+  for (let i = 0; i < total; i++) {
+    const credential = matches[i];
+    onProgress?.(i + 1, total, credential.envVar);
+
+    try {
+      // Step 1: Store in Secretless vault with read-back verification
       const vaultResult = await storeInVault(credential);
 
-      // Step 2: Replace in source file (only if stored somewhere)
+      // Step 2: Replace in source file (only if stored and verified)
       const replaced = vaultResult.stored ? replaceInSource(credential) : false;
 
       // Step 3: Create broker policy
@@ -779,6 +860,13 @@ async function storeInVault(credential: CredentialMatch): Promise<{ stored: bool
     const { SecretStore } = mod;
     const store = new SecretStore();
     await store.setSecret(credential.envVar, credential.value);
+
+    // Read back to verify the value actually landed before we wipe source
+    const verified = await store.getSecret(credential.envVar);
+    if (!verified) {
+      throw new Error(`Read-back verification failed: ${credential.envVar} was written but could not be retrieved from vault`);
+    }
+
     return { stored: true, location: 'vault' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -881,8 +969,10 @@ function replaceInSource(credential: CredentialMatch): boolean {
     // where the matched credential is a substring of the quoted content
     // (e.g., regex matches 20-char AWS key but string has trailing chars).
     const escVal = credential.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const dblQuoteRegex = new RegExp(`"[^"]*${escVal}[^"]*"`);
-    const sglQuoteRegex = new RegExp(`'[^']*${escVal}[^']*'`);
+    // [^"\n] and [^'\n]: never cross a newline — prevents spanning multiple
+    // lines and matching unrelated quote-delimited tokens in the same file.
+    const dblQuoteRegex = new RegExp(`"[^"\n]*${escVal}[^"\n]*"`);
+    const sglQuoteRegex = new RegExp(`'[^'\n]*${escVal}[^'\n]*'`);
 
     const dblMatch = content.match(dblQuoteRegex);
     const sglMatch = content.match(sglQuoteRegex);
@@ -896,8 +986,27 @@ function replaceInSource(credential: CredentialMatch): boolean {
       newContent = content.replace(credential.value, replacement);
     }
   } else {
-    // For config files (YAML, JSON, .env, etc.), replace value inside quotes
-    newContent = content.replace(credential.value, replacement);
+    // For config files (JSON, YAML, .env, etc.): the matched value may be a
+    // substring of the full token (e.g. DRIFT-002 captures 20 chars but the
+    // file has 21). Use a quote-aware regex so the full token is replaced,
+    // not just the captured substring.
+    const escVal = credential.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const dblQuoteRegex = new RegExp(`"[^"\n]*${escVal}[^"\n]*"`);
+    const sglQuoteRegex = new RegExp(`'[^'\n]*${escVal}[^'\n]*'`);
+    const dblMatch = content.match(dblQuoteRegex);
+    const sglMatch = content.match(sglQuoteRegex);
+
+    if (dblMatch) {
+      // Keep surrounding quotes — config files need "value" not bare value
+      newContent = content.replace(dblMatch[0], `"${replacement}"`);
+    } else if (sglMatch) {
+      newContent = content.replace(sglMatch[0], `'${replacement}'`);
+    } else {
+      // Unquoted (e.g. .env bare value): match value plus any trailing
+      // non-delimiter chars so partial-match tokens are fully replaced.
+      const bareTokenRegex = new RegExp(`${escVal}[^"'\\s\\n]*`);
+      newContent = content.replace(bareTokenRegex, replacement);
+    }
   }
 
   if (newContent === content) return false; // nothing changed
@@ -1231,9 +1340,30 @@ function printReport(report: ProtectReport): void {
     process.stdout.write('  1. Review changes: ' + dim('git diff') + '\n');
     process.stdout.write('  2. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
     process.stdout.write('  3. Re-assess posture: ' + dim('opena2a init') + '\n');
-    process.stdout.write('\n' + dim('Rollback:') + '\n');
+    process.stdout.write('\n' + dim('Rollback (restores credentials to source AND removes from vault):') + '\n');
     if (report.migrated > 0) {
-      process.stdout.write(dim('  git checkout -- <files>    Restore original files (credentials re-appear in source)') + '\n');
+      // Show backup restore commands — works even without git history
+      const manifest = report.rollbackManifestPath
+        ? (() => { try { return JSON.parse(fs.readFileSync(report.rollbackManifestPath, 'utf-8')); } catch { return null; } })()
+        : null;
+      const backups: Array<{ original: string; backup: string }> = manifest?.backups ?? [];
+      if (backups.length > 0) {
+        process.stdout.write(dim('  -- restore source files --') + '\n');
+        for (const b of backups) {
+          process.stdout.write(dim(`  cp ${b.backup} ${b.original}`) + '\n');
+        }
+      } else {
+        process.stdout.write(dim('  git checkout -- <files>            Restore original files') + '\n');
+      }
+    }
+    if (report.vaultStoredEnvVars && report.vaultStoredEnvVars.length > 0) {
+      process.stdout.write(dim('  -- remove from vault --') + '\n');
+      for (const envVar of report.vaultStoredEnvVars) {
+        process.stdout.write(dim(`  npx secretless-ai secret rm ${envVar}`) + '\n');
+      }
+    }
+    if (report.rollbackManifestPath) {
+      process.stdout.write(dim(`  Manifest: ${path.relative(report.targetDir, report.rollbackManifestPath)}`) + '\n');
     }
     if (af?.configsSigned) {
       process.stdout.write(dim('  rm .opena2a/guard/signatures.json   Remove config signatures') + '\n');
