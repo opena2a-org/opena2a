@@ -2,6 +2,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { baselines } from '../../src/commands/baselines.js';
 import type { BaselinesOptions } from '../../src/commands/baselines.js';
 
+// Isolate from the developer's real ~/.opena2a/config.json. checkOptIn does
+// `await import('@opena2a/shared')` and reads loadUserConfig().contribute.enabled
+// — without this mock the suite passes only on machines where contribute is off.
+// Default to enabled=false so the "not enabled" test path runs deterministically.
+// The other tests in this file tolerate either exit code, so a single shared
+// default is enough.
+vi.mock('@opena2a/shared', () => ({
+  default: {
+    loadUserConfig: () => ({
+      contribute: { enabled: false },
+      registry: { url: 'https://test-registry.example.com' },
+    }),
+  },
+  loadUserConfig: () => ({
+    contribute: { enabled: false },
+    registry: { url: 'https://test-registry.example.com' },
+  }),
+}));
+
 // Mock global fetch
 const mockFetch = vi.fn();
 
@@ -55,8 +74,6 @@ function captureStderr(fn: () => Promise<number>): Promise<{ exitCode: number; s
 
 describe('baselines', () => {
   it('returns 1 when contribute is not enabled', async () => {
-    // By default, @opena2a/shared will either not be loadable or return disabled
-    // The dynamic import of @opena2a/shared may fail, which means checkOptIn returns false
     const options: BaselinesOptions = {
       packageName: 'hackmyagent',
       ci: true,
