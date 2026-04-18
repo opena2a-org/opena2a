@@ -1,0 +1,31 @@
+{
+  "name": "@opena2a/ai-classifier",
+  "version": "0.1.0",
+  "description": "Tier-based AI package classification (native / adjacent / unrelated) for OpenA2A trust tooling",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/opena2a.git",
+    "directory": "packages/ai-classifier"
+  },
+  "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/ai-classifier",
+  "license": "Apache-2.0"
+}
