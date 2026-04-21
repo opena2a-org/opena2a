@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/shared",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared types, config schema, and utilities for the OpenA2A platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
