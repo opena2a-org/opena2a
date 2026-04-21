@@ -56,14 +56,24 @@ jobs:
 
       - name: Verify provenance attached
         run: |
-          sleep 15
+          verify_attestations() {
+            local pkg="$1"
+            local deadline=$((SECONDS + 300))
+            local attestations=""
+            while [ $SECONDS -lt $deadline ]; do
+              attestations=$(npm view "$pkg" dist.attestations --json 2>&1 || true)
+              if [ -n "$attestations" ] && [ "$attestations" != "null" ] && [ "$attestations" != "{}" ]; then
+                echo "Provenance verified for $pkg"
+                return 0
+              fi
+              echo "Attestations for $pkg not yet visible, retrying in 15s... (elapsed ${SECONDS}s)"
+              sleep 15
+            done
+            echo "::error::Provenance attestations missing from npm for $pkg after 5 minutes"
+            return 1
+          }
           for pkg in opena2a-cli @opena2a/shared @opena2a/cli-ui @opena2a/contribute; do
-            attestations=$(npm view "$pkg" dist.attestations --json 2>/dev/null || echo "")
-            if [ -z "$attestations" ] || [ "$attestations" = "null" ]; then
-              echo "::error::Provenance attestations missing from npm for $pkg"
-              exit 1
-            fi
-            echo "Provenance verified for $pkg"
+            verify_attestations "$pkg" || exit 1
           done
 
       - name: Create GitHub Release
