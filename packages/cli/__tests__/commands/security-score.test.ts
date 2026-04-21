@@ -95,14 +95,33 @@ describe('calculateSecurityScore', () => {
       [
         { label: '.gitignore', status: 'warn' as const, detail: 'missing' },
         { label: '.env protection', status: 'warn' as const, detail: 'NOT in .gitignore' },
-        { label: 'Lock file', status: 'pass' as const, detail: 'package-lock.json' },
+        { label: 'Lock file', status: 'warn' as const, detail: 'none found' },
         { label: 'Security config', status: 'info' as const, detail: 'none' },
       ],
     );
     expect(breakdown.credentials.detail).toContain('critical');
     expect(breakdown.credentials.detail).toContain('high');
     expect(breakdown.environment.detail).toContain('.env unprotected');
-    expect(breakdown.configuration.detail).toContain('no .gitignore');
+    expect(breakdown.configuration.detail).toContain('no lock file');
+  });
+
+  it('missing .gitignore does not deduct (HMA covers this at LOW, 0.8.24)', () => {
+    const withGitignore = [
+      { label: 'Credential scan', status: 'pass' as const, detail: 'no findings' },
+      { label: '.gitignore', status: 'pass' as const, detail: 'present' },
+      { label: '.env protection', status: 'pass' as const, detail: 'in .gitignore' },
+      { label: 'Lock file', status: 'pass' as const, detail: 'package-lock.json' },
+      { label: 'Security config', status: 'pass' as const, detail: '.opena2a.yaml' },
+    ];
+    const withoutGitignore = [
+      ...withGitignore.filter(c => c.label !== '.gitignore' && c.label !== '.env protection'),
+      { label: '.gitignore', status: 'warn' as const, detail: 'missing' },
+      { label: '.env protection', status: 'pass' as const, detail: 'in .gitignore' },
+    ];
+    const a = calculateSecurityScore({}, withGitignore);
+    const b = calculateSecurityScore({}, withoutGitignore);
+    expect(b.breakdown.configuration.deduction).toBe(a.breakdown.configuration.deduction);
+    expect(b.breakdown.configuration.detail).not.toContain('.gitignore');
   });
 
   it('includes MCP high-risk tools in environment deduction (+5)', () => {

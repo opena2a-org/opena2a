@@ -7,6 +7,14 @@
 - `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
 - Docker adapter configurable port mapping for `train` command (full DVAA port range)
 
+## 0.8.24
+
+### Bug Fixes
+- Scoring: removed redundant 8-point deduction for missing `.gitignore` in the configuration category. HackMyAgent already covers this at LOW severity; the overlay was double-counting and caused `opena2a scan` to disagree with `hackmyagent secure` on the same target (95 MEDIUM vs 98 LOW). Users will see the same score climb from 95 to 98 on the reference fixture. The `.gitignore` hygiene check itself still reports `warn` when missing, so the item remains visible in the checks list.
+
+### Notes
+- First opena2a-cli release published via tag-triggered GitHub Actions workflow with npm provenance attestations (SLSA). Verify: `npm view opena2a-cli dist.attestations --json`.
+
 ## 0.8.23
 
 ### Bug Fixes

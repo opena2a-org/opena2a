@@ -89,9 +89,10 @@ export function calculateSecurityScore(
   const envDetail = envDetails.length > 0 ? envDetails.join(', ') : 'clean';
 
   // --- Configuration category (cap at -15, bonus up to +5) ---
+  // .gitignore deduction removed in 0.8.24: HMA already covers this at LOW
+  // severity. Double-counting caused opena2a scan to disagree with hackmyagent
+  // secure (98 LOW vs 95 MEDIUM) on the same target.
   let configDeduction = 0;
-  const gitignoreCheck = checks.find(c => c.label === '.gitignore');
-  if (gitignoreCheck?.status !== 'pass') configDeduction += 8;
 
   const lockCheck = checks.find(c => c.label === 'Lock file');
   if (lockCheck?.status !== 'pass') configDeduction += 4;
@@ -106,7 +107,6 @@ export function calculateSecurityScore(
   configDeduction = Math.min(configDeduction, 15); // category cap
 
   const configDetails: string[] = [];
-  if (gitignoreCheck?.status !== 'pass') configDetails.push('no .gitignore');
   if (lockCheck?.status !== 'pass') configDetails.push('no lock file');
   if (secConfig?.status !== 'pass') configDetails.push('no security config');
   if (configBonus > 0) configDetails.push('security config present');
