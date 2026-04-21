@@ -44,6 +44,28 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Publish cli-ui package
+        run: npm publish --workspace=packages/cli-ui --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish contribute package
+        run: npm publish --workspace=packages/contribute --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify provenance attached
+        run: |
+          sleep 15
+          for pkg in opena2a-cli @opena2a/shared @opena2a/cli-ui @opena2a/contribute; do
+            attestations=$(npm view "$pkg" dist.attestations --json 2>/dev/null || echo "")
+            if [ -z "$attestations" ] || [ "$attestations" = "null" ]; then
+              echo "::error::Provenance attestations missing from npm for $pkg"
+              exit 1
+            fi
+            echo "Provenance verified for $pkg"
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
