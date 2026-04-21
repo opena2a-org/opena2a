@@ -34,27 +34,38 @@ jobs:
 
       - run: npm run test
 
-      - name: Publish CLI package
-        run: npm publish --workspace=packages/cli --provenance --access public
+      - name: Publish packages (idempotent — skips if version already on npm)
+        id: publish
+        run: |
+          set -e
+          : > /tmp/published.txt
+          : > /tmp/skipped.txt
+          publish_if_new() {
+            local ws="$1"
+            local pkg="$2"
+            local ver
+            ver=$(node -p "require('./$ws/package.json').version")
+            if npm view "$pkg@$ver" version >/dev/null 2>&1; then
+              echo "::notice::$pkg@$ver already on npm — skipping publish"
+              echo "$pkg" >> /tmp/skipped.txt
+            else
+              echo "Publishing $pkg@$ver with provenance..."
+              npm publish --workspace="$ws" --provenance --access public
+              echo "$pkg" >> /tmp/published.txt
+            fi
+          }
+          publish_if_new packages/cli opena2a-cli
+          publish_if_new packages/shared @opena2a/shared
+          publish_if_new packages/cli-ui @opena2a/cli-ui
+          publish_if_new packages/contribute @opena2a/contribute
+          echo "=== Published this run ==="
+          cat /tmp/published.txt
+          echo "=== Skipped (version already on npm) ==="
+          cat /tmp/skipped.txt
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish shared package
-        run: npm publish --workspace=packages/shared --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish cli-ui package
-        run: npm publish --workspace=packages/cli-ui --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish contribute package
-        run: npm publish --workspace=packages/contribute --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Verify provenance attached
+      - name: Verify provenance on newly-published packages
         run: |
           verify_attestations() {
             local pkg="$1"
@@ -72,9 +83,13 @@ jobs:
             echo "::error::Provenance attestations missing from npm for $pkg after 5 minutes"
             return 1
           }
-          for pkg in opena2a-cli @opena2a/shared @opena2a/cli-ui @opena2a/contribute; do
+          if [ ! -s /tmp/published.txt ]; then
+            echo "No packages published this run — nothing to verify."
+            exit 0
+          fi
+          while IFS= read -r pkg; do
             verify_attestations "$pkg" || exit 1
-          done
+          done < /tmp/published.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
