@@ -14,6 +14,7 @@
 
 import { dim, yellow, cyan } from './colors.js';
 import { validateRegistryUrl } from './validate-registry-url.js';
+import { getVersion } from './version.js';
 
 // --- Types ---
 
@@ -169,54 +170,47 @@ export async function submitScanReport(
   try {
     validateRegistryUrl(registryUrl);
 
-    // Map ScanReport to unified publish format
-    const unifiedPayload = {
-      name: report.packageName,
-      type: report.packageType,
-      score: report.overallScore,
-      maxScore: 100,
-      tool: report.scannerName || 'opena2a-cli',
-      toolVersion: report.scannerVersion || '0.1.0',
-      findings: report.findings.map(f => ({
-        checkId: f.findingId,
-        name: f.title,
-        severity: f.severity,
-        passed: false, // ScanReport only includes failed findings
-        message: f.description || f.title,
-        category: f.category,
-        attackClass: f.attackClass,
-      })),
-      scanTimestamp: new Date().toISOString(),
-      verdict: report.verdict === 'fail' ? 'fail' : report.verdict === 'warnings' ? 'warn' : 'pass',
-    };
-
-    const url = `${registryUrl}/api/v1/trust/publish`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(unifiedPayload),
-      signal: AbortSignal.timeout(10_000),
+    const { RegistryClient, RegistryApiError } = await import('@opena2a/registry-client');
+    const client = new RegistryClient({
+      baseUrl: registryUrl,
+      userAgent: `opena2a-cli/${getVersion()}`,
+      cache: false,
     });
 
-    if (response.ok) {
-      const result = await response.json() as Record<string, unknown>;
+    try {
+      const result = await client.publishScan({
+        name: report.packageName,
+        type: report.packageType,
+        score: report.overallScore,
+        maxScore: 100,
+        tool: report.scannerName || 'opena2a-cli',
+        toolVersion: report.scannerVersion || '0.1.0',
+        findings: report.findings.map(f => ({
+          checkId: f.findingId,
+          name: f.title,
+          severity: f.severity,
+          passed: false, // ScanReport only includes failed findings
+          message: f.description || f.title,
+          category: f.category,
+          attackClass: f.attackClass,
+        })),
+        scanTimestamp: new Date().toISOString(),
+        verdict: report.verdict === 'fail' ? 'fail' : report.verdict === 'warnings' ? 'warn' : 'pass',
+      });
+
       if (verbose && result.publishId) {
-        process.stderr.write(dim(`Published to registry (${(result.publishId as string).slice(0, 8)})\n`));
+        process.stderr.write(dim(`Published to registry (${result.publishId.slice(0, 8)})\n`));
       } else if (verbose) {
         process.stderr.write(dim('Scan report shared with OpenA2A community.\n'));
       }
       return true;
+    } catch (err) {
+      // Fall back to legacy endpoint if unified endpoint returned 404
+      if (err instanceof RegistryApiError && err.statusCode === 404) {
+        return submitLegacyScanReport(registryUrl, report, verbose);
+      }
+      throw err;
     }
-
-    // Fall back to legacy endpoint on 404
-    if (response.status === 404) {
-      return submitLegacyScanReport(registryUrl, report, verbose);
-    }
-
-    return false;
   } catch {
     // Network errors are non-critical
     return false;

@@ -3,6 +3,9 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { bold, dim, green, yellow, red, cyan, gray } from '../util/colors.js';
+import { getVersion } from '../util/version.js';
+
+const DEFAULT_REGISTRY_BASE = 'https://api.oa2a.org';
 
 interface McpCommandOptions {
   subcommand: string;
@@ -150,12 +153,13 @@ function computeConfigHash(entry: McpServerEntry): string {
 
 async function fetchTrustScore(serverName: string): Promise<number | null> {
   try {
-    const resp = await fetch(
-      `https://api.oa2a.org/api/v1/trust/query?name=${encodeURIComponent(serverName)}&type=mcp_server`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    if (!resp.ok) return null;
-    const data = await resp.json() as any;
+    const { RegistryClient } = await import('@opena2a/registry-client');
+    const client = new RegistryClient({
+      baseUrl: DEFAULT_REGISTRY_BASE,
+      userAgent: `opena2a-cli/${getVersion()}`,
+      timeoutMs: 5000,
+    });
+    const data = await client.checkTrust(serverName, 'mcp_server');
     // trustScore is 0-1 from the registry, convert to 0-100
     if (typeof data.trustScore === 'number') {
       return Math.round(data.trustScore * 100);

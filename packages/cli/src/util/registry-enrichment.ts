@@ -6,6 +6,7 @@
  * community scan counts, and verification status from the public registry.
  */
 
+import { getVersion } from './version.js';
 import { validateRegistryUrl } from './validate-registry-url.js';
 
 // ---------------------------------------------------------------------------
@@ -21,24 +22,6 @@ export interface RegistryEnrichment {
   communityScans: number;
   verified: boolean;
   scanStatus: string;
-}
-
-export interface RegistryBatchResult {
-  packageId: string;
-  name: string;
-  packageType: string;
-  trustLevel: number;
-  trustScore: number;
-  verdict: string;
-  confidence: number;
-  scanStatus: string;
-  communityScans: number;
-}
-
-export interface RegistryBatchResponse {
-  queriedAt: string;
-  results: RegistryBatchResult[];
-  total: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,36 +58,21 @@ export async function enrichFromRegistry(
 
   const baseUrl = (registryBaseUrl || DEFAULT_REGISTRY_BASE).replace(/\/+$/, '');
   validateRegistryUrl(baseUrl);
-  const batchUrl = `${baseUrl}/api/v1/trust/batch`;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REGISTRY_TIMEOUT_MS);
-
-    const body = JSON.stringify({
-      packages: assets.map((a) => ({ name: a.name, type: a.type })),
+    const { RegistryClient } = await import('@opena2a/registry-client');
+    const client = new RegistryClient({
+      baseUrl,
+      userAgent: `opena2a-cli/${getVersion()}`,
+      timeoutMs: REGISTRY_TIMEOUT_MS,
     });
 
-    const response = await fetch(batchUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: controller.signal,
-    });
+    const response = await client.batchQuery(
+      assets.map((a) => ({ name: a.name, type: a.type })),
+    );
 
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return enrichments;
-    }
-
-    const data = (await response.json()) as RegistryBatchResponse;
-
-    if (!data.results || !Array.isArray(data.results)) {
-      return enrichments;
-    }
-
-    for (const result of data.results) {
+    for (const result of response.results) {
+      if (!result.packageType) continue;
       const key = `${result.name}:${result.packageType}`;
       enrichments.set(key, {
         name: result.name,
@@ -112,9 +80,9 @@ export async function enrichFromRegistry(
         trustScore: result.trustScore,
         trustLevel: result.trustLevel,
         verdict: result.verdict,
-        communityScans: result.communityScans,
+        communityScans: result.communityScans ?? 0,
         verified: result.verdict === 'verified' || result.trustLevel >= 4,
-        scanStatus: result.scanStatus,
+        scanStatus: result.scanStatus ?? '',
       });
     }
   } catch {
