@@ -345,4 +345,97 @@ describe('aggregateFindings', () => {
     expect(result).toHaveLength(1);
     expect(result[0].source).toBe('credential-scan');
   });
+
+  it('prefers HMA over credData when HMA credential finding has file but no line', () => {
+    // Real HMA output often omits line numbers for credential findings (e.g.
+    // AST-CRED-001 on config.ts has file but line=null). The dedupe must
+    // fall back to file-only comparison for credential-category HMA checks
+    // so we don't double-count the same credential.
+    const credData: CredentialPhaseData = {
+      matches: [makeCredMatch({ filePath: '/tmp/target/config.ts', line: 10 })],
+      totalFindings: 1,
+      bySeverity: { critical: 1 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+    const hmaData = makeHmaData([
+      makeHmaFinding({
+        checkId: 'AST-CRED-001',
+        file: 'config.ts',
+        line: undefined,
+        severity: 'high',
+      }),
+    ]);
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', hmaData);
+
+    // Only 1 finding: HMA wins, credData is dropped.
+    expect(result).toHaveLength(1);
+    expect(result[0].source).toBe('hma');
+    // Severity upgraded from HMA's "high" to credData's "critical".
+    expect(result[0].severity).toBe('critical');
+  });
+
+  it('non-credential HMA finding on a file does NOT mask a credential in that file', () => {
+    // A HIGH GIT-002 on .gitignore must not suppress a CRITICAL CRED-001
+    // that quickCredentialScan found in the same file — the dedupe is
+    // scoped to credential-category HMA checks only.
+    const credData: CredentialPhaseData = {
+      matches: [makeCredMatch({
+        findingId: 'CRED-001',
+        filePath: '/tmp/target/.gitignore',
+        line: 3,
+      })],
+      totalFindings: 1,
+      bySeverity: { critical: 1 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+    const hmaData = makeHmaData([
+      makeHmaFinding({
+        checkId: 'GIT-002',
+        file: '.gitignore',
+        line: undefined,
+        severity: 'high',
+      }),
+    ]);
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', hmaData);
+
+    // 2 findings: HMA's GIT-002 and credData's CRED-001 both kept.
+    expect(result).toHaveLength(2);
+    const sources = result.map(r => r.source).sort();
+    expect(sources).toEqual(['credential-scan', 'hma']);
+  });
+
+  it('upgrades HMA severity to max(hma, cred) when dedupe fires', () => {
+    // credData sees CRITICAL (sk-ant-*), HMA returns HIGH. Dedupe must
+    // preserve the higher severity so the Observations block and verdict
+    // reflect the worst case, not HMA's narrower classification.
+    const credData: CredentialPhaseData = {
+      matches: [makeCredMatch({
+        filePath: '/tmp/target/config.ts',
+        line: 10,
+        severity: 'critical',
+      })],
+      totalFindings: 1,
+      bySeverity: { critical: 1 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+    const hmaData = makeHmaData([
+      makeHmaFinding({
+        checkId: 'SEM-CRED-002',
+        file: 'config.ts',
+        line: 10,
+        severity: 'high',
+      }),
+    ]);
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', hmaData);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].source).toBe('hma');
+    expect(result[0].severity).toBe('critical');
+  });
 });

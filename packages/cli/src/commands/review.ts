@@ -991,6 +991,30 @@ function computeRecoverySummary(
 
 // --- Findings Aggregation ---
 
+/** HMA check-ID prefixes that indicate a credential-related finding.
+ *  Used to scope the prefer-HMA dedupe: only credential HMA findings
+ *  suppress credential-scan matches. Non-credential HMA findings on the
+ *  same file (e.g. GIT-002 on .gitignore) MUST NOT hide a credential that
+ *  quickCredentialScan found in that file. */
+const HMA_CREDENTIAL_PREFIXES = [
+  'CRED', 'AST-CRED', 'WEBCRED', 'SEM-CRED', 'AGENT-CRED',
+  'ENVLEAK', 'CLIPASS', 'DRIFT',
+];
+
+function isHmaCredentialFinding(checkId: string): boolean {
+  const id = (checkId || '').toUpperCase();
+  for (const p of HMA_CREDENTIAL_PREFIXES) {
+    if (id === p || id.startsWith(p + '-')) return true;
+  }
+  return false;
+}
+
+const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+function maxSeverity(a: string, b: string): string {
+  return (SEV_RANK[a] ?? 0) >= (SEV_RANK[b] ?? 0) ? a : b;
+}
+
 export function aggregateFindings(
   credData: CredentialPhaseData,
   shieldData: ShieldPhaseData,
@@ -1000,15 +1024,26 @@ export function aggregateFindings(
   const findings: ReviewFinding[] = [];
 
   // HMA findings first so we can dedupe credential-scan matches against them.
-  // HMA's credential detection is more comprehensive (context-gated, 200+ check
-  // IDs vs raw regex in quickCredentialScan), so we prefer HMA when both fire
-  // on the same file:line.
-  const hmaLocationKeys = new Set<string>();
+  // HMA's credential detection is context-gated across 200+ check IDs, so we
+  // prefer HMA for the credential surface. IMPORTANT: HMA often emits findings
+  // without a line number (e.g. file-level checks on .gitignore, package.json,
+  // and some credential patterns). We therefore key dedupe by BOTH `file:line`
+  // AND `file` alone, scoped to credential-category HMA findings only.
+  const hmaCredLineKeys = new Set<string>();
+  const hmaCredFileKeys = new Set<string>();
+  const hmaCredSevByKey = new Map<string, string>();
   if (hmaData && hmaData.available) {
     for (const f of hmaData.allFailedFindings) {
-      if (f.file) {
-        const key = f.line != null ? `${f.file}:${f.line}` : f.file;
-        hmaLocationKeys.add(key);
+      const cred = isHmaCredentialFinding(f.checkId);
+      if (cred && f.file) {
+        hmaCredFileKeys.add(f.file);
+        if (f.line != null) {
+          const k = `${f.file}:${f.line}`;
+          hmaCredLineKeys.add(k);
+          hmaCredSevByKey.set(k, f.severity);
+        } else {
+          hmaCredSevByKey.set(f.file, f.severity);
+        }
       }
       findings.push({
         id: f.checkId,
@@ -1023,18 +1058,35 @@ export function aggregateFindings(
     }
   }
 
-  // Credential findings — skip any that duplicate an HMA finding at the
-  // same file:line (prefer HMA).
+  // Credential findings — skip any that duplicate an HMA credential finding
+  // at the same location. When dedupe fires, upgrade the surviving HMA
+  // finding's severity to the max of the two so we don't silently narrow
+  // from credData's "critical" to HMA's "high".
   for (const m of credData.matches) {
     const rel = path.relative(targetDir, m.filePath);
-    const key = `${rel}:${m.line}`;
-    if (hmaLocationKeys.has(key)) continue;
+    const lineKey = `${rel}:${m.line}`;
+    const matchedLine = hmaCredLineKeys.has(lineKey);
+    const matchedFile = hmaCredFileKeys.has(rel);
+    if (matchedLine || matchedFile) {
+      const hmaKey = matchedLine ? lineKey : rel;
+      const prevSev = hmaCredSevByKey.get(hmaKey);
+      if (prevSev && SEV_RANK[m.severity] > SEV_RANK[prevSev]) {
+        // Upgrade the surviving HMA finding's severity.
+        for (const f of findings) {
+          if (f.source === 'hma' && (f.detail === lineKey || f.detail === rel)) {
+            f.severity = maxSeverity(f.severity, m.severity);
+          }
+        }
+        hmaCredSevByKey.set(hmaKey, maxSeverity(prevSev, m.severity));
+      }
+      continue;
+    }
     findings.push({
       id: m.findingId,
       title: m.title,
       severity: m.severity,
       source: 'credential-scan',
-      detail: key,
+      detail: lineKey,
       remediation: 'opena2a protect',
     });
   }
