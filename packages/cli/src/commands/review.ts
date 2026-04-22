@@ -173,7 +173,14 @@ export interface HmaPhaseData {
   failed: number;
   bySeverity: Record<string, number>;
   byCategory: Record<string, number>;
+  /** Top 30 findings, deduped by checkId, for the HMA tab in the HTML report.
+   *  Display-only — do NOT use for severity counts. See allFailedFindings. */
   topFindings: HmaFinding[];
+  /** Every failed HMA finding (not deduped, not capped). Used by aggregateFindings.
+   *  topFindings keeps the deduped-by-checkId + slice(0,30) list for the HMA tab
+   *  in the HTML report; this field preserves the raw set so the Observations
+   *  block and overview severity counts match `hackmyagent secure`. */
+  allFailedFindings: HmaFinding[];
 }
 
 export interface DetectPhaseData {
@@ -368,7 +375,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   );
 
   // Aggregate findings
-  const findings = aggregateFindings(credentialData, shieldData, targetDir);
+  const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData);
 
   // Action items
   const actionItems = generateActionItems(credentialData, guardData, shieldData, initData);
@@ -681,7 +688,7 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
   const emptyResult: HmaPhaseData = {
     available: false, score: 0, maxScore: 100,
     totalChecks: 0, passed: 0, failed: 0,
-    bySeverity: {}, byCategory: {}, topFindings: [],
+    bySeverity: {}, byCategory: {}, topFindings: [], allFailedFindings: [],
   };
 
   try {
@@ -764,6 +771,7 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       bySeverity,
       byCategory,
       topFindings,
+      allFailedFindings: failedFindings,
     };
   } catch {
     return emptyResult;
@@ -985,21 +993,113 @@ function computeRecoverySummary(
 
 // --- Findings Aggregation ---
 
-function aggregateFindings(
+/** HMA check-ID prefixes that indicate a credential-related finding.
+ *  Used to scope the prefer-HMA dedupe: only credential HMA findings
+ *  suppress credential-scan matches. Non-credential HMA findings on the
+ *  same file (e.g. GIT-002 on .gitignore) MUST NOT hide a credential that
+ *  quickCredentialScan found in that file. */
+const HMA_CREDENTIAL_PREFIXES = [
+  'CRED', 'AST-CRED', 'WEBCRED', 'SEM-CRED', 'AGENT-CRED',
+  'ENVLEAK', 'CLIPASS', 'DRIFT',
+];
+
+function isHmaCredentialFinding(checkId: string): boolean {
+  const id = (checkId || '').toUpperCase();
+  for (const p of HMA_CREDENTIAL_PREFIXES) {
+    if (id === p || id.startsWith(p + '-')) return true;
+  }
+  return false;
+}
+
+const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+function maxSeverity(a: string, b: string): string {
+  return (SEV_RANK[a] ?? 0) >= (SEV_RANK[b] ?? 0) ? a : b;
+}
+
+export function aggregateFindings(
   credData: CredentialPhaseData,
   shieldData: ShieldPhaseData,
   targetDir: string,
+  hmaData: HmaPhaseData | null,
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
-  // Credential findings
+  // HMA findings first so we can dedupe credential-scan matches against them.
+  // HMA's credential detection is context-gated across 200+ check IDs, so we
+  // prefer HMA for the credential surface. IMPORTANT: HMA often emits findings
+  // without a line number (e.g. file-level checks on .gitignore, package.json,
+  // and some credential patterns). We therefore key dedupe by BOTH `file:line`
+  // AND `file` alone, scoped to credential-category HMA findings only.
+  const hmaCredLineKeys = new Set<string>();
+  const hmaCredFileKeys = new Set<string>();
+  const hmaCredSevByKey = new Map<string, string>();
+  if (hmaData && hmaData.available) {
+    for (const f of hmaData.allFailedFindings) {
+      const cred = isHmaCredentialFinding(f.checkId);
+      if (cred && f.file) {
+        hmaCredFileKeys.add(f.file);
+        if (f.line != null) {
+          const k = `${f.file}:${f.line}`;
+          hmaCredLineKeys.add(k);
+          hmaCredSevByKey.set(k, f.severity);
+        } else {
+          hmaCredSevByKey.set(f.file, f.severity);
+        }
+      }
+      findings.push({
+        id: f.checkId,
+        title: f.name,
+        severity: f.severity,
+        source: 'hma',
+        detail: f.file
+          ? (f.line != null ? `${f.file}:${f.line}` : f.file)
+          : (f.message || ''),
+        remediation: f.fix || f.guidance || '',
+      });
+    }
+  }
+
+  // Credential findings — skip any that duplicate an HMA credential finding
+  // at the same location. When dedupe fires, upgrade the surviving HMA
+  // finding's severity to the max of the two so we don't silently narrow
+  // from credData's "critical" to HMA's "high".
+  // Defense in depth. credData.matches originates from walkFiles(targetDir,
+  // ...) in credential-patterns.ts and so should always be rooted inside
+  // targetDir, but if a symlink escape or upstream contract change ever
+  // leaks an out-of-scope path into the aggregation layer we drop it rather
+  // than render a misleading row in the review output. Resolve both sides
+  // and require the credential file to be inside the target tree — catches
+  // absolute paths, parent-traversal, and the Windows-drive-letter-on-Unix
+  // case that a plain rel.startsWith('..') check misses.
+  const resolvedTarget = path.resolve(targetDir);
   for (const m of credData.matches) {
+    const resolvedFile = path.resolve(m.filePath);
+    if (resolvedFile !== resolvedTarget && !resolvedFile.startsWith(resolvedTarget + path.sep)) continue;
+    const rel = path.relative(resolvedTarget, resolvedFile);
+    const lineKey = `${rel}:${m.line}`;
+    const matchedLine = hmaCredLineKeys.has(lineKey);
+    const matchedFile = hmaCredFileKeys.has(rel);
+    if (matchedLine || matchedFile) {
+      const hmaKey = matchedLine ? lineKey : rel;
+      const prevSev = hmaCredSevByKey.get(hmaKey);
+      if (prevSev && SEV_RANK[m.severity] > SEV_RANK[prevSev]) {
+        // Upgrade the surviving HMA finding's severity.
+        for (const f of findings) {
+          if (f.source === 'hma' && (f.detail === lineKey || f.detail === rel)) {
+            f.severity = maxSeverity(f.severity, m.severity);
+          }
+        }
+        hmaCredSevByKey.set(hmaKey, maxSeverity(prevSev, m.severity));
+      }
+      continue;
+    }
     findings.push({
       id: m.findingId,
       title: m.title,
       severity: m.severity,
       source: 'credential-scan',
-      detail: `${path.relative(targetDir, m.filePath)}:${m.line}`,
+      detail: lineKey,
       remediation: 'opena2a protect',
     });
   }
