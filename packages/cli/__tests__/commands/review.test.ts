@@ -166,4 +166,38 @@ describe('review', () => {
     expect(html).toContain('OpenA2A Security Review');
     expect(html).toContain('report-data');
   });
+
+  it('renders the @opena2a/cli-ui Observations block with Surfaces/Checks/Categories/Verdict labels', async () => {
+    // Smoke test for the CA-030 cli-ui wire at packages/cli/src/commands/review.ts:430.
+    // Asserts the dynamic import of @opena2a/cli-ui succeeded AND the four label
+    // strings appear between the Score summary and the Report line. A regression
+    // here means either cli-ui is missing from node_modules or the renderer was
+    // accidentally deleted from review() — both are blocking.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'obs-test', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const { exitCode, output } = await captureStdout(() => review({
+      targetDir: tempDir,
+      autoOpen: false,
+      skipHma: true,
+      ci: true,
+    }));
+
+    expect(exitCode).toBe(0);
+    // All four Observations labels must render.
+    expect(output).toContain('Surfaces');
+    expect(output).toContain('Checks');
+    expect(output).toContain('Categories');
+    expect(output).toContain('Verdict');
+    // Block appears between Score and Report.
+    const scoreIdx = output.indexOf('Score:');
+    const surfacesIdx = output.indexOf('Surfaces');
+    const reportIdx = output.indexOf('Report:');
+    expect(scoreIdx).toBeGreaterThanOrEqual(0);
+    expect(surfacesIdx).toBeGreaterThan(scoreIdx);
+    expect(reportIdx).toBeGreaterThan(surfacesIdx);
+    // cli-ui's standard Checks line shape survives the wire.
+    expect(output).toMatch(/\d+ static/);
+    expect(output).toContain('semantic (NanoMind AST)');
+  });
 });

@@ -12,6 +12,27 @@ import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { platform, tmpdir } from 'node:os';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
+
+/** Local structural subset of @opena2a/cli-ui types. Duplicated here
+ *  because this package is CJS and cli-ui is ESM; static type imports
+ *  from ESM require a resolution-mode attribute unsupported by our
+ *  toolchain. The shape matches cli-ui's CategorizableFinding + VerdictFinding
+ *  exactly so the runtime values flow through unchanged. */
+type LocalSeverity = 'critical' | 'high' | 'medium' | 'low';
+interface LocalCategorizableFinding {
+  checkId?: string;
+  name?: string;
+  category?: string;
+  passed: boolean;
+  severity: LocalSeverity;
+}
+interface LocalVerdictFinding {
+  severity: LocalSeverity;
+  name?: string;
+  checkId?: string;
+  file?: string;
+  line?: number;
+}
 import { detectProject } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
@@ -400,6 +421,68 @@ export async function review(options: ReviewOptions): Promise<number> {
     `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}` +
     `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)\n`,
   );
+
+  // ── Observations + Verdict ──────────────────────────────────────────
+  // Shared block from @opena2a/cli-ui so review/scan output stays
+  // consistent with hackmyagent secure output per [CA-030]. Dynamic
+  // import because cli-ui is ESM and this package is CJS (same pattern
+  // as @opena2a/shared / @opena2a/contribute usage elsewhere).
+  try {
+    const cliUi = await import('@opena2a/cli-ui');
+    const projectLabel = report.projectType && report.projectType !== 'unknown'
+      ? report.projectType
+      : 'project';
+    const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
+      checkId: f.id,
+      name: f.title,
+      category: f.source,
+      passed: false,
+      severity: f.severity as LocalSeverity,
+    }));
+    const verdictFindings: LocalVerdictFinding[] = findings.map(f => ({
+      severity: f.severity as LocalSeverity,
+      name: f.title,
+      checkId: f.id,
+    }));
+    const categorySummaries = cliUi.buildCategorySummaries(categorizable);
+    const verdict = cliUi.buildVerdict(
+      { critical: sevCounts.critical, high: sevCounts.high, medium: sevCounts.medium, low: sevCounts.low },
+      { kind: projectLabel },
+      verdictFindings,
+    );
+    const { lines } = cliUi.renderObservationsBlock({
+      surfaces: { kind: projectLabel },
+      checks: {
+        staticCount: phases.length,
+        semanticCount: 0,
+      },
+      categories: categorySummaries,
+      verdict,
+      verbose: !!options.verbose,
+    });
+    process.stdout.write('\n');
+    const toneColor = (tone: 'default' | 'good' | 'warning' | 'critical'): (s: string) => string => {
+      if (tone === 'good') return green;
+      if (tone === 'warning') return yellow;
+      if (tone === 'critical') return red;
+      return (s: string): string => s;
+    };
+    const LABEL_WIDTH = 12;
+    for (const line of lines) {
+      const labelPad = line.label.padEnd(LABEL_WIDTH, ' ');
+      const color = toneColor(line.tone);
+      process.stdout.write(`  ${dim(labelPad)}${color(line.value)}\n`);
+    }
+    process.stdout.write('\n');
+  } catch (err: unknown) {
+    // cli-ui import failed — non-critical, skip the Observations block.
+    // The existing Score + findings summary above still carries the result.
+    // Log in verbose mode so debugging isn't silent.
+    if (options.verbose) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(dim(`  [observations] skipped — ${msg}\n`));
+    }
+  }
 
   // Generate HTML report
   const reportPath = options.reportPath ??
