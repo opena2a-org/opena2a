@@ -54,7 +54,7 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a init` | Read-only security assessment with trust score |
 | `opena2a identity create` | Cryptographic identity for your project |
 | `opena2a harden-soul` | Generate SOUL.md governance rules |
-| `opena2a scan` | 204 security checks via HackMyAgent |
+| `opena2a scan` | 238 security checks via HackMyAgent |
 | `opena2a shield init` | Full security setup — all of the above, one command |
 
 Full command reference: [opena2a.org/docs](https://opena2a.org/docs)
@@ -67,7 +67,7 @@ Each command routes to a specialized tool, installed on first use:
 |---------|------|-------------|
 | `detect` | Shadow AI | Discover AI agents, MCP servers, AI configs |
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
-| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 204 security checks, 115 attack payloads, auto-fix |
+| `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 238 security checks, 164 attack payloads, auto-fix |
 | `scan-soul` | SOUL Scanner | 72 governance controls, 9 domains, 6 profiles |
 | `harden-skill` | Skill Hardener | Frontmatter validation, permission scoping, integrity pinning |
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
