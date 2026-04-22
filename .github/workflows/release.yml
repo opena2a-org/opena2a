@@ -10,6 +10,7 @@ on:
       - 'contribute-v*'
       - 'aim-core-v*'
       - 'ai-classifier-v*'
+      - 'registry-client-v*'
 
 permissions:
   contents: write
@@ -70,6 +71,7 @@ jobs:
           # migration from hackmyagent is signed off. Leaving commented prevents
           # aim-core 0.2.0 from auto-publishing (and failing) on the next v* tag.
           # publish_if_new packages/aim-core @opena2a/aim-core
+          publish_if_new packages/registry-client @opena2a/registry-client
           echo "=== Published this run ==="
           cat /tmp/published.txt
           echo "=== Skipped (version already on npm) ==="
