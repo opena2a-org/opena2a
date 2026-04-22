@@ -1064,14 +1064,19 @@ export function aggregateFindings(
   // at the same location. When dedupe fires, upgrade the surviving HMA
   // finding's severity to the max of the two so we don't silently narrow
   // from credData's "critical" to HMA's "high".
+  // Defense in depth. credData.matches originates from walkFiles(targetDir,
+  // ...) in credential-patterns.ts and so should always be rooted inside
+  // targetDir, but if a symlink escape or upstream contract change ever
+  // leaks an out-of-scope path into the aggregation layer we drop it rather
+  // than render a misleading row in the review output. Resolve both sides
+  // and require the credential file to be inside the target tree — catches
+  // absolute paths, parent-traversal, and the Windows-drive-letter-on-Unix
+  // case that a plain rel.startsWith('..') check misses.
+  const resolvedTarget = path.resolve(targetDir);
   for (const m of credData.matches) {
-    const rel = path.relative(targetDir, m.filePath);
-    // Defense in depth. credData.matches originates from walkFiles(targetDir,
-    // ...) in credential-patterns.ts and so should always be rooted inside
-    // targetDir, but if a symlink escape or upstream contract change ever
-    // leaks an absolute or parent-traversal path into the aggregation layer
-    // we drop it rather than render a misleading row in the review output.
-    if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
+    const resolvedFile = path.resolve(m.filePath);
+    if (resolvedFile !== resolvedTarget && !resolvedFile.startsWith(resolvedTarget + path.sep)) continue;
+    const rel = path.relative(resolvedTarget, resolvedFile);
     const lineKey = `${rel}:${m.line}`;
     const matchedLine = hmaCredLineKeys.has(lineKey);
     const matchedFile = hmaCredFileKeys.has(rel);
