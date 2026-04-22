@@ -474,9 +474,14 @@ export async function review(options: ReviewOptions): Promise<number> {
       process.stdout.write(`  ${dim(labelPad)}${color(line.value)}\n`);
     }
     process.stdout.write('\n');
-  } catch {
+  } catch (err: unknown) {
     // cli-ui import failed — non-critical, skip the Observations block.
     // The existing Score + findings summary above still carries the result.
+    // Log in verbose mode so debugging isn't silent.
+    if (options.verbose) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(dim(`  [observations] skipped — ${msg}\n`));
+    }
   }
 
   // Generate HTML report
