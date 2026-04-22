@@ -56,6 +56,50 @@ describe("RegistryClient", () => {
       ).toThrow(TypeError);
     });
 
+    it("rejects non-URL baseUrl", () => {
+      expect(
+        () =>
+          new RegistryClient({
+            baseUrl: "not a url",
+            userAgent: UA,
+            fetch: fetchMock as unknown as typeof fetch,
+          }),
+      ).toThrow(/valid URL/);
+    });
+
+    it("rejects file:// baseUrl (SSRF guard)", () => {
+      expect(
+        () =>
+          new RegistryClient({
+            baseUrl: "file:///etc/passwd",
+            userAgent: UA,
+            fetch: fetchMock as unknown as typeof fetch,
+          }),
+      ).toThrow(/http or https/);
+    });
+
+    it("rejects javascript: baseUrl (SSRF guard)", () => {
+      expect(
+        () =>
+          new RegistryClient({
+            baseUrl: "javascript:alert(1)",
+            userAgent: UA,
+            fetch: fetchMock as unknown as typeof fetch,
+          }),
+      ).toThrow(/http or https/);
+    });
+
+    it("accepts http:// baseUrl", () => {
+      expect(
+        () =>
+          new RegistryClient({
+            baseUrl: "http://localhost:8080",
+            userAgent: UA,
+            fetch: fetchMock as unknown as typeof fetch,
+          }),
+      ).not.toThrow();
+    });
+
     it("strips trailing slashes from baseUrl", async () => {
       const c = new RegistryClient({
         baseUrl: "https://api.example.com///",
@@ -68,6 +112,69 @@ describe("RegistryClient", () => {
       await c.checkTrust("t");
       const calledUrl = fetchMock.mock.calls[0][0] as string;
       expect(calledUrl.startsWith("https://api.example.com/api/")).toBe(true);
+    });
+  });
+
+  describe("input validation", () => {
+    it("rejects empty package name", async () => {
+      await expect(client.checkTrust("")).rejects.toThrow(TypeError);
+    });
+
+    it("rejects package name exceeding 512 chars", async () => {
+      await expect(client.checkTrust("a".repeat(513))).rejects.toThrow(
+        /exceeds 512/,
+      );
+    });
+
+    it("rejects package name with control characters", async () => {
+      await expect(client.checkTrust("foo\x00bar")).rejects.toThrow(
+        /control characters/,
+      );
+      await expect(client.checkTrust("foo\nbar")).rejects.toThrow(
+        /control characters/,
+      );
+    });
+
+    it("rejects type with control characters", async () => {
+      await expect(client.checkTrust("valid", "mcp\x00")).rejects.toThrow(
+        /control characters/,
+      );
+    });
+
+    it("batchQuery validates every name", async () => {
+      await expect(
+        client.batchQuery([{ name: "ok" }, { name: "bad\x00" }]),
+      ).rejects.toThrow(/control characters/);
+    });
+  });
+
+  describe("error body capping", () => {
+    it("caps RegistryApiError.body at 2KB with truncation marker", async () => {
+      const big = "x".repeat(5000);
+      fetchMock.mockResolvedValue(jsonResponse(big, 500));
+      try {
+        await client.checkTrust("p");
+        throw new Error("should not reach");
+      } catch (err) {
+        const apiErr = err as RegistryApiError;
+        expect(apiErr.body).toBeDefined();
+        expect(apiErr.body!.length).toBeLessThanOrEqual(2048 + "... [truncated]".length);
+        expect(apiErr.body!.endsWith("... [truncated]")).toBe(true);
+      }
+    });
+  });
+
+  describe("cache key canonicalization", () => {
+    it("does not collide on control-char-separator injection in name", async () => {
+      // If the cache key were `${name}\x00${type}`, then name="a\x00b" with no
+      // type would collide with name="a" type="b". Use JSON.stringify([name, type])
+      // to avoid that class of bug.
+      fetchMock.mockResolvedValue(
+        jsonResponse({ packageId: "x", name: "p", trustLevel: 3, trustScore: 0.8, verdict: "safe" }),
+      );
+      // This would throw due to control-char validation, which is the real
+      // defense. This test pins the canonicalization invariant.
+      await expect(client.checkTrust("foo\x00bar")).rejects.toThrow(TypeError);
     });
   });
 

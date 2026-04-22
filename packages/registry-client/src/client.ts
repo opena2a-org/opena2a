@@ -13,6 +13,25 @@ import type {
 } from "./types.js";
 
 const NULL_UUID = "00000000-0000-0000-0000-000000000000";
+const MAX_PACKAGE_NAME_LENGTH = 512;
+const MAX_ERROR_BODY_BYTES = 2048;
+const CONTROL_CHAR_RE = /[\x00-\x1F\x7F]/;
+
+function validatePackageName(name: string): void {
+  if (typeof name !== "string" || name.length === 0) {
+    throw new TypeError("RegistryClient: package name must be a non-empty string");
+  }
+  if (name.length > MAX_PACKAGE_NAME_LENGTH) {
+    throw new TypeError(
+      `RegistryClient: package name exceeds ${MAX_PACKAGE_NAME_LENGTH} chars (got ${name.length})`,
+    );
+  }
+  if (CONTROL_CHAR_RE.test(name)) {
+    throw new TypeError(
+      "RegistryClient: package name contains control characters",
+    );
+  }
+}
 
 export interface RegistryClientOptions {
   /** Base URL for the registry, e.g. https://api.oa2a.org */
@@ -53,6 +72,19 @@ export class RegistryClient {
     if (!options.userAgent) {
       throw new TypeError("RegistryClient: userAgent is required");
     }
+    let parsed: URL;
+    try {
+      parsed = new URL(options.baseUrl);
+    } catch {
+      throw new TypeError(
+        `RegistryClient: baseUrl must be a valid URL (got ${JSON.stringify(options.baseUrl)})`,
+      );
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new TypeError(
+        `RegistryClient: baseUrl must use http or https (got ${parsed.protocol})`,
+      );
+    }
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.userAgent = options.userAgent;
     this.timeoutMs = options.timeoutMs ?? 10000;
@@ -73,7 +105,11 @@ export class RegistryClient {
   }
 
   async checkTrust(name: string, type?: string): Promise<TrustAnswer> {
-    const cacheKey = type ? `${name}\x00${type}` : name;
+    validatePackageName(name);
+    if (type !== undefined && CONTROL_CHAR_RE.test(type)) {
+      throw new TypeError("RegistryClient: type contains control characters");
+    }
+    const cacheKey = JSON.stringify([name, type ?? ""]);
     const hit = this.trustCache?.get(cacheKey);
     if (hit) return hit;
 
@@ -93,6 +129,12 @@ export class RegistryClient {
   }
 
   async batchQuery(packages: PackageQuery[]): Promise<BatchResponse> {
+    for (const p of packages) {
+      validatePackageName(p.name);
+      if (p.type !== undefined && CONTROL_CHAR_RE.test(p.type)) {
+        throw new TypeError("RegistryClient: type contains control characters");
+      }
+    }
     const cacheKey = canonicalBatchKey(packages);
     const hit = this.batchCache?.get(cacheKey);
     if (hit) return hit;
@@ -193,7 +235,11 @@ export class RegistryClient {
 
 async function safeText(response: Response): Promise<string | undefined> {
   try {
-    return await response.text();
+    const raw = await response.text();
+    if (raw.length > MAX_ERROR_BODY_BYTES) {
+      return raw.slice(0, MAX_ERROR_BODY_BYTES) + "... [truncated]";
+    }
+    return raw;
   } catch {
     return undefined;
   }
