@@ -7,6 +7,9 @@ import {
   trustLevelLabel,
   trustLevelLegend,
   formatScanAge,
+  renderCheckBlock,
+  renderNotFoundBlock,
+  renderNextSteps,
 } from "./index.js";
 
 describe("scoreMeter", () => {
@@ -100,5 +103,33 @@ describe("formatScanAge", () => {
     const out = formatScanAge(old);
     expect(out).toContain("120");
     expect(out).toContain("stale");
+  });
+});
+
+describe("renderCheckBlock (barrel export)", () => {
+  it("is exported from the package entry point", () => {
+    const out = renderCheckBlock({
+      name: "x",
+      trustLevel: 3,
+      trustScore: 0.82,
+      verdict: "passed",
+      scanStatus: "completed",
+    });
+    expect(out.header.name).toBe("x");
+    expect(out.meterShown).toBe(true);
+  });
+});
+
+describe("renderNotFoundBlock (barrel export)", () => {
+  it("is exported from the package entry point", () => {
+    const out = renderNotFoundBlock({ pkg: "x", ecosystem: "npm" });
+    expect(out.header.text).toContain("Package not found");
+  });
+});
+
+describe("renderNextSteps (barrel export)", () => {
+  it("is exported from the package entry point", () => {
+    const out = renderNextSteps({ ctas: [{ label: "go", command: "go do", primary: true }] });
+    expect(out.lines[0].bullet).toBe("→");
   });
 });
