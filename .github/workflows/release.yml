@@ -66,11 +66,7 @@ jobs:
           publish_if_new packages/cli-ui @opena2a/cli-ui
           publish_if_new packages/contribute @opena2a/contribute
           publish_if_new packages/ai-classifier @opena2a/ai-classifier
-          # TODO(trusted-publishing-stage2): uncomment once @opena2a/aim-core
-          # has a Trusted Publisher configured on npmjs.com and the 0.1.2 -> 0.2.0
-          # migration from hackmyagent is signed off. Leaving commented prevents
-          # aim-core 0.2.0 from auto-publishing (and failing) on the next v* tag.
-          # publish_if_new packages/aim-core @opena2a/aim-core
+          publish_if_new packages/aim-core @opena2a/aim-core
           publish_if_new packages/registry-client @opena2a/registry-client
           echo "=== Published this run ==="
           cat /tmp/published.txt
