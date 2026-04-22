@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/ai-classifier",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tier-based AI package classification (native / adjacent / unrelated) for OpenA2A trust tooling",
   "type": "module",
   "main": "dist/index.js",
