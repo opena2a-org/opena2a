@@ -1,7 +1,7 @@
 {
   "name": "@opena2a/cli-ui",
-  "version": "0.1.0",
-  "description": "Shared terminal UI primitives for OpenA2A CLIs (score meter, trust level legend, verdict colors)",
+  "version": "0.2.0",
+  "description": "Shared terminal UI primitives for OpenA2A CLIs (score meter, trust level legend, verdict colors, observations + verdict block, analyst-render)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

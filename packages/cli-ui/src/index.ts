@@ -21,3 +21,29 @@ export {
   type TrustLevel,
 } from "./trust-level.js";
 export { formatScanAge } from "./scan-age.js";
+export {
+  buildCategorySummaries,
+  buildVerdict,
+  classifyCategory,
+  renderObservationsBlock,
+  ALL_CATEGORY_LABELS,
+  type ArtifactLine,
+  type CategorizableFinding,
+  type CategorySummary,
+  type ChecksSummary,
+  type ObservationsInput,
+  type RenderedLine,
+  type RenderedObservations,
+  type SurfaceSummary,
+  type VerdictFinding,
+  type VerdictStatus,
+} from "./observations.js";
+export {
+  isRenderableAnalystFinding,
+  formatAnalystDescription,
+  capAnalystThreatLevel,
+  formatAnalystConfidence,
+  LOW_CONFIDENCE_CAP,
+  type AnalystFindingLike,
+  type FormattedDescription,
+} from "./analyst-render.js";
