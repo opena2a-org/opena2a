@@ -2,7 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { review } from '../../src/commands/review.js';
+import {
+  review,
+  aggregateFindings,
+  type CredentialPhaseData,
+  type ShieldPhaseData,
+  type HmaPhaseData,
+  type HmaFinding,
+} from '../../src/commands/review.js';
+import type { CredentialMatch } from '../../src/util/credential-patterns.js';
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
   const chunks: string[] = [];
@@ -199,5 +207,142 @@ describe('review', () => {
     // cli-ui's standard Checks line shape survives the wire.
     expect(output).toMatch(/\d+ static/);
     expect(output).toContain('semantic (NanoMind AST)');
+  });
+
+  it('credentials from quickCredentialScan show up in the Categories line', async () => {
+    // Regression for the review-HMA-coverage fix. Before, aggregateFindings
+    // could produce zero credential findings even when credData had matches
+    // because the loop existed but the Observations block downstream only
+    // showed "other". This asserts CRED-* findings are classified into the
+    // cli-ui "credentials" bucket end-to-end.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'cred-test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    const fakeKey = 'sk-ant-api03-' + 'A'.repeat(85);
+    fs.writeFileSync(path.join(tempDir, 'config.ts'), `const key = "${fakeKey}";`);
+
+    const { exitCode, output } = await captureStdout(() => review({
+      targetDir: tempDir,
+      autoOpen: false,
+      skipHma: true,
+      ci: true,
+    }));
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain('Categories');
+    // The cli-ui classifier maps CRED-* into the "credentials" bucket.
+    const categoriesLine = output.split('\n').find(l => l.includes('Categories')) ?? '';
+    expect(categoriesLine).toContain('credentials');
+  });
+});
+
+describe('aggregateFindings', () => {
+  const SHIELD_EMPTY: ShieldPhaseData = {
+    eventCount: 0,
+    classifiedFindings: [],
+    arpStats: {} as any,
+    postureScore: 100,
+    policyLoaded: false,
+    policyMode: null,
+    integrityStatus: 'ok',
+  };
+
+  const makeCredMatch = (overrides: Partial<CredentialMatch> = {}): CredentialMatch => ({
+    findingId: 'CRED-001',
+    title: 'Hardcoded API Key',
+    severity: 'critical',
+    filePath: '/tmp/target/config.ts',
+    line: 10,
+    value: 'sk-xxx',
+    envVar: 'API_KEY',
+    ...overrides,
+  });
+
+  const makeHmaFinding = (overrides: Partial<HmaFinding> = {}): HmaFinding => ({
+    checkId: 'CRED-HMA-001',
+    name: 'Hardcoded credential detected',
+    description: '',
+    category: 'credentials',
+    severity: 'critical',
+    passed: false,
+    message: '',
+    file: 'config.ts',
+    line: 10,
+    fixable: true,
+    fix: 'opena2a protect',
+    guidance: '',
+    count: 1,
+    sampleFiles: [],
+    ...overrides,
+  });
+
+  const makeHmaData = (findings: HmaFinding[]): HmaPhaseData => ({
+    available: true,
+    score: 50,
+    maxScore: 100,
+    totalChecks: findings.length,
+    passed: 0,
+    failed: findings.length,
+    bySeverity: {},
+    byCategory: {},
+    topFindings: findings,
+    allFailedFindings: findings,
+  });
+
+  it('prefers HMA over quickCredentialScan when both fire at the same file:line', () => {
+    const credData: CredentialPhaseData = {
+      matches: [makeCredMatch({ filePath: '/tmp/target/config.ts', line: 10 })],
+      totalFindings: 1,
+      bySeverity: { critical: 1 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+    const hmaData = makeHmaData([
+      makeHmaFinding({ checkId: 'CRED-HMA-001', file: 'config.ts', line: 10 }),
+    ]);
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', hmaData);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].source).toBe('hma');
+    expect(result[0].id).toBe('CRED-HMA-001');
+  });
+
+  it('keeps both when HMA and credData fire at different locations', () => {
+    const credData: CredentialPhaseData = {
+      matches: [
+        makeCredMatch({ filePath: '/tmp/target/a.ts', line: 5 }),
+        makeCredMatch({ filePath: '/tmp/target/b.ts', line: 20 }),
+      ],
+      totalFindings: 2,
+      bySeverity: { critical: 2 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+    const hmaData = makeHmaData([
+      makeHmaFinding({ checkId: 'MCP-001', file: 'mcp.json', line: 1, severity: 'high' }),
+      makeHmaFinding({ checkId: 'CRED-HMA-002', file: 'c.ts', line: 30 }),
+    ]);
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', hmaData);
+
+    // 2 cred + 2 hma, no overlap
+    expect(result).toHaveLength(4);
+    const sources = result.map(r => r.source).sort();
+    expect(sources).toEqual(['credential-scan', 'credential-scan', 'hma', 'hma']);
+  });
+
+  it('null hmaData leaves credData and shield untouched (backward compat)', () => {
+    const credData: CredentialPhaseData = {
+      matches: [makeCredMatch()],
+      totalFindings: 1,
+      bySeverity: { critical: 1 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', null);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].source).toBe('credential-scan');
   });
 });

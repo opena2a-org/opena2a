@@ -174,6 +174,11 @@ export interface HmaPhaseData {
   bySeverity: Record<string, number>;
   byCategory: Record<string, number>;
   topFindings: HmaFinding[];
+  /** Every failed HMA finding (not deduped, not capped). Used by aggregateFindings.
+   *  topFindings keeps the deduped-by-checkId + slice(0,30) list for the HMA tab
+   *  in the HTML report; this field preserves the raw set so the Observations
+   *  block and overview severity counts match `hackmyagent secure`. */
+  allFailedFindings: HmaFinding[];
 }
 
 export interface DetectPhaseData {
@@ -368,7 +373,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   );
 
   // Aggregate findings
-  const findings = aggregateFindings(credentialData, shieldData, targetDir);
+  const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData);
 
   // Action items
   const actionItems = generateActionItems(credentialData, guardData, shieldData, initData);
@@ -681,7 +686,7 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
   const emptyResult: HmaPhaseData = {
     available: false, score: 0, maxScore: 100,
     totalChecks: 0, passed: 0, failed: 0,
-    bySeverity: {}, byCategory: {}, topFindings: [],
+    bySeverity: {}, byCategory: {}, topFindings: [], allFailedFindings: [],
   };
 
   try {
@@ -764,6 +769,7 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       bySeverity,
       byCategory,
       topFindings,
+      allFailedFindings: failedFindings,
     };
   } catch {
     return emptyResult;
@@ -985,21 +991,50 @@ function computeRecoverySummary(
 
 // --- Findings Aggregation ---
 
-function aggregateFindings(
+export function aggregateFindings(
   credData: CredentialPhaseData,
   shieldData: ShieldPhaseData,
   targetDir: string,
+  hmaData: HmaPhaseData | null,
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
-  // Credential findings
+  // HMA findings first so we can dedupe credential-scan matches against them.
+  // HMA's credential detection is more comprehensive (context-gated, 200+ check
+  // IDs vs raw regex in quickCredentialScan), so we prefer HMA when both fire
+  // on the same file:line.
+  const hmaLocationKeys = new Set<string>();
+  if (hmaData && hmaData.available) {
+    for (const f of hmaData.allFailedFindings) {
+      if (f.file) {
+        const key = f.line != null ? `${f.file}:${f.line}` : f.file;
+        hmaLocationKeys.add(key);
+      }
+      findings.push({
+        id: f.checkId,
+        title: f.name,
+        severity: f.severity,
+        source: 'hma',
+        detail: f.file
+          ? (f.line != null ? `${f.file}:${f.line}` : f.file)
+          : (f.message || ''),
+        remediation: f.fix || f.guidance || '',
+      });
+    }
+  }
+
+  // Credential findings — skip any that duplicate an HMA finding at the
+  // same file:line (prefer HMA).
   for (const m of credData.matches) {
+    const rel = path.relative(targetDir, m.filePath);
+    const key = `${rel}:${m.line}`;
+    if (hmaLocationKeys.has(key)) continue;
     findings.push({
       id: m.findingId,
       title: m.title,
       severity: m.severity,
       source: 'credential-scan',
-      detail: `${path.relative(targetDir, m.filePath)}:${m.line}`,
+      detail: key,
       remediation: 'opena2a protect',
     });
   }
