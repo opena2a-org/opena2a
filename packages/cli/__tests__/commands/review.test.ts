@@ -408,6 +408,26 @@ describe('aggregateFindings', () => {
     expect(sources).toEqual(['credential-scan', 'hma']);
   });
 
+  it('drops credData matches whose path escapes targetDir (defense in depth)', () => {
+    const credData: CredentialPhaseData = {
+      matches: [
+        makeCredMatch({ filePath: '/etc/passwd', line: 1 }),
+        makeCredMatch({ filePath: '/tmp/target/../outside.ts', line: 1 }),
+        makeCredMatch({ filePath: '/tmp/target/config.ts', line: 10 }),
+      ],
+      totalFindings: 3,
+      bySeverity: { critical: 3 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', null);
+
+    // Only the in-scope match should survive.
+    expect(result).toHaveLength(1);
+    expect(result[0].detail).toBe('config.ts:10');
+  });
+
   it('upgrades HMA severity to max(hma, cred) when dedupe fires', () => {
     // credData sees CRITICAL (sk-ant-*), HMA returns HIGH. Dedupe must
     // preserve the higher severity so the Observations block and verdict

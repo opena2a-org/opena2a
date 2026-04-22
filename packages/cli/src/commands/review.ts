@@ -173,6 +173,8 @@ export interface HmaPhaseData {
   failed: number;
   bySeverity: Record<string, number>;
   byCategory: Record<string, number>;
+  /** Top 30 findings, deduped by checkId, for the HMA tab in the HTML report.
+   *  Display-only — do NOT use for severity counts. See allFailedFindings. */
   topFindings: HmaFinding[];
   /** Every failed HMA finding (not deduped, not capped). Used by aggregateFindings.
    *  topFindings keeps the deduped-by-checkId + slice(0,30) list for the HMA tab
@@ -1064,6 +1066,12 @@ export function aggregateFindings(
   // from credData's "critical" to HMA's "high".
   for (const m of credData.matches) {
     const rel = path.relative(targetDir, m.filePath);
+    // Defense in depth. credData.matches originates from walkFiles(targetDir,
+    // ...) in credential-patterns.ts and so should always be rooted inside
+    // targetDir, but if a symlink escape or upstream contract change ever
+    // leaks an absolute or parent-traversal path into the aggregation layer
+    // we drop it rather than render a misleading row in the review output.
+    if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
     const lineKey = `${rel}:${m.line}`;
     const matchedLine = hmaCredLineKeys.has(lineKey);
     const matchedFile = hmaCredFileKeys.has(rel);
