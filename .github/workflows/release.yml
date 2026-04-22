@@ -10,6 +10,7 @@ on:
       - 'contribute-v*'
       - 'aim-core-v*'
       - 'ai-classifier-v*'
+      - 'registry-client-v*'
 
 permissions:
   contents: write
@@ -70,6 +71,12 @@ jobs:
           # migration from hackmyagent is signed off. Leaving commented prevents
           # aim-core 0.2.0 from auto-publishing (and failing) on the next v* tag.
           # publish_if_new packages/aim-core @opena2a/aim-core
+          # TODO(ca-034-m1): uncomment once @opena2a/registry-client has a
+          # Trusted Publisher configured on npmjs.com. Flip the switch in the
+          # same PR that tags registry-client-v0.1.0 — not before (a bare tag
+          # without TP fails the OIDC exchange and burns the attestation-
+          # verification retry window).
+          # publish_if_new packages/registry-client @opena2a/registry-client
           echo "=== Published this run ==="
           cat /tmp/published.txt
           echo "=== Skipped (version already on npm) ==="
