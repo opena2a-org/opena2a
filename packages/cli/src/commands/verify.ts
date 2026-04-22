@@ -10,6 +10,11 @@ import { bold, green, yellow, red, dim } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { table } from '../util/format.js';
 import { validateRegistryUrl } from '../util/validate-registry-url.js';
+import { getVersion } from '../util/version.js';
+
+function clientUserAgent(): string {
+  return `opena2a-cli/${getVersion()}`;
+}
 
 // --- Types ---
 
@@ -153,22 +158,19 @@ interface OracleVerdict {
 
 async function queryTrustProfile(registryUrl: string, name: string, type?: string): Promise<TrustProfile | null> {
   try {
-    const params = new URLSearchParams({ name, includeProfile: 'true', includeDeps: 'true' });
-    if (type) params.set('type', type);
-    const url = `${registryUrl}/api/v1/trust/query?${params}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(10_000),
+    const { RegistryClient } = await import('@opena2a/registry-client');
+    const client = new RegistryClient({
+      baseUrl: registryUrl,
+      userAgent: clientUserAgent(),
     });
-    if (!response.ok) return null;
-
-    const data = await response.json() as any;
+    const data = await client.checkTrust(name, type);
     return {
-      trustScore: data.trustProfile?.trustScore ?? data.trustScore ?? 0,
-      verdict: data.trustProfile?.verdict ?? data.verdict ?? 'unknown',
-      lastScannedAt: data.trustProfile?.lastScannedAt ?? data.lastScannedAt ?? null,
-      dependencyRiskCount: data.dependencies?.riskCount ?? 0,
+      trustScore: data.trustScore ?? 0,
+      verdict: data.verdict ?? 'unknown',
+      lastScannedAt: data.lastScannedAt ?? null,
+      dependencyRiskCount: data.dependencies?.riskSummary
+        ? (data.dependencies.riskSummary.blocked + data.dependencies.riskSummary.warning)
+        : 0,
     };
   } catch {
     return null;
@@ -243,10 +245,16 @@ async function verifyPackage(
   let error: string | undefined;
 
   try {
+    // Hash-based tamper detection uses a registry-side parameter
+    // (`&hash=...`) not exposed by @opena2a/registry-client@0.1.0, so this
+    // call remains a direct fetch. Revisit when the client adds a hash option.
     const url = `${registryUrl}/api/v1/trust/query?name=${encodeURIComponent(packageName)}&hash=${localHash}`;
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'Accept': 'application/json' },
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': clientUserAgent(),
+      },
       signal: AbortSignal.timeout(10_000),
     });
 
