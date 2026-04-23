@@ -11,6 +11,7 @@ on:
       - 'aim-core-v*'
       - 'ai-classifier-v*'
       - 'registry-client-v*'
+      - 'check-core-v*'
 
 permissions:
   contents: write
@@ -68,6 +69,7 @@ jobs:
           publish_if_new packages/ai-classifier @opena2a/ai-classifier
           publish_if_new packages/aim-core @opena2a/aim-core
           publish_if_new packages/registry-client @opena2a/registry-client
+          publish_if_new packages/check-core @opena2a/check-core
           echo "=== Published this run ==="
           cat /tmp/published.txt
           echo "=== Skipped (version already on npm) ==="
