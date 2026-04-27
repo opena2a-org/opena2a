@@ -7,6 +7,16 @@
 - `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
 - Docker adapter configurable port mapping for `train` command (full DVAA port range)
 
+## 0.9.0
+
+### New Features
+- Tier-1 anonymous usage telemetry via `@opena2a/telemetry@0.1.2`. `opena2a --version` prints the disclosure line; `opena2a telemetry [on|off|status]` inspects/toggles. Disable per-invocation with `OPENA2A_TELEMETRY=off`, persistently with `opena2a telemetry off`, audit payloads with `OPENA2A_TELEMETRY_DEBUG=print`. README §Telemetry documents the schema and links to [opena2a.org/telemetry](https://opena2a.org/telemetry). Default ON. Wire format keys events under `tool: "opena2a-cli"` (matches npm package name) so download counts and event counts can correlate; user-facing display uses the `opena2a` brand.
+- `docs/testing/release-smoke.md` — first release-smoke for this package, focused on telemetry surfaces (build/test live in the monorepo's existing CI).
+
+### Changed
+- `main()` wraps `program.parseAsync` in a try/catch/finally so `tele.error()` fires on subcommand throws and `tele.flush()` always runs before exit. Subcommand tracking happens via Commander `preAction`/`postAction` hooks.
+- CommonJS / ESM bridge: the runtime imports of `@opena2a/telemetry` and `@opena2a/cli-ui` use dynamic `import()` inside the async `main()`, with `import type ... with { 'resolution-mode': 'import' }` for the TS type-only reference. Same pattern shipped in DVAA 0.8.2 and secretless-ai 0.16.0.
+
 ## 0.8.26
 
 ### Changed

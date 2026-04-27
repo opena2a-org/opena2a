@@ -2,7 +2,10 @@
 
 import { spawn } from 'node:child_process';
 import { Command } from 'commander';
+import type { TelemetryAction } from '@opena2a/cli-ui' with { 'resolution-mode': 'import' };
 import { printBanner, printCompact } from './branding.js';
+// @opena2a/telemetry and @opena2a/cli-ui are pure ESM; this CLI is CommonJS,
+// so the runtime imports happen via dynamic import() inside main().
 import { classifyInput, dispatchCommand } from './router.js';
 import { handleSearch } from './semantic/index.js';
 import { handleContext } from './contextual/index.js';
@@ -14,6 +17,15 @@ import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
 
 const VERSION = getVersion();
+// Wire-format tool name (analytics key in tool_usage_events). Matches the
+// npm package name so download counts and event counts can be correlated.
+const TOOL = 'opena2a-cli';
+// User-facing brand (matches the `bin` name and the --version header).
+const BRAND = 'opena2a';
+// Subcommands not tracked: pure config / self-referential commands.
+const NON_TRACKED_COMMANDS = new Set<string>(['telemetry', 'help']);
+// Per-invocation start times keyed by subcommand name (preAction → postAction).
+const telemetryStartedAt = new Map<string, number>();
 
 // Tell downstream tools (hackmyagent, secretless) to use 'opena2a' in user-facing messages.
 // HMA_CLI_PREFIX is the *binary-level* prefix — HMA appends verbs to it
@@ -23,12 +35,19 @@ const VERSION = getVersion();
 process.env.HMA_CLI_PREFIX = 'opena2a';
 
 async function main(): Promise<void> {
+  // Tier-1 anonymous usage telemetry \u2014 default ON; opt-out via OPENA2A_TELEMETRY=off
+  // or `opena2a telemetry off`. See README \u00a7Telemetry. Disclosure surfaces:
+  // README, --version line, telemetry subcommand, opena2a.org/telemetry.
+  const tele = await import('@opena2a/telemetry');
+  const { versionLine, runTelemetryCommand } = await import('@opena2a/cli-ui');
+  await tele.init({ tool: TOOL, version: VERSION });
+
   const program = new Command();
 
   program
     .name('opena2a')
     .description('Open-source security platform for AI agents')
-    .version(`opena2a ${VERSION} \u2014 security platform for AI agents`, '-v, --version')
+    .version(versionLine({ tool: 'opena2a', version: VERSION, telemetry: tele.status() }), '-v, --version')
     .option('--ci', 'CI mode (no interactive prompts, machine-readable output)')
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
@@ -43,6 +62,24 @@ async function main(): Promise<void> {
       if (opts.json) {
         thisCommand.setOptionValue('format', 'json');
       }
+    })
+    // Telemetry tracking — records command start time, fires on postAction.
+    // The 'telemetry' subcommand itself is excluded to avoid self-referential
+    // events.
+    .hook('preAction', (_thisCommand, actionCommand) => {
+      const name = actionCommand.name();
+      if (NON_TRACKED_COMMANDS.has(name)) return;
+      telemetryStartedAt.set(name, Date.now());
+    })
+    .hook('postAction', (_thisCommand, actionCommand) => {
+      const name = actionCommand.name();
+      const startedAt = telemetryStartedAt.get(name);
+      if (startedAt === undefined) return;
+      telemetryStartedAt.delete(name);
+      void tele.track(name, {
+        success: (process.exitCode ?? 0) === 0,
+        durationMs: Date.now() - startedAt,
+      });
     })
     .showHelpAfterError('Run opena2a --help for available commands.')
     .addHelpText('beforeAll', `
@@ -152,6 +189,17 @@ Learn more: https://opena2a.org/docs`);
   }
 
   // Protect command (direct, not adapter-based)
+  program
+    .command('telemetry [action]')
+    .description('Inspect or toggle anonymous usage telemetry: on | off | status')
+    .action((action: TelemetryAction | undefined) => {
+      console.log(runTelemetryCommand(action, {
+        tool: BRAND,
+        getStatus: tele.status,
+        setOptOut: tele.setOptOut,
+      }));
+    });
+
   program
     .command('protect [directory]')
     .description('Detect and migrate credentials to encrypted vault')
@@ -1082,7 +1130,21 @@ Valid actions:
   }
 
   // Let Commander parse known subcommands and flags
-  await program.parseAsync(process.argv);
+  try {
+    await program.parseAsync(process.argv);
+  } catch (err) {
+    // Fire an error event for the subcommand, then re-throw so commander's
+    // own error handling runs.
+    const cmdName = (err as { command?: { name?: () => string } })?.command?.name?.() || 'unknown';
+    if (!NON_TRACKED_COMMANDS.has(cmdName)) {
+      tele.error(cmdName, (err as { code?: string; name?: string })?.code || (err as { name?: string })?.name || 'UNKNOWN');
+    }
+    throw err;
+  } finally {
+    // process.exit() doesn't fire Node's beforeExit hook, so flush explicitly.
+    // Bounded by the SDK's 2s per-event timeout — never hangs longer.
+    await tele.flush();
+  }
 }
 
 function getIntentDescription(intent: string): string {
