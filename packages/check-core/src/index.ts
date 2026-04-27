@@ -8,9 +8,13 @@
  *   - registry-status → meter-gate mapping
  *   - canonical CheckOutput + NotFoundOutput JSON shape
  *   - registry-first, scan-on-miss orchestrator (with pluggable adapters)
+ *   - PackageNarrative wire types for skill + mcp rich-context (v1)
+ *   - secret-rotation lookup (drives the rotate-this-key UX)
+ *   - deterministic rule engine for verdict reasoning + action gradient
  *
  * Rendering stays in `@opena2a/cli-ui` (renderCheckBlock /
- * renderNotFoundBlock / renderNextSteps) — this package is data only.
+ * renderNotFoundBlock / renderNextSteps / renderCheckRichBlock) —
+ * this package is data only.
  */
 
 export {
@@ -49,3 +53,38 @@ export type {
   TranslatedError,
   TrustData,
 } from "./types.js";
+
+export type {
+  ArtifactType,
+  HardcodedSecret,
+  HardcodedSecretsBlock,
+  McpNarrative,
+  McpTool,
+  NextStep,
+  PackageNarrative,
+  PermissionDeltaStatus,
+  PermissionStatus,
+  SecretSeverity,
+  SkillNarrative,
+  ToolCallCount,
+  VerdictReasoningStatement,
+} from "./narrative.js";
+
+export {
+  SECRET_ROTATION_TABLE,
+  enrichSecretRotation,
+  lookupSecretRotation,
+  type SecretRotationGuide,
+} from "./secret-rotation.js";
+
+export {
+  runRuleEngine,
+  type AttestationSummary,
+  type PublisherSignals,
+  type RuleArtifactType,
+  type RuleEngineInput,
+  type RuleEngineOutput,
+  type RuleFinding,
+  type ScanStatus,
+  type TrustVerdict,
+} from "./rule-engine.js";

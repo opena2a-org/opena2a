@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildCheckOutput, buildNotFoundOutput } from "./output.js";
 import type { ScanResult, TrustData } from "./types.js";
+import type { PackageNarrative } from "./narrative.js";
 
 describe("buildCheckOutput", () => {
   const baseScan: ScanResult = {
@@ -153,6 +154,52 @@ describe("buildCheckOutput", () => {
     expect(out.scanStatus).toBeUndefined();
     expect(out.packageType).toBeUndefined();
     expect(out.lastScannedAt).toBeUndefined();
+  });
+
+  it("appends narrative as the last key when provided (preserves byte-equality when absent)", () => {
+    const narrative: PackageNarrative = {
+      schemaVersion: 1,
+      generatedAt: "2026-04-27T07:30:00.000Z",
+      generatedFrom: {
+        artifactType: "skill",
+        artifactVersion: "0.3.1",
+        scanRunId: "00000000-0000-0000-0000-000000000000",
+      },
+      summary: "A code-review skill that reads files and streams to Claude.",
+      hardcodedSecrets: { detected: [], scanCovered: true },
+      skill: {
+        skillName: "opena2a/code-review-skill",
+        activationPhrases: ["review"],
+        behaviorDescription: "Reads files via Read tool only.",
+        permissions: [],
+        externalServices: ["anthropic.com"],
+        persistence: "none",
+        toolCallsObserved: [],
+        misuseNarrative: "",
+        threatModelQuestions: [],
+      },
+      verdictReasoning: [],
+      nextSteps: [],
+    };
+    const out = buildCheckOutput({
+      name: "opena2a/code-review-skill",
+      type: "npm-package",
+      scan: { score: 78, maxScore: 100, findings: [] },
+      narrative,
+    });
+    const keys = Object.keys(out);
+    expect(keys[keys.length - 1]).toBe("narrative");
+    expect(out.narrative).toBe(narrative);
+  });
+
+  it("does not include narrative when undefined (zero key drift on the legacy path)", () => {
+    const out = buildCheckOutput({
+      name: "express",
+      type: "npm-package",
+      scan: { score: 100, maxScore: 100, findings: [] },
+    });
+    expect(out).not.toHaveProperty("narrative");
+    expect(Object.keys(out)).not.toContain("narrative");
   });
 });
 
