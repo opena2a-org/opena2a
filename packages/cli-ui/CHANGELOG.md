@@ -1,5 +1,15 @@
 # Changelog — @opena2a/cli-ui
 
+## 0.4.0
+
+### Added
+- `versionLine({ tool, version, telemetry })` — multi-line `--version` output for OpenA2A CLIs. Appends a "Telemetry: on/off (opt-out: ...)" line when a status object is supplied. Structurally typed against `@opena2a/telemetry`'s `status()` so cli-ui takes no hard dep on the telemetry package.
+- `runTelemetryCommand(action, input)` — handler for `<tool> telemetry [on|off|status]` subcommands. Returns the string to print; consumers wire it into commander/yargs/etc. in three lines. Default action is `status`; unknown actions return a friendly error.
+
+### Behaviour
+- Telemetry-aware helpers are opt-in: tools that haven't integrated `@opena2a/telemetry` yet can call `versionLine({ tool, version })` with no second arg and get just the head line.
+- Both helpers print the canonical `opena2a.org/telemetry` policy URL so the per-run banner is unnecessary (matches the spec's disclosure-surfaces amendment).
+
 ## 0.3.0
 
 ### Added
