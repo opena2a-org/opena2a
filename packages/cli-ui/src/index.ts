@@ -69,3 +69,13 @@ export {
   type RenderedNextSteps,
   type NextStepsTone,
 } from "./next-steps.js";
+export {
+  versionLine,
+  type TelemetryStatusLike,
+  type VersionLineInput,
+} from "./version-line.js";
+export {
+  runTelemetryCommand,
+  type TelemetryAction,
+  type TelemetryCommandInput,
+} from "./telemetry-command.js";

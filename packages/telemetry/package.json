@@ -1,7 +1,7 @@
 {
-  "name": "@opena2a/cli-ui",
-  "version": "0.4.0",
-  "description": "Shared terminal UI primitives for OpenA2A CLIs (score meter, trust level legend, verdict colors, observations + verdict block, analyst-render, check block, not-found block, next-steps, version-line, telemetry-command)",
+  "name": "@opena2a/telemetry",
+  "version": "0.1.0",
+  "description": "Tier-1 anonymous usage telemetry SDK for OpenA2A CLIs and tools. Fire-and-forget, opt-out, no content collection.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,9 +17,6 @@
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
-  "dependencies": {
-    "chalk": "^5.3.0"
-  },
   "files": [
     "dist",
     "README.md"
@@ -27,8 +24,11 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/opena2a-org/opena2a.git",
-    "directory": "packages/cli-ui"
+    "directory": "packages/telemetry"
   },
-  "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/cli-ui",
-  "license": "Apache-2.0"
+  "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/telemetry",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
