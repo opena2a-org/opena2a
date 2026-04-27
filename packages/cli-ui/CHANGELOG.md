@@ -1,5 +1,23 @@
 # Changelog — @opena2a/cli-ui
 
+## 0.5.0
+
+### Added
+- `renderCheckRichBlock(input)` — orchestrator for the v1 rich-context `check` view (skills + MCPs). Composes header, hardcoded-secrets, "What is this skill?" / "What is this MCP?", "What we observed", "Why VERIFIED/LISTED/BLOCKED", "How this skill could be misused" (skill only), threat-model questions, and the action gradient. Returns structured `{ header, sections[] }` so CLI consumers apply their own chalk palette. Closes brief `check-rich-context-skills-mcp-v1.md` §3 mockups byte-for-byte on must_match fields.
+- `renderHardcodedSecretsBlock(input)` — always-renders, 3-state secrets section: detected (severity-grouped + rotation URLs + report command), clean ("None detected on the latest version (vX.Y.Z)"), unscanned ("Not yet analyzed").
+- `renderSkillNarrativeBlock(narrative)` + `renderSkillMisuseNarrative(narrative)` — skill-name / activation phrases / behaviour / declared-vs-observed permission delta / external services / persistence / tool-call counts; misuse paragraph emitted only when NanoMind v3 cached output is non-empty.
+- `renderMcpNarrativeBlock(narrative)` — opener line + tool list (column-aligned signatures) + path scope / network / persistence / auth / side effects rows.
+- `renderVerdictReasoningBlock(input)` — header derived from tier ("Why VERIFIED" / "Why VERIFIED despite findings" / "Why LISTED, not VERIFIED" / "Why BLOCKED" / "Why no score"); consumes `VerdictReasoningStatement[]` from `@opena2a/check-core`'s rule engine and applies `[ok]` / `1.` / `CRITICAL` markers.
+- `renderActionGradientBlock(input)` — column-aligned `Next` rows; first `primary` step gets the tier-driven headline tone (good / warning / critical / default).
+- Static threat-model question tables (`SKILL_THREAT_MODEL_QUESTIONS`, `MCP_THREAT_MODEL_QUESTIONS`) per brief §6, frozen so callers can't mutate.
+
+### Behaviour
+- `renderCheckRichBlock` consumes the registry's `PackageNarrative` payload structurally — cli-ui has no runtime dependency on `@opena2a/check-core` (chalk-only deps preserved).
+- Section ordering is invariant across calls with the same `tier`: `Hardcoded secrets, What is this <type>?, What we observed, Why <tier>, [Recovery path, alternatives — BLOCKED only], [How this skill could be misused — skill only], Threat-model questions, Next`. The orchestrator suppresses "What we observed" on `LISTED_UNSCANNED` (no scan to surface) and on `NOT_FOUND` (different render path).
+- `LISTED_UNSCANNED` renders `Score: [—]` + `Never scanned` instead of a fabricated number.
+- `BLOCKED` renders an immutable `Recovery path: None.` line and an alternatives list (top 3) when suggestions are present.
+- No emojis, no marketing language, no superlatives — section names match brief §3 contract.
+
 ## 0.4.0
 
 ### Added

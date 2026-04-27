@@ -10,6 +10,15 @@ import {
   renderCheckBlock,
   renderNotFoundBlock,
   renderNextSteps,
+  renderCheckRichBlock,
+  renderHardcodedSecretsBlock,
+  renderSkillNarrativeBlock,
+  renderMcpNarrativeBlock,
+  renderVerdictReasoningBlock,
+  renderActionGradientBlock,
+  threatModelQuestionsFor,
+  SKILL_THREAT_MODEL_QUESTIONS,
+  MCP_THREAT_MODEL_QUESTIONS,
 } from "./index.js";
 
 describe("scoreMeter", () => {
@@ -131,5 +140,88 @@ describe("renderNextSteps (barrel export)", () => {
   it("is exported from the package entry point", () => {
     const out = renderNextSteps({ ctas: [{ label: "go", command: "go do", primary: true }] });
     expect(out.lines[0].bullet).toBe("→");
+  });
+});
+
+describe("rich-block barrel exports (0.5.0)", () => {
+  it("renderHardcodedSecretsBlock — clean state", () => {
+    const out = renderHardcodedSecretsBlock({
+      detected: [],
+      scanCovered: true,
+      latestVersion: "1.0.0",
+    });
+    expect(out.lines[0].text).toBe("None detected on the latest version (1.0.0)");
+  });
+
+  it("renderSkillNarrativeBlock — header is 'What is this skill?'", () => {
+    const out = renderSkillNarrativeBlock({
+      skillName: "x",
+      activationPhrases: [],
+      behaviorDescription: "",
+      permissions: [],
+      externalServices: [],
+      persistence: "",
+      toolCallsObserved: [],
+      misuseNarrative: "",
+    });
+    expect(out.header).toBe("What is this skill?");
+  });
+
+  it("renderMcpNarrativeBlock — header is 'What is this MCP?'", () => {
+    const out = renderMcpNarrativeBlock({
+      mcpName: "x",
+      tools: [],
+      pathScope: "",
+      network: "",
+      persistence: "",
+      auth: "",
+      sideEffects: [],
+    });
+    expect(out.header).toBe("What is this MCP?");
+  });
+
+  it("renderVerdictReasoningBlock — VERIFIED tier", () => {
+    const out = renderVerdictReasoningBlock({
+      tier: "VERIFIED",
+      statements: [{ kind: "positive", text: "ok" }],
+    });
+    expect(out.header).toBe("Why VERIFIED");
+  });
+
+  it("renderActionGradientBlock — empty steps", () => {
+    const out = renderActionGradientBlock({ tier: "VERIFIED", steps: [] });
+    expect(out.lines).toEqual([]);
+  });
+
+  it("threat-model questions are exported as frozen lists", () => {
+    expect(SKILL_THREAT_MODEL_QUESTIONS).toHaveLength(3);
+    expect(MCP_THREAT_MODEL_QUESTIONS).toHaveLength(3);
+    expect(threatModelQuestionsFor("skill")).toBe(SKILL_THREAT_MODEL_QUESTIONS);
+  });
+
+  it("renderCheckRichBlock — emits header + sections for VERIFIED skill", () => {
+    const out = renderCheckRichBlock({
+      name: "opena2a/clean-skill",
+      artifactType: "skill",
+      header: { trustVerdict: "VERIFIED", trustScore: 94 },
+      hardcodedSecrets: { detected: [], scanCovered: true },
+      skill: {
+        skillName: "clean-skill",
+        activationPhrases: [],
+        behaviorDescription: "",
+        permissions: [],
+        externalServices: [],
+        persistence: "",
+        toolCallsObserved: [],
+        misuseNarrative: "",
+      },
+      findings: [],
+      verdictReasoning: [{ kind: "positive", text: "ok" }],
+      nextSteps: [{ weight: "primary", label: "Install", command: "i x" }],
+    });
+    expect(out.header.name).toBe("opena2a/clean-skill");
+    expect(out.sections.find((s) => s.divider === "Hardcoded secrets")).toBeDefined();
+    expect(out.sections.find((s) => s.divider === "Why VERIFIED")).toBeDefined();
+    expect(out.sections.find((s) => s.divider === "Next")).toBeDefined();
   });
 });
