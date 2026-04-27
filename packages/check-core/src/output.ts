@@ -6,6 +6,7 @@ import type {
   ScanResult,
   TrustData,
 } from "./types.js";
+import type { PackageNarrative } from "./narrative.js";
 
 /**
  * Input to `buildCheckOutput`. At least one of `scan` or `registry`
@@ -17,6 +18,12 @@ export interface BuildCheckOutputInput {
   type: PackageTarget;
   scan?: ScanResult;
   registry?: TrustData | null;
+  /**
+   * Optional rich-context narrative (skill + mcp v1). Emitted AFTER
+   * `analystFindings` so the existing key order is preserved when
+   * narrative is absent.
+   */
+  narrative?: PackageNarrative;
 }
 
 /**
@@ -34,7 +41,7 @@ export interface BuildCheckOutputInput {
  *   analystFindings
  */
 export function buildCheckOutput(input: BuildCheckOutputInput): CheckOutput {
-  const { name, type, scan, registry } = input;
+  const { name, type, scan, registry, narrative } = input;
   const out: CheckOutput = {
     name,
     type,
@@ -62,6 +69,12 @@ export function buildCheckOutput(input: BuildCheckOutputInput): CheckOutput {
 
   if (scan?.analystFindings && scan.analystFindings.length) {
     out.analystFindings = scan.analystFindings;
+  }
+
+  // narrative is the LAST key so the byte-equality parity contract
+  // holds for emissions that don't include it.
+  if (narrative !== undefined) {
+    out.narrative = narrative;
   }
 
   return out;

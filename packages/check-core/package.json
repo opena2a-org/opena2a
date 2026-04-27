@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/check-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Data-shape and orchestration primitives for the `check` command across OpenA2A CLIs. One implementation of input classification, registry → scan-on-miss flow, download-error translation, and canonical CheckOutput schema — consumed by hackmyagent, opena2a-cli, and ai-trust.",
   "type": "module",
   "main": "dist/index.js",
