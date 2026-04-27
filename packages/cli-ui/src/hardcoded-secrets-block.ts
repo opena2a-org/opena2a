@@ -11,7 +11,12 @@
  * tuples; the caller applies tones from its own palette. Severity
  * prefixes (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) are baked into the
  * value strings so a piped/`--json` consumer can grep for them.
+ *
+ * All caller-supplied strings are sanitized via `sanitizeForTerminal`
+ * before they enter the rendered output — registry values are
+ * untrusted and could otherwise embed ANSI / OSC-8 / control bytes.
  */
+import { sanitizeForTerminal } from "./terminal-safe.js";
 
 /**
  * Local mirror of `HardcodedSecret` from `@opena2a/check-core`. cli-ui
@@ -115,7 +120,7 @@ function maxSeverity(secrets: SecretLike[]): SecretLike["severity"] | null {
  */
 function versionSuffix(latestVersion?: string): string {
   if (!latestVersion) return "";
-  return ` (${latestVersion})`;
+  return ` (${sanitizeForTerminal(latestVersion)})`;
 }
 
 /**
@@ -131,17 +136,18 @@ function dedupRotationLines(secrets: SecretLike[]): SecretsBlockLine[] {
     const key = `${s.type}|${s.rotationUrl ?? ""}|${s.rotationCommand ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    const safeLabel = sanitizeForTerminal(s.typeLabel);
     if (s.rotationUrl) {
       out.push({
         indent: 0,
-        text: `Rotate (${s.typeLabel}): ${s.rotationUrl}`,
+        text: `Rotate (${safeLabel}): ${sanitizeForTerminal(s.rotationUrl)}`,
         tone: "default",
       });
     }
     if (s.rotationCommand) {
       out.push({
         indent: 0,
-        text: `Rotate (${s.typeLabel}): ${s.rotationCommand}`,
+        text: `Rotate (${safeLabel}): ${sanitizeForTerminal(s.rotationCommand)}`,
         tone: "default",
       });
     }
@@ -199,15 +205,16 @@ export function renderHardcodedSecretsBlock(
 
   // One block per credential — type + locator, masked + char count, ships note.
   for (const s of detected) {
-    const locator = s.line ? `${s.file}:${s.line}` : s.file;
+    const safeFile = sanitizeForTerminal(s.file);
+    const locator = s.line ? `${safeFile}:${s.line}` : safeFile;
     lines.push({
       indent: 1,
-      text: `${s.typeLabel}  at  ${locator}`,
+      text: `${sanitizeForTerminal(s.typeLabel)}  at  ${locator}`,
       tone: SEVERITY_TONE[s.severity],
     });
     lines.push({
       indent: 2,
-      text: `${s.maskedValue} (${s.shownChars} of ${s.totalChars} chars)`,
+      text: `${sanitizeForTerminal(s.maskedValue)} (${s.shownChars} of ${s.totalChars} chars)`,
       tone: "default",
     });
     if (s.shipsInArtifact) {
@@ -234,8 +241,14 @@ export function renderHardcodedSecretsBlock(
   }
 
   // Report command.
-  const tool = reportTool && reportTool.length > 0 ? reportTool : "hackmyagent";
-  const target = packageName && packageName.length > 0 ? packageName : "<pkg>";
+  const tool =
+    reportTool && reportTool.length > 0
+      ? sanitizeForTerminal(reportTool)
+      : "hackmyagent";
+  const target =
+    packageName && packageName.length > 0
+      ? sanitizeForTerminal(packageName)
+      : "<pkg>";
   lines.push({
     indent: 0,
     text: `Report:  ${tool} report ${target} --secret-leak`,

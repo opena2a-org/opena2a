@@ -18,6 +18,11 @@
 - `BLOCKED` renders an immutable `Recovery path: None.` line and an alternatives list (top 3) when suggestions are present.
 - No emojis, no marketing language, no superlatives — section names match brief §3 contract.
 
+### Security
+- New `sanitizeForTerminal(s)` + `sanitizeArray(arr)` helpers (also exported) strip ANSI escape sequences (CSI / OSC / lone Esc), the BEL byte, NULs, DEL, and other C0 control bytes from caller-supplied strings before they enter rendered output. Preserves `\n` and `\t`. Applied at every emit site that consumes a registry-sourced narrative field — `summary`, `behaviorDescription`, `misuseNarrative`, `pathScope`, `network`, `persistence`, `auth`, `secret.maskedValue` / `file` / `rotationUrl`, `mcp.tools[].signature` / `description`, finding `description` / `fix` / `locator`, `nextStep.command` / `url`, alternatives, header publisher / license / scan-age / version label, and the package name itself. Mitigates ANSI-injection / OSC-8 hyperlink-spoof / clear-screen attacks via a malicious `secure --publish` payload. Fix for Phase 3 adversarial review finding HIGH-1.
+- `What we observed` findings now render in severity-descending order (CRITICAL first, LOW last; stable within bucket). Previously caller-supplied array order could bury a CRITICAL below a long list of LOWs. Fix for Phase 3 finding MEDIUM-3.
+- `BLOCKED` tier verdict-reasoning falls back to `gap` entries when the upstream rule engine emits zero `critical` statements (data-quality bug); falls back to a `Block reasoning unavailable — data error in upstream record.` placeholder when both are empty. Prevents an empty `Why BLOCKED` section. Fix for Phase 3 finding MEDIUM-4.
+
 ## 0.4.0
 
 ### Added

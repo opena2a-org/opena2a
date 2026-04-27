@@ -8,7 +8,12 @@
  * independently whether to render the misuse paragraph (it may be
  * empty when the registry-cached NanoMind v3 summary is OOD per
  * `project_nanomind_v05_intelreport_task_mismatch.md`).
+ *
+ * All caller-supplied strings are sanitized via `sanitizeForTerminal`
+ * — registry-sourced narrative fields are untrusted and could embed
+ * ANSI / OSC-8 / control bytes.
  */
+import { sanitizeArray, sanitizeForTerminal } from "./terminal-safe.js";
 
 /**
  * Permission delta entry — local mirror of `PermissionStatus` from
@@ -103,17 +108,21 @@ function permissionTone(p: PermissionStatusLike): SkillNarrativeTone {
  */
 function formatActivationPhrases(phrases: string[]): string {
   if (phrases.length === 0) return "no activation phrases declared";
-  return phrases.map((p) => `"${p}"`).join(", ");
+  return sanitizeArray(phrases)
+    .map((p) => `"${p}"`)
+    .join(", ");
 }
 
 function formatToolCalls(tcs: ToolCallCountLike[]): string {
   if (tcs.length === 0) return "no tool calls observed";
-  return tcs.map((t) => `${t.tool} x${t.count}`).join(", ");
+  return tcs
+    .map((t) => `${sanitizeForTerminal(t.tool)} x${t.count}`)
+    .join(", ");
 }
 
 function formatExternalServices(services: string[]): string {
   if (services.length === 0) return "none";
-  return services.join(", ");
+  return sanitizeArray(services).join(", ");
 }
 
 const SKILL_LABELS = [
@@ -149,7 +158,7 @@ export function renderSkillNarrativeBlock(
   lines.push({
     indent: 0,
     label: pad("Skill name", labelWidth),
-    value: narrative.skillName || "(unknown)",
+    value: narrative.skillName ? sanitizeForTerminal(narrative.skillName) : "(unknown)",
     tone: "default",
   });
 
@@ -164,7 +173,7 @@ export function renderSkillNarrativeBlock(
     lines.push({
       indent: 0,
       label: pad("What it does", labelWidth),
-      value: narrative.behaviorDescription,
+      value: sanitizeForTerminal(narrative.behaviorDescription),
       tone: "default",
     });
   } else {
@@ -191,9 +200,12 @@ export function renderSkillNarrativeBlock(
     }
     nameWidth = Math.min(nameWidth, 18);
     for (const p of narrative.permissions) {
-      const padded = p.name.padEnd(nameWidth, " ");
+      const safeName = sanitizeForTerminal(p.name);
+      const padded = safeName.padEnd(nameWidth, " ");
       const marker = permissionStatusMarker(p);
-      const note = p.note && p.note.length > 0 ? `   ${p.note}` : "";
+      const note = p.note && p.note.length > 0
+        ? `   ${sanitizeForTerminal(p.note)}`
+        : "";
       lines.push({
         indent: 1,
         label: "",
@@ -215,7 +227,7 @@ export function renderSkillNarrativeBlock(
     label: pad("Persistence", labelWidth),
     value:
       narrative.persistence && narrative.persistence.length > 0
-        ? narrative.persistence
+        ? sanitizeForTerminal(narrative.persistence)
         : "none",
     tone: "default",
   });
@@ -248,6 +260,6 @@ export function renderSkillMisuseNarrative(
   if (text.length === 0) return null;
   return {
     header: "How this skill could be misused",
-    paragraph: text,
+    paragraph: sanitizeForTerminal(text),
   };
 }

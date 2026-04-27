@@ -14,7 +14,13 @@
  * Header label is derived from the verdict tier so callers don't have
  * to know the prose. For NOT_FOUND the function returns an empty block;
  * the orchestrator picks a different render path.
+ *
+ * Statement text is sanitized via `sanitizeForTerminal` — rule-engine
+ * output is deterministic but composes from registry strings (rule
+ * IDs, finding locators, descriptions), so defense-in-depth strips any
+ * ANSI / OSC / control bytes before entering rendered output.
  */
+import { sanitizeForTerminal } from "./terminal-safe.js";
 
 /**
  * Local mirror of `VerdictReasoningStatement` from check-core. Defined
@@ -78,7 +84,7 @@ function headerForTier(
 }
 
 function renderPositive(text: string): VerdictReasoningLine {
-  return { text: `[ok]  ${text}`, tone: "good" };
+  return { text: `[ok]  ${sanitizeForTerminal(text)}`, tone: "good" };
 }
 
 function renderGap(
@@ -86,15 +92,16 @@ function renderGap(
   numbered: boolean,
   index: number,
 ): VerdictReasoningLine {
+  const safe = sanitizeForTerminal(text);
   if (numbered) {
     // 2+ gaps → numbered list ("1.  ", "2.  ", ...).
-    return { text: `${index + 1}.  ${text}`, tone: "warning" };
+    return { text: `${index + 1}.  ${safe}`, tone: "warning" };
   }
-  return { text: `-  ${text}`, tone: "warning" };
+  return { text: `-  ${safe}`, tone: "warning" };
 }
 
 function renderCritical(text: string): VerdictReasoningLine {
-  return { text: `CRITICAL  ${text}`, tone: "critical" };
+  return { text: `CRITICAL  ${sanitizeForTerminal(text)}`, tone: "critical" };
 }
 
 export function renderVerdictReasoningBlock(
@@ -114,8 +121,23 @@ export function renderVerdictReasoningBlock(
   const lines: VerdictReasoningLine[] = [];
 
   if (tier === "BLOCKED") {
-    // Critical-driven render.
-    for (const c of criticals) lines.push(renderCritical(c.text));
+    // Critical-driven render. If the upstream rule engine emitted no
+    // critical statements (data-quality bug — BLOCKED tier without
+    // critical reasoning), fall back to gap entries so the section
+    // body isn't empty. Worst case: "Why BLOCKED" with at least one
+    // explanatory line, never an empty divider.
+    if (criticals.length > 0) {
+      for (const c of criticals) lines.push(renderCritical(c.text));
+    } else if (gaps.length > 0) {
+      for (let i = 0; i < gaps.length; i++) {
+        lines.push(renderGap(gaps[i].text, gaps.length >= 2, i));
+      }
+    } else {
+      lines.push({
+        text: "CRITICAL  Block reasoning unavailable — data error in upstream record.",
+        tone: "critical",
+      });
+    }
     return { header, lines };
   }
 

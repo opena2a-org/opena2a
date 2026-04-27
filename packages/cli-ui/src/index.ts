@@ -143,3 +143,7 @@ export {
   threatModelQuestionsFor,
   type ThreatModelArtifactType,
 } from "./threat-model-questions.js";
+export {
+  sanitizeArray,
+  sanitizeForTerminal,
+} from "./terminal-safe.js";

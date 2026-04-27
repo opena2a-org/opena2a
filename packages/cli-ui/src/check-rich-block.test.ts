@@ -326,6 +326,181 @@ describe("renderCheckRichBlock — BLOCKED MCP (mockup 3.6)", () => {
   });
 });
 
+describe("renderCheckRichBlock — Phase 3 finding 1 (ANSI / OSC sanitization)", () => {
+  it("strips ANSI escape sequences from registry-sourced narrative fields", () => {
+    const out = renderCheckRichBlock(
+      skillFixture({
+        name: "evil/\x1b[2J\x1b[Hpkg-name",
+        skill: {
+          skillName: "\x1b[31mhostile\x1b[0m",
+          activationPhrases: ["\x07bell", "ok"],
+          behaviorDescription: "before\x1b[2Jafter",
+          permissions: [
+            {
+              name: "Read",
+              declared: true,
+              used: true,
+              status: "used",
+              note: "trail\x07note",
+            },
+          ],
+          externalServices: ["evil.com\x1b]8;;evil://x\x07click\x1b]8;;\x07"],
+          persistence: "\x07none",
+          toolCallsObserved: [{ tool: "\x1b[31mRead", count: 1 }],
+          misuseNarrative: "para\x1b[2Jgraph",
+        },
+      }),
+    );
+    expect(out.header.name).toBe("evil/pkg-name");
+    const all = out.sections.flatMap((s) => s.lines.map((l) => l.text));
+    for (const line of all) {
+      expect(line).not.toMatch(/\x1b/);
+      expect(line).not.toMatch(/\x07/);
+      expect(line).not.toMatch(/\x00/);
+    }
+    const skillSec = out.sections.find((s) => s.divider === "What is this skill?");
+    expect(
+      skillSec?.lines.some((l) => l.text.includes("hostile")),
+    ).toBe(true);
+    const misuseSec = out.sections.find(
+      (s) => s.divider === "How this skill could be misused",
+    );
+    expect(misuseSec?.lines[0].text).toBe("paragraph");
+  });
+
+  it("strips ANSI from rotation URLs in hardcoded-secrets block", () => {
+    const out = renderCheckRichBlock(
+      skillFixture({
+        hardcodedSecrets: {
+          detected: [
+            {
+              type: "openai_api_key",
+              typeLabel: "OpenAI API key",
+              file: "src/auth\x1b[31m.js",
+              line: 8,
+              maskedValue: "sk-proj-•••",
+              shownChars: 16,
+              totalChars: 56,
+              shipsInArtifact: true,
+              severity: "high",
+              rotationUrl:
+                "https://legit.example/keys\x1b]8;;evil://x\x07evil\x1b]8;;\x07",
+            },
+          ],
+          scanCovered: true,
+        },
+      }),
+    );
+    const sec = out.sections.find((s) => s.divider === "Hardcoded secrets");
+    expect(sec).toBeDefined();
+    for (const line of sec!.lines) {
+      expect(line.text).not.toMatch(/\x1b/);
+      expect(line.text).not.toMatch(/\x07/);
+    }
+  });
+});
+
+describe("renderCheckRichBlock — Phase 3 finding 3 (severity-order burial)", () => {
+  it("renders findings in severity desc order (CRITICAL never buried)", () => {
+    const out = renderCheckRichBlock(
+      skillFixture({
+        findings: [
+          { severity: "low", ruleId: "LOW-1", locator: "a:1", description: "" },
+          { severity: "low", ruleId: "LOW-2", locator: "a:2", description: "" },
+          { severity: "low", ruleId: "LOW-3", locator: "a:3", description: "" },
+          { severity: "low", ruleId: "LOW-4", locator: "a:4", description: "" },
+          {
+            severity: "critical",
+            ruleId: "CRED-EXFIL",
+            locator: "post.js:1",
+            description: "",
+          },
+          { severity: "low", ruleId: "LOW-5", locator: "a:5", description: "" },
+        ],
+      }),
+    );
+    const sec = out.sections.find((s) => s.divider === "What we observed");
+    expect(sec?.lines[0].text).toMatch(/^CRITICAL\s+CRED-EXFIL/);
+    expect(sec?.dividerTone).toBe("critical");
+  });
+
+  it("preserves input order within the same severity bucket", () => {
+    const out = renderCheckRichBlock(
+      skillFixture({
+        findings: [
+          { severity: "medium", ruleId: "MED-A", locator: "a", description: "" },
+          { severity: "low", ruleId: "LOW-A", locator: "b", description: "" },
+          { severity: "medium", ruleId: "MED-B", locator: "c", description: "" },
+          { severity: "low", ruleId: "LOW-B", locator: "d", description: "" },
+        ],
+      }),
+    );
+    const sec = out.sections.find((s) => s.divider === "What we observed");
+    const ruleIds = sec!.lines
+      .filter((l) => l.indent === 0)
+      .map((l) => l.text.match(/(\S+-[A-Z])/)?.[1])
+      .filter(Boolean);
+    expect(ruleIds).toEqual(["MED-A", "MED-B", "LOW-A", "LOW-B"]);
+  });
+});
+
+describe("renderCheckRichBlock — Phase 3 finding 4 (BLOCKED with empty criticals)", () => {
+  it("falls back to gap entries when verdictReasoning has no critical statements", () => {
+    const out = renderCheckRichBlock({
+      name: "edge-case",
+      artifactType: "mcp",
+      header: { trustVerdict: "BLOCKED", trustScore: 8 },
+      hardcodedSecrets: { detected: [], scanCovered: true },
+      latestVersion: "0.0.1",
+      mcp: {
+        mcpName: "edge-case",
+        tools: [],
+        pathScope: "",
+        network: "",
+        persistence: "",
+        auth: "",
+        sideEffects: [],
+      },
+      findings: [],
+      verdictReasoning: [
+        { kind: "gap", text: "No provenance attestation." },
+        { kind: "gap", text: "No maintainer history." },
+      ],
+      nextSteps: [{ weight: "primary", label: "Stop", command: "Do NOT install" }],
+    });
+    const sec = out.sections.find((s) => s.divider === "Why BLOCKED");
+    expect(sec).toBeDefined();
+    expect(sec!.lines.length).toBeGreaterThan(0);
+    expect(sec!.lines[0].text).toMatch(/^1\./);
+  });
+
+  it("emits a placeholder when both criticals and gaps are empty", () => {
+    const out = renderCheckRichBlock({
+      name: "data-error",
+      artifactType: "mcp",
+      header: { trustVerdict: "BLOCKED" },
+      hardcodedSecrets: { detected: [], scanCovered: true },
+      latestVersion: "",
+      mcp: {
+        mcpName: "data-error",
+        tools: [],
+        pathScope: "",
+        network: "",
+        persistence: "",
+        auth: "",
+        sideEffects: [],
+      },
+      findings: [],
+      verdictReasoning: [],
+      nextSteps: [{ weight: "primary", label: "Stop", command: "Do NOT install" }],
+    });
+    const sec = out.sections.find((s) => s.divider === "Why BLOCKED");
+    expect(sec).toBeDefined();
+    expect(sec!.lines).toHaveLength(1);
+    expect(sec!.lines[0].text).toMatch(/^CRITICAL\s+Block reasoning unavailable/);
+  });
+});
+
 describe("renderCheckRichBlock — section ordering invariant", () => {
   it("LISTED skill section order: Hardcoded secrets, What is this skill?, What we observed, Why LISTED, How misused, Threat-model, Next", () => {
     const out = renderCheckRichBlock(skillFixture());

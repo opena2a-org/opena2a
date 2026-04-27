@@ -10,7 +10,13 @@
  * `Pin to current:` line up across rows) and renders one line per
  * step. The first `primary` carries the headline tone; secondary
  * entries render at default tone.
+ *
+ * Step labels, commands, and URLs are sanitized via
+ * `sanitizeForTerminal` — registry-sourced rotation URLs / install
+ * commands are untrusted and could embed ANSI / OSC-8 / control bytes
+ * that would otherwise spoof the displayed action.
  */
+import { sanitizeForTerminal } from "./terminal-safe.js";
 
 /**
  * Local mirror of `NextStep` from check-core. Defined here so cli-ui
@@ -80,8 +86,12 @@ function primaryToneFor(tier: ActionGradientTier): ActionGradientTone {
  * — the renderer drops the colon-and-padding suffix in that case.
  */
 function stepValue(step: NextStepLike): string {
-  if (step.command && step.command.length > 0) return step.command;
-  if (step.url && step.url.length > 0) return step.url;
+  if (step.command && step.command.length > 0) {
+    return sanitizeForTerminal(step.command);
+  }
+  if (step.url && step.url.length > 0) {
+    return sanitizeForTerminal(step.url);
+  }
   return "";
 }
 
@@ -121,6 +131,7 @@ export function renderActionGradientBlock(
 
   const lines: ActionGradientLine[] = [];
   for (const step of steps) {
+    const safeLabel = sanitizeForTerminal(step.label);
     const value = stepValue(step);
     let row: string;
     if (value.length === 0) {
@@ -128,9 +139,9 @@ export function renderActionGradientBlock(
       // (Mockup 3.6: "Stop:  Do NOT install" — but "Do NOT install"
       // is the label-only directive that ships as `command`. If a
       // step has truly no value we strip the colon.)
-      row = step.label;
+      row = safeLabel;
     } else {
-      row = `${padLabel(step.label, width)}${value}`;
+      row = `${padLabel(safeLabel, width)}${value}`;
     }
 
     let tone: ActionGradientTone;

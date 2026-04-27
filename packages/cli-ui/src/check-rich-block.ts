@@ -37,6 +37,7 @@ import {
   threatModelQuestionsFor,
   type ThreatModelArtifactType,
 } from "./threat-model-questions.js";
+import { sanitizeForTerminal } from "./terminal-safe.js";
 import {
   renderVerdictReasoningBlock,
   type VerdictReasoningStatementLike,
@@ -197,6 +198,8 @@ function buildHeaderMetaLines(input: CheckRichBlockInput): RichBlockMetaLine[] {
   const out: RichBlockMetaLine[] = [];
 
   // First meta line: "skill  ·  LISTED" (or equivalent verdict label).
+  // artifactType is a typed enum ('skill' | 'mcp') so no sanitization
+  // needed; verdictLabel returns hardcoded strings.
   out.push({
     text: `${artifactType}  ·  ${verdictLabel(header.trustVerdict)}`,
     tone: VERDICT_TONE[header.trustVerdict],
@@ -213,33 +216,37 @@ function buildHeaderMetaLines(input: CheckRichBlockInput): RichBlockMetaLine[] {
     parts2.push("Score: [—]");
   }
   if (header.lastScanAge && header.lastScanAge.length > 0) {
-    parts2.push(`Last scan: ${header.lastScanAge}`);
+    parts2.push(`Last scan: ${sanitizeForTerminal(header.lastScanAge)}`);
   } else if (header.trustVerdict === "LISTED_UNSCANNED") {
     parts2.push("Never scanned");
   }
   if (header.latestVersionLabel && header.latestVersionLabel.length > 0) {
-    parts2.push(`Latest: ${header.latestVersionLabel}`);
+    parts2.push(`Latest: ${sanitizeForTerminal(header.latestVersionLabel)}`);
   }
   if (parts2.length > 0) {
     out.push({ text: parts2.join("  ·  "), tone: "default" });
   }
 
   // Publisher line.
-  if (header.publisher && header.publisher.name.length > 0) {
-    const verifiedKind = header.publisher.kind
-      ? `(${header.publisher.kind})`
+  if (header.publisher && header.publisher.name && header.publisher.name.length > 0) {
+    const safeName = sanitizeForTerminal(header.publisher.name);
+    const safeKind = header.publisher.kind
+      ? sanitizeForTerminal(header.publisher.kind)
+      : "";
+    const verifiedKind = safeKind
+      ? `(${safeKind})`
       : header.publisher.verified
         ? "(verified)"
         : "(unverified)";
     out.push({
-      text: `Publisher: ${header.publisher.name} ${verifiedKind}`,
+      text: `Publisher: ${safeName} ${verifiedKind}`,
       tone: header.publisher.verified ? "good" : "warning",
     });
   }
 
   // License + maintainers.
   const parts4: string[] = [];
-  if (header.license) parts4.push(`License: ${header.license}`);
+  if (header.license) parts4.push(`License: ${sanitizeForTerminal(header.license)}`);
   if (typeof header.maintainerCount === "number") {
     parts4.push(
       `${header.maintainerCount} maintainer${header.maintainerCount === 1 ? "" : "s"}`,
@@ -286,6 +293,13 @@ function formatDownloads(n: number): string {
  * prefix + ruleId + locator on the first row, description on a
  * continuation row, fix on a third continuation row when present.
  */
+const SEVERITY_ORDER: Record<RichObservationFinding["severity"], number> = {
+  critical: 3,
+  high: 2,
+  medium: 1,
+  low: 0,
+};
+
 function buildObservationsSection(
   findings: RichObservationFinding[],
 ): RichBlockSection {
@@ -297,36 +311,45 @@ function buildObservationsSection(
     };
   }
 
-  // Section divider tone: max severity wins.
-  const top = findings.reduce<RichObservationFinding["severity"]>(
-    (acc, f) => {
-      const order: Record<RichObservationFinding["severity"], number> = {
-        critical: 3,
-        high: 2,
-        medium: 1,
-        low: 0,
-      };
-      return order[f.severity] > order[acc] ? f.severity : acc;
-    },
-    "low",
-  );
+  // Sort by severity descending (stable on input order within a tier)
+  // so CRITICAL findings render first and never get buried below
+  // softer signals. Caller-supplied array order is preserved within
+  // each severity bucket.
+  const sorted = findings
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => {
+      const sevDiff = SEVERITY_ORDER[b.f.severity] - SEVERITY_ORDER[a.f.severity];
+      return sevDiff !== 0 ? sevDiff : a.i - b.i;
+    })
+    .map((x) => x.f);
+
+  const top = sorted[0].severity;
 
   const lines: RichBlockSectionLine[] = [];
-  for (const f of findings) {
+  for (const f of sorted) {
     const prefix = SEVERITY_PREFIX[f.severity];
-    const locatorPart = f.locator && f.locator.length > 0
-      ? ` at ${f.locator}`
-      : "";
+    const safeRuleId = sanitizeForTerminal(f.ruleId);
+    const safeLocator = sanitizeForTerminal(f.locator);
+    const locatorPart =
+      safeLocator && safeLocator.length > 0 ? ` at ${safeLocator}` : "";
     lines.push({
       indent: 0,
-      text: `${prefix}   ${f.ruleId}${locatorPart}`,
+      text: `${prefix}   ${safeRuleId}${locatorPart}`,
       tone: SEVERITY_TONE[f.severity],
     });
     if (f.description && f.description.length > 0) {
-      lines.push({ indent: 1, text: f.description, tone: "default" });
+      lines.push({
+        indent: 1,
+        text: sanitizeForTerminal(f.description),
+        tone: "default",
+      });
     }
     if (f.fix && f.fix.length > 0) {
-      lines.push({ indent: 1, text: `Fix: ${f.fix}`, tone: "default" });
+      lines.push({
+        indent: 1,
+        text: `Fix: ${sanitizeForTerminal(f.fix)}`,
+        tone: "default",
+      });
     }
   }
 
@@ -366,7 +389,11 @@ function buildAlternativesSection(
   alternatives: RichAlternativeSuggestion[],
 ): RichBlockSection | null {
   if (alternatives.length === 0) return null;
-  const top3 = alternatives.slice(0, 3);
+  const top3 = alternatives.slice(0, 3).map((a) => ({
+    name: sanitizeForTerminal(a.name),
+    tier: sanitizeForTerminal(a.tier),
+    score: a.score,
+  }));
   const nameWidth = Math.min(
     24,
     top3.reduce((m, a) => Math.max(m, a.name.length), 0) + 2,
@@ -448,6 +475,8 @@ export function renderCheckRichBlock(
   const sections: RichBlockSection[] = [];
 
   // -- Hardcoded secrets (always renders, 3 states) -----------------------
+  // Sub-renderer sanitizes its own input fields; `name` and
+  // `reportTool` are passed through and sanitized inside.
   const secretsOut = renderHardcodedSecretsBlock({
     detected: input.hardcodedSecrets.detected,
     scanCovered: input.hardcodedSecrets.scanCovered,
@@ -549,7 +578,7 @@ export function renderCheckRichBlock(
 
   return {
     header: {
-      name: input.name,
+      name: sanitizeForTerminal(input.name),
       metaLines: buildHeaderMetaLines(input),
     },
     sections,

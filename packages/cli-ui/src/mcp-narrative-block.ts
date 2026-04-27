@@ -10,7 +10,12 @@
  * renderer composes a deterministic opener from the tools count.
  * Future schema bumps can add prose; until then the labelled rows
  * (Path scope, Network, Persistence, Auth) carry the meaning.
+ *
+ * All caller-supplied strings are sanitized via `sanitizeForTerminal`
+ * — registry-sourced narrative fields are untrusted and could embed
+ * ANSI / OSC-8 / control bytes.
  */
+import { sanitizeForTerminal } from "./terminal-safe.js";
 
 export interface McpToolLike {
   name: string;
@@ -113,9 +118,10 @@ export function renderMcpNarrativeBlock(
   if (narrative.tools.length > 0) {
     const sigWidth = signatureWidth(narrative.tools);
     for (const t of narrative.tools) {
-      const sig = t.signature.padEnd(sigWidth, " ");
+      const safeSig = sanitizeForTerminal(t.signature);
+      const sig = safeSig.padEnd(sigWidth, " ");
       const desc = t.description && t.description.length > 0
-        ? `— ${t.description}`
+        ? `— ${sanitizeForTerminal(t.description)}`
         : "";
       lines.push({
         indent: 1,
@@ -131,7 +137,7 @@ export function renderMcpNarrativeBlock(
     label: pad("Path scope", labelWidth),
     value:
       narrative.pathScope && narrative.pathScope.length > 0
-        ? narrative.pathScope
+        ? sanitizeForTerminal(narrative.pathScope)
         : "not specified",
     tone: "default",
   });
@@ -141,7 +147,7 @@ export function renderMcpNarrativeBlock(
     label: pad("Network", labelWidth),
     value:
       narrative.network && narrative.network.length > 0
-        ? narrative.network
+        ? sanitizeForTerminal(narrative.network)
         : "none",
     tone: "default",
   });
@@ -151,7 +157,7 @@ export function renderMcpNarrativeBlock(
     label: pad("Persistence", labelWidth),
     value:
       narrative.persistence && narrative.persistence.length > 0
-        ? narrative.persistence
+        ? sanitizeForTerminal(narrative.persistence)
         : "none",
     tone: "default",
   });
@@ -160,7 +166,9 @@ export function renderMcpNarrativeBlock(
     indent: 0,
     label: pad("Auth", labelWidth),
     value:
-      narrative.auth && narrative.auth.length > 0 ? narrative.auth : "none",
+      narrative.auth && narrative.auth.length > 0
+        ? sanitizeForTerminal(narrative.auth)
+        : "none",
     tone: "default",
   });
 
@@ -168,7 +176,9 @@ export function renderMcpNarrativeBlock(
     lines.push({
       indent: 0,
       label: pad("Side effects", labelWidth),
-      value: narrative.sideEffects.join("; "),
+      value: narrative.sideEffects
+        .map((s) => sanitizeForTerminal(s))
+        .join("; "),
       tone: "warning",
     });
   }
