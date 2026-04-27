@@ -174,3 +174,33 @@ describe("network failure tolerance", () => {
     await expect(tele.track("scan")).resolves.toBeUndefined();
   });
 });
+
+describe("flush", () => {
+  it("waits for in-flight fetches before resolving", async () => {
+    // A 1.5s slow request — process.exit() would kill it without flush().
+    let resolveFetch: (v: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((r) => {
+          resolveFetch = r;
+        }),
+    );
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.8.1" });
+    tele.start(); // fire-and-forget; doesn't await internally
+    let flushDone = false;
+    const flushPromise = tele.flush().then(() => {
+      flushDone = true;
+    });
+    expect(flushDone).toBe(false);
+    resolveFetch(new Response(null, { status: 204 }));
+    await flushPromise;
+    expect(flushDone).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op with no in-flight events", async () => {
+    const tele = await freshSdk();
+    await expect(tele.flush()).resolves.toBeUndefined();
+  });
+});
