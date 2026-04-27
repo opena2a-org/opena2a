@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/telemetry",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Tier-1 anonymous usage telemetry SDK for OpenA2A CLIs and tools. Fire-and-forget, opt-out, no content collection.",
   "type": "module",
   "main": "dist/index.js",

@@ -10,6 +10,8 @@ import { loadConfig, setEnabled, configPaths, POLICY_URL } from "./config.js";
 import { sendEvent } from "./sender.js";
 import type { InitOptions, Status, TrackFields, UsageEvent } from "./types.js";
 
+export { flush } from "./sender.js";
+
 let session: { tool: string; version: string; installId: string; enabled: boolean } | null = null;
 
 function nodeMajor(): number {
