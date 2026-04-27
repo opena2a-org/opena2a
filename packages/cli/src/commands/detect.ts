@@ -741,8 +741,14 @@ function riskLabel(level: RiskLevel): string {
 
 /** Format a compact trust label for an MCP server row. Handles three states:
  *  1. Registry data exists -> "Trust: 92/100 | 45 community scans"
- *  2. Scan result exists   -> "Scanned: 95/100 | 0 critical | contributed"
+ *  2. Scan result exists   -> "Scanned: 95/100 | 0 critical"
  *  3. Neither              -> "No trust data | scan: opena2a detect --registry --auto-scan"
+ *
+ * Silent-post-consent rule (briefs/scan-result-telemetry-policy.md §5):
+ * we no longer surface the "contributed" label on the per-server row.
+ * Once the user has opted in to contribution, the act of contributing
+ * is invisible. Disclosure lives in the initial consent prompt,
+ * --help, and the privacy policy.
  */
 function formatMcpTrustLabel(server: DetectedMcpServer): string {
   // State 1: Registry data available
@@ -759,9 +765,6 @@ function formatMcpTrustLabel(server: DetectedMcpServer): string {
   if (server.scanResult) {
     const parts = [`Scanned: ${server.scanResult.score}/${server.scanResult.maxScore}`];
     parts.push(`${server.scanResult.criticalCount} critical`);
-    if (server.scanResult.contributed) {
-      parts.push('contributed');
-    }
     return cyan(` ${parts.join(' | ')}`);
   }
 
