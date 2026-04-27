@@ -294,17 +294,28 @@ export async function dispatchCommand(
   if (command === 'check' && args.length > 0) {
     const target = args[0];
     if (target && !target.startsWith('-')) {
+      // Rich-block prefix (skill: / mcp:) — names commonly contain
+      // slashes (opena2a/code-review-skill, @modelcontextprotocol/...).
+      // The isNpmTarget gate's slash-rejection would block these, so
+      // recognize the prefix explicitly and pass through to HMA which
+      // owns the rich-block dispatch in src/check/.
+      // Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§3, §8)
+      if (isRichTarget(target)) {
+        return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
+      }
       if (isNpmTarget(target)) {
         return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
       }
       // Unrecognized target format -- show helpful error
       process.stderr.write(`Unknown target: ${target}\n`);
       process.stderr.write(`Accepted formats:\n`);
-      process.stderr.write(`  opena2a check express           npm package\n`);
-      process.stderr.write(`  opena2a check @scope/pkg        scoped npm package\n`);
-      process.stderr.write(`  opena2a check pip:requests      PyPI package\n`);
-      process.stderr.write(`  opena2a check owner/repo        GitHub repository\n`);
-      process.stderr.write(`  opena2a check ./path            local directory\n`);
+      process.stderr.write(`  opena2a check express                  npm package\n`);
+      process.stderr.write(`  opena2a check @scope/pkg               scoped npm package\n`);
+      process.stderr.write(`  opena2a check skill:<name>             registered skill (rich block)\n`);
+      process.stderr.write(`  opena2a check mcp:<name>               registered MCP server (rich block)\n`);
+      process.stderr.write(`  opena2a check pip:requests             PyPI package\n`);
+      process.stderr.write(`  opena2a check owner/repo               GitHub repository\n`);
+      process.stderr.write(`  opena2a check ./path                   local directory\n`);
       return 1;
     }
   }
@@ -413,6 +424,20 @@ function getInstallHint(config: AdapterConfig): string {
     default:
       return `npm install -g ${config.packageName ?? config.name}`;
   }
+}
+
+/**
+ * Detect a rich-block dispatch target — `skill:<name>` or `mcp:<name>`.
+ * HMA's parseRichTarget owns the actual parse; the router only needs
+ * to know "this is a rich-target, hand it to HMA without npm-name
+ * validation" because rich-target names commonly contain slashes
+ * (opena2a/code-review-skill, @modelcontextprotocol/server-filesystem)
+ * that the npm gate rejects.
+ */
+export function isRichTarget(target: string): boolean {
+  if (target.startsWith('skill:') && target.length > 'skill:'.length) return true;
+  if (target.startsWith('mcp:') && target.length > 'mcp:'.length) return true;
+  return false;
 }
 
 /**
