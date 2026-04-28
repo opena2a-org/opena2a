@@ -79,3 +79,71 @@ export {
   type TelemetryAction,
   type TelemetryCommandInput,
 } from "./telemetry-command.js";
+export {
+  renderCheckRichBlock,
+  type CheckRichBlockInput,
+  type RenderedRichBlock,
+  type RichAlternativeSuggestion,
+  type RichArtifactType,
+  type RichBlockHeaderSignals,
+  type RichBlockMetaLine,
+  type RichBlockSection,
+  type RichBlockSectionLine,
+  type RichBlockTone,
+  type RichObservationFinding,
+} from "./check-rich-block.js";
+export {
+  renderHardcodedSecretsBlock,
+  type RenderedSecretsBlock,
+  type SecretLike,
+  type SecretsBlockInput,
+  type SecretsBlockLine,
+  type SecretsTone,
+} from "./hardcoded-secrets-block.js";
+export {
+  renderSkillMisuseNarrative,
+  renderSkillNarrativeBlock,
+  type PermissionStatusLike,
+  type RenderedMisuseNarrative,
+  type RenderedSkillNarrative,
+  type SkillNarrativeLike,
+  type SkillNarrativeLine,
+  type SkillNarrativeTone,
+  type ToolCallCountLike,
+} from "./skill-narrative-block.js";
+export {
+  renderMcpNarrativeBlock,
+  type McpNarrativeLike,
+  type McpNarrativeLine,
+  type McpNarrativeTone,
+  type McpToolLike,
+  type RenderedMcpNarrative,
+} from "./mcp-narrative-block.js";
+export {
+  renderVerdictReasoningBlock,
+  type RenderedVerdictReasoning,
+  type VerdictReasoningInput,
+  type VerdictReasoningLine,
+  type VerdictReasoningStatementLike,
+  type VerdictTier,
+  type VerdictTone,
+} from "./verdict-reasoning-block.js";
+export {
+  renderActionGradientBlock,
+  type ActionGradientInput,
+  type ActionGradientLine,
+  type ActionGradientTier,
+  type ActionGradientTone,
+  type NextStepLike,
+  type RenderedActionGradient,
+} from "./action-gradient-block.js";
+export {
+  MCP_THREAT_MODEL_QUESTIONS,
+  SKILL_THREAT_MODEL_QUESTIONS,
+  threatModelQuestionsFor,
+  type ThreatModelArtifactType,
+} from "./threat-model-questions.js";
+export {
+  sanitizeArray,
+  sanitizeForTerminal,
+} from "./terminal-safe.js";
