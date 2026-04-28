@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
     .option('--json', 'Shorthand for --format json')
     .option('--contribute', 'Share anonymized scan results with OpenA2A community')
+    .option('--no-contribute', 'Skip community contribution for this invocation only')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
     .option('--analm', 'AI-powered threat analysis using AnaLM')
     .option('--static-only', 'Disable semantic analysis (static checks only, fast)')
@@ -155,6 +156,7 @@ Learn more: https://opena2a.org/docs`);
             ci: globalOpts.ci,
             format: globalOpts.format,
             contribute: globalOpts.contribute,
+            noContribute: globalOpts.contribute === false,
             deep: globalOpts.deep,
             analm: globalOpts.analm,
             staticOnly: globalOpts.staticOnly,
@@ -181,6 +183,7 @@ Learn more: https://opena2a.org/docs`);
           ci: globalOpts.ci,
           format: globalOpts.format,
           contribute: globalOpts.contribute,
+          noContribute: globalOpts.contribute === false,
           deep: globalOpts.deep,
           staticOnly: globalOpts.staticOnly,
         });
@@ -273,6 +276,7 @@ analysis runs and results can be shared with the community.
           ci: globalOpts.ci,
           format: globalOpts.format,
           contribute: globalOpts.contribute,
+          noContribute: globalOpts.contribute === false,
           deep: globalOpts.deep,
           staticOnly: globalOpts.staticOnly,
         });
@@ -311,6 +315,7 @@ analysis runs and results can be shared with the community.
           ci: globalOpts.ci,
           format: globalOpts.format,
           contribute: globalOpts.contribute,
+          noContribute: globalOpts.contribute === false,
           deep: globalOpts.deep,
           staticOnly: globalOpts.staticOnly,
         });

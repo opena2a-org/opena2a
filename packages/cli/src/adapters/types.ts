@@ -26,6 +26,7 @@ export interface RunOptions {
   ci?: boolean;
   format?: 'text' | 'json' | 'sarif';
   contribute?: boolean;
+  noContribute?: boolean;
   cwd?: string;
   deep?: boolean;
   analm?: boolean;

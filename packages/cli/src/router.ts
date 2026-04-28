@@ -386,7 +386,9 @@ export async function dispatchCommand(
 
   // Community contribution: submit scan reports when contribute is enabled.
   // This is best-effort and non-blocking -- failures are silently ignored.
-  if (globalOptions.contribute || await isContributeEnabled()) {
+  // --no-contribute is a per-invocation override that beats both --contribute
+  // and the persisted user-config consent (issue #107).
+  if ((globalOptions.contribute || await isContributeEnabled()) && !globalOptions.noContribute) {
     try {
       const registryUrl = await getRegistryUrl();
       // Parse stdout for scan report JSON (adapters that produce scan results)
