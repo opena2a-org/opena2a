@@ -369,6 +369,13 @@ export async function dispatchCommand(
   if (globalOptions.staticOnly && !adapterArgs.includes('--static-only')) {
     adapterArgs.push('--static-only');
   }
+  // Propagate contribution flags to downstream tools (hackmyagent supports both).
+  // --no-contribute beats --contribute when both are present (issue #107).
+  if (globalOptions.noContribute && !adapterArgs.includes('--no-contribute')) {
+    adapterArgs.push('--no-contribute');
+  } else if (globalOptions.contribute && !adapterArgs.includes('--contribute') && !adapterArgs.includes('--no-contribute')) {
+    adapterArgs.push('--contribute');
+  }
 
   const result = await adapter.run({
     args: adapterArgs,
