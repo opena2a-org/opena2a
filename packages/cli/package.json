@@ -13,7 +13,8 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "release-smoke:corpus": "tsx scripts/release-smoke-corpus.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
