@@ -7,6 +7,15 @@
 - `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
 - Docker adapter configurable port mapping for `train` command (full DVAA port range)
 
+## 0.8.26
+
+### Changed
+- **`@opena2a/cli-ui` exact pin bumped to `0.5.0`** (was `0.2.0`). Picks up the rich-context check block primitives (`renderCheckRichBlock`, `renderHardcodedSecretsBlock`, `renderSkillNarrativeBlock`, `renderMcpNarrativeBlock`, `renderVerdictReasoningBlock`, `renderActionGradientBlock`, `threatModelQuestionsFor`, `sanitizeForTerminal`) and the ANSI sanitizer for untrusted narrative strings. Spawn-delegated `check skill:<name>` and `check mcp:<name>` now render the rich block via hackmyagent 0.21.0+; falls back gracefully on older HMA installs.
+
+### Bug Fixes
+- `router`: pass `skill:` / `mcp:` rich-block targets through to hackmyagent untouched. Previously the router could strip the prefix, breaking rich-block dispatch.
+- `detect`: silent post-consent — drop the "contributed" label from per-server status rows. Rows now read clean once the user has consented; the consent state is implicit, not re-announced per row.
+
 ## 0.8.25
 
 ### Changed

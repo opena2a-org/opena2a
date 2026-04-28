@@ -1,6 +1,6 @@
 {
   "name": "opena2a-cli",
-  "version": "0.8.25",
+  "version": "0.8.26",
   "description": "Unified CLI for the OpenA2A security platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
-    "@opena2a/cli-ui": "0.2.0",
+    "@opena2a/cli-ui": "0.5.0",
     "@opena2a/contribute": "0.1.0",
     "@opena2a/registry-client": "0.1.0",
     "@opena2a/shared": "0.1.0",
