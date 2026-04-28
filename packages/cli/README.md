@@ -91,6 +91,20 @@ Full command reference, Shield subcommands, scope drift detection, behavioral go
 - Node.js >= 18
 - Optional: Docker (for `opena2a train`)
 
+## Telemetry
+
+`opena2a` sends anonymous tier-1 usage data to the OpenA2A Registry: tool name, version, command name (`check`, `scan`, `protect`, etc.), success, duration, platform, Node major version, and a stable per-machine `install_id`. **No content is collected** — no scanned packages, no findings, no file paths, no env-var values, no IPs.
+
+This is **separate** from the community-contribution data the Registry already collects via `--publish` flags; that flow continues to populate the public community page (scan submissions, findings, contributors). Telemetry just answers "is anyone running these commands at all?"
+
+- **Policy:** [opena2a.org/telemetry](https://opena2a.org/telemetry).
+- **Status:** `opena2a telemetry status`.
+- **Disable per-invocation:** `OPENA2A_TELEMETRY=off opena2a <anything>`.
+- **Disable persistently:** `opena2a telemetry off`.
+- **Audit every payload:** `OPENA2A_TELEMETRY_DEBUG=print opena2a <anything>` echoes each event to stderr in JSON.
+
+Fire-and-forget with a 2-second timeout — telemetry never blocks the CLI.
+
 ## License
 
 Apache-2.0
