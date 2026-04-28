@@ -83,6 +83,10 @@ Smart Features:
   $ opena2a find secrets         Natural language command matching
   $ opena2a detect credentials   Natural language command matching
 
+Telemetry:
+  Anonymous usage telemetry is on. Disable: OPENA2A_TELEMETRY=off
+  Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute
+
 Learn more: https://opena2a.org/docs`);
 
   // Register all adapter-backed commands
