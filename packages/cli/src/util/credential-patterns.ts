@@ -114,7 +114,27 @@ export const SKIP_DIRS = new Set([
   '__tests__', 'test', 'tests', 'spec', 'specs',
   'fixtures', 'testdata', 'test-data',
   'e2e',
+  // VHS recording assets — convention is to embed placeholder credentials
+  // for terminal-recording demos. Matches `docs/vhs/`, `vhs/` etc.
+  'vhs',
 ]);
+
+/**
+ * Filename patterns that indicate test or demo files where credential-shaped
+ * strings are intentional placeholders, not real exposures. Matches files
+ * that live alongside source (e.g. `src/dlp/dlp.test.ts`) and aren't caught
+ * by the SKIP_DIRS directory walk.
+ *
+ * Tradeoff: a real credential committed into a `*.test.ts` or `demo-*.sh`
+ * file will not be flagged by this scanner. Real-credential exposure in
+ * those paths is the wrong layer to fix — use git pre-commit hooks or
+ * `git secrets`. The scanner's job here is composite-score correctness.
+ */
+export const SKIP_FILENAME_PATTERNS: RegExp[] = [
+  /\.(test|spec)\.(?:tsx?|jsx?|mjs|cjs|py)$/i,
+  /_test\.(?:go|py)$/i,
+  /^demo[-_].*\.(?:sh|ts|js|py)$/i,
+];
 
 /**
  * Path segments that identify the CLI's own source files.
@@ -167,6 +187,7 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (SKIP_EXTENSIONS.has(ext)) continue;
+      if (SKIP_FILENAME_PATTERNS.some(re => re.test(entry.name))) continue;
       // Skip large files (>1MB)
       try {
         const stat = fs.statSync(path.join(dir, entry.name));
