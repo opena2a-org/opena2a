@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1
+
+### Changed
+- **`hackmyagent` runtime dep pinned exact `0.22.0`** (was `^0.17.0`, which resolved to 0.17.0 because pre-1.0 caret pins minor). Closes [#121](https://github.com/opena2a-org/opena2a/issues/121) (status/verify advertised stale HMA 0.17.0), [#128](https://github.com/opena2a-org/opena2a/issues/128) (HMA 0.17 text renderer leaked the multi-line `fix` field as raw `## Trust Hierarchy` / `1. System instructions` lines into `scan` stdout — verified zero occurrences post-bump on the malicious kitchen-sink fixture), and the W3-D5 audit finding (`secrets` reporting stale HMA version). Five-minor jump (0.17 → 0.22) brings: HMA Finding v2 fields (`evidence` / `rationale` / `concept` / `attackClass`) populated 114/114 with `attackClass` on every static-check finding (HMA #138, #146); the proximity-gated `transmit` URL capture (HMA #148); the heuristic compiler verbatim-evidence emit (HMA #151, #152); the integrity-verifier hardening (HMA #160). The opena2a-cli renderer wiring shipped in 0.10.0 (PR #114) now sees populated v2 fields end-to-end. Per-package "exact version pins" rule (CLAUDE.md). Phase 4.5 Tier B adversarial review on the boundary contract: PASS — load-bearing surfaces clean (CLI argv, JSON shape, render assumptions, activation gates, exit code, transitive ai-trust 0.16.7 isolated to ai-trust subprocess); 4 pre-existing follow-ups noted (init.ts dead-code branch checking non-existent HMA exports; `interactive-html.ts` evidence-string type land-mine; `review.ts:890` bare-catch swallow; `review` malicious-tier composite scoring at 69/100 — all pre-existed in 0.17 and are out of scope for this bump).
+
 ## 0.10.0
 
 ### New Features
