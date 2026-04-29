@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
+import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
@@ -140,6 +141,16 @@ export async function init(options: InitOptions): Promise<number> {
     if (!seenCredValues.has(mc.value)) {
       credentialMatches.push(mc);
       seenCredValues.add(mc.value);
+    }
+  }
+
+  // Cryptographic key/cert files (private keys, PKCS#12 stores, certs) are
+  // credentials by file type, not by string content (#116). Without this
+  // pass, kitchen-sink fixtures with `.key` / `.pem` files in source score
+  // artificially high.
+  for (const km of scanCryptoKeyFiles(targetDir)) {
+    if (!credentialMatches.some(m => m.filePath === km.filePath && m.findingId === km.findingId)) {
+      credentialMatches.push(km);
     }
   }
 
@@ -509,6 +520,8 @@ const HYGIENE_FILE_PROBES: Record<string, string[]> = {
   'MCP-CRED': ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'],
   'ENV-DOTENV': ['.gitignore'],
   'AI-CONFIG': ['.gitignore', '.git/info/exclude'],
+  'AI-SKILLS': ['SKILL.md'],
+  'AI-SOUL': ['SOUL.md', 'soul.md'],
 };
 
 function probeHygieneLocation(findingId: string, dir: string): { file: string; line: number }[] {
@@ -618,6 +631,37 @@ function groupFindings(
     });
   }
 
+  // Surface unsigned skill files as a discrete finding so the user sees
+  // it in the text view and the JSON `findings[]` array, not just buried
+  // in `hygieneChecks`. Pre-#116 this warn was emitted but never shown
+  // as a finding, which made `init` look quieter than the project was.
+  const skillCheck = checks.find(c => c.label === 'Skill files' && c.status === 'warn');
+  if (skillCheck) {
+    groups.set('AI-SKILLS', {
+      findingId: 'AI-SKILLS',
+      title: skillCheck.detail,
+      severity: 'medium',
+      count: 1,
+      explanation: 'Skill files declare AI-agent capabilities. Without an opena2a-guard signature block, modifications are not detectable and the agent has no integrity baseline.',
+      businessImpact: 'Sign each skill file so future tampering is visible and the agent\'s capability surface is anchored to a known-good baseline.',
+      locations: probeHygieneLocation('AI-SKILLS', targetDir),
+    });
+  }
+
+  // Surface SOUL.md prompt-injection / override patterns the same way.
+  const soulCheck = checks.find(c => c.label === 'Soul file' && c.status === 'warn');
+  if (soulCheck) {
+    groups.set('AI-SOUL', {
+      findingId: 'AI-SOUL',
+      title: soulCheck.detail,
+      severity: 'high',
+      count: 1,
+      explanation: 'SOUL.md is the agent\'s governance document. Override / injection patterns here can defeat trust hierarchies and broaden the agent\'s authority beyond what the operator intended.',
+      businessImpact: 'Review the patterns and either remove them or document why they are required. Re-sign the file once corrections land.',
+      locations: probeHygieneLocation('AI-SOUL', targetDir),
+    });
+  }
+
   // Add HMA findings
   for (const f of hmaFindings) {
     const key = `HMA-${f.checkId}`;
@@ -668,11 +712,16 @@ function generateActions(
 ): ActionItem[] {
   const actions: ActionItem[] = [];
 
-  // Credential migration action
-  if (creds.length > 0) {
-    // Build breakdown string
+  // Split key/cert files from text-pattern credentials. `opena2a protect`
+  // can migrate text patterns to a vault but cannot rotate or untrack
+  // binary key files — surfacing both under a single protect-action would
+  // be a CISO Rule 1 dead end on the keyfile side (Phase 4.5 finding).
+  const keyfileCreds = creds.filter(c => c.findingId === 'CRED-KEYFILE' || c.findingId === 'CRED-CERTFILE');
+  const textCreds = creds.filter(c => c.findingId !== 'CRED-KEYFILE' && c.findingId !== 'CRED-CERTFILE');
+
+  if (textCreds.length > 0) {
     const byTitle = new Map<string, number>();
-    for (const c of creds) {
+    for (const c of textCreds) {
       byTitle.set(c.title, (byTitle.get(c.title) || 0) + 1);
     }
     const breakdownParts = Array.from(byTitle.entries())
@@ -680,11 +729,22 @@ function generateActions(
       .join(', ');
 
     actions.push({
-      description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'} to a vault`,
+      description: `Migrate ${textCreds.length} hardcoded credential${textCreds.length === 1 ? '' : 's'} to a vault`,
       command: 'opena2a protect',
       why: 'Credentials in source files are readable by anyone with repo access. A vault stores them encrypted, rotates them automatically, and provides an audit trail.',
       approach: 'Moves keys to environment variables backed by an encrypted vault. Keys rotate without code changes, and access is auditable.',
       detail: `Keys found: ${breakdownParts}`,
+    });
+  }
+
+  if (keyfileCreds.length > 0) {
+    const fileExamples = keyfileCreds.slice(0, 3).map(c => path.basename(c.filePath)).join(', ');
+    actions.push({
+      description: `Untrack ${keyfileCreds.length} key/cert file${keyfileCreds.length === 1 ? '' : 's'} and rotate at issuer`,
+      command: "git rm --cached '<file>' && echo '*.key' >> .gitignore",
+      why: 'Cryptographic key files (.key/.pem/.p12/.pfx) are credentials by file type. opena2a protect handles text-pattern keys but cannot rotate binary key material — that has to happen at the issuing CA, vault, or KMS.',
+      approach: 'Untrack the file from git, add the extension to .gitignore so it cannot be re-added, then issue a fresh key at the upstream provider. Treat the historical commit as a leak even after rotation — assume any holder of the old key has used it.',
+      detail: `Files: ${fileExamples}${keyfileCreds.length > 3 ? ` (+${keyfileCreds.length - 3} more)` : ''}`,
     });
   }
 
@@ -886,6 +946,24 @@ function getVerificationCommand(
 function getToolRecommendation(
   findingId: string,
 ): { command: string; label: string } | null {
+  // Cryptographic key/cert files are credentials by file type, not text
+  // content. `opena2a protect` only handles text-pattern credentials, so
+  // a Fix line pointing there would be a CISO Rule 1 dead end. Surface
+  // the actual remediation: untrack from git + add the extension to
+  // `.gitignore`. Rotation happens at the issuing CA / vault and cannot
+  // be automated by the CLI.
+  if (findingId === 'CRED-KEYFILE') {
+    return {
+      command: "git rm --cached '<file>' && echo '*.key' >> .gitignore",
+      label: 'untrack key file + .gitignore (then rotate the key at issuer)',
+    };
+  }
+  if (findingId === 'CRED-CERTFILE') {
+    return {
+      command: "git rm --cached '<file>' && echo '*.crt' >> .gitignore",
+      label: 'untrack cert file + .gitignore (verify the matching private key is not committed)',
+    };
+  }
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
     return { command: 'opena2a protect', label: 'opena2a protect' };
   }

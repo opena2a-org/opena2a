@@ -394,8 +394,9 @@ describe('init', () => {
     }));
 
     const report = JSON.parse(output);
-    // MCP-TOOLS adds 5 to environment deduction
-    expect(report.scoreBreakdown.environment.deduction).toBeGreaterThanOrEqual(5);
+    // Per #116: MCP-TOOLS now scales by server count (-3 per server,
+    // sub-cap -15). Single-server fixture deducts 3, not 5.
+    expect(report.scoreBreakdown.environment.deduction).toBeGreaterThanOrEqual(3);
     expect(report.scoreBreakdown.environment.detail).toContain('MCP');
   });
 
@@ -480,6 +481,140 @@ describe('init', () => {
     expect(parsed.message).toContain('Directory not found');
   });
 
+  // Regression: opena2a/issues/116 — `init` was scoring kitchen-sink-class
+  // malicious projects at 96/100 because the quick-scan path did not detect
+  // private-key files in source. The fix adds .key/.pem detection and
+  // surfaces them as CRITICAL credential findings.
+  it('detects .key/.pem private-key files as CRITICAL credentials (#116)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'fake-private.key'), '-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----');
+    fs.writeFileSync(path.join(tempDir, 'fake-cert.pem'), '-----BEGIN CERTIFICATE-----');
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    expect(report.credentialsBySeverity.critical).toBeGreaterThanOrEqual(2);
+    const keyFinding = report.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
+    expect(keyFinding).toBeDefined();
+    expect(keyFinding.severity).toBe('critical');
+    // Score must drop materially below the pre-#116 baseline of 96/100 for
+    // a project carrying .key + .pem in its root.
+    expect(report.securityScore).toBeLessThan(70);
+  });
+
+  it('scales MCP-tools deduction by server count across multiple configs (#116)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '{}');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'a': { command: 'filesystem-server' },
+        'b': { command: 'filesystem-server' },
+        'c': { command: 'filesystem-server' },
+        'd': { command: 'filesystem-server' },
+      },
+    }));
+    fs.mkdirSync(path.join(tempDir, '.cursor'));
+    fs.writeFileSync(path.join(tempDir, '.cursor', 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'e': { command: 'filesystem-server' },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    expect(report.scoreBreakdown.environment.detail).toContain('5 server');
+    // 5 servers × -3 = -15 to environment, plus the score must reflect
+    // that this is a high-impact MCP surface (well below the
+    // single-server baseline).
+    expect(report.scoreBreakdown.environment.deduction).toBeGreaterThanOrEqual(15);
+  });
+
+  it('surfaces unsigned skill files as a discrete AI-SKILLS finding (#116)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'SKILL.md'), '# unsigned skill');
+    fs.writeFileSync(path.join(tempDir, 'extra.skill.md'), '# unsigned skill');
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const skillFinding = report.findings.find((f: any) => f.findingId === 'AI-SKILLS');
+    expect(skillFinding).toBeDefined();
+    expect(skillFinding.severity).toBe('medium');
+    expect(skillFinding.locations.length).toBeGreaterThan(0);
+  });
+
+  it('benign + buggy + malicious-shaped fixtures keep monotonic score order (#116)', async () => {
+    // Benign: lock file + security config + .gitignore + nothing else
+    const benignDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-benign-'));
+    try {
+      fs.writeFileSync(path.join(benignDir, 'package.json'), JSON.stringify({ name: 'b' }));
+      fs.writeFileSync(path.join(benignDir, '.gitignore'), '.env\nnode_modules\n');
+      fs.writeFileSync(path.join(benignDir, 'package-lock.json'), '{}');
+      fs.mkdirSync(path.join(benignDir, '.opena2a'), { recursive: true });
+      fs.mkdirSync(path.join(benignDir, '.opena2a', 'guard'), { recursive: true });
+      fs.writeFileSync(path.join(benignDir, '.opena2a', 'guard', 'signatures.json'), '{}');
+
+      const { output: benignOut } = await captureStdout(() => init({ targetDir: benignDir, format: 'json' }));
+      const benign = JSON.parse(benignOut);
+
+      // Buggy: 1 hardcoded credential in .env.example
+      const buggyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-buggy-'));
+      fs.writeFileSync(path.join(buggyDir, 'package.json'), JSON.stringify({ name: 'bg' }));
+      fs.writeFileSync(path.join(buggyDir, '.gitignore'), '.env\n');
+      const fakeKey = 'sk-ant-api03-' + 'Q'.repeat(85);
+      fs.writeFileSync(path.join(buggyDir, '.env.example'), `KEY=${fakeKey}\n`);
+
+      const { output: buggyOut } = await captureStdout(() => init({ targetDir: buggyDir, format: 'json' }));
+      const buggy = JSON.parse(buggyOut);
+
+      // Malicious: private key + 4-server MCP + unsigned skill
+      const malDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-mal-'));
+      fs.writeFileSync(path.join(malDir, 'package.json'), JSON.stringify({ name: 'm' }));
+      fs.writeFileSync(path.join(malDir, '.gitignore'), '.env\n');
+      fs.writeFileSync(path.join(malDir, 'fake-private.key'), '-----BEGIN PRIVATE KEY-----\nFAKE');
+      fs.writeFileSync(path.join(malDir, 'fake-cert.pem'), '-----BEGIN CERTIFICATE-----');
+      fs.writeFileSync(path.join(malDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'a': { command: 'filesystem-server' },
+          'b': { command: 'filesystem-server' },
+          'c': { command: 'filesystem-server' },
+          'd': { command: 'filesystem-server' },
+        },
+      }));
+      fs.writeFileSync(path.join(malDir, 'SKILL.md'), '# unsigned');
+
+      const { output: malOut } = await captureStdout(() => init({ targetDir: malDir, format: 'json' }));
+      const mal = JSON.parse(malOut);
+
+      // Monotonicity: benign > buggy > malicious. With band assertions:
+      expect(benign.securityScore).toBeGreaterThan(buggy.securityScore);
+      expect(buggy.securityScore).toBeGreaterThan(mal.securityScore);
+      expect(benign.securityScore).toBeGreaterThanOrEqual(80);
+      expect(buggy.securityScore).toBeGreaterThanOrEqual(50);
+      expect(buggy.securityScore).toBeLessThanOrEqual(80);
+      // Malicious must drop below 60 (pre-#116 it was 96/100).
+      expect(mal.securityScore).toBeLessThan(60);
+
+      fs.rmSync(buggyDir, { recursive: true, force: true });
+      fs.rmSync(malDir, { recursive: true, force: true });
+    } finally {
+      fs.rmSync(benignDir, { recursive: true, force: true });
+    }
+  });
+
   // Regression: opena2a/issues/119 — JSON findings must carry the same
   // verify / fix / locations the text view prints. CI gates and IDE
   // plugins parse the JSON; missing fields force them to re-run scanners.
@@ -493,6 +628,10 @@ describe('init', () => {
     }));
     const fakeKey = 'sk-ant-api03-' + 'P'.repeat(85);
     fs.writeFileSync(path.join(tempDir, 'config.ts'), `const k = "${fakeKey}";`);
+    // Add a key file so we can also assert CRED-KEYFILE carries a non-
+    // misleading fix command (Phase 4.5 follow-up: pre-fix this routed
+    // to `opena2a protect` which silently no-ops on binary key files).
+    fs.writeFileSync(path.join(tempDir, 'leak.key'), '-----BEGIN PRIVATE KEY-----\nFAKE');
 
     const { output } = await captureStdout(() => init({
       targetDir: tempDir,
@@ -500,13 +639,21 @@ describe('init', () => {
     }));
 
     const report = JSON.parse(output);
-    const credFinding = report.findings.find((f: any) => f.findingId.startsWith('CRED-'));
-    expect(credFinding).toBeDefined();
-    expect(typeof credFinding.verify).toBe('string');
-    expect(credFinding.verify.length).toBeGreaterThan(0);
-    expect(credFinding.fix).toBe('opena2a protect');
-    expect(credFinding.locations.length).toBeGreaterThan(0);
-    expect(credFinding.locations[0]).toMatchObject({ file: expect.any(String), line: expect.any(Number) });
+    const textCred = report.findings.find((f: any) => f.findingId === 'CRED-001');
+    expect(textCred).toBeDefined();
+    expect(typeof textCred.verify).toBe('string');
+    expect(textCred.verify.length).toBeGreaterThan(0);
+    expect(textCred.fix).toBe('opena2a protect');
+    expect(textCred.locations.length).toBeGreaterThan(0);
+    expect(textCred.locations[0]).toMatchObject({ file: expect.any(String), line: expect.any(Number) });
+
+    const keyfile = report.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
+    expect(keyfile).toBeDefined();
+    // Critical: CRED-KEYFILE must NOT route to plain `opena2a protect`,
+    // which silently no-ops on binary key files. The fix command must
+    // mention `git rm` so the user has an actionable next step.
+    expect(keyfile.fix).not.toBe('opena2a protect');
+    expect(keyfile.fix).toContain('git rm');
 
     const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
     expect(mcpFinding).toBeDefined();
@@ -514,6 +661,44 @@ describe('init', () => {
     expect(mcpFinding.fix).toBe('opena2a shield init');
     expect(mcpFinding.locations.length).toBeGreaterThan(0);
     expect(mcpFinding.locations[0].file.endsWith('mcp.json')).toBe(true);
+  });
+
+  // Phase 4.5 follow-up: a single MEDIUM `.crt` finding alone must NOT
+  // co-exist with a 100/100 score and a "+5 security config" bonus.
+  // Pre-fix `hasHighImpact` only checked critCount/highCount.
+  it('MEDIUM CRED-CERTFILE alone suppresses the security-config bonus (#116/Phase4.5)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '{}');
+    fs.mkdirSync(path.join(tempDir, '.opena2a', 'guard'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.opena2a', 'guard', 'signatures.json'), '{}');
+    fs.writeFileSync(path.join(tempDir, 'leaf.crt'), '-----BEGIN CERTIFICATE-----');
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    expect(report.securityScore).toBeLessThan(100);
+    const certFinding = report.findings.find((f: any) => f.findingId === 'CRED-CERTFILE');
+    expect(certFinding).toBeDefined();
+    expect(certFinding.severity).toBe('medium');
+  });
+
+  // Phase 4.5 follow-up: assert the real corpus is checked when present
+  // so monotonicity isn't only validated on synthetic shapes.
+  const corpusKitchenSink = path.join(os.homedir(), 'workspace', 'opena2a-org', 'opena2a-corpus', 'repo', 'malicious', 'kitchen-sink');
+  const corpusBenign = path.join(os.homedir(), 'workspace', 'opena2a-org', 'opena2a-corpus', 'repo', 'benign', 'tiny-clean-repo');
+  const hasCorpus = fs.existsSync(corpusKitchenSink) && fs.existsSync(corpusBenign);
+  it.skipIf(!hasCorpus)('real corpus: malicious < buggy ceiling, benign within band (#116)', async () => {
+    const { output: malOut } = await captureStdout(() => init({ targetDir: corpusKitchenSink, format: 'json' }));
+    const mal = JSON.parse(malOut);
+    expect(mal.securityScore).toBeLessThan(60); // pre-#116 was 96
+    const { output: benignOut } = await captureStdout(() => init({ targetDir: corpusBenign, format: 'json' }));
+    const benign = JSON.parse(benignOut);
+    expect(benign.securityScore).toBeGreaterThan(mal.securityScore);
+    expect(benign.securityScore).toBeGreaterThanOrEqual(80);
   });
 
   // Regression: opena2a/issues/117 — Fix commands must point to runnable
