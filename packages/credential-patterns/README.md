@@ -12,12 +12,17 @@ npm install @opena2a/credential-patterns
 
 Pin exactly. Per OpenA2A convention across the CLI consolidation, depend with `"@opena2a/credential-patterns": "0.1.0"`, not `^0.1.0`. Trades dependency-update PR volume for supply-chain tightness; removes transitive surprise.
 
+This package is **ESM-only** (`"type": "module"`, no CJS build).
+
+- ESM consumers (`"type": "module"`, or `.mjs` / `.mts` files): use a static `import { ... } from '@opena2a/credential-patterns'` as shown below.
+- CommonJS consumers (`"type": "commonjs"`, including any `.ts` file under a CJS `tsconfig` with `module: "Node16"`): use a dynamic `await import('@opena2a/credential-patterns')` inside an async function. A static `import` will fail with TypeScript `TS1479` ("CommonJS module ... cannot be imported with `require`"). This is the path `secretless-ai` uses today for `@opena2a/cli-ui` and is the same path PR 2 will use here.
+
 ## Exports
 
 ```ts
 import {
   CREDENTIAL_PATTERNS,           // CredentialPattern[] — ordered, prefix-specific first
-  CREDENTIAL_PREFIX_QUICK_CHECK, // RegExp — fast prefilter built from pattern prefixes
+  CREDENTIAL_PREFIX_QUICK_CHECK, // RegExp (no /g flag — safe to call .test() repeatedly)
   KNOWN_EXAMPLE_KEYS,            // Set<string> — exact public example keys to allowlist
   PLACEHOLDER_INDICATORS,        // string[] — case-insensitive placeholder substrings
   SECRET_FILE_PATTERNS,          // string[] — file globs that must never reach AI tools
