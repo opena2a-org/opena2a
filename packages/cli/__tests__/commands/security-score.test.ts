@@ -21,11 +21,14 @@ describe('calculateSecurityScore', () => {
     const { score: score2 } = calculateSecurityScore({ critical: 2 }, cleanChecks);
     const { score: score3 } = calculateSecurityScore({ critical: 5 }, cleanChecks);
 
-    // First critical = -20, each subsequent = -8
-    expect(score1).toBe(100 - 20 + 5); // 85 (with +5 config bonus)
-    expect(score2).toBe(100 - 20 - 8 + 5); // 77
+    // First critical = -20, each subsequent = -8.
+    // Per #116: security-config bonus is suppressed when CRITICAL
+    // findings exist (a signed signatures.json doesn't compensate).
+    // Pre-#116 these returned 85 / 77 / 61 with the +5 bonus.
+    expect(score1).toBe(100 - 20); // 80
+    expect(score2).toBe(100 - 20 - 8); // 72
     // 5 critical: 20 + 4*8 = 52, but cap additional at 24, so 20+24=44
-    expect(score3).toBe(100 - 44 + 5); // 61
+    expect(score3).toBe(100 - 44); // 56
   });
 
   it('caps credential deduction at 60', () => {
@@ -124,14 +127,28 @@ describe('calculateSecurityScore', () => {
     expect(b.breakdown.configuration.detail).not.toContain('.gitignore');
   });
 
-  it('includes MCP high-risk tools in environment deduction (+5)', () => {
+  it('includes MCP high-risk tools in environment deduction (-3 per server, post-#116)', () => {
     const checksWithMcp = [
       ...cleanChecks,
       { label: 'MCP high-risk tools', status: 'warn' as const, detail: '1 server with filesystem access' },
     ];
     const { breakdown } = calculateSecurityScore({}, checksWithMcp);
-    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(5);
+    // Pre-#116 was a flat -5 regardless of server count. Post-#116 the
+    // per-server scale is -3 with a sub-cap of -15.
+    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(3);
     expect(breakdown.environment.detail).toContain('MCP high-risk tools');
+  });
+
+  it('scales MCP-tools deduction by server count across multiple configs (#116)', () => {
+    const checksMultiMcp = [
+      ...cleanChecks,
+      { label: 'MCP high-risk tools', status: 'warn' as const, detail: '4 servers with filesystem/shell access in mcp.json' },
+      { label: 'MCP high-risk tools', status: 'warn' as const, detail: '1 server with filesystem/shell access in .cursor/mcp.json' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checksMultiMcp);
+    // 5 servers × 3 = 15 (sub-cap of 15)
+    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(15);
+    expect(breakdown.environment.detail).toContain('5 server');
   });
 
   it('includes MCP credentials in environment deduction (+5)', () => {
@@ -154,7 +171,7 @@ describe('calculateSecurityScore', () => {
     expect(breakdown.environment.detail).toContain('AI config exposed');
   });
 
-  it('caps environment at 25 even with MCP + AI + LLM + env issues', () => {
+  it('caps environment at 30 even with MCP + AI + LLM + env + skill + soul issues (#116)', () => {
     const heavyChecks = [
       { label: 'Credential scan', status: 'pass' as const, detail: 'no findings' },
       { label: '.gitignore', status: 'pass' as const, detail: 'present' },
@@ -162,11 +179,29 @@ describe('calculateSecurityScore', () => {
       { label: 'Lock file', status: 'pass' as const, detail: 'package-lock.json' },
       { label: 'Security config', status: 'pass' as const, detail: '.opena2a.yaml' },
       { label: 'LLM server exposure', status: 'warn' as const, detail: 'Ollama on :11434' },
-      { label: 'MCP high-risk tools', status: 'warn' as const, detail: '1 server' },
+      { label: 'MCP high-risk tools', status: 'warn' as const, detail: '5 servers' },
       { label: 'MCP credentials', status: 'warn' as const, detail: 'hardcoded' },
       { label: 'AI config exposure', status: 'warn' as const, detail: '3 files' },
+      { label: 'Skill files', status: 'warn' as const, detail: '4 unsigned' },
+      { label: 'Soul file', status: 'warn' as const, detail: 'override patterns' },
     ];
     const { breakdown } = calculateSecurityScore({}, heavyChecks);
-    expect(breakdown.environment.deduction).toBeLessThanOrEqual(25);
+    expect(breakdown.environment.deduction).toBeLessThanOrEqual(30);
+  });
+
+  it('suppresses security-config bonus when CRITICAL/HIGH findings exist (#116)', () => {
+    const cleanChecks = [
+      { label: 'Credential scan', status: 'pass' as const, detail: 'no findings' },
+      { label: '.gitignore', status: 'pass' as const, detail: 'present' },
+      { label: '.env protection', status: 'pass' as const, detail: 'in .gitignore' },
+      { label: 'Lock file', status: 'pass' as const, detail: 'package-lock.json' },
+      { label: 'Security config', status: 'pass' as const, detail: '.opena2a/guard/signatures.json' },
+    ];
+    const { score: scoreWithBonus } = calculateSecurityScore({}, cleanChecks);
+    expect(scoreWithBonus).toBe(100);
+
+    // With a CRITICAL credential, the +5 bonus must NOT apply.
+    const { score: scoreWithCrit } = calculateSecurityScore({ critical: 1 }, cleanChecks);
+    expect(scoreWithCrit).toBe(80); // 100 - 20, no bonus
   });
 });
