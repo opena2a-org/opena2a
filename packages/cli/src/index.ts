@@ -248,7 +248,7 @@ Examples:
   $ opena2a check                                            Scan current directory
 
 Packages and repos are checked against the OpenA2A Registry first. If fresh data
-exists (< 3 days), it is shown immediately. Otherwise a full HMA + NanoMind
+exists (< 3 days), it is shown immediately. Otherwise a full HMA security
 analysis runs and results can be shared with the community.
 `)
       .action(async (target: string | undefined, _opts, cmd) => {

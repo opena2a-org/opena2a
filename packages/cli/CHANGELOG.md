@@ -1,11 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.9.2
 
-### New Features
-- `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing, heartbeat, tests, and GitHub Action template
-- `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
-- Docker adapter configurable port mapping for `train` command (full DVAA port range)
+### Bug Fixes
+- **Credential scanner: skip test fixtures, demo scripts, and VHS recordings (audit B12 + B1).** The 2026-04-29 self-audit of `opena2a review` surfaced 7 credential findings on opena2a/main where every match was an intentional placeholder — three in `packages/aim-core/src/dlp/dlp.test.ts` (the DLP scanner's own fixtures), three in `docs/vhs/setup-lab.sh` and `scripts/demo-setup.sh` (terminal-recording demos), and one generic key in the same demo path. `opena2a protect` would have rewritten them and broken the DLP test suite. `walkFiles` in `packages/cli/src/util/credential-patterns.ts` now skips files whose basename matches `*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}`, `*_test.{go,py}`, or `demo[-_]*.{sh,ts,js,py}`, plus the `vhs/` directory segment. Production source files, non-demo shell scripts, and credential-bearing files outside those naming conventions still scan as before. Tradeoff documented inline: real credentials committed inside test/demo paths won't be flagged by this scanner — that's the wrong layer to defend against; use git pre-commit hooks instead. 16 unit tests (`packages/cli/__tests__/util/credential-patterns-fixture-exclusion.test.ts`) pin the regex behaviour and reproduce the audit's 7-finding-to-zero scenario.
+- **`opena2a review` HMA tab labels (audit B3).** "Total Checks / Failed / Passed" displayed `60 / 60 / 0` because `runHmaPhase` derived all three counters from `parsed.findings` (HMA's failed-only array), making "0 Passed" structurally inevitable. HMA also emits `parsed.allFindings`, which carries every check that ran (passed and failed). New exported helper `deriveHmaCounts(parsed, failedCount)` reads `allFindings` when present and falls back to the failed count for older HMA versions. Self-scan now reads `152 Total / 48 Passed / 60 Failed`. 6 unit tests in `packages/cli/__tests__/commands/review-hma-counts.test.ts` cover both code paths.
+- **`opena2a check --help` no longer claims "HMA + NanoMind" analysis (audit B17).** The string at `packages/cli/src/index.ts:251` advertised a NanoMind code path that does not exist in the cli today (no `@nanomind/*` dependency in `packages/cli/package.json`; daemon 0.2.0 ships separately and the cli wiring is soft-gated on telemetry per [CHIEF-CDS-033]). Now reads "full HMA security analysis runs". Will revert when daemon consumption lands.
+- **`opena2a review` Shield phase: gate findings by scan target (closes #109 sub-item 1, PR #112).** SHIELD-INT-001 "Configuration file tampered" surfaced 288 critical occurrences on an empty target because Shield's event log carried state from prior scans of unrelated paths. New `filterEventsToTarget` helper narrows ConfigGuard events to `targetDir` before classification; other event sources (notably ARP) pass through to preserve `/usr/bin/curl` and similar absolute-path detections. 24 deterministic unit tests in `packages/cli/__tests__/shield/findings-path-scoping.test.ts`. Empty-test reproducer: composite 27→72.
+
+### New Features (carried forward from prior work, first release-tagged here)
+- `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing, heartbeat, tests, and GitHub Action template.
+- `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags.
+- Docker adapter configurable port mapping for `train` command (full DVAA port range).
 
 ## 0.9.1
 

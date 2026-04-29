@@ -685,6 +685,30 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
   };
 }
 
+/**
+ * Derive HMA tab counts from HMA's JSON envelope.
+ *
+ * HMA emits two arrays:
+ *   - `findings`    — failed checks only, un-deduped occurrences
+ *   - `allFindings` — every check that ran, both passed and failed
+ *
+ * Older HMA versions only emit `findings`. When `allFindings` is present we
+ * derive `totalChecks` and `passed` from it; otherwise both fall back to the
+ * failed count (legacy behaviour displays "0 Passed", which is what we are
+ * fixing here for current HMA builds).
+ */
+export function deriveHmaCounts(
+  parsed: Record<string, unknown>,
+  failedCount: number,
+): { totalChecks: number; passed: number } {
+  const fullSet = parsed.allFindings as Record<string, unknown>[] | undefined;
+  if (!Array.isArray(fullSet)) {
+    return { totalChecks: failedCount, passed: 0 };
+  }
+  const passed = fullSet.filter(f => f.passed === true).length;
+  return { totalChecks: fullSet.length, passed };
+}
+
 async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
   const emptyResult: HmaPhaseData = {
     available: false, score: 0, maxScore: 100,
@@ -730,7 +754,9 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
     }));
 
     const failedFindings = allFindings.filter(f => !f.passed);
-    const passedFindings = allFindings.filter(f => f.passed);
+
+    const { totalChecks: totalChecksRun, passed: passedCount } =
+      deriveHmaCounts(parsed, failedFindings.length);
 
     const bySeverity: Record<string, number> = {};
     const byCategory: Record<string, number> = {};
@@ -766,8 +792,8 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       available: true,
       score: (parsed.score as number) ?? 0,
       maxScore: (parsed.maxScore as number) ?? 100,
-      totalChecks: allFindings.length,
-      passed: passedFindings.length,
+      totalChecks: totalChecksRun,
+      passed: passedCount,
       failed: failedFindings.length,
       bySeverity,
       byCategory,
