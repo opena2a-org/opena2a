@@ -369,6 +369,13 @@ export async function dispatchCommand(
   if (globalOptions.staticOnly && !adapterArgs.includes('--static-only')) {
     adapterArgs.push('--static-only');
   }
+  // Propagate contribution flags to downstream tools (hackmyagent supports both).
+  // --no-contribute beats --contribute when both are present (issue #107).
+  if (globalOptions.noContribute && !adapterArgs.includes('--no-contribute')) {
+    adapterArgs.push('--no-contribute');
+  } else if (globalOptions.contribute && !adapterArgs.includes('--contribute') && !adapterArgs.includes('--no-contribute')) {
+    adapterArgs.push('--contribute');
+  }
 
   const result = await adapter.run({
     args: adapterArgs,
@@ -386,7 +393,9 @@ export async function dispatchCommand(
 
   // Community contribution: submit scan reports when contribute is enabled.
   // This is best-effort and non-blocking -- failures are silently ignored.
-  if (globalOptions.contribute || await isContributeEnabled()) {
+  // --no-contribute is a per-invocation override that beats both --contribute
+  // and the persisted user-config consent (issue #107).
+  if ((globalOptions.contribute || await isContributeEnabled()) && !globalOptions.noContribute) {
     try {
       const registryUrl = await getRegistryUrl();
       // Parse stdout for scan report JSON (adapters that produce scan results)

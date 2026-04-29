@@ -7,6 +7,12 @@
 - `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags
 - Docker adapter configurable port mapping for `train` command (full DVAA port range)
 
+## 0.9.1
+
+### Bug Fixes
+- **`--no-contribute` per-invocation override (closes #107).** The flag was advertised in `--help` and the README telemetry table since 0.9.0 but never registered with Commander, so passing it produced `unknown option '--no-contribute'`. Now declared via `.option('--no-contribute', ...)`, threaded through the four `dispatchCommand` call sites in `index.ts` as `noContribute: globalOpts.contribute === false`, and the contribution gate in `router.ts` is rewritten to `(globalOptions.contribute || await isContributeEnabled()) && !globalOptions.noContribute` so the flag beats both `--contribute` and the persisted user-config consent for that single invocation. `RunOptions.noContribute?: boolean` added to `adapters/types.ts`.
+- **Propagate `--no-contribute` and `--contribute` to spawned scanners.** `dispatchCommand` already injected `--format`, `--deep`, `--analm`, and `--static-only` into `adapterArgs`, but `--no-contribute` was being dropped before reaching `hackmyagent secure`, so the underlying subprocess still queued an anonymized summary even when opena2a-cli's own gate was closed. The flag now propagates so end-to-end suppression works (`opena2a scan --no-contribute` is silent; default and `--contribute` still queue). Independently rediscovered as P2-1 by the 0.9.0 `/release-test` walkthrough — strong signal the disclosure-without-implementation gap was real.
+
 ## 0.9.0
 
 ### New Features
