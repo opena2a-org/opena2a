@@ -675,7 +675,7 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
   postureScore = Math.max(0, Math.min(100, postureScore));
 
   return {
-    eventCount: scopedEvents.length,
+    eventCount: events.length,
     classifiedFindings,
     arpStats,
     postureScore,
