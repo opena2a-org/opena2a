@@ -147,6 +147,40 @@ export interface ShieldPhaseData {
   integrityStatus: string;
 }
 
+/** Pass-through mirrors of HMA Finding v2 schema (hackmyagent commit dc8d344,
+ *  src/types/finding-evidence.ts). opena2a-cli is a wrapper consumer; these
+ *  types are kept structurally compatible so runtime values flow through
+ *  JSON parse → render unchanged. Do NOT narrow or author values here. */
+export interface HmaPositiveEvidenceLine {
+  /** 1-based line number in the artifact. */
+  n: number;
+  /** Verbatim line content as the detector saw it. */
+  content: string;
+  /** What makes this line dangerous in context. */
+  why?: string;
+}
+export interface HmaPositiveEvidence {
+  kind: 'positive';
+  lines: HmaPositiveEvidenceLine[];
+}
+export interface HmaAbsenceEvidence {
+  kind: 'absence';
+  observed: {
+    lines: Array<{ n: number; content: string }>;
+    summary: string;
+  };
+  expected: Array<{ constraint: string; rationale: string }>;
+}
+export interface HmaMixedEvidence {
+  kind: 'mixed';
+  positive: Omit<HmaPositiveEvidence, 'kind'>;
+  absence: Omit<HmaAbsenceEvidence, 'kind'>;
+}
+export type HmaEvidence = HmaPositiveEvidence | HmaAbsenceEvidence | HmaMixedEvidence;
+export interface HmaRationale {
+  plainEnglish: string;
+}
+
 export interface HmaFinding {
   checkId: string;
   name: string;
@@ -162,6 +196,14 @@ export interface HmaFinding {
   guidance: string;
   count: number;
   sampleFiles: string[];
+  /** HMA Finding v2 — structured evidence (positive lines, absence-of-defense, or mixed). */
+  evidence?: HmaEvidence;
+  /** HMA Finding v2 — plain-English rationale grounded in the evidence. */
+  rationale?: HmaRationale;
+  /** HMA Finding v2 — concept tag for an unfamiliar primitive a fix recommends. */
+  concept?: string;
+  /** HMA #138 — taxonomy attackClass label populated on every static-check finding. */
+  attackClass?: string;
 }
 
 export interface HmaPhaseData {
@@ -686,6 +728,64 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
 }
 
 /**
+ * Runtime guard for HMA Finding v2 Evidence at the JSON parse boundary.
+ *
+ * opena2a-cli is a wrapper consumer; HMA owns the schema. We narrow on
+ * `kind` only and pass the body through unchanged so the renderer (review-
+ * html.ts) sees what HMA emitted. Returns false for any value that doesn't
+ * have a recognized discriminator.
+ */
+export function isHmaEvidence(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as { kind?: unknown };
+  return v.kind === 'positive' || v.kind === 'absence' || v.kind === 'mixed';
+}
+
+/**
+ * Runtime guard for HMA Finding v2 Rationale at the JSON parse boundary.
+ *
+ * Requires `plainEnglish` to be a non-empty string. Empty strings fall
+ * through to the legacy `guidance` render path.
+ */
+export function isHmaRationale(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as { plainEnglish?: unknown };
+  return typeof v.plainEnglish === 'string' && v.plainEnglish.length > 0;
+}
+
+/**
+ * Map a raw HMA finding (as returned by `hackmyagent secure --format json`)
+ * into the local HmaFinding shape. Pure function — no I/O — so the parse
+ * boundary can be tested deterministically.
+ *
+ * Optional Finding v2 fields (HMA commit dc8d344) are passed through when
+ * present and recognized; absent or malformed values become `undefined` so
+ * the renderer falls back to the legacy `guidance` / `legacyRiskKb` path.
+ */
+export function mapRawHmaFinding(f: Record<string, unknown>): HmaFinding {
+  return {
+    checkId: (f.checkId as string) ?? '',
+    name: (f.name as string) ?? '',
+    description: (f.description as string) ?? '',
+    category: (f.category as string) ?? '',
+    severity: (f.severity as string) ?? 'medium',
+    passed: (f.passed as boolean) ?? false,
+    message: (f.message as string) ?? '',
+    file: f.file as string | undefined,
+    line: f.line as number | undefined,
+    fixable: (f.fixable as boolean) ?? false,
+    fix: (f.fix as string) ?? '',
+    guidance: (f.guidance as string) ?? '',
+    count: 1,
+    sampleFiles: [],
+    evidence: isHmaEvidence(f.evidence) ? (f.evidence as HmaEvidence) : undefined,
+    rationale: isHmaRationale(f.rationale) ? (f.rationale as HmaRationale) : undefined,
+    concept: typeof f.concept === 'string' ? f.concept : undefined,
+    attackClass: typeof f.attackClass === 'string' ? f.attackClass : undefined,
+  };
+}
+
+/**
  * Derive HMA tab counts from HMA's JSON envelope.
  *
  * HMA emits two arrays:
@@ -736,22 +836,9 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
     });
 
     const parsed = JSON.parse(output);
-    const allFindings: HmaFinding[] = (parsed.findings || []).map((f: Record<string, unknown>) => ({
-      checkId: (f.checkId as string) ?? '',
-      name: (f.name as string) ?? '',
-      description: (f.description as string) ?? '',
-      category: (f.category as string) ?? '',
-      severity: (f.severity as string) ?? 'medium',
-      passed: (f.passed as boolean) ?? false,
-      message: (f.message as string) ?? '',
-      file: f.file as string | undefined,
-      line: f.line as number | undefined,
-      fixable: (f.fixable as boolean) ?? false,
-      fix: (f.fix as string) ?? '',
-      guidance: (f.guidance as string) ?? '',
-      count: 1,
-      sampleFiles: [],
-    }));
+    const allFindings: HmaFinding[] = (parsed.findings || []).map(
+      (f: Record<string, unknown>) => mapRawHmaFinding(f),
+    );
 
     const failedFindings = allFindings.filter(f => !f.passed);
 
