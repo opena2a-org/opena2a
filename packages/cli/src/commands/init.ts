@@ -104,7 +104,20 @@ export async function init(options: InitOptions): Promise<number> {
   const targetDir = path.resolve(options.targetDir ?? process.cwd());
 
   if (!fs.existsSync(targetDir)) {
-    process.stderr.write(red(`Directory not found: ${targetDir}\n`));
+    if (options.format === 'json') {
+      process.stdout.write(JSON.stringify({
+        error: 'directory-not-found',
+        directory: targetDir,
+        message: `Directory not found: ${targetDir}`,
+      }) + '\n');
+    } else {
+      process.stderr.write(red(`Directory not found: ${targetDir}\n`));
+      process.stderr.write('\n');
+      process.stderr.write(dim('  Next steps:\n'));
+      process.stderr.write(dim('    Scan the current directory:  opena2a init\n'));
+      process.stderr.write(dim('    Scan a specific path:        opena2a init <path>\n'));
+      process.stderr.write(dim('    Show all options:            opena2a init --help\n'));
+    }
     return 1;
   }
 

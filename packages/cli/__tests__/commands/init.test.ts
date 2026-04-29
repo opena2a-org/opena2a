@@ -21,6 +21,23 @@ function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; o
   });
 }
 
+function captureStderr(fn: () => Promise<number>): Promise<{ exitCode: number; stderr: string }> {
+  const chunks: string[] = [];
+  const origWrite = process.stderr.write;
+  process.stderr.write = ((chunk: any) => {
+    chunks.push(String(chunk));
+    return true;
+  }) as any;
+
+  return fn().then(exitCode => {
+    process.stderr.write = origWrite;
+    return { exitCode, stderr: chunks.join('') };
+  }).catch(err => {
+    process.stderr.write = origWrite;
+    throw err;
+  });
+}
+
 describe('init', () => {
   let tempDir: string;
 
@@ -434,6 +451,33 @@ describe('init', () => {
     expect(output).not.toContain('recoverable');
     // Should contain deduction indicators
     expect(output).toContain('Recommendations');
+  });
+
+  // Regression: audit-wave-1 bug B — ENOENT must print Next Steps with
+  // discoverable usage. Bare "Directory not found" was a CISO Rule 1 dead
+  // end. JSON mode emits a structured error object so CI consumers can
+  // distinguish ENOENT from valid-zero-finding states.
+  it('text-mode ENOENT prints Next Steps with --help reference (audit B)', async () => {
+    const { stderr, exitCode } = await captureStderr(() => init({
+      targetDir: '/tmp/opena2a-init-enoent-' + Date.now(),
+    }));
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('Directory not found');
+    expect(stderr).toContain('Next steps');
+    expect(stderr).toContain('opena2a init --help');
+  });
+
+  it('json-mode ENOENT emits structured error object (audit B)', async () => {
+    const missing = '/tmp/opena2a-init-enoent-json-' + Date.now();
+    const { output, exitCode } = await captureStdout(() => init({
+      targetDir: missing,
+      format: 'json',
+    }));
+    expect(exitCode).toBe(1);
+    const parsed = JSON.parse(output);
+    expect(parsed.error).toBe('directory-not-found');
+    expect(parsed.directory).toBe(missing);
+    expect(parsed.message).toContain('Directory not found');
   });
 
   // Regression: opena2a/issues/119 — JSON findings must carry the same
