@@ -24,8 +24,12 @@ describe('calculateSecurityScore (shared module)', () => {
   it('applies diminishing returns for critical findings', () => {
     const { score: s1 } = calculateSecurityScore({ critical: 1 }, cleanChecks);
     const { score: s2 } = calculateSecurityScore({ critical: 2 }, cleanChecks);
-    expect(s1).toBe(85); // 100 - 20 + 5
-    expect(s2).toBe(77); // 100 - 20 - 8 + 5
+    // Per #116: security-config bonus is suppressed when CRITICAL/HIGH
+    // findings exist (a signed signatures.json doesn't compensate for a
+    // private key in source). Pre-#116 these returned 85 and 77 with
+    // a +5 bonus included.
+    expect(s1).toBe(80); // 100 - 20
+    expect(s2).toBe(72); // 100 - 20 - 8
   });
 
   it('caps credential deduction at 60', () => {
@@ -36,7 +40,7 @@ describe('calculateSecurityScore (shared module)', () => {
     expect(breakdown.credentials.deduction).toBeLessThanOrEqual(60);
   });
 
-  it('caps environment deduction at 25', () => {
+  it('caps environment deduction at 30 (was 25 pre-#116)', () => {
     const heavy: HygieneCheck[] = [
       ...cleanChecks.filter(c => c.label !== '.env protection'),
       { label: '.env protection', status: 'warn', detail: 'NOT in .gitignore' },
@@ -44,9 +48,11 @@ describe('calculateSecurityScore (shared module)', () => {
       { label: 'MCP high-risk tools', status: 'warn', detail: '1 server' },
       { label: 'MCP credentials', status: 'warn', detail: 'hardcoded' },
       { label: 'AI config exposure', status: 'warn', detail: '3 files' },
+      { label: 'Skill files', status: 'warn', detail: '5 unsigned skill files' },
+      { label: 'Soul file', status: 'warn', detail: 'override patterns' },
     ];
     const { breakdown } = calculateSecurityScore({}, heavy);
-    expect(breakdown.environment.deduction).toBeLessThanOrEqual(25);
+    expect(breakdown.environment.deduction).toBeLessThanOrEqual(30);
   });
 
   it('score never goes below 0 or above 100', () => {

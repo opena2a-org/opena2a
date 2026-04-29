@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
+import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
@@ -26,6 +27,7 @@ import {
   type HygieneCheck as HygieneCheckShared,
   type ScoreBreakdown as ScoreBreakdownShared,
 } from '../util/scoring.js';
+import { HMA_CHECK_COUNT } from '../util/canonical.js';
 
 // --- Types ---
 
@@ -49,6 +51,12 @@ interface GroupedFinding {
   businessImpact: string;
   locations: { file: string; line: number }[];
   attackClass?: string;
+  // Populated from getVerificationCommand() / getToolRecommendation() so
+  // JSON consumers (CI gates, IDE plugins) get the same per-finding
+  // verify/fix mapping the text view prints. Undefined when no command
+  // is appropriate.
+  verify?: string;
+  fix?: string;
 }
 
 interface ActionItem {
@@ -97,7 +105,20 @@ export async function init(options: InitOptions): Promise<number> {
   const targetDir = path.resolve(options.targetDir ?? process.cwd());
 
   if (!fs.existsSync(targetDir)) {
-    process.stderr.write(red(`Directory not found: ${targetDir}\n`));
+    if (options.format === 'json') {
+      process.stdout.write(JSON.stringify({
+        error: 'directory-not-found',
+        directory: targetDir,
+        message: `Directory not found: ${targetDir}`,
+      }) + '\n');
+    } else {
+      process.stderr.write(red(`Directory not found: ${targetDir}\n`));
+      process.stderr.write('\n');
+      process.stderr.write(dim('  Next steps:\n'));
+      process.stderr.write(dim('    Scan the current directory:  opena2a init\n'));
+      process.stderr.write(dim('    Scan a specific path:        opena2a init <path>\n'));
+      process.stderr.write(dim('    Show all options:            opena2a init --help\n'));
+    }
     return 1;
   }
 
@@ -120,6 +141,16 @@ export async function init(options: InitOptions): Promise<number> {
     if (!seenCredValues.has(mc.value)) {
       credentialMatches.push(mc);
       seenCredValues.add(mc.value);
+    }
+  }
+
+  // Cryptographic key/cert files (private keys, PKCS#12 stores, certs) are
+  // credentials by file type, not by string content (#116). Without this
+  // pass, kitchen-sink fixtures with `.key` / `.pem` files in source score
+  // artificially high.
+  for (const km of scanCryptoKeyFiles(targetDir)) {
+    if (!credentialMatches.some(m => m.filePath === km.filePath && m.findingId === km.findingId)) {
+      credentialMatches.push(km);
     }
   }
 
@@ -160,7 +191,7 @@ export async function init(options: InitOptions): Promise<number> {
   }
 
   // 6. Group findings
-  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings);
+  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings, targetDir);
 
   // 7. Calculate unified security score
   if (isTTY) spinner.update('Assessing security posture...');
@@ -222,6 +253,15 @@ export async function init(options: InitOptions): Promise<number> {
   if (isTTY) spinner.stop();
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  // 11.5 Enrich findings with verify/fix so JSON consumers see the same
+  // per-finding command mapping the text view prints (#119).
+  for (const f of groupedFindings) {
+    const verify = getVerificationCommand(f, targetDir);
+    if (verify) f.verify = verify;
+    const tool = getToolRecommendation(f.findingId);
+    if (tool) f.fix = tool.command;
+  }
 
   // 12. Build report
   const riskLevel = scoreToRiskLevel(score);
@@ -325,7 +365,7 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write(dim('  To set up full Shield protection (11-step orchestration): opena2a shield init') + '\n');
 
     // Deeper analysis hint
-    process.stdout.write(dim('  For deeper analysis (238 checks): opena2a scan --deep') + '\n');
+    process.stdout.write(dim(`  For deeper analysis (${HMA_CHECK_COUNT} checks): opena2a scan --deep`) + '\n');
 
     // Global install hint (only when running via npx)
     if (isRunningViaNpx()) {
@@ -472,10 +512,33 @@ async function checkLLMServerExposure(): Promise<HygieneCheck | null> {
 
 // --- Finding grouping ---
 
+// File probes for hygiene-derived findings. Each entry returns the FIRST
+// existing file in the project, or null if none. Keeps `locations[]`
+// aligned with what `getVerificationCommand` would resolve.
+const HYGIENE_FILE_PROBES: Record<string, string[]> = {
+  'MCP-TOOLS': ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'],
+  'MCP-CRED': ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'],
+  'ENV-DOTENV': ['.gitignore'],
+  'AI-CONFIG': ['.gitignore', '.git/info/exclude'],
+  'AI-SKILLS': ['SKILL.md'],
+  'AI-SOUL': ['SOUL.md', 'soul.md'],
+};
+
+function probeHygieneLocation(findingId: string, dir: string): { file: string; line: number }[] {
+  const candidates = HYGIENE_FILE_PROBES[findingId];
+  if (!candidates) return [];
+  for (const rel of candidates) {
+    const full = path.join(dir, rel);
+    if (fs.existsSync(full)) return [{ file: full, line: 1 }];
+  }
+  return [];
+}
+
 function groupFindings(
   creds: CredentialMatch[],
   checks: HygieneCheck[],
   hmaFindings: { severity: string; checkId: string; message: string; attackClass?: string }[],
+  targetDir: string,
 ): GroupedFinding[] {
   const groups = new Map<string, GroupedFinding>();
 
@@ -524,7 +587,7 @@ function groupFindings(
       count: 1,
       explanation: 'Environment files may be committed to version control.',
       businessImpact: 'Adding .env to .gitignore keeps secrets out of version control.',
-      locations: [],
+      locations: probeHygieneLocation('ENV-DOTENV', targetDir),
     });
   }
 
@@ -538,7 +601,7 @@ function groupFindings(
       count: 1,
       explanation: 'MCP servers with filesystem or shell access can read, modify, or delete files on your system when invoked by an AI assistant.',
       businessImpact: 'Review server permissions to ensure each server has only the access it needs.',
-      locations: [],
+      locations: probeHygieneLocation('MCP-TOOLS', targetDir),
     });
   }
 
@@ -551,7 +614,7 @@ function groupFindings(
       count: 1,
       explanation: 'API keys hardcoded in MCP config files are readable by anyone with access to the project directory.',
       businessImpact: 'Move credentials to environment variables so they are not stored in plaintext.',
-      locations: [],
+      locations: probeHygieneLocation('MCP-CRED', targetDir),
     });
   }
 
@@ -564,7 +627,38 @@ function groupFindings(
       count: 1,
       explanation: 'AI instruction files (CLAUDE.md, .cursorrules, etc.) reveal tooling choices and system prompts when committed to a public repository.',
       businessImpact: 'Add these files to .git/info/exclude to keep them local without modifying .gitignore.',
-      locations: [],
+      locations: probeHygieneLocation('AI-CONFIG', targetDir),
+    });
+  }
+
+  // Surface unsigned skill files as a discrete finding so the user sees
+  // it in the text view and the JSON `findings[]` array, not just buried
+  // in `hygieneChecks`. Pre-#116 this warn was emitted but never shown
+  // as a finding, which made `init` look quieter than the project was.
+  const skillCheck = checks.find(c => c.label === 'Skill files' && c.status === 'warn');
+  if (skillCheck) {
+    groups.set('AI-SKILLS', {
+      findingId: 'AI-SKILLS',
+      title: skillCheck.detail,
+      severity: 'medium',
+      count: 1,
+      explanation: 'Skill files declare AI-agent capabilities. Without an opena2a-guard signature block, modifications are not detectable and the agent has no integrity baseline.',
+      businessImpact: 'Sign each skill file so future tampering is visible and the agent\'s capability surface is anchored to a known-good baseline.',
+      locations: probeHygieneLocation('AI-SKILLS', targetDir),
+    });
+  }
+
+  // Surface SOUL.md prompt-injection / override patterns the same way.
+  const soulCheck = checks.find(c => c.label === 'Soul file' && c.status === 'warn');
+  if (soulCheck) {
+    groups.set('AI-SOUL', {
+      findingId: 'AI-SOUL',
+      title: soulCheck.detail,
+      severity: 'high',
+      count: 1,
+      explanation: 'SOUL.md is the agent\'s governance document. Override / injection patterns here can defeat trust hierarchies and broaden the agent\'s authority beyond what the operator intended.',
+      businessImpact: 'Review the patterns and either remove them or document why they are required. Re-sign the file once corrections land.',
+      locations: probeHygieneLocation('AI-SOUL', targetDir),
     });
   }
 
@@ -618,11 +712,16 @@ function generateActions(
 ): ActionItem[] {
   const actions: ActionItem[] = [];
 
-  // Credential migration action
-  if (creds.length > 0) {
-    // Build breakdown string
+  // Split key/cert files from text-pattern credentials. `opena2a protect`
+  // can migrate text patterns to a vault but cannot rotate or untrack
+  // binary key files — surfacing both under a single protect-action would
+  // be a CISO Rule 1 dead end on the keyfile side (Phase 4.5 finding).
+  const keyfileCreds = creds.filter(c => c.findingId === 'CRED-KEYFILE' || c.findingId === 'CRED-CERTFILE');
+  const textCreds = creds.filter(c => c.findingId !== 'CRED-KEYFILE' && c.findingId !== 'CRED-CERTFILE');
+
+  if (textCreds.length > 0) {
     const byTitle = new Map<string, number>();
-    for (const c of creds) {
+    for (const c of textCreds) {
       byTitle.set(c.title, (byTitle.get(c.title) || 0) + 1);
     }
     const breakdownParts = Array.from(byTitle.entries())
@@ -630,11 +729,22 @@ function generateActions(
       .join(', ');
 
     actions.push({
-      description: `Migrate ${creds.length} hardcoded credential${creds.length === 1 ? '' : 's'} to a vault`,
+      description: `Migrate ${textCreds.length} hardcoded credential${textCreds.length === 1 ? '' : 's'} to a vault`,
       command: 'opena2a protect',
       why: 'Credentials in source files are readable by anyone with repo access. A vault stores them encrypted, rotates them automatically, and provides an audit trail.',
       approach: 'Moves keys to environment variables backed by an encrypted vault. Keys rotate without code changes, and access is auditable.',
       detail: `Keys found: ${breakdownParts}`,
+    });
+  }
+
+  if (keyfileCreds.length > 0) {
+    const fileExamples = keyfileCreds.slice(0, 3).map(c => path.basename(c.filePath)).join(', ');
+    actions.push({
+      description: `Untrack ${keyfileCreds.length} key/cert file${keyfileCreds.length === 1 ? '' : 's'} and rotate at issuer`,
+      command: "git rm --cached '<file>' && echo '*.key' >> .gitignore",
+      why: 'Cryptographic key files (.key/.pem/.p12/.pfx) are credentials by file type. opena2a protect handles text-pattern keys but cannot rotate binary key material — that has to happen at the issuing CA, vault, or KMS.',
+      approach: 'Untrack the file from git, add the extension to .gitignore so it cannot be re-added, then issue a fresh key at the upstream provider. Treat the historical commit as a leak even after rotation — assume any holder of the old key has used it.',
+      detail: `Files: ${fileExamples}${keyfileCreds.length > 3 ? ` (+${keyfileCreds.length - 3} more)` : ''}`,
     });
   }
 
@@ -674,8 +784,8 @@ function generateActions(
   if (llmCheck) {
     actions.push({
       description: 'Secure LLM server',
-      command: 'opena2a shield status',
-      why: 'A local LLM server without authentication accepts requests from any process on the network. Binding to localhost or adding auth limits access.',
+      command: 'opena2a shield init',
+      why: 'A local LLM server without authentication accepts requests from any process on the network. shield init runs the 11-step setup that includes runtime guard binding and access policy.',
     });
   }
 
@@ -683,9 +793,9 @@ function generateActions(
   const mcpToolsFinding = findings.find(f => f.findingId === 'MCP-TOOLS');
   if (mcpToolsFinding) {
     actions.push({
-      description: 'Review MCP server permissions',
-      command: 'opena2a shield status',
-      why: 'MCP servers with filesystem or shell access can read, modify, or delete files when invoked by an AI assistant. Review each server to confirm it has only the access it needs.',
+      description: 'Review and lock down MCP server permissions',
+      command: 'opena2a shield init',
+      why: 'MCP servers with filesystem or shell access can read, modify, or delete files when invoked by an AI assistant. shield init walks each server, captures a signed baseline, and applies the recommended permission policy.',
     });
   }
 
@@ -836,11 +946,29 @@ function getVerificationCommand(
 function getToolRecommendation(
   findingId: string,
 ): { command: string; label: string } | null {
+  // Cryptographic key/cert files are credentials by file type, not text
+  // content. `opena2a protect` only handles text-pattern credentials, so
+  // a Fix line pointing there would be a CISO Rule 1 dead end. Surface
+  // the actual remediation: untrack from git + add the extension to
+  // `.gitignore`. Rotation happens at the issuing CA / vault and cannot
+  // be automated by the CLI.
+  if (findingId === 'CRED-KEYFILE') {
+    return {
+      command: "git rm --cached '<file>' && echo '*.key' >> .gitignore",
+      label: 'untrack key file + .gitignore (then rotate the key at issuer)',
+    };
+  }
+  if (findingId === 'CRED-CERTFILE') {
+    return {
+      command: "git rm --cached '<file>' && echo '*.crt' >> .gitignore",
+      label: 'untrack cert file + .gitignore (verify the matching private key is not committed)',
+    };
+  }
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
     return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId === 'ENV-LLM') {
-    return { command: 'opena2a shield status', label: 'opena2a shield status' };
+    return { command: 'opena2a shield init', label: 'opena2a shield init' };
   }
   if (findingId === 'ENV-DOTENV') {
     return { command: 'opena2a protect', label: 'opena2a protect' };
@@ -849,7 +977,7 @@ function getToolRecommendation(
     return { command: 'opena2a scan --deep', label: 'opena2a scan --deep' };
   }
   if (findingId === 'MCP-TOOLS') {
-    return { command: 'opena2a shield status', label: 'opena2a shield status' };
+    return { command: 'opena2a shield init', label: 'opena2a shield init' };
   }
   if (findingId === 'MCP-CRED') {
     return { command: 'opena2a protect', label: 'opena2a protect' };
@@ -920,14 +1048,14 @@ function getContextualTip(
   const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
   if (hasLLM) {
     return {
-      text: 'An unauthenticated LLM server is running locally. opena2a shield status shows which Shield modules are active and what ARP is monitoring at the process and network level.',
-      command: 'opena2a shield status',
+      text: 'An unauthenticated LLM server is running locally. opena2a shield init runs the 11-step setup that binds runtime guard, captures a signed baseline, and applies an access policy.',
+      command: 'opena2a shield init',
     };
   }
 
   if (report.securityScore >= 90) {
     return {
-      text: 'Strong baseline. HackMyAgent runs 238 checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.',
+      text: `Strong baseline. HackMyAgent runs ${HMA_CHECK_COUNT} checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.`,
       command: 'npx hackmyagent secure',
     };
   }
@@ -939,8 +1067,8 @@ function getContextualTip(
   }
 
   return {
-    text: 'opena2a shield status shows all active protections: ARP runtime monitoring, Guard config integrity, Secretless credential management, and HackMyAgent scan coverage.',
-    command: 'opena2a shield status',
+    text: 'opena2a shield init runs the 11-step orchestration: ARP runtime monitoring, Guard config integrity baseline, Secretless credential migration, and HackMyAgent scan coverage.',
+    command: 'opena2a shield init',
   };
 }
 
