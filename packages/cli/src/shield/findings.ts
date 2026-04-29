@@ -12,6 +12,8 @@
  *               INT (integrity), SUP (supply chain), BAS (behavioral)
  */
 
+import path from 'node:path';
+
 import type { ShieldEvent, EventSeverity, PolicyViolation } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -275,6 +277,53 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
   }
 
   return null;
+}
+
+/**
+ * Drop events whose absolute-path target is outside `targetDir`.
+ *
+ * The global event log at `~/.opena2a/shield/events.jsonl` accumulates
+ * events from every `opena2a guard`/scan invocation across the user's
+ * machine. When `opena2a review` runs against a directory, only events
+ * whose subject lives inside that directory should surface — otherwise
+ * unrelated cross-project events (e.g. SHIELD-INT-001 from a tampered
+ * config in `/Users/foo/projectA`) bleed into a scan of an unrelated
+ * `/tmp/projectB` and the report appears broken (issue #109).
+ *
+ * Containment rules:
+ * - If `event.target` looks like an absolute path (starts with `/` on
+ *   POSIX or matches a Windows drive letter), keep the event only if
+ *   the path resolves under `targetDir`. Equality counts as inside.
+ * - If `event.target` is empty or doesn't look like a path (URLs,
+ *   package names, action identifiers, hostnames), keep the event —
+ *   we can't prove it's out of scope, so we don't drop it.
+ *
+ * Pure function. No I/O.
+ */
+export function filterEventsToTarget(
+  events: ShieldEvent[],
+  targetDir: string,
+): ShieldEvent[] {
+  const normalizedTarget = path.resolve(targetDir);
+  return events.filter(event => {
+    const target = event.target ?? '';
+    if (!isAbsolutePathLike(target)) return true;
+    const normalizedEventTarget = path.resolve(target);
+    if (normalizedEventTarget === normalizedTarget) return true;
+    const rel = path.relative(normalizedTarget, normalizedEventTarget);
+    if (rel === '' ) return true;
+    if (rel.startsWith('..')) return false;
+    if (path.isAbsolute(rel)) return false;
+    return true;
+  });
+}
+
+function isAbsolutePathLike(value: string): boolean {
+  if (value.length === 0) return false;
+  if (value.startsWith('/')) return true;
+  // Windows drive letter (C:\, D:/, etc.)
+  if (/^[A-Za-z]:[\\/]/.test(value)) return true;
+  return false;
 }
 
 /**
