@@ -674,8 +674,8 @@ function generateActions(
   if (llmCheck) {
     actions.push({
       description: 'Secure LLM server',
-      command: 'opena2a shield status',
-      why: 'A local LLM server without authentication accepts requests from any process on the network. Binding to localhost or adding auth limits access.',
+      command: 'opena2a shield init',
+      why: 'A local LLM server without authentication accepts requests from any process on the network. shield init runs the 11-step setup that includes runtime guard binding and access policy.',
     });
   }
 
@@ -683,9 +683,9 @@ function generateActions(
   const mcpToolsFinding = findings.find(f => f.findingId === 'MCP-TOOLS');
   if (mcpToolsFinding) {
     actions.push({
-      description: 'Review MCP server permissions',
-      command: 'opena2a shield status',
-      why: 'MCP servers with filesystem or shell access can read, modify, or delete files when invoked by an AI assistant. Review each server to confirm it has only the access it needs.',
+      description: 'Review and lock down MCP server permissions',
+      command: 'opena2a shield init',
+      why: 'MCP servers with filesystem or shell access can read, modify, or delete files when invoked by an AI assistant. shield init walks each server, captures a signed baseline, and applies the recommended permission policy.',
     });
   }
 
@@ -840,7 +840,7 @@ function getToolRecommendation(
     return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId === 'ENV-LLM') {
-    return { command: 'opena2a shield status', label: 'opena2a shield status' };
+    return { command: 'opena2a shield init', label: 'opena2a shield init' };
   }
   if (findingId === 'ENV-DOTENV') {
     return { command: 'opena2a protect', label: 'opena2a protect' };
@@ -849,7 +849,7 @@ function getToolRecommendation(
     return { command: 'opena2a scan --deep', label: 'opena2a scan --deep' };
   }
   if (findingId === 'MCP-TOOLS') {
-    return { command: 'opena2a shield status', label: 'opena2a shield status' };
+    return { command: 'opena2a shield init', label: 'opena2a shield init' };
   }
   if (findingId === 'MCP-CRED') {
     return { command: 'opena2a protect', label: 'opena2a protect' };
@@ -920,8 +920,8 @@ function getContextualTip(
   const hasLLM = report.findings.some(f => f.findingId === 'ENV-LLM');
   if (hasLLM) {
     return {
-      text: 'An unauthenticated LLM server is running locally. opena2a shield status shows which Shield modules are active and what ARP is monitoring at the process and network level.',
-      command: 'opena2a shield status',
+      text: 'An unauthenticated LLM server is running locally. opena2a shield init runs the 11-step setup that binds runtime guard, captures a signed baseline, and applies an access policy.',
+      command: 'opena2a shield init',
     };
   }
 
@@ -939,8 +939,8 @@ function getContextualTip(
   }
 
   return {
-    text: 'opena2a shield status shows all active protections: ARP runtime monitoring, Guard config integrity, Secretless credential management, and HackMyAgent scan coverage.',
-    command: 'opena2a shield status',
+    text: 'opena2a shield init runs the 11-step orchestration: ARP runtime monitoring, Guard config integrity baseline, Secretless credential migration, and HackMyAgent scan coverage.',
+    command: 'opena2a shield init',
   };
 }
 
