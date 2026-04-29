@@ -13,6 +13,7 @@ on:
       - 'registry-client-v*'
       - 'check-core-v*'
       - 'telemetry-v*'
+      - 'credential-patterns-v*'
 
 permissions:
   contents: write
@@ -72,6 +73,7 @@ jobs:
           publish_if_new packages/registry-client @opena2a/registry-client
           publish_if_new packages/check-core @opena2a/check-core
           publish_if_new packages/telemetry @opena2a/telemetry
+          publish_if_new packages/credential-patterns @opena2a/credential-patterns
           echo "=== Published this run ==="
           cat /tmp/published.txt
           echo "=== Skipped (version already on npm) ==="
