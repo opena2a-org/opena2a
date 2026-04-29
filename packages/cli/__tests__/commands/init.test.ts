@@ -435,4 +435,28 @@ describe('init', () => {
     // Should contain deduction indicators
     expect(output).toContain('Recommendations');
   });
+
+  // Regression: opena2a/issues/117 — Fix commands must point to runnable
+  // mutations, never to status/read-only commands. `opena2a shield status`
+  // is read-only and creates a dead-end UX (CISO Rule 3 violation).
+  it('action commands never point to read-only status commands (#117)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs': { command: 'filesystem-server', args: [] },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    for (const action of report.actions) {
+      expect(action.command).not.toBe('opena2a shield status');
+      expect(action.command).not.toMatch(/\bstatus\s*$/);
+    }
+  });
 });
