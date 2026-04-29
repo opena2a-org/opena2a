@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
-    "release-smoke:corpus": "tsx scripts/release-smoke-corpus.ts"
+    "release-smoke:corpus": "tsx scripts/release-smoke-corpus.ts",
+    "release-smoke:init": "tsx scripts/release-smoke-init.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
