@@ -45,6 +45,10 @@ describe('isHmaRationale', () => {
   it('rejects empty plainEnglish (falls back to legacy guidance render)', () => {
     expect(isHmaRationale({ plainEnglish: '' })).toBe(false);
   });
+  it('rejects whitespace-only plainEnglish (would render as empty yellow panel)', () => {
+    expect(isHmaRationale({ plainEnglish: '   ' })).toBe(false);
+    expect(isHmaRationale({ plainEnglish: '\n\t' })).toBe(false);
+  });
   it('rejects non-string plainEnglish', () => {
     expect(isHmaRationale({ plainEnglish: 42 })).toBe(false);
     expect(isHmaRationale({ plainEnglish: null })).toBe(false);
@@ -233,6 +237,18 @@ describe('generateReviewHtml — Finding v2 wiring (renderer source assertions)'
     const html = generateReviewHtml(buildReport([]));
     expect(html).toContain("f.evidence.kind==='absence'");
     expect(html).toContain('f.evidence.observed');
+  });
+
+  it('the renderer renders mixed evidence (both positive and absence panels)', () => {
+    const html = generateReviewHtml(buildReport([]));
+    // Adversarial Phase 4.5 surfaced this: HMA's HmaMixedEvidence variant
+    // had no renderer branch — silent display drop. Renderer must now route
+    // through positivePanel + absencePanel helpers.
+    expect(html).toContain("f.evidence.kind==='mixed'");
+    expect(html).toContain('f.evidence.positive');
+    expect(html).toContain('f.evidence.absence');
+    expect(html).toContain('function positivePanel');
+    expect(html).toContain('function absencePanel');
   });
 
   it('the renderer surfaces attackClass next to category', () => {

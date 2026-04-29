@@ -750,7 +750,7 @@ export function isHmaEvidence(value: unknown): boolean {
 export function isHmaRationale(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as { plainEnglish?: unknown };
-  return typeof v.plainEnglish === 'string' && v.plainEnglish.length > 0;
+  return typeof v.plainEnglish === 'string' && v.plainEnglish.trim().length > 0;
 }
 
 /**
