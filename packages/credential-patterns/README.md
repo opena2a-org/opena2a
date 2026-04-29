@@ -10,7 +10,7 @@ One place to update credential detection so `secretless-ai`, `hackmyagent`, and 
 npm install @opena2a/credential-patterns
 ```
 
-Pin exactly. Per OpenA2A convention across the CLI consolidation, depend with `"@opena2a/credential-patterns": "0.1.0"`, not `^0.1.0`. Trades dependency-update PR volume for supply-chain tightness; removes transitive surprise.
+Pin exactly. Per OpenA2A convention across the CLI consolidation, depend with `"@opena2a/credential-patterns": "0.1.1"`, not `^0.1.1`. Trades dependency-update PR volume for supply-chain tightness; removes transitive surprise.
 
 This package is **ESM-only** (`"type": "module"`, no CJS build).
 
