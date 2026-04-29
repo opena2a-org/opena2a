@@ -50,6 +50,12 @@ interface GroupedFinding {
   businessImpact: string;
   locations: { file: string; line: number }[];
   attackClass?: string;
+  // Populated from getVerificationCommand() / getToolRecommendation() so
+  // JSON consumers (CI gates, IDE plugins) get the same per-finding
+  // verify/fix mapping the text view prints. Undefined when no command
+  // is appropriate.
+  verify?: string;
+  fix?: string;
 }
 
 interface ActionItem {
@@ -161,7 +167,7 @@ export async function init(options: InitOptions): Promise<number> {
   }
 
   // 6. Group findings
-  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings);
+  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings, targetDir);
 
   // 7. Calculate unified security score
   if (isTTY) spinner.update('Assessing security posture...');
@@ -223,6 +229,15 @@ export async function init(options: InitOptions): Promise<number> {
   if (isTTY) spinner.stop();
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  // 11.5 Enrich findings with verify/fix so JSON consumers see the same
+  // per-finding command mapping the text view prints (#119).
+  for (const f of groupedFindings) {
+    const verify = getVerificationCommand(f, targetDir);
+    if (verify) f.verify = verify;
+    const tool = getToolRecommendation(f.findingId);
+    if (tool) f.fix = tool.command;
+  }
 
   // 12. Build report
   const riskLevel = scoreToRiskLevel(score);
@@ -473,10 +488,31 @@ async function checkLLMServerExposure(): Promise<HygieneCheck | null> {
 
 // --- Finding grouping ---
 
+// File probes for hygiene-derived findings. Each entry returns the FIRST
+// existing file in the project, or null if none. Keeps `locations[]`
+// aligned with what `getVerificationCommand` would resolve.
+const HYGIENE_FILE_PROBES: Record<string, string[]> = {
+  'MCP-TOOLS': ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'],
+  'MCP-CRED': ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'],
+  'ENV-DOTENV': ['.gitignore'],
+  'AI-CONFIG': ['.gitignore', '.git/info/exclude'],
+};
+
+function probeHygieneLocation(findingId: string, dir: string): { file: string; line: number }[] {
+  const candidates = HYGIENE_FILE_PROBES[findingId];
+  if (!candidates) return [];
+  for (const rel of candidates) {
+    const full = path.join(dir, rel);
+    if (fs.existsSync(full)) return [{ file: full, line: 1 }];
+  }
+  return [];
+}
+
 function groupFindings(
   creds: CredentialMatch[],
   checks: HygieneCheck[],
   hmaFindings: { severity: string; checkId: string; message: string; attackClass?: string }[],
+  targetDir: string,
 ): GroupedFinding[] {
   const groups = new Map<string, GroupedFinding>();
 
@@ -525,7 +561,7 @@ function groupFindings(
       count: 1,
       explanation: 'Environment files may be committed to version control.',
       businessImpact: 'Adding .env to .gitignore keeps secrets out of version control.',
-      locations: [],
+      locations: probeHygieneLocation('ENV-DOTENV', targetDir),
     });
   }
 
@@ -539,7 +575,7 @@ function groupFindings(
       count: 1,
       explanation: 'MCP servers with filesystem or shell access can read, modify, or delete files on your system when invoked by an AI assistant.',
       businessImpact: 'Review server permissions to ensure each server has only the access it needs.',
-      locations: [],
+      locations: probeHygieneLocation('MCP-TOOLS', targetDir),
     });
   }
 
@@ -552,7 +588,7 @@ function groupFindings(
       count: 1,
       explanation: 'API keys hardcoded in MCP config files are readable by anyone with access to the project directory.',
       businessImpact: 'Move credentials to environment variables so they are not stored in plaintext.',
-      locations: [],
+      locations: probeHygieneLocation('MCP-CRED', targetDir),
     });
   }
 
@@ -565,7 +601,7 @@ function groupFindings(
       count: 1,
       explanation: 'AI instruction files (CLAUDE.md, .cursorrules, etc.) reveal tooling choices and system prompts when committed to a public repository.',
       businessImpact: 'Add these files to .git/info/exclude to keep them local without modifying .gitignore.',
-      locations: [],
+      locations: probeHygieneLocation('AI-CONFIG', targetDir),
     });
   }
 

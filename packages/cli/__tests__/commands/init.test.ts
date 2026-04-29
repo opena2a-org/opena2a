@@ -436,6 +436,42 @@ describe('init', () => {
     expect(output).toContain('Recommendations');
   });
 
+  // Regression: opena2a/issues/119 — JSON findings must carry the same
+  // verify / fix / locations the text view prints. CI gates and IDE
+  // plugins parse the JSON; missing fields force them to re-run scanners.
+  it('JSON findings populate verify, fix, and locations (#119)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs': { command: 'filesystem-server', args: [] },
+      },
+    }));
+    const fakeKey = 'sk-ant-api03-' + 'P'.repeat(85);
+    fs.writeFileSync(path.join(tempDir, 'config.ts'), `const k = "${fakeKey}";`);
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const credFinding = report.findings.find((f: any) => f.findingId.startsWith('CRED-'));
+    expect(credFinding).toBeDefined();
+    expect(typeof credFinding.verify).toBe('string');
+    expect(credFinding.verify.length).toBeGreaterThan(0);
+    expect(credFinding.fix).toBe('opena2a protect');
+    expect(credFinding.locations.length).toBeGreaterThan(0);
+    expect(credFinding.locations[0]).toMatchObject({ file: expect.any(String), line: expect.any(Number) });
+
+    const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
+    expect(mcpFinding).toBeDefined();
+    expect(mcpFinding.verify).toContain('mcp.json');
+    expect(mcpFinding.fix).toBe('opena2a shield init');
+    expect(mcpFinding.locations.length).toBeGreaterThan(0);
+    expect(mcpFinding.locations[0].file.endsWith('mcp.json')).toBe(true);
+  });
+
   // Regression: opena2a/issues/117 — Fix commands must point to runnable
   // mutations, never to status/read-only commands. `opena2a shield status`
   // is read-only and creates a dead-end UX (CISO Rule 3 violation).
