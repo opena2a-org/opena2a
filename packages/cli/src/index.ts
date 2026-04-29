@@ -15,6 +15,7 @@ import { ADAPTER_REGISTRY } from './adapters/registry.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
+import { HMA_CHECK_COUNT } from './util/canonical.js';
 
 const VERSION = getVersion();
 // Wire-format tool name (analytics key in tool_usage_events). Matches the
@@ -106,7 +107,7 @@ Quick Start:
   $ opena2a protect              Detect and migrate hardcoded credentials
   $ opena2a guard sign           Sign config files for tamper detection
   $ opena2a check express        Check npm package against Registry + HMA
-  $ opena2a scan secure          Run 238 security checks on your AI agent
+  $ opena2a scan secure          Run ${HMA_CHECK_COUNT} security checks on your AI agent
   $ opena2a skill create         Scaffold a secure skill (SKILL.md, heartbeat, tests)
   $ opena2a guard harden         Scan skills for security issues (--fix to auto-fix)
   $ opena2a harden-skill         Harden a skill file (frontmatter, permissions, integrity pin)
