@@ -12,6 +12,8 @@
  *               INT (integrity), SUP (supply chain), BAS (behavioral)
  */
 
+import path from 'node:path';
+
 import type { ShieldEvent, EventSeverity, PolicyViolation } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -275,6 +277,62 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
   }
 
   return null;
+}
+
+/**
+ * Drop ConfigGuard events whose absolute-path target is outside `targetDir`.
+ *
+ * The global event log at `~/.opena2a/shield/events.jsonl` accumulates
+ * events from every `opena2a guard verify` invocation across the user's
+ * machine. When `opena2a review` runs against a directory, ConfigGuard
+ * verify events from unrelated directories should not surface as
+ * SHIELD-INT-001 critical findings — otherwise an empty test dir
+ * inherits 288 cross-project tamper events and the report looks broken
+ * (issue #109 sub-item 1).
+ *
+ * Scope of this filter (intentionally narrow):
+ * - Only `event.source === 'configguard'` events with an absolute-path
+ *   `target` are subject to scoping. Those events use `target` as the
+ *   directory whose configs were verified (set at guard.ts:310,
+ *   guard-policy.ts, guard-snapshots.ts:247).
+ * - All other event sources (arp, registry, secretless, shield) are
+ *   passed through untouched. Their `target` field is the affected
+ *   entity (binary, package, finding id, action) — NOT a scope
+ *   indicator. Filtering those by path would suppress legitimate
+ *   cross-cutting findings (e.g. an ARP event for `/usr/bin/curl`
+ *   spawned inside the scan target).
+ * - ConfigGuard events with a non-absolute `target` (`guard watch`
+ *   emits relative paths like `package.json`) are kept. They cannot
+ *   be reliably scoped without writer-side changes; that's tracked
+ *   as a residual issue separate from this PR.
+ *
+ * No filesystem I/O — `path.resolve` only consults `process.cwd()`
+ * when `targetDir` is relative.
+ */
+export function filterEventsToTarget(
+  events: ShieldEvent[],
+  targetDir: string,
+): ShieldEvent[] {
+  const normalizedTarget = path.resolve(targetDir);
+  return events.filter(event => {
+    if (event.source !== 'configguard') return true;
+    const target = event.target ?? '';
+    if (!isAbsolutePathLike(target)) return true;
+    const normalizedEventTarget = path.resolve(target);
+    if (normalizedEventTarget === normalizedTarget) return true;
+    const rel = path.relative(normalizedTarget, normalizedEventTarget);
+    if (rel === '') return true;
+    if (rel === '..' || rel.startsWith('..' + path.sep)) return false;
+    if (path.isAbsolute(rel)) return false;
+    return true;
+  });
+}
+
+function isAbsolutePathLike(value: string): boolean {
+  if (value.length === 0) return false;
+  if (value.startsWith('/')) return true;
+  if (/^[A-Za-z]:[\\/]/.test(value)) return true;
+  return false;
 }
 
 /**

@@ -38,7 +38,7 @@ import { quickCredentialScan, type CredentialMatch } from '../util/credential-pa
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
 import { readEvents } from '../shield/events.js';
-import { classifyEvents, type ClassifiedFinding } from '../shield/findings.js';
+import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
 import { getARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
@@ -645,7 +645,8 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
     events = [] as ReturnType<typeof readEvents>;
   }
 
-  const classifiedFindings = classifyEvents(events);
+  const scopedEvents = filterEventsToTarget(events, targetDir);
+  const classifiedFindings = classifyEvents(scopedEvents);
 
   let arpStats: ARPStats;
   try {
