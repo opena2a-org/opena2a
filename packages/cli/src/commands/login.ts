@@ -4,7 +4,10 @@
  * Implements OAuth 2.0 Device Authorization Grant (RFC 8628) for
  * browser-based authentication against an AIM server.
  *
- * Credentials are stored in ~/.opena2a/auth.json with 0600 permissions.
+ * Tokens are stored in the OS keychain (macOS Keychain / Linux Secret
+ * Service) when available; metadata lives at ~/.opena2a/auth.json (mode
+ * 0600). On platforms without keychain support, tokens fall back to the
+ * file with a stderr warning.
  */
 
 import { resolveServerUrl } from '../util/server-url.js';
@@ -114,7 +117,7 @@ export async function login(options: LoginOptions): Promise<number> {
 
       // Success -- save credentials
       const expiresAt = new Date(Date.now() + token.expiresIn * 1000).toISOString();
-      saveAuth({
+      const tokenStorage = saveAuth({
         serverUrl,
         accessToken: token.accessToken,
         refreshToken: token.refreshToken,
@@ -124,11 +127,15 @@ export async function login(options: LoginOptions): Promise<number> {
       });
 
       if (isJson) {
-        console.log(JSON.stringify({ status: 'authenticated', serverUrl }));
+        console.log(JSON.stringify({ status: 'authenticated', serverUrl, tokenStorage }));
       } else {
         console.log('');
         console.log(`  Authenticated to ${serverUrl}`);
-        console.log('  Credentials saved to ~/.opena2a/auth.json');
+        if (tokenStorage === 'keychain') {
+          console.log('  Tokens saved to OS keychain (metadata in ~/.opena2a/auth.json, mode 0600).');
+        } else {
+          console.log('  Tokens saved to ~/.opena2a/auth.json (mode 0600). Keychain unavailable on this host.');
+        }
         console.log('');
         console.log('  You can now use server commands without --api-key:');
         console.log('    opena2a identity list --server cloud');
@@ -188,7 +195,7 @@ export async function logout(options: { format?: string; json?: boolean }): Prom
   if (isJson) {
     console.log(JSON.stringify({ status: removed ? 'logged_out' : 'not_authenticated' }));
   } else if (removed) {
-    console.log('Logged out. Credentials removed from ~/.opena2a/auth.json');
+    console.log('Logged out. Tokens removed from keychain (if present) and ~/.opena2a/auth.json.');
   } else {
     console.log('Not currently authenticated.');
   }
