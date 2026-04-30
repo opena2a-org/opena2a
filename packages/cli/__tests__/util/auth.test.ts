@@ -148,3 +148,152 @@ describe('auth storage with keychain forced off (file-fallback path)', () => {
     expect(loadAuth()).toBeNull();
   });
 });
+
+describe('auth storage with mock keychain backend (keychain path)', () => {
+  // The forced-off path tests proved file-fallback is correct, but the
+  // KEY claim of this PR — that tokens never appear in the file when the
+  // keychain handles them — needs a backend the test can drive. Mock the
+  // backend by intercepting the keychain module on import.
+
+  it('saveAuth in keychain mode writes a file with NO accessToken or refreshToken keys', async () => {
+    delete process.env.OPENA2A_AUTH_FORCE_FILE;
+    const stored = new Map<string, string>();
+    vi.resetModules();
+    vi.doMock('../../src/util/keychain.js', () => ({
+      KEYCHAIN_SERVICE: 'opena2a-cli',
+      validateServerUrl: () => undefined,
+      getKeychain: () => ({
+        name: 'mock-keychain',
+        isAvailable: () => true,
+        setSecret: (serverUrl: string, kind: string, value: string) => {
+          stored.set(`${serverUrl}:${kind}`, value);
+        },
+        getSecret: (serverUrl: string, kind: string) => stored.get(`${serverUrl}:${kind}`) ?? null,
+        deleteSecret: (serverUrl: string, kind: string) => stored.delete(`${serverUrl}:${kind}`),
+        listAccounts: () => Array.from(stored.keys()),
+      }),
+      _resetKeychainForTests: () => undefined,
+    }));
+
+    const { saveAuth, loadAuth } = await import('../../src/util/auth.js');
+    const storage = saveAuth({
+      serverUrl: 'https://aim.oa2a.org',
+      accessToken: 'KEYCHAIN-ACCESS-TOKEN-DO-NOT-LEAK',
+      refreshToken: 'KEYCHAIN-REFRESH-TOKEN-DO-NOT-LEAK',
+      expiresAt: '2099-01-01T00:00:00Z',
+      tokenType: 'Bearer',
+      authenticatedAt: '2026-04-30T00:00:00Z',
+    });
+    expect(storage).toBe('keychain');
+
+    const filePath = path.join(TMP_HOME, '.opena2a', 'auth.json');
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    // The file MUST NOT contain either token, anywhere, in any form.
+    expect(raw).not.toContain('KEYCHAIN-ACCESS-TOKEN-DO-NOT-LEAK');
+    expect(raw).not.toContain('KEYCHAIN-REFRESH-TOKEN-DO-NOT-LEAK');
+    const onDisk = JSON.parse(raw);
+    expect(Object.keys(onDisk).sort()).toEqual([
+      'authenticatedAt', 'expiresAt', 'serverUrl', 'tokenStorage', 'tokenType',
+    ]);
+    expect(onDisk.tokenStorage).toBe('keychain');
+
+    // Round-trip: loadAuth reads tokens back from the mock keychain.
+    const loaded = loadAuth();
+    expect(loaded?.accessToken).toBe('KEYCHAIN-ACCESS-TOKEN-DO-NOT-LEAK');
+    expect(loaded?.refreshToken).toBe('KEYCHAIN-REFRESH-TOKEN-DO-NOT-LEAK');
+
+    vi.doUnmock('../../src/util/keychain.js');
+  });
+
+  it('removeAuth enumerates and clears every opena2a-cli keychain account, not just the current serverUrl', async () => {
+    delete process.env.OPENA2A_AUTH_FORCE_FILE;
+    const stored = new Map<string, string>();
+    // Pre-populate keychain with entries from a prior server-switch:
+    // user was on cloud, then switched to self-hosted without logging out.
+    stored.set('https://aim.oa2a.org:access', 'cloud-access');
+    stored.set('https://aim.oa2a.org:refresh', 'cloud-refresh');
+    stored.set('http://localhost:8080:access', 'self-hosted-access');
+    stored.set('http://localhost:8080:refresh', 'self-hosted-refresh');
+
+    vi.resetModules();
+    vi.doMock('../../src/util/keychain.js', () => ({
+      KEYCHAIN_SERVICE: 'opena2a-cli',
+      validateServerUrl: () => undefined,
+      getKeychain: () => ({
+        name: 'mock-keychain',
+        isAvailable: () => true,
+        setSecret: (serverUrl: string, kind: string, value: string) => {
+          stored.set(`${serverUrl}:${kind}`, value);
+        },
+        getSecret: (serverUrl: string, kind: string) => stored.get(`${serverUrl}:${kind}`) ?? null,
+        deleteSecret: (serverUrl: string, kind: string) => stored.delete(`${serverUrl}:${kind}`),
+        listAccounts: () => Array.from(stored.keys()),
+      }),
+      _resetKeychainForTests: () => undefined,
+    }));
+
+    // Metadata file points only at the self-hosted URL — cloud entry is
+    // orphaned. The naive "use serverUrl from file" logout would leave the
+    // cloud refresh token alive.
+    const dir = path.join(TMP_HOME, '.opena2a');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({
+      serverUrl: 'http://localhost:8080',
+      expiresAt: '2099-01-01T00:00:00Z',
+      tokenType: 'Bearer',
+      authenticatedAt: '2026-04-30T00:00:00Z',
+      tokenStorage: 'keychain',
+    }));
+
+    const { removeAuth } = await import('../../src/util/auth.js');
+    expect(removeAuth()).toBe(true);
+
+    // EVERY entry is gone — both cloud and self-hosted. No orphan refresh
+    // token left in the keychain.
+    expect(stored.size).toBe(0);
+
+    vi.doUnmock('../../src/util/keychain.js');
+  });
+
+  it('removeAuth clears keychain entries even when the metadata file is malformed', async () => {
+    delete process.env.OPENA2A_AUTH_FORCE_FILE;
+    const stored = new Map<string, string>([
+      ['https://aim.oa2a.org:access', 'tok-a'],
+      ['https://aim.oa2a.org:refresh', 'tok-r'],
+    ]);
+    vi.resetModules();
+    vi.doMock('../../src/util/keychain.js', () => ({
+      KEYCHAIN_SERVICE: 'opena2a-cli',
+      validateServerUrl: () => undefined,
+      getKeychain: () => ({
+        name: 'mock-keychain',
+        isAvailable: () => true,
+        setSecret: () => undefined,
+        getSecret: (serverUrl: string, kind: string) => stored.get(`${serverUrl}:${kind}`) ?? null,
+        deleteSecret: (serverUrl: string, kind: string) => stored.delete(`${serverUrl}:${kind}`),
+        listAccounts: () => Array.from(stored.keys()),
+      }),
+      _resetKeychainForTests: () => undefined,
+    }));
+    const dir = path.join(TMP_HOME, '.opena2a');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'auth.json'), 'not-json{');
+    const { removeAuth } = await import('../../src/util/auth.js');
+    expect(removeAuth()).toBe(true);
+    expect(stored.size).toBe(0);
+    vi.doUnmock('../../src/util/keychain.js');
+  });
+});
+
+describe('keychain validateServerUrl', () => {
+  it('rejects empty string, leading hyphen, control chars, and overlength', async () => {
+    const { validateServerUrl } = await import('../../src/util/keychain.js');
+    expect(() => validateServerUrl('')).toThrow();
+    expect(() => validateServerUrl('-evil')).toThrow();
+    expect(() => validateServerUrl('https://aim.oa2a.org\nfake')).toThrow();
+    expect(() => validateServerUrl('https://aim.oa2a.org\x00fake')).toThrow();
+    expect(() => validateServerUrl('a'.repeat(513))).toThrow();
+    expect(() => validateServerUrl('https://aim.oa2a.org')).not.toThrow();
+    expect(() => validateServerUrl('http://localhost:8080')).not.toThrow();
+  });
+});

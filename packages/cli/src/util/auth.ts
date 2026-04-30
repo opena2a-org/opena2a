@@ -185,30 +185,43 @@ export function saveAuth(creds: AuthCredentials): TokenStorage {
 }
 
 /**
- * Remove auth credentials from BOTH keychain and file.
- * Returns true if anything was removed.
+ * Remove auth credentials from BOTH keychain and file. Enumerates every
+ * `opena2a-cli` keychain entry (not just the current serverUrl) so logout
+ * clears orphans from prior sessions or server-switches — e.g. user logged
+ * into cloud, then into self-hosted without logging out, leaving the cloud
+ * refresh token alive in the keychain indefinitely. Also covers the case
+ * where the metadata file is malformed and we can't parse the serverUrl.
+ *
+ * Returns true if anything was removed (file present and/or any keychain
+ * entry deleted).
  */
 export function removeAuth(): boolean {
   const p = authConfigPath();
   let removed = false;
 
-  // Read file first so we know which serverUrl to clear from keychain.
-  let serverUrl: string | null = null;
-  if (existsSync(p)) {
+  const kc = getKeychain();
+  if (kc.isAvailable()) {
+    let accounts: string[] = [];
     try {
-      const parsed = JSON.parse(readFileSync(p, 'utf-8')) as AuthFile;
-      serverUrl = parsed.serverUrl ?? null;
+      accounts = kc.listAccounts();
     } catch {
-      // Malformed file — fine, just delete it.
+      accounts = [];
     }
-  }
-
-  if (serverUrl) {
-    const kc = getKeychain();
-    if (kc.isAvailable()) {
-      // Best-effort; deleteSecret returns false when the entry is absent.
-      if (kc.deleteSecret(serverUrl, 'access')) removed = true;
-      if (kc.deleteSecret(serverUrl, 'refresh')) removed = true;
+    for (const account of accounts) {
+      // accountFor() shape is `${serverUrl}:${kind}` — split on the LAST
+      // colon so URLs containing colons (e.g. http://localhost:8080) survive.
+      const lastColon = account.lastIndexOf(':');
+      if (lastColon <= 0) continue;
+      const serverUrl = account.slice(0, lastColon);
+      const kind = account.slice(lastColon + 1);
+      if (kind !== 'access' && kind !== 'refresh') continue;
+      try {
+        if (kc.deleteSecret(serverUrl, kind)) removed = true;
+      } catch {
+        // validateServerUrl in accountFor may reject pathological account
+        // strings — skip them. They're already orphaned; nothing more we can
+        // do without bypassing our own input validation.
+      }
     }
   }
 
