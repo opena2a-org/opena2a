@@ -61,6 +61,62 @@ unset OPENA2A_TELEMETRY_URL
 # overwrite ~/.config/opena2a/telemetry.json.
 ```
 
+## 4. Setup-flow URLs — frontend host invariant (1 min)
+
+`opena2a setup` prints links the user is expected to click. Backend host
+(`oa2a.org`) serves the API; frontend host (`opena2a.org`) renders the UI.
+Printing the backend host as a "Dashboard:" link sends users to a JSON health
+endpoint, not the dashboard. This invariant is unit-tested in
+`__tests__/util/server-url.test.ts` (`resolveDashboardUrl`); the smoke checks
+the wire output every release because URL drift is invisible to scoring tests.
+
+Run setup with the JSON flag against a fresh auth file pointed at `cloud`. If
+you don't have a live AIM Cloud auth on this machine, skip 4.2 and run the
+helper-output check (4.3) by itself — it covers the regression.
+
+```bash
+# 4.1 - inspect the cloud-auth path (real flow; needs a valid login first)
+opena2a login --server cloud   # one-time
+opena2a setup --json | jq '.dashboard, .mcpDashboard, .serverUrl'
+```
+
+| # | Assertion |
+|---|-----------|
+| 4.1.a | `dashboard` and `mcpDashboard` start with `https://aim.opena2a.org/` (NEVER `aim.oa2a.org`, NEVER `api.aim.opena2a.org`). |
+| 4.1.b | `dashboard` ends with `/dashboard/agents/<agentId>` — deep link to the agent we just created, not the generic `/dashboard`. |
+| 4.1.c | `serverUrl` is the API host (`https://aim.oa2a.org` for cloud) — that field is for downstream tooling, kept distinct from `dashboard`. |
+
+Text-mode output should include a "Self-hosted instead?" hint that names a
+`--server` example (e.g. `localhost:8080`). If that line is missing, the
+self-hosted disclosure regressed — release-blocker.
+
+```bash
+# 4.2 - self-hosted shape (no live server needed; reads cached config)
+node -e "
+  const { resolveDashboardUrl } = require('./dist/util/server-url.js');
+  const cases = {
+    cloudBackend:    'https://aim.oa2a.org',
+    communityApi:    'https://api.aim.opena2a.org',
+    selfHostedLocal: 'http://localhost:8080',
+    selfHostedCorp:  'https://aim.example.internal',
+  };
+  for (const [k, v] of Object.entries(cases)) console.log(k, '->', resolveDashboardUrl(v));
+"
+```
+
+Expected (line for line):
+
+```
+cloudBackend -> https://aim.opena2a.org
+communityApi -> https://aim.opena2a.org
+selfHostedLocal -> http://localhost:8080
+selfHostedCorp -> https://aim.example.internal
+```
+
+Fail the release if any line drifts. The two `*.opena2a.org` lines must NOT
+contain `oa2a.org` (no `n`-drop) and the two self-hosted lines must echo the
+input host exactly — same protocol, same port.
+
 ## When this checklist isn't enough
 
 - If the diff touches `src/router.ts` or any subcommand action — also run the relevant subcommand against a real target (`opena2a check express`, `opena2a status`, etc.) — telemetry hooks fire on the postAction phase, so a broken hook only surfaces with a real action.

@@ -442,7 +442,7 @@ analysis runs and results can be shared with the community.
   program
     .command('login')
     .description('Authenticate with an AIM server via browser login')
-    .option('--server <url>', 'AIM server URL (default: cloud, i.e. aim.oa2a.org)')
+    .option('--server <url>', 'AIM server URL (default: cloud = aim.opena2a.org; pass localhost:8080 or a URL for a self-hosted AIM)')
     .option('--json', 'Output as JSON')
     .action(async (opts) => {
       const { login } = await import('./commands/login.js');

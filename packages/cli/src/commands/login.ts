@@ -27,7 +27,7 @@ export async function login(options: LoginOptions): Promise<number> {
     if (isJson) {
       console.log(JSON.stringify({ error: 'invalid_server', message: 'Server URL is required.' }));
     } else {
-      console.error('Server URL is required. Use --server <url> or omit for aim.oa2a.org.');
+      console.error('Server URL is required. Use --server <url> or omit to use AIM Cloud (aim.opena2a.org).');
     }
     return 1;
   }

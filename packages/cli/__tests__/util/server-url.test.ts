@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveServerUrl } from '../../src/util/server-url.js';
+import { resolveServerUrl, resolveDashboardUrl } from '../../src/util/server-url.js';
 
 describe('resolveServerUrl', () => {
   it('resolves "cloud" to https://aim.oa2a.org', () => {
@@ -53,5 +53,37 @@ describe('resolveServerUrl', () => {
   it('trims whitespace', () => {
     expect(resolveServerUrl('  cloud  ')).toBe('https://aim.oa2a.org');
     expect(resolveServerUrl('  localhost:8080  ')).toBe('http://localhost:8080');
+  });
+});
+
+describe('resolveDashboardUrl', () => {
+  it('maps the AIM Cloud backend host to the user-facing frontend host', () => {
+    // oa2a.org = backend, opena2a.org = frontend. The CLI used to print the
+    // backend URL with /dashboard appended, sending users to an API
+    // health endpoint that does not render a UI.
+    expect(resolveDashboardUrl('https://aim.oa2a.org')).toBe('https://aim.opena2a.org');
+    expect(resolveDashboardUrl('https://aim.oa2a.org/')).toBe('https://aim.opena2a.org');
+  });
+
+  it('maps the community API host to the community frontend (drops api. prefix)', () => {
+    expect(resolveDashboardUrl('https://api.aim.opena2a.org')).toBe('https://aim.opena2a.org');
+  });
+
+  it('keeps localhost untouched (self-hosted AIM serves API + UI on the same host)', () => {
+    expect(resolveDashboardUrl('http://localhost:8080')).toBe('http://localhost:8080');
+    expect(resolveDashboardUrl('http://127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
+  });
+
+  it('keeps custom self-hosted hostnames untouched', () => {
+    expect(resolveDashboardUrl('https://aim.example.internal')).toBe('https://aim.example.internal');
+    expect(resolveDashboardUrl('https://aim.example.com:9090')).toBe('https://aim.example.com:9090');
+  });
+
+  it('strips trailing slashes and any path the caller passed in', () => {
+    expect(resolveDashboardUrl('https://aim.example.com/api/v1/')).toBe('https://aim.example.com');
+  });
+
+  it('returns input untouched when not a parseable URL (defensive)', () => {
+    expect(resolveDashboardUrl('not-a-url')).toBe('not-a-url');
   });
 });
