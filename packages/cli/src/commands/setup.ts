@@ -272,7 +272,13 @@ export async function setup(options: SetupOptions): Promise<number> {
   const dashboardBase = resolveDashboardUrl(auth.serverUrl);
   const agentUrl = `${dashboardBase}/dashboard/agents/${agentId}`;
   const mcpUrl = `${dashboardBase}/dashboard/mcp`;
-  const isCloud = /aim\.(opena2a|oa2a)\.org$/.test(new URL(auth.serverUrl).host);
+  // Defensive: a corrupted auth.json could carry an unparseable serverUrl
+  // (e.g. "not a url"). Don't crash the post-success path on it — degrade
+  // the cloud-only "Self-hosted instead?" hint to off.
+  let isCloud = false;
+  try {
+    isCloud = /aim\.(opena2a|oa2a)\.org$/.test(new URL(auth.serverUrl).host);
+  } catch { /* unparseable serverUrl — leave isCloud=false */ }
 
   if (isJson) {
     process.stdout.write(JSON.stringify({
