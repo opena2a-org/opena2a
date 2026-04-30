@@ -36,3 +36,41 @@ export function resolveServerUrl(input: string): string {
   // Any other hostname -- default to https
   return `https://${trimmed}`.replace(/\/+$/, '');
 }
+
+/**
+ * Map an AIM API/server URL to the user-facing frontend host (where the
+ * dashboard renders). Backend = oa2a.org, frontend = opena2a.org. Printing the
+ * backend host as a "Dashboard:" link sends users to the API health endpoint
+ * instead of the UI.
+ *
+ *   https://aim.oa2a.org             -> https://aim.opena2a.org
+ *   https://api.aim.opena2a.org      -> https://aim.opena2a.org
+ *   http://localhost:8080            -> http://localhost:8080  (self-hosted: same host serves both)
+ *   https://aim.example.internal     -> https://aim.example.internal (self-hosted: same host)
+ */
+export function resolveDashboardUrl(serverUrl: string): string {
+  const trimmed = serverUrl.trim().replace(/\/+$/, '');
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    // Caller passed something that isn't parseable; return it untouched so
+    // callers don't crash on unexpected config.
+    return trimmed;
+  }
+
+  // AIM Cloud backend -> AIM Cloud frontend
+  if (url.host === 'aim.oa2a.org') {
+    return 'https://aim.opena2a.org';
+  }
+
+  // Community API host -> community frontend (drop the api. prefix)
+  if (url.host === 'api.aim.opena2a.org') {
+    return 'https://aim.opena2a.org';
+  }
+
+  // Self-hosted (localhost or custom hostname): same host serves API + UI.
+  // Strip any path so the caller can append its own.
+  return `${url.protocol}//${url.host}`;
+}

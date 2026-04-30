@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.2
+
+### Bug Fixes
+- **`opena2a setup` printed the backend host as the dashboard URL.** The success block built `${auth.serverUrl}/dashboard` directly, which on AIM Cloud became `https://aim.oa2a.org/dashboard` — the API host, which serves a JSON health endpoint, not the UI. Backend = `oa2a.org`, frontend = `opena2a.org`; the two were never meant to be the same host. New helper `resolveDashboardUrl(serverUrl)` in `packages/cli/src/util/server-url.ts` maps API host → frontend host (`aim.oa2a.org` → `aim.opena2a.org`, `api.aim.opena2a.org` → `aim.opena2a.org`, self-hosted hostnames are passed through unchanged). 6 new unit tests in `__tests__/util/server-url.test.ts` pin the four URL flavors plus a defensive non-URL case. Release-smoke section 4 (`docs/testing/release-smoke.md`) asserts the wire output every release — URL drift is invisible to scoring tests so it needs its own gate.
+- **`opena2a setup` deep-links to the agent that was just created.** Printed link is now `https://aim.opena2a.org/dashboard/agents/<agentId>` (the resource the user just created), with a separate `MCP inventory:` line when MCP servers were attached. Reduces the click-distance from "agent registered" to "I can see my agent" from N+1 clicks to zero.
+- **`opena2a setup` auto-launches login when not authenticated.** Previously emitted `Run: opena2a login` and exited code 1, which forced the user to cancel + retry the setup flow. Setup now calls into the existing `login()` flow inline, prints a one-line "Press Ctrl+C to cancel and use --server <url>" hint for users who actually want a self-hosted AIM, and continues into identity creation once auth lands. JSON callers (`--json`) keep the strict-mode behavior — they still error out with the machine-readable code.
+- **Help/error strings stop leaking the backend host.** `opena2a login --server <url>` help and the "server URL required" error message both used to say "omit for aim.oa2a.org" — that domain is for backend/API traffic, never for human eyes. Now mentions `aim.opena2a.org` (the user-facing domain) and explicitly calls out `localhost:8080` as the self-hosted shorthand.
+
+### What just happened
+`opena2a setup` text output expanded to include a "What just happened" block (agent registered with Ed25519 keypair, N MCP servers discovered/attached, trust score reflects the agent + every MCP it depends on) and a "Next:" block with concrete follow-up commands (`watch`, `identity list`, `trust <package>`). The cloud-auth path also prints a "Self-hosted instead?" hint that names a `--server` example so users on AIM Cloud are aware they can swap to their own AIM at any time.
+
 ## 0.10.0
 
 ### New Features

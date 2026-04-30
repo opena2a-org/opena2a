@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { bold, dim, green, yellow, red, cyan, gray } from '../util/colors.js';
 import { AimClient, loadServerConfig, saveServerConfig } from '../util/aim-client.js';
 import { loadAuth, isAuthValid } from '../util/auth.js';
+import { resolveDashboardUrl } from '../util/server-url.js';
 import { scanMcpServers } from './detect.js';
 
 export interface SetupOptions {
@@ -69,16 +70,34 @@ export async function setup(options: SetupOptions): Promise<number> {
   const isJson = options.json || options.format === 'json';
   const dir = options.targetDir;
 
-  // Step 1: Check authentication
-  const auth = loadAuth();
+  // Step 1: Check authentication. If missing or expired, run the browser login
+  // flow inline so the user doesn't have to cancel + retry. JSON callers stay
+  // strict-mode (still error with a machine-readable code).
+  let auth = loadAuth();
   if (!auth || !isAuthValid(auth)) {
     if (isJson) {
       process.stdout.write(JSON.stringify({ error: 'not_authenticated', message: 'Run: opena2a login' }, null, 2) + '\n');
-    } else {
-      process.stderr.write(red('Not authenticated.') + '\n');
-      process.stderr.write('Run: ' + cyan('opena2a login') + '\n');
+      return 1;
     }
-    return 1;
+
+    process.stdout.write(yellow('  Not authenticated.') + ' Launching browser login...\n');
+    process.stdout.write(dim('  (Press Ctrl+C to cancel and use --server <url> for a self-hosted AIM server.)') + '\n\n');
+
+    const { login } = await import('./login.js');
+    const loginCode = await login({
+      ci: options.ci,
+      format: options.format,
+    });
+    if (loginCode !== 0) {
+      return loginCode;
+    }
+
+    auth = loadAuth();
+    if (!auth || !isAuthValid(auth)) {
+      process.stderr.write(red('  Login completed but no valid credentials were saved. Try opena2a login again.') + '\n');
+      return 1;
+    }
+    process.stdout.write('\n');
   }
 
   if (!isJson) {
@@ -248,7 +267,18 @@ export async function setup(options: SetupOptions): Promise<number> {
   } catch { /* use initial trust score */ }
 
   // Output results
-  const dashboardUrl = `${auth.serverUrl.replace(/\/+$/, '')}/dashboard`;
+  // Backend host (oa2a.org) serves the API; the dashboard renders on the
+  // frontend host (opena2a.org). Map API host -> frontend before printing.
+  const dashboardBase = resolveDashboardUrl(auth.serverUrl);
+  const agentUrl = `${dashboardBase}/dashboard/agents/${agentId}`;
+  const mcpUrl = `${dashboardBase}/dashboard/mcp`;
+  // Defensive: a corrupted auth.json could carry an unparseable serverUrl
+  // (e.g. "not a url"). Don't crash the post-success path on it — degrade
+  // the cloud-only "Self-hosted instead?" hint to off.
+  let isCloud = false;
+  try {
+    isCloud = /aim\.(opena2a|oa2a)\.org$/.test(new URL(auth.serverUrl).host);
+  } catch { /* unparseable serverUrl — leave isCloud=false */ }
 
   if (isJson) {
     process.stdout.write(JSON.stringify({
@@ -257,14 +287,32 @@ export async function setup(options: SetupOptions): Promise<number> {
       trustScore,
       mcpServersDiscovered: mcpCount,
       mcpServersAttached: mcpAttached,
-      dashboard: dashboardUrl,
+      serverUrl: auth.serverUrl,
+      dashboard: agentUrl,
+      mcpDashboard: mcpUrl,
     }, null, 2) + '\n');
   } else {
     // Server returns 0-1 scale; display as percentage
     const displayScore = trustScore <= 1 ? Math.round(trustScore * 100) : Math.round(trustScore);
     process.stdout.write(green('  Trust score:') + ` ${displayScore}/100\n`);
-    process.stdout.write(green('  Dashboard:') + ` ${cyan(dashboardUrl)}\n`);
-    process.stdout.write('\n' + dim('  Agent is registered and monitored.') + '\n');
+    process.stdout.write(green('  Agent page:') + ` ${cyan(agentUrl)}\n`);
+    if (mcpCount > 0) {
+      process.stdout.write(green('  MCP inventory:') + ` ${cyan(mcpUrl)}\n`);
+    }
+    process.stdout.write('\n');
+    process.stdout.write(bold('  What just happened:') + '\n');
+    process.stdout.write(dim('    - Agent identity registered on AIM (signed Ed25519 keypair, agent_id ') + cyan(agentId.slice(0, 8)) + dim(')') + '\n');
+    process.stdout.write(dim(`    - ${mcpCount} MCP server${mcpCount === 1 ? '' : 's'} discovered, ${mcpAttached} attached and now scored against the trust graph`) + '\n');
+    process.stdout.write(dim('    - Trust score reflects the agent + every MCP it depends on; it updates as new evidence arrives') + '\n');
+    process.stdout.write('\n');
+    process.stdout.write(bold('  Next:') + '\n');
+    process.stdout.write(dim('    opena2a watch                  # live activity tail\n'));
+    process.stdout.write(dim('    opena2a identity list          # list your agents\n'));
+    process.stdout.write(dim('    opena2a trust <package>        # trust query for any npm/MCP\n'));
+    if (isCloud) {
+      process.stdout.write('\n');
+      process.stdout.write(dim('  Self-hosted instead? Re-run: ') + cyan('opena2a login --server localhost:8080') + dim(' (or any URL of an AIM instance you control).') + '\n');
+    }
   }
 
   return 0;
