@@ -7,6 +7,9 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'hackmyagent',
     subcommand: 'secure',
     description: 'Scan AI agent for security vulnerabilities (HackMyAgent)',
+    // `secure` resolves the dead-end command HMA emits via HMA_CLI_PREFIX
+    // substitution in scan output Next Steps (closes #135).
+    aliases: ['secure'],
   },
   secrets: {
     name: 'secrets',

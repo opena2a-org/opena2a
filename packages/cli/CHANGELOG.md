@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.3
+
+### Bug Fixes
+- **`opena2a secure --fix` and `opena2a check <pkg> --nanomind` no longer dead-end (closes #135).** Both commands appear in HackMyAgent's prefix-substituted Next Steps text every time `opena2a scan` runs against a fixture with findings — `HMA_CLI_PREFIX=opena2a` translates HMA's `hackmyagent secure --fix` to `opena2a secure --fix`, but opena2a-cli renamed `secure` → `scan` and stripped `--nanomind` from `check` (CHANGELOG 0.10.0 audit B17). User following the cited command saw `error: unknown command 'secure'` or `error: too many arguments for 'check'`. Now: `secure` is registered as a Commander alias of `scan` via a new `aliases?: string[]` field on `AdapterConfig` (`packages/cli/src/adapters/types.ts`), populated by the `scan` adapter entry in `packages/cli/src/adapters/registry.ts`. The `check` command registers `--nanomind` and `--rescan` as known options + `.allowExcessArguments(true)`, with both flags forwarded to HMA's check subprocess via `extraArgs`. New regression test `__tests__/adapters/aliases.test.ts` (2 cases) pins the alias list and verifies no collision with another registered command name. CISO Rule 11 / release-test Phase 4f — every cited command now resolves through the parser.
+
 ## 0.10.2
 
 ### Security
