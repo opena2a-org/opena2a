@@ -136,6 +136,10 @@ Learn more: https://opena2a.org/docs`);
       .allowUnknownOption(true)
       .helpOption(false); // Disable Commander's --help interception so it passes through to the adapter
 
+    if (config.aliases?.length) {
+      adapterCmd.aliases(config.aliases);
+    }
+
     adapterCmd.action(async (args: string[], _opts: unknown, _cmd: unknown) => {
         // Handle --help / -h: show adapter info without delegating to Docker/external tools
         if (args.includes('--help') || args.includes('-h')) {
@@ -236,7 +240,10 @@ Learn more: https://opena2a.org/docs`);
     program
       .command('check [target]')
       .description('Security check for npm packages, GitHub repos, or local directories')
+      .option('--nanomind', 'Run AI-assisted analysis on top of static checks (passthrough to HackMyAgent)')
+      .option('--rescan', 'Force a fresh scan even if registry has recent data')
       .allowUnknownOption(true)
+      .allowExcessArguments(true)
       .addHelpText('after', `
 Examples:
   $ opena2a check @modelcontextprotocol/server-filesystem   Check npm package via Registry + HMA
@@ -251,9 +258,12 @@ Packages and repos are checked against the OpenA2A Registry first. If fresh data
 exists (< 3 days), it is shown immediately. Otherwise a full HMA security
 analysis runs and results can be shared with the community.
 `)
-      .action(async (target: string | undefined, _opts, cmd) => {
+      .action(async (target: string | undefined, opts: { nanomind?: boolean; rescan?: boolean }, cmd) => {
         const globalOpts = program.opts();
         const extraArgs = cmd.args?.filter((a: string) => a !== target) ?? [];
+        // Registered passthrough flags (HMA emits these in scan Next Steps; #135).
+        if (opts.nanomind) extraArgs.push('--nanomind');
+        if (opts.rescan) extraArgs.push('--rescan');
 
         // Detect npm package names and GitHub repos — both delegate to HMA check:
         //   - Scoped packages (@scope/name) are always npm
