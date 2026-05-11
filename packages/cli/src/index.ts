@@ -78,7 +78,9 @@ async function main(): Promise<void> {
       if (startedAt === undefined) return;
       telemetryStartedAt.delete(name);
       void tele.track(name, {
-        success: (process.exitCode ?? 0) === 0,
+        // Exit 1 = findings detected (success at the job); >=2 = real crash.
+        // See @opena2a/telemetry successFromExitCode docs.
+        success: tele.successFromExitCode(process.exitCode),
         durationMs: Date.now() - startedAt,
       });
     })

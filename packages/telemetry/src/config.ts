@@ -1,6 +1,6 @@
-import { homedir, platform as osPlatform } from "node:os";
+import { homedir, hostname, platform as osPlatform } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 
 export const POLICY_URL = "https://opena2a.org/telemetry";
@@ -50,20 +50,30 @@ function writeConfigFile(paths: ConfigPaths, cfg: TelemetryConfig): void {
 /**
  * Stable-per-machine install ID.
  *
- * Persisted in the config file. If absent, derived from a hash of
- * platform + node-major + npm-cache-dir mtime so npx invocations on
- * the same machine produce the same ID for ~30 days, then rotate.
- * Falls back to a fresh UUID if the cache stat is unavailable.
+ * Persisted in the config file. If absent, derived from a hash of the
+ * hostname + platform + node major version. Same machine → same ID,
+ * across container restarts, npm-cache rebuilds, and indefinite time.
+ *
+ * History: an earlier implementation (v0.1.x) keyed on npm-cache mtime
+ * bucketed to 30 days, which rotated install_ids every month even on
+ * stable machines AND fell back to randomUUID() in containers where the
+ * cache wasn't persisted — both inflated "unique installs" numbers in
+ * production. This implementation lands stable IDs on the FIRST run and
+ * keeps them stable forever (until the user runs `<tool> telemetry reset`
+ * or the config file is destroyed).
+ *
+ * Privacy: hostname is hashed with SHA-256 + formatted into a UUID
+ * shape. The Registry never sees plaintext hostname; the hash is
+ * irreversible. install_id is also rotatable on demand by the user.
+ *
+ * Falls back to randomUUID() only if BOTH hostname() and the standard
+ * /etc/machine-id-style env vars fail — vanishingly rare.
  */
 function deriveInstallId(): string {
   try {
-    const cacheDir = process.env.npm_config_cache
-      ?? join(homedir(), ".npm");
-    if (existsSync(cacheDir)) {
-      const mtimeBucket = Math.floor(
-        statSync(cacheDir).mtimeMs / (1000 * 60 * 60 * 24 * 30),
-      );
-      const seed = `${osPlatform()}:${process.versions.node.split(".")[0]}:${cacheDir}:${mtimeBucket}`;
+    const host = hostname();
+    if (host && host !== "localhost" && host !== "") {
+      const seed = `${host}:${osPlatform()}:${process.versions.node.split(".")[0]}`;
       const hash = createHash("sha256").update(seed).digest("hex");
       return [
         hash.slice(0, 8),

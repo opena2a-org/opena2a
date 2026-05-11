@@ -175,6 +175,68 @@ describe("network failure tolerance", () => {
   });
 });
 
+describe("successFromExitCode", () => {
+  it("exit 0 = success (no findings)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(0)).toBe(true);
+  });
+  it("exit 1 = success (findings detected — security-tool convention)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(1)).toBe(true);
+  });
+  it("exit 2 = failure (real crash / config error)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(2)).toBe(false);
+  });
+  it("exit 127 = failure", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(127)).toBe(false);
+  });
+  it("undefined treated as 0 (success)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(undefined)).toBe(true);
+  });
+  it("null treated as 0 (success)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(null)).toBe(true);
+  });
+  it("string '0' coerced to success (Node 22 widened exitCode type)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode("0")).toBe(true);
+  });
+  it("string '1' coerced to success", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode("1")).toBe(true);
+  });
+  it("string '2' coerced to failure", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode("2")).toBe(false);
+  });
+  it("unparseable string = failure", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode("oops")).toBe(false);
+  });
+});
+
+describe("install_id stability", () => {
+  it("status() returns the same install_id across processes for the same machine", async () => {
+    const a = await freshSdk();
+    const idA = a.status().installId;
+    const b = await freshSdk();
+    const idB = b.status().installId;
+    expect(idA).toBe(idB);
+    // shape is a v4-ish UUID
+    expect(idA).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("install_id is non-empty even when no config file existed yet", async () => {
+    const tele = await freshSdk();
+    const s = tele.status();
+    expect(s.installId).toBeTruthy();
+    expect(s.installId.length).toBeGreaterThan(0);
+  });
+});
+
 describe("flush", () => {
   it("waits for in-flight fetches before resolving", async () => {
     // A 1.5s slow request — process.exit() would kill it without flush().
