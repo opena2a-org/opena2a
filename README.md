@@ -44,6 +44,7 @@ npm install -g opena2a-cli           # install globally if you'd rather
 
 ```bash
 brew tap opena2a-org/tap
+brew tap-info opena2a-org/tap        # verify the tap source before installing
 brew install opena2a
 ```
 
@@ -54,6 +55,7 @@ The CLI is a TypeScript monorepo. Clone and build if you want to inspect every l
 ```bash
 git clone https://github.com/opena2a-org/opena2a.git
 cd opena2a
+git verify-tag $(git describe --tags --abbrev=0)   # verify the latest release tag's signature
 npm install
 npm run build                        # builds all workspaces via turbo
 ./packages/cli/dist/index.js review  # run the freshly-built binary
@@ -195,6 +197,8 @@ opena2a identity audit | jq 'select(.result == "denied")'
 ```
 
 The audit log lives at `~/.opena2a/aim-core/audit.jsonl`. Append-only. Rotation at 50 MB, last 5 generations kept. Bring your own log aggregator if you want it shipped to Splunk or Sentinel.
+
+**Encryption at rest is the user's call.** The JSONL is stored unencrypted by default so `grep` and `jq` work without ceremony. For compliance use cases, encrypt `~/.opena2a/` with filesystem-level encryption (FileVault on macOS, LUKS on Linux, BitLocker on Windows) or ship the JSONL to a KMS-backed log aggregator via the standard \"tail and forward\" pattern.
 
 This is what makes `opena2a-cli` valuable on a solo dev machine, no server.
 
