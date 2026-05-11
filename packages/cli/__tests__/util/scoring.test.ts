@@ -24,8 +24,12 @@ describe('calculateSecurityScore (shared module)', () => {
   it('applies diminishing returns for critical findings', () => {
     const { score: s1 } = calculateSecurityScore({ critical: 1 }, cleanChecks);
     const { score: s2 } = calculateSecurityScore({ critical: 2 }, cleanChecks);
-    expect(s1).toBe(85); // 100 - 20 + 5
-    expect(s2).toBe(77); // 100 - 20 - 8 + 5
+    // Per #116: security-config bonus is suppressed when CRITICAL/HIGH
+    // findings exist (a signed signatures.json doesn't compensate for a
+    // private key in source). Pre-#116 these returned 85 and 77 with
+    // a +5 bonus included.
+    expect(s1).toBe(80); // 100 - 20
+    expect(s2).toBe(72); // 100 - 20 - 8
   });
 
   it('caps credential deduction at 60', () => {
@@ -36,7 +40,7 @@ describe('calculateSecurityScore (shared module)', () => {
     expect(breakdown.credentials.deduction).toBeLessThanOrEqual(60);
   });
 
-  it('caps environment deduction at 25', () => {
+  it('caps environment deduction at 30 (was 25 pre-#116)', () => {
     const heavy: HygieneCheck[] = [
       ...cleanChecks.filter(c => c.label !== '.env protection'),
       { label: '.env protection', status: 'warn', detail: 'NOT in .gitignore' },
@@ -44,9 +48,11 @@ describe('calculateSecurityScore (shared module)', () => {
       { label: 'MCP high-risk tools', status: 'warn', detail: '1 server' },
       { label: 'MCP credentials', status: 'warn', detail: 'hardcoded' },
       { label: 'AI config exposure', status: 'warn', detail: '3 files' },
+      { label: 'Skill files', status: 'warn', detail: '5 unsigned skill files' },
+      { label: 'Soul file', status: 'warn', detail: 'override patterns' },
     ];
     const { breakdown } = calculateSecurityScore({}, heavy);
-    expect(breakdown.environment.deduction).toBeLessThanOrEqual(25);
+    expect(breakdown.environment.deduction).toBeLessThanOrEqual(30);
   });
 
   it('score never goes below 0 or above 100', () => {
@@ -81,5 +87,45 @@ describe('formatCredCount', () => {
     expect(formatCredCount(1, 2, 0, 0)).toBe('1 critical, 2 high');
     expect(formatCredCount(0, 0, 0, 0)).toBe('none');
     expect(formatCredCount(0, 0, 3, 1)).toBe('3 medium, 1 low');
+  });
+});
+
+// Regression: the security-config +5 bonus must suppress on ANY user-visible
+// finding, not just CRED-*/HMA on the credential side. Pre-fix, a project
+// with only HMA findings — or only `.env unprotected`, or only AI-config
+// exposure — would still receive the bonus and render "strong" 95+.
+describe('configuration bonus suppression covers all live-warn surfaces', () => {
+  const cleanChecks: HygieneCheck[] = [
+    { label: 'Credential scan', status: 'pass', detail: 'no findings' },
+    { label: '.gitignore', status: 'pass', detail: 'present' },
+    { label: '.env protection', status: 'pass', detail: 'in .gitignore' },
+    { label: 'Lock file', status: 'pass', detail: 'package-lock.json' },
+    { label: 'Security config', status: 'pass', detail: '.opena2a.yaml' },
+  ];
+
+  it('HMA criticals alone suppress the security-config bonus', () => {
+    const { breakdown } = calculateSecurityScore({ critical: 3 }, cleanChecks);
+    // configBonus = 0 because hasHighImpact is true via hmaFindingCount > 0.
+    // breakdown.configuration.deduction is (deduction - configBonus). With
+    // clean config (Lock pass + secConfig pass) raw deduction is 0; subtract
+    // configBonus=0 → 0. Pre-fix this was -5 (the bonus applied).
+    expect(breakdown.configuration.deduction).toBe(0);
+  });
+
+  it('.env unprotected alone suppresses the security-config bonus', () => {
+    const envWarnChecks: HygieneCheck[] = cleanChecks.map(c =>
+      c.label === '.env protection' ? { ...c, status: 'warn', detail: 'not in .gitignore' } : c,
+    );
+    const { breakdown } = calculateSecurityScore({}, envWarnChecks);
+    expect(breakdown.configuration.deduction).toBe(0);
+  });
+
+  it('AI config exposure alone suppresses the security-config bonus', () => {
+    const aiConfigWarnChecks: HygieneCheck[] = [
+      ...cleanChecks,
+      { label: 'AI config exposure', status: 'warn', detail: 'CLAUDE.md contains key' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, aiConfigWarnChecks);
+    expect(breakdown.configuration.deduction).toBe(0);
   });
 });
