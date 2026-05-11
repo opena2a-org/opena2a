@@ -328,6 +328,34 @@ describe('CREDENTIAL_PATTERNS', () => {
       expect(elapsed, `Pattern ${pattern.id} took ${elapsed}ms on adversarial input`).toBeLessThan(50);
     }
   });
+
+  // Issue #127 item 2: a single adversarial shape per pattern is a thin gate.
+  // Every regex edit should clear these worst-case inputs within budget.
+  const REDOS_INPUTS: Array<{ name: string; value: string }> = [
+    { name: 'empty string', value: '' },
+    { name: 'single char', value: 'a' },
+    { name: '1k repeated a', value: 'a'.repeat(1000) },
+    { name: '10k repeated a', value: 'a'.repeat(10000) },
+    { name: '10k repeated /', value: '/'.repeat(10000) },
+    // Patterns that share `sk-` / `AKIA` / `ghp_` prefixes might over-backtrack
+    // on inputs that match the prefix but fail the body.
+    { name: '10k after sk-', value: 'sk-' + 'a'.repeat(10000) },
+    { name: '10k after AKIA', value: 'AKIA' + 'A'.repeat(10000) },
+    { name: '10k after ghp_', value: 'ghp_' + 'a'.repeat(10000) },
+    { name: '10k newlines', value: '\n'.repeat(10000) },
+    { name: 'mixed long', value: ('aB1_-/.' as string).repeat(2000) },
+  ];
+
+  for (const input of REDOS_INPUTS) {
+    it(`no regex causes ReDoS on adversarial input "${input.name}" (every pattern <50ms)`, () => {
+      for (const pattern of CREDENTIAL_PATTERNS) {
+        const start = performance.now();
+        pattern.regex.test(input.value);
+        const elapsed = performance.now() - start;
+        expect(elapsed, `Pattern ${pattern.id} took ${elapsed}ms on "${input.name}"`).toBeLessThan(50);
+      }
+    });
+  }
 });
 
 describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {

@@ -7,6 +7,58 @@
 import { KNOWN_EXAMPLE_KEYS, PLACEHOLDER_INDICATORS, type CredentialPattern } from './patterns.js';
 
 /**
+ * Demo-tier passwords that combine with localhost-bound DB connection strings
+ * to mark a value as a tutorial fixture, not a real credential.
+ *
+ * Real prod credentials should never be values like `password123` AND bound to
+ * `localhost`. The combination is the allowlist signal.
+ */
+const DEMO_PASSWORDS = new Set([
+  'password',
+  'password123',
+  'secret',
+  'admin',
+  'root',
+  'demo',
+  'test',
+  'changeme',
+]);
+
+function isLocalhostDemoConnectionString(value: string): boolean {
+  const protoEnd = value.indexOf('://');
+  if (protoEnd === -1) return false;
+  const atIdx = value.lastIndexOf('@');
+  if (atIdx === -1 || atIdx <= protoEnd + 3) return false;
+  const userInfo = value.slice(protoEnd + 3, atIdx);
+  const host = value.slice(atIdx + 1);
+  // Anchored host check defeats `localhost.evil.com` bypass. Accepts IPv4
+  // loopback `127.0.0.1`, IPv6 loopback `[::1]`, and the `localhost` literal.
+  if (!/^(\[::1\]|localhost|127\.0\.0\.1)(:|\/|$)/i.test(host)) return false;
+  const colonIdx = userInfo.indexOf(':');
+  if (colonIdx === -1) return false;
+  // Password compared case-insensitively — `Password123` in a tutorial fixture
+  // is functionally the same demo password as `password123`.
+  const password = userInfo.slice(colonIdx + 1).toLowerCase();
+  return DEMO_PASSWORDS.has(password);
+}
+
+function isExampleInComment(line: string): boolean {
+  const lineLC = line.toLowerCase();
+  if (!lineLC.includes('example')) return false;
+  if (lineLC.includes('//')) return true;
+  if (lineLC.includes('#')) return true;
+  if (lineLC.includes('/*')) return true;
+  if (lineLC.includes('<!--')) return true;
+  if (lineLC.includes('-->')) return true;
+  if (lineLC.includes("'''")) return true;
+  if (lineLC.includes('"""')) return true;
+  // JSDoc continuation: line starts with optional whitespace then `*`.
+  // Anchored so `x * y` (multiplication) does NOT match.
+  if (/^\s*\*/.test(line)) return true;
+  return false;
+}
+
+/**
  * Check if a matched credential is a known example or placeholder.
  * Returns true if the match should be excluded from results.
  *
@@ -16,16 +68,11 @@ import { KNOWN_EXAMPLE_KEYS, PLACEHOLDER_INDICATORS, type CredentialPattern } fr
  */
 export function isKnownExample(line: string, match: RegExpMatchArray): boolean {
   const value = match[0];
-  // Check exact known example keys
   if (KNOWN_EXAMPLE_KEYS.has(value)) return true;
-  // Check placeholder indicators (case-insensitive)
   const lower = value.toLowerCase();
   if (PLACEHOLDER_INDICATORS.some(p => lower.includes(p))) return true;
-  // Check if the line contains a comment marking it as an example
-  const lineLC = line.toLowerCase();
-  if (lineLC.includes('example') && (lineLC.includes('//') || lineLC.includes('#'))) {
-    if (lineLC.includes('example') || lineLC.includes('placeholder') || lineLC.includes('fake')) return true;
-  }
+  if (isLocalhostDemoConnectionString(value)) return true;
+  if (isExampleInComment(line)) return true;
   return false;
 }
 
