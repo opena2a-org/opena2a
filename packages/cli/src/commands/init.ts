@@ -897,6 +897,18 @@ function getVerificationCommand(
   ) {
     const loc = finding.locations[0];
     const rel = path.relative(reportDir, loc.file);
+    // Keyfile/certfile findings target binary or PEM-armored files. `sed -n
+    // '1p'` on a `.p12`/`.pfx` dumps raw binary to the terminal — a
+    // verification dead-end. For PEM-armored `.pem`/`.key`/`.crt`/`.cer` the
+    // first line `-----BEGIN ...-----` tells the user what the file actually
+    // is (private key vs public cert). For PKCS#12 we use `openssl pkcs12`.
+    if (finding.findingId === 'CRED-KEYFILE' || finding.findingId === 'CRED-CERTFILE') {
+      const ext = path.extname(rel).toLowerCase();
+      if (ext === '.p12' || ext === '.pfx') {
+        return `openssl pkcs12 -in ${rel} -info -nokeys -passin pass: 2>/dev/null | head -20 || file ${rel}`;
+      }
+      return `head -1 ${rel}`;
+    }
     return `sed -n '${loc.line}p' ${rel}`;
   }
 

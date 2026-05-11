@@ -135,6 +135,9 @@ export function calculateSecurityScore(
   // emit MEDIUM CRED-CERTFILE). Without medCount, a project with a single
   // MEDIUM finding visible to the user still rendered 100/100 — CISO
   // Rule 11 violation surfaced by Phase 4.5 review of #116.
+  const hmaFindingCount = hmaBySeverity
+    ? (hmaBySeverity['critical'] || 0) + (hmaBySeverity['high'] || 0) + (hmaBySeverity['medium'] || 0)
+    : 0;
   const hasHighImpact =
     critCount > 0 ||
     highCount > 0 ||
@@ -143,7 +146,10 @@ export function calculateSecurityScore(
     !!skillCheck ||
     !!soulCheck ||
     (!!llmCheck && llmCheck.status === 'warn') ||
-    !!mcpCredCheck;
+    !!mcpCredCheck ||
+    (!!envProtection && envProtection.status === 'warn') ||
+    !!aiConfigCheck ||
+    hmaFindingCount > 0;
   let configBonus = 0;
   if (secConfig?.status === 'pass' && !hasHighImpact) configBonus = 5;
 

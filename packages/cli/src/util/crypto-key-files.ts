@@ -79,9 +79,12 @@ function walk(dir: string, callback: (filePath: string) => void): void {
     return;
   }
   for (const entry of entries) {
-    if (entry.name.startsWith('.') && entry.name !== '.opena2a') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      // Skip on SKIP_DIRS membership only — descend into dot directories
+      // like `.ssh/`, `.secrets/`, `.config/`, `.aws/` where private keys
+      // conventionally live. A blanket dot-prefix skip would hide those
+      // exact files this scanner exists to surface.
       if (SKIP_DIRS.has(entry.name)) continue;
       walk(full, callback);
     } else if (entry.isFile()) {

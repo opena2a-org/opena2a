@@ -89,3 +89,43 @@ describe('formatCredCount', () => {
     expect(formatCredCount(0, 0, 3, 1)).toBe('3 medium, 1 low');
   });
 });
+
+// Regression: the security-config +5 bonus must suppress on ANY user-visible
+// finding, not just CRED-*/HMA on the credential side. Pre-fix, a project
+// with only HMA findings — or only `.env unprotected`, or only AI-config
+// exposure — would still receive the bonus and render "strong" 95+.
+describe('configuration bonus suppression covers all live-warn surfaces', () => {
+  const cleanChecks: HygieneCheck[] = [
+    { label: 'Credential scan', status: 'pass', detail: 'no findings' },
+    { label: '.gitignore', status: 'pass', detail: 'present' },
+    { label: '.env protection', status: 'pass', detail: 'in .gitignore' },
+    { label: 'Lock file', status: 'pass', detail: 'package-lock.json' },
+    { label: 'Security config', status: 'pass', detail: '.opena2a.yaml' },
+  ];
+
+  it('HMA criticals alone suppress the security-config bonus', () => {
+    const { breakdown } = calculateSecurityScore({ critical: 3 }, cleanChecks);
+    // configBonus = 0 because hasHighImpact is true via hmaFindingCount > 0.
+    // breakdown.configuration.deduction is (deduction - configBonus). With
+    // clean config (Lock pass + secConfig pass) raw deduction is 0; subtract
+    // configBonus=0 → 0. Pre-fix this was -5 (the bonus applied).
+    expect(breakdown.configuration.deduction).toBe(0);
+  });
+
+  it('.env unprotected alone suppresses the security-config bonus', () => {
+    const envWarnChecks: HygieneCheck[] = cleanChecks.map(c =>
+      c.label === '.env protection' ? { ...c, status: 'warn', detail: 'not in .gitignore' } : c,
+    );
+    const { breakdown } = calculateSecurityScore({}, envWarnChecks);
+    expect(breakdown.configuration.deduction).toBe(0);
+  });
+
+  it('AI config exposure alone suppresses the security-config bonus', () => {
+    const aiConfigWarnChecks: HygieneCheck[] = [
+      ...cleanChecks,
+      { label: 'AI config exposure', status: 'warn', detail: 'CLAUDE.md contains key' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, aiConfigWarnChecks);
+    expect(breakdown.configuration.deduction).toBe(0);
+  });
+});
