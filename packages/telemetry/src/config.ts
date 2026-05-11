@@ -1,7 +1,8 @@
-import { homedir, platform as osPlatform } from "node:os";
+import { homedir, hostname, platform as osPlatform } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 
 export const POLICY_URL = "https://opena2a.org/telemetry";
 export const DEFAULT_ENDPOINT = "https://api.oa2a.org/api/v1/registry/telemetry/v1/event";
@@ -47,34 +48,109 @@ function writeConfigFile(paths: ConfigPaths, cfg: TelemetryConfig): void {
   });
 }
 
+function hashToUuid(seed: string): string {
+  const hash = createHash("sha256").update(seed).digest("hex");
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    "4" + hash.slice(13, 16),
+    "8" + hash.slice(17, 20),
+    hash.slice(20, 32),
+  ].join("-");
+}
+
+/**
+ * Read the OS-level machine identifier.
+ *
+ * Linux: /etc/machine-id (systemd) or /var/lib/dbus/machine-id (older).
+ * macOS: IOPlatformUUID via `ioreg -rd1 -c IOPlatformExpertDevice`.
+ * Windows: HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid.
+ *
+ * Returns the raw identifier on success; null when unavailable, the
+ * platform isn't supported, or the probe command fails. Never throws.
+ */
+function readMachineIdRaw(): string | null {
+  try {
+    const plat = osPlatform();
+    if (plat === "linux") {
+      for (const p of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+        if (existsSync(p)) {
+          const v = readFileSync(p, "utf8").trim();
+          if (v) return v;
+        }
+      }
+      return null;
+    }
+    if (plat === "darwin") {
+      const out = execSync("ioreg -rd1 -c IOPlatformExpertDevice", {
+        timeout: 1500,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      });
+      const m = out.match(/"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]+)"/);
+      return m ? m[1] : null;
+    }
+    if (plat === "win32") {
+      const out = execSync(
+        'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
+        { timeout: 1500, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" },
+      );
+      const m = out.match(/MachineGuid\s+REG_SZ\s+([0-9A-Fa-f-]+)/);
+      return m ? m[1] : null;
+    }
+  } catch {
+    // probe failed (timeout, missing binary, sandboxed env) — fall through
+  }
+  return null;
+}
+
 /**
  * Stable-per-machine install ID.
  *
- * Persisted in the config file. If absent, derived from a hash of
- * platform + node-major + npm-cache-dir mtime so npx invocations on
- * the same machine produce the same ID for ~30 days, then rotate.
- * Falls back to a fresh UUID if the cache stat is unavailable.
+ * Persisted in the config file on first call. If absent, derived from a
+ * platform-specific source in this priority order:
+ *
+ *   1. OS machine-id (Linux /etc/machine-id, macOS IOPlatformUUID,
+ *      Windows MachineGuid) — purpose-built stable per-machine
+ *      identifier. High entropy, not predictable from hostnames.
+ *   2. Hash of hostname + platform + node major version — fallback for
+ *      sandboxed/container environments where the probe in (1) fails.
+ *   3. randomUUID() — last resort; rotates on every config-file rebuild.
+ *
+ * History: an earlier implementation (v0.1.x) keyed on npm-cache mtime
+ * bucketed to 30 days, which rotated install_ids every month even on
+ * stable machines AND fell back to randomUUID() in containers where the
+ * cache wasn't persisted — both inflated "unique installs" numbers in
+ * production.
+ *
+ * Privacy: the raw machine-id / hostname is never transmitted. SHA-256
+ * is applied locally and only the hash is sent to the Registry. The
+ * hash is irreversible. install_id is also user-rotatable via
+ * `<tool> telemetry reset` (deletes the config file; next run picks a
+ * fresh ID — or the same ID if the machine-id source is stable).
+ *
+ * Rainbow-table resistance: machine-id values on Linux/macOS/Windows
+ * are random per-install (Linux machine-id is a random 128-bit value
+ * generated at install time; macOS IOPlatformUUID is per-device).
+ * Hostname fallback is less resistant — predictable patterns like
+ * `runner-12345` in CI environments are theoretically guessable — but
+ * still a one-way hash. Users in privacy-sensitive environments should
+ * prefer (1) by ensuring `/etc/machine-id` exists, or run
+ * `<tool> telemetry reset` to opt into a random ID.
  */
 function deriveInstallId(): string {
+  const machineId = readMachineIdRaw();
+  if (machineId) {
+    return hashToUuid(`mid:${machineId}`);
+  }
   try {
-    const cacheDir = process.env.npm_config_cache
-      ?? join(homedir(), ".npm");
-    if (existsSync(cacheDir)) {
-      const mtimeBucket = Math.floor(
-        statSync(cacheDir).mtimeMs / (1000 * 60 * 60 * 24 * 30),
-      );
-      const seed = `${osPlatform()}:${process.versions.node.split(".")[0]}:${cacheDir}:${mtimeBucket}`;
-      const hash = createHash("sha256").update(seed).digest("hex");
-      return [
-        hash.slice(0, 8),
-        hash.slice(8, 12),
-        "4" + hash.slice(13, 16),
-        "8" + hash.slice(17, 20),
-        hash.slice(20, 32),
-      ].join("-");
+    const host = hostname();
+    if (host && host !== "localhost" && host !== "") {
+      const seed = `host:${host}:${osPlatform()}:${process.versions.node.split(".")[0]}`;
+      return hashToUuid(seed);
     }
   } catch {
-    // fall through
+    // hostname() failed — fall through
   }
   return randomUUID();
 }

@@ -103,5 +103,39 @@ export function setOptOut(enabled: boolean): Status {
   };
 }
 
+/**
+ * Translate a CLI's exit code into a `success` boolean for `track()`.
+ *
+ * Security-tool convention (npm audit, eslint, etc.): exit 0 means the
+ * command found nothing wrong; exit 1 means the command worked and DID
+ * find something (success at its job); exit >=2 means the command itself
+ * failed (config error, crash, network failure, invalid input).
+ *
+ * @param exitCode - Process exit code (0-255 per POSIX) or undefined/null
+ *   for processes that haven't set one (treated as success). Strings are
+ *   accepted because Node 22+ widened `process.exitCode` to
+ *   `string | number | null | undefined`; unparseable strings return false.
+ * @returns `true` if the exit code indicates success (0 or 1).
+ *   `false` for any failure code (≥ 2), out-of-range value (< 0 or > 255),
+ *   non-finite numbers, or unparseable strings.
+ *
+ * @example
+ *   tele.track(name, {
+ *     success: tele.successFromExitCode(process.exitCode),
+ *     durationMs: Date.now() - startedAt,
+ *   });
+ *
+ * For commands that need a richer notion of success (network call failed
+ * but exit code still 0, etc.), pass `success` directly instead of using
+ * this helper.
+ */
+export function successFromExitCode(exitCode: number | string | undefined | null): boolean {
+  if (exitCode === undefined || exitCode === null) return true;
+  const n = typeof exitCode === "string" ? Number.parseInt(exitCode, 10) : exitCode;
+  if (!Number.isFinite(n)) return false;
+  if (n < 0 || n > 255) return false;
+  return n <= 1;
+}
+
 export { POLICY_URL } from "./config.js";
 export type { InitOptions, Status, TrackFields, UsageEvent } from "./types.js";
