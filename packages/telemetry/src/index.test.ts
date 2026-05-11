@@ -216,6 +216,21 @@ describe("successFromExitCode", () => {
     const tele = await freshSdk();
     expect(tele.successFromExitCode("oops")).toBe(false);
   });
+  it("negative exit codes return false (out of POSIX 0-255 range)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(-1)).toBe(false);
+  });
+  it("exit codes > 255 return false (out of POSIX 0-255 range)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(256)).toBe(false);
+    expect(tele.successFromExitCode(999)).toBe(false);
+    expect(tele.successFromExitCode(Number.MAX_SAFE_INTEGER)).toBe(false);
+  });
+  it("Infinity / -Infinity return false", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(Number.POSITIVE_INFINITY)).toBe(false);
+    expect(tele.successFromExitCode(Number.NEGATIVE_INFINITY)).toBe(false);
+  });
 });
 
 describe("install_id stability", () => {
@@ -234,6 +249,18 @@ describe("install_id stability", () => {
     const s = tele.status();
     expect(s.installId).toBeTruthy();
     expect(s.installId.length).toBeGreaterThan(0);
+  });
+
+  it("install_id does not leak plaintext hostname (hash is irreversible)", async () => {
+    const tele = await freshSdk();
+    const host = (await import("node:os")).hostname();
+    const id = tele.status().installId;
+    if (host && host !== "localhost" && host.length >= 4) {
+      // hostname substring must not appear in the install_id
+      expect(id.toLowerCase()).not.toContain(host.toLowerCase());
+    }
+    // Always: install_id is a v4-shaped UUID, not a raw identifier
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
 

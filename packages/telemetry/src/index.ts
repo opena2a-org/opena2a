@@ -111,8 +111,15 @@ export function setOptOut(enabled: boolean): Status {
  * find something (success at its job); exit >=2 means the command itself
  * failed (config error, crash, network failure, invalid input).
  *
- * Wire this in your dispatcher's postAction / finally block:
+ * @param exitCode - Process exit code (0-255 per POSIX) or undefined/null
+ *   for processes that haven't set one (treated as success). Strings are
+ *   accepted because Node 22+ widened `process.exitCode` to
+ *   `string | number | null | undefined`; unparseable strings return false.
+ * @returns `true` if the exit code indicates success (0 or 1).
+ *   `false` for any failure code (≥ 2), out-of-range value (< 0 or > 255),
+ *   non-finite numbers, or unparseable strings.
  *
+ * @example
  *   tele.track(name, {
  *     success: tele.successFromExitCode(process.exitCode),
  *     durationMs: Date.now() - startedAt,
@@ -123,11 +130,10 @@ export function setOptOut(enabled: boolean): Status {
  * this helper.
  */
 export function successFromExitCode(exitCode: number | string | undefined | null): boolean {
-  // Node 22+ widened process.exitCode to `string | number | null | undefined`.
-  // Coerce strings; treat unparseable strings as failure (something is off).
   if (exitCode === undefined || exitCode === null) return true;
   const n = typeof exitCode === "string" ? Number.parseInt(exitCode, 10) : exitCode;
-  if (Number.isNaN(n)) return false;
+  if (!Number.isFinite(n)) return false;
+  if (n < 0 || n > 255) return false;
   return n <= 1;
 }
 
