@@ -17,6 +17,8 @@ export interface AdapterConfig {
   ports?: string[];
   /** Description shown in help text */
   description: string;
+  /** Commander aliases for this command (e.g. scan exposes `secure` so HMA's prefix-substituted Next Steps text resolves). */
+  aliases?: string[];
 }
 
 export interface RunOptions {
