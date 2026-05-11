@@ -12,6 +12,7 @@ on:
       - ".github/workflows/parity.yml"
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: parity-${{ github.ref }}
