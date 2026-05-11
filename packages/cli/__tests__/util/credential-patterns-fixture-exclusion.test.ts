@@ -162,3 +162,51 @@ describe('quickCredentialScan: fixture/demo files are silently skipped', () => {
     expect(matches).toHaveLength(0);
   });
 });
+
+// Regression: the walker's self-exemption previously used dir.includes(marker)
+// on "packages/cli/src" and "packages/cli/dist", which silently skipped ANY
+// user project whose path contained those substrings. The anchored fix
+// resolves the CLI's own package root at module load and compares with
+// path.startsWith, so user directories are scanned even when they share
+// the path fragment.
+describe('walkFiles self-exemption is anchored, not substring', () => {
+  it('scans a user directory whose path contains "packages/cli/src"', async () => {
+    const { walkFiles } = await import('../../src/util/credential-patterns.js');
+    const userDir = path.join(tmpDir, 'packages', 'cli', 'src');
+    fs.mkdirSync(userDir, { recursive: true });
+    const file = path.join(userDir, 'app.ts');
+    fs.writeFileSync(file, 'const x = 1;', 'utf-8');
+
+    const visited: string[] = [];
+    walkFiles(tmpDir, (p: string) => { visited.push(p); });
+
+    expect(visited).toContain(file);
+  });
+
+  it('still skips the CLI\'s own source tree', async () => {
+    const { walkFiles } = await import('../../src/util/credential-patterns.js');
+    let dir = __dirname;
+    while (dir !== path.parse(dir).root) {
+      const pkgPath = path.join(dir, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+          if (pkg.name === 'opena2a-cli') break;
+        } catch {
+          // ignore
+        }
+      }
+      dir = path.dirname(dir);
+    }
+    const cliRoot = dir;
+    const srcDir = path.join(cliRoot, 'src');
+    // Vitest always runs from the dev tree, where src/ must exist. If it
+    // doesn't, the test is running in an unexpected environment and we
+    // want a loud failure rather than a silent no-op pass.
+    expect(fs.existsSync(srcDir)).toBe(true);
+
+    const visited: string[] = [];
+    walkFiles(srcDir, (p: string) => { visited.push(p); });
+    expect(visited.length).toBe(0);
+  });
+});
