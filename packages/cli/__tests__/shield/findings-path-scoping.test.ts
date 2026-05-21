@@ -75,10 +75,12 @@ describe('filterEventsToTarget — configguard scoping', () => {
     expect(filtered).toHaveLength(1);
   });
 
-  it('keeps configguard events whose target is empty or relative (guard watch case)', () => {
-    // guard.ts:493,522 emits target: sig.filePath (relative, e.g. "package.json").
-    // We can't reliably scope these without writer-side changes, so they
-    // pass through. Documented as residual in the helper docstring.
+  it('keeps configguard events whose target is empty or relative (defensive — writer-side fix in #110)', () => {
+    // guard.ts no longer emits sig.filePath (relative) as the target — #110
+    // landed the fix to emit `path.join(targetDir, sig.filePath)` (absolute).
+    // The filter still cannot scope relative paths reliably, so it keeps
+    // them defensively. Any future writer that emits relative is filed as
+    // its own bug.
     const events = [
       makeEvent({ target: '' }),
       makeEvent({ target: 'package.json' }),
@@ -86,6 +88,27 @@ describe('filterEventsToTarget — configguard scoping', () => {
     ];
     const filtered = filterEventsToTarget(events, '/Users/foo/projectA');
     expect(filtered).toHaveLength(3);
+  });
+
+  it('#110: guard.watch absolute-path events scope correctly to the scan target', () => {
+    // After #110, guard.ts:handleFileChange emits `path.join(targetDir, sig.filePath)`
+    // as the event target. Verify that a tamper event recorded against project A
+    // is dropped when reviewing project B.
+    const events = [
+      makeEvent({
+        action: 'guard.watch',
+        target: '/Users/foo/projectA/package.json',
+        category: 'config.tampered',
+      }),
+      makeEvent({
+        action: 'guard.watch',
+        target: '/Users/foo/projectB/package.json',
+        category: 'config.tampered',
+      }),
+    ];
+    const filtered = filterEventsToTarget(events, '/Users/foo/projectB');
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.target).toBe('/Users/foo/projectB/package.json');
   });
 
   it('normalizes the scan target so trailing slashes and . segments do not change the result', () => {

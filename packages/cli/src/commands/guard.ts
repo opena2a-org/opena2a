@@ -490,7 +490,10 @@ async function handleFileChange(targetDir: string, sig: ConfigSignature, isJson:
   if (!fs.existsSync(fullPath)) {
     if (isJson) { process.stdout.write(JSON.stringify({ time: timestamp, file: sig.filePath, status: 'missing' }) + '\n'); }
     else { process.stdout.write(`${dim(timestamp.slice(11, 19))}  ${red('MISSING')}   ${sig.filePath}\n`); }
-    await emitEvent('config.tampered', 'guard.watch', sig.filePath, 'high', enforce ? 'blocked' : 'monitored', { reason: 'file_deleted' });
+    // Emit absolute path so the Shield path-scoping filter (#109 sub-item 1)
+    // can drop these events when an unrelated `opena2a review <dir>` runs.
+    // Relative paths leak across targets — see #110.
+    await emitEvent('config.tampered', 'guard.watch', fullPath, 'high', enforce ? 'blocked' : 'monitored', { reason: 'file_deleted' });
     return;
   }
 
@@ -519,7 +522,7 @@ async function handleFileChange(targetDir: string, sig: ConfigSignature, isJson:
     }
     process.stdout.write('\n');
   }
-  await emitEvent('config.tampered', 'guard.watch', sig.filePath, enforce ? 'high' : 'medium', enforce ? 'blocked' : 'monitored', { currentHash, expectedHash: sig.hash, diff });
+  await emitEvent('config.tampered', 'guard.watch', fullPath, enforce ? 'high' : 'medium', enforce ? 'blocked' : 'monitored', { currentHash, expectedHash: sig.hash, diff });
 }
 
 // --- Diff ---
