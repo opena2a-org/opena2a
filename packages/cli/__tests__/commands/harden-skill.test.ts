@@ -193,4 +193,44 @@ capabilities:
     expect(exitCode).toBe(0);
     expect(output).toContain('deploy.skill.md');
   });
+
+  it('#131: no-args mode does NOT recurse into subdirectories', async () => {
+    // SKILL.md under a subdirectory should NOT be auto-discovered.
+    const subDir = path.join(tmpDir, 'unrelated-fixture');
+    fs.mkdirSync(subDir);
+    const buriedPath = path.join(subDir, 'SKILL.md');
+    fs.writeFileSync(buriedPath, '---\nname: buried\n---\n', 'utf-8');
+
+    const chunks: string[] = [];
+    const origErr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+
+    let exitCode: number;
+    try {
+      exitCode = await hardenSkill({ ci: true, format: 'text' });
+    } finally {
+      process.stderr.write = origErr;
+    }
+
+    expect(exitCode).toBe(1);
+    const errOut = chunks.join('');
+    expect(errOut).toContain('No skill files found in current directory');
+    // Verify the buried file was NOT mutated.
+    const buriedAfter = fs.readFileSync(buriedPath, 'utf-8');
+    expect(buriedAfter).toBe('---\nname: buried\n---\n');
+  });
+
+  it('#131: no-args mode returns structured JSON error when no top-level skill files', async () => {
+    const subDir = path.join(tmpDir, 'sub');
+    fs.mkdirSync(subDir);
+    fs.writeFileSync(path.join(subDir, 'SKILL.md'), '---\nname: ignored\n---\n', 'utf-8');
+
+    const { exitCode, output } = await captureStdout(() =>
+      hardenSkill({ ci: true, format: 'json' })
+    );
+
+    expect(exitCode).toBe(1);
+    const parsed = JSON.parse(output);
+    expect(parsed.error).toContain('No skill files found in current directory');
+  });
 });
