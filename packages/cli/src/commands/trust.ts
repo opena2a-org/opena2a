@@ -358,7 +358,11 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     if (sc.maintainerCount > 0) {
       process.stdout.write(`  Maintainers:  ${sc.maintainerCount}\n`);
     }
-    if (sc.weeklyDownloads !== undefined && sc.weeklyDownloads !== null) {
+    // Treat 0 as "not reported by Registry" rather than "this package has zero
+    // downloads" — popular packages (express, lodash) show 0 when the Registry
+    // backfill is incomplete; emitting "0/week" reads as a confidence signal
+    // about the package, which is the wrong signal. Closes #123.
+    if (sc.weeklyDownloads !== undefined && sc.weeklyDownloads !== null && sc.weeklyDownloads > 0) {
       process.stdout.write(`  Downloads:    ${formatNumber(sc.weeklyDownloads)}/week\n`);
     }
   } else {
@@ -393,13 +397,15 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     if (data.lastScanned) process.stdout.write(`  Scanned:  ${dim(data.lastScanned)}\n`);
   }
 
-  // Links — the Registry website is not live yet (launches April 2026) and
-  // some responses embed legacy hostnames. Suppress the Profile/Badge lines
-  // when the host is known-dead so users don't see broken URLs, and show a
-  // dim placeholder instead.
+  // Links — some Registry responses embed legacy hostnames (registry.oa2a.org,
+  // api.opena2a.org) that 404. Suppress the Profile/Badge lines for known-dead
+  // hostnames so users don't see broken URLs. Closes #123 — the prior copy
+  // ("Registry launches soon") claimed the Registry was offline, which was
+  // misleading: the Registry is live, only the per-package profile URL is
+  // missing.
   process.stdout.write('\n');
   if (isDeadProfileHost(data.profileUrl)) {
-    process.stdout.write(dim('Profile: (Registry launches soon — opena2a.org)') + '\n');
+    process.stdout.write(dim('Profile: not available for this package') + '\n');
   } else {
     process.stdout.write(`Profile: ${cyan(data.profileUrl)}\n`);
     process.stdout.write(`Badge:   ${dim(`${data.profileUrl.replace('/agents/', '/v1/trust/')}/badge.svg`)}\n`);
