@@ -649,11 +649,11 @@ describe('init', () => {
 
     const keyfile = report.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
     expect(keyfile).toBeDefined();
-    // Critical: CRED-KEYFILE must NOT route to plain `opena2a protect`,
-    // which silently no-ops on binary key files. The fix command must
-    // mention `git rm` so the user has an actionable next step.
-    expect(keyfile.fix).not.toBe('opena2a protect');
-    expect(keyfile.fix).toContain('git rm');
+    // Post-#126: `opena2a protect` now surfaces key/cert files with a
+    // per-file warning block (untrack from git + add to .gitignore + rotate
+    // at issuing CA). init can now point at the unified entry point;
+    // protect's output gives the user the actionable `git rm` command.
+    expect(keyfile.fix).toBe('opena2a protect');
 
     const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
     expect(mcpFinding).toBeDefined();
