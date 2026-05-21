@@ -14,7 +14,6 @@ import { bold, green, yellow, red, dim, cyan } from '../util/colors.js';
 import {
   parseFrontmatter,
   scanSkillFile,
-  findSkillFiles,
   type SkillFinding,
 } from '../scanners/skillguard-checks.js';
 
@@ -81,11 +80,14 @@ export async function hardenSkill(options: HardenSkillOptions): Promise<number> 
       return 1;
     }
   } else {
-    // Auto-detect skill files in current directory
+    // Auto-detect skill files in the CURRENT directory only (non-recursive).
+    // Recursive discovery surfaces a mass-mutation footgun: running from
+    // /tmp (or any dir with sibling test fixtures) would offer to harden
+    // every SKILL.md the recursion finds. Closes #131.
     targetDir = process.cwd();
-    const skillFiles = findSkillFiles(targetDir, 0);
+    const skillFiles = findSkillFilesNonRecursive(targetDir);
     if (skillFiles.length === 0) {
-      const msg = 'No skill files found. Specify a file with --file or create one with: opena2a skill create\n';
+      const msg = 'No skill files found in current directory.\nProvide a path with: opena2a harden-skill <file>\nOr create a new skill with: opena2a skill create\n';
       if (isJson) {
         process.stdout.write(JSON.stringify({ error: msg.trim() }, null, 2) + '\n');
       } else {
@@ -127,6 +129,30 @@ export async function hardenSkill(options: HardenSkillOptions): Promise<number> 
   }
 
   return 0;
+}
+
+// --- File discovery ---
+
+/**
+ * Find SKILL.md / *.skill.md files in the given directory only (no recursion).
+ * Mutation commands (harden-skill no-args) must NOT auto-discover files in
+ * subdirectories — that surface enabled accidental mass-mutation of unrelated
+ * test fixtures when invoked from /tmp or any dir with sibling skill trees.
+ * Closes #131.
+ */
+export function findSkillFilesNonRecursive(dir: string): string[] {
+  const results: string[] = [];
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      if (entry.name === 'SKILL.md' || entry.name.endsWith('.skill.md')) {
+        results.push(path.join(dir, entry.name));
+      }
+    }
+  } catch {
+    // Unreadable directory — return empty.
+  }
+  return results;
 }
 
 // --- Core hardening logic ---
