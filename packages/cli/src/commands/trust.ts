@@ -441,9 +441,11 @@ function printTrustNextSteps(packageName: string): void {
   process.stdout.write('\n');
 }
 
-function formatRelativeTime(isoDate: string): string {
+export function formatRelativeTime(isoDate: string | null | undefined): string {
+  if (!isoDate) return 'never';
   try {
     const then = new Date(isoDate).getTime();
+    if (!Number.isFinite(then)) return 'never';
     const now = Date.now();
     const diffMs = now - then;
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -458,7 +460,7 @@ function formatRelativeTime(isoDate: string): string {
     if (months === 1) return '1 month ago';
     return `${months} months ago`;
   } catch {
-    return isoDate;
+    return 'never';
   }
 }
 

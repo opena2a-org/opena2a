@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { trust, _internals } from '../../src/commands/trust.js';
+import { trust, _internals, formatRelativeTime } from '../../src/commands/trust.js';
 import type { TrustOptions } from '../../src/commands/trust.js';
 import type { TrustLookupResponse } from '../../src/commands/atp-types.js';
 
@@ -361,5 +361,36 @@ describe('trust', () => {
     const parsed = JSON.parse(output);
     expect(parsed.trustLevel).toBe('discovered');
     expect(parsed.trustScore).toBe(0.1);
+  });
+});
+
+describe('formatRelativeTime (#122)', () => {
+  it("returns 'never' for null", () => {
+    expect(formatRelativeTime(null)).toBe('never');
+  });
+
+  it("returns 'never' for undefined", () => {
+    expect(formatRelativeTime(undefined)).toBe('never');
+  });
+
+  it("returns 'never' for empty string", () => {
+    expect(formatRelativeTime('')).toBe('never');
+  });
+
+  it("returns 'never' for unparseable date", () => {
+    expect(formatRelativeTime('not-a-date')).toBe('never');
+  });
+
+  it("never returns 'NaN months ago' (regression for #122)", () => {
+    expect(formatRelativeTime(null)).not.toContain('NaN');
+    expect(formatRelativeTime(undefined)).not.toContain('NaN');
+    expect(formatRelativeTime('garbage')).not.toContain('NaN');
+  });
+
+  it("formats a valid recent timestamp as 'today' or 'N days ago'", () => {
+    const now = new Date().toISOString();
+    expect(formatRelativeTime(now)).toBe('today');
+    const threeDaysAgo = new Date(Date.now() - 3 * 86400_000).toISOString();
+    expect(formatRelativeTime(threeDaysAgo)).toBe('3 days ago');
   });
 });
