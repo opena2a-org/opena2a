@@ -959,22 +959,13 @@ function getToolRecommendation(
   findingId: string,
 ): { command: string; label: string } | null {
   // Cryptographic key/cert files are credentials by file type, not text
-  // content. `opena2a protect` only handles text-pattern credentials, so
-  // a Fix line pointing there would be a CISO Rule 1 dead end. Surface
-  // the actual remediation: untrack from git + add the extension to
-  // `.gitignore`. Rotation happens at the issuing CA / vault and cannot
-  // be automated by the CLI.
-  if (findingId === 'CRED-KEYFILE') {
-    return {
-      command: "git rm --cached '<file>' && echo '*.key' >> .gitignore",
-      label: 'untrack key file + .gitignore (then rotate the key at issuer)',
-    };
-  }
-  if (findingId === 'CRED-CERTFILE') {
-    return {
-      command: "git rm --cached '<file>' && echo '*.crt' >> .gitignore",
-      label: 'untrack cert file + .gitignore (verify the matching private key is not committed)',
-    };
+  // content. As of #126 `opena2a protect` surfaces these files with a
+  // per-file remediation block (untrack from git + add the extension to
+  // `.gitignore` + rotate the key at its issuing CA / vault). The init Fix
+  // line can now point at the unified entry point. Rotation itself still
+  // happens at the CA and cannot be automated by the CLI.
+  if (findingId === 'CRED-KEYFILE' || findingId === 'CRED-CERTFILE') {
+    return { command: 'opena2a protect', label: 'opena2a protect' };
   }
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
     return { command: 'opena2a protect', label: 'opena2a protect' };

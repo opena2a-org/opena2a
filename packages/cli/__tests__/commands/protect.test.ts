@@ -665,4 +665,100 @@ describe('protect command', () => {
     expect(report.scoreAfter).toBeDefined();
     expect(report.scoreAfter).toBeGreaterThanOrEqual(report.scoreBefore);
   });
+
+  describe('#126: surfaces .key/.pem/.p12/.pfx files (was silent no-op)', () => {
+    it('emits keyFiles in JSON report when .key file is present', async () => {
+      fs.writeFileSync(
+        path.join(tempDir, 'leak.key'),
+        '-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n'
+      );
+
+      const chunks: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+
+      let exitCode: number;
+      try {
+        exitCode = await protect({
+          targetDir: tempDir,
+          dryRun: true,
+          ci: true,
+          format: 'json',
+          skipVerify: true,
+          skipSign: true,
+        });
+      } finally {
+        process.stdout.write = origWrite;
+      }
+
+      const report = JSON.parse(chunks.join(''));
+      expect(report.keyFiles).toBeDefined();
+      expect(report.keyFiles.length).toBe(1);
+      expect(report.keyFiles[0]).toMatchObject({
+        findingId: 'CRED-KEYFILE',
+        severity: 'critical',
+        relativePath: 'leak.key',
+      });
+      expect(report.keyFiles[0].remediation).toContain('git rm --cached');
+      expect(report.keyFiles[0].remediation).toContain('.gitignore');
+      expect(report.verificationPassed).toBe(false);
+      expect(exitCode).toBe(1);
+    });
+
+    it('exits 0 with verificationPassed=true when no key files present', async () => {
+      fs.writeFileSync(path.join(tempDir, 'app.ts'), 'const x = 42;\n');
+
+      const chunks: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+
+      let exitCode: number;
+      try {
+        exitCode = await protect({
+          targetDir: tempDir,
+          dryRun: true,
+          ci: true,
+          format: 'json',
+          skipVerify: true,
+          skipSign: true,
+        });
+      } finally {
+        process.stdout.write = origWrite;
+      }
+
+      const report = JSON.parse(chunks.join(''));
+      expect(report.keyFiles).toBeUndefined();
+      expect(report.verificationPassed).toBe(true);
+      expect(exitCode).toBe(0);
+    });
+
+    it('emits CRED-CERTFILE (medium) for .crt files', async () => {
+      fs.writeFileSync(
+        path.join(tempDir, 'server.crt'),
+        '-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n'
+      );
+
+      const chunks: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+
+      try {
+        await protect({
+          targetDir: tempDir,
+          dryRun: true,
+          ci: true,
+          format: 'json',
+          skipVerify: true,
+          skipSign: true,
+        });
+      } finally {
+        process.stdout.write = origWrite;
+      }
+
+      const report = JSON.parse(chunks.join(''));
+      expect(report.keyFiles).toBeDefined();
+      expect(report.keyFiles[0].findingId).toBe('CRED-CERTFILE');
+      expect(report.keyFiles[0].severity).toBe('medium');
+    });
+  });
 });

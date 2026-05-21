@@ -35,6 +35,23 @@ interface MigrationResult {
   error?: string;
 }
 
+interface KeyFileFinding {
+  /** Absolute path to the key/cert file */
+  filePath: string;
+  /** Path relative to the scan target (for display) */
+  relativePath: string;
+  /** CRED-KEYFILE (private-key-bearing) or CRED-CERTFILE (X.509 cert) */
+  findingId: 'CRED-KEYFILE' | 'CRED-CERTFILE';
+  /** Severity per crypto-key-files.ts: critical for .key/.pem/.p12/.pfx, medium for .crt/.cer */
+  severity: 'critical' | 'medium';
+  /** Human-readable title (e.g. "Private key file") */
+  title: string;
+  /** Why this is a credential surface */
+  explanation: string;
+  /** Recommended remediation (text-mode hint, not auto-applied yet) */
+  remediation: string;
+}
+
 interface ProtectReport {
   /** Target directory */
   targetDir: string;
@@ -62,6 +79,13 @@ interface ProtectReport {
   scoreBefore?: number;
   /** Security score after fixes */
   scoreAfter?: number;
+  /**
+   * Cryptographic key / cert files in source (CRED-KEYFILE / CRED-CERTFILE).
+   * Surface only — protect does NOT rotate or re-encrypt binary key material;
+   * the user must untrack the file, add the extension to .gitignore, and
+   * rotate the key at its issuing CA / vault. Closes #126.
+   */
+  keyFiles?: KeyFileFinding[];
 }
 
 interface AdditionalFixes {
@@ -110,6 +134,7 @@ import {
   type LivenessResult,
 } from '../util/drift-verification.js';
 import { scanMcpCredentials, scanAiConfigFiles } from '../util/ai-config.js';
+import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { calculateSecurityScore } from '../util/scoring.js';
 import { runScoringChecks } from '../util/hygiene.js';
 
@@ -147,6 +172,22 @@ export async function protect(options: ProtectOptions): Promise<number> {
     }
   }
 
+  // Detect cryptographic key/cert files by extension (.key/.pem/.p12/.pfx + .crt/.cer).
+  // protect cannot migrate these to a vault — they're binary key material that
+  // requires CA-side rotation — but surfacing them tells the user the file is
+  // a credential and what to do about it. Closes #126.
+  const keyFiles: KeyFileFinding[] = scanCryptoKeyFiles(targetDir).map(m => ({
+    filePath: m.filePath,
+    relativePath: path.relative(targetDir, m.filePath),
+    findingId: m.findingId as 'CRED-KEYFILE' | 'CRED-CERTFILE',
+    severity: m.severity as 'critical' | 'medium',
+    title: m.title,
+    explanation: m.explanation ?? '',
+    remediation: m.severity === 'critical'
+      ? `git rm --cached "${path.relative(targetDir, m.filePath)}" && echo "*${path.extname(m.filePath)}" >> .gitignore && rotate the key at its issuing CA / vault`
+      : `git rm --cached "${path.relative(targetDir, m.filePath)}" && echo "*${path.extname(m.filePath)}" >> .gitignore`,
+  }));
+
   spinner.stop();
 
   const isJson = options.format === 'json';
@@ -167,8 +208,13 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
   if (matches.length === 0) {
     if (!isJson) {
-      process.stdout.write(green('No hardcoded credentials detected.\n'));
-      process.stdout.write(dim('protect also applies git hygiene and config signing.\n'));
+      if (keyFiles.length === 0) {
+        process.stdout.write(green('No hardcoded credentials detected.\n'));
+        process.stdout.write(dim('protect also applies git hygiene and config signing.\n'));
+      } else {
+        process.stdout.write(green('No hardcoded text credentials detected.\n'));
+      }
+      printKeyFileWarnings(keyFiles);
     }
 
     // Even without credentials, apply git hygiene and config signing fixes
@@ -220,15 +266,21 @@ export async function protect(options: ProtectOptions): Promise<number> {
         failed: 0,
         skipped: 0,
         results: [],
-        verificationPassed: true,
+        // Verification passes only when nothing was left for the user to do.
+        // Key files are unmigrated surface — flag them as failed verification
+        // so CI consumers (--ci callers) get a non-clean signal. Closes #126.
+        verificationPassed: keyFiles.length === 0,
         durationMs: Date.now() - startTime,
         ...(anyFix ? { additionalFixes: noCredFixes } : {}),
+        ...(keyFiles.length > 0 ? { keyFiles } : {}),
       };
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     } else if (anyFix) {
       process.stdout.write(dim(`Completed in ${formatDuration(Date.now() - startTime)}\n`));
     }
-    return 0;
+    // Exit non-zero when key files were detected but not remediated — they
+    // are a credential surface protect could not handle automatically.
+    return keyFiles.length > 0 ? 1 : 0;
   }
 
   // Phase 1.5: Liveness verification for DRIFT findings
@@ -322,11 +374,13 @@ export async function protect(options: ProtectOptions): Promise<number> {
         verificationPassed: false,
         durationMs: Date.now() - startTime,
         ...(livenessResults ? { livenessResults: Object.fromEntries(livenessResults) } : {}),
+        ...(keyFiles.length > 0 ? { keyFiles } : {}),
       };
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     } else {
       process.stdout.write(yellow('[DRY RUN] Would migrate the above credentials.\n'));
       process.stdout.write(dim('Run without --dry-run to apply changes.\n'));
+      printKeyFileWarnings(keyFiles);
     }
 
     // Generate HTML report even in dry-run mode
@@ -507,19 +561,24 @@ export async function protect(options: ProtectOptions): Promise<number> {
     failed,
     skipped,
     results,
-    verificationPassed,
+    // Verification fails when key/cert files are present — protect cannot
+    // remediate them automatically (binary key material requires CA-side
+    // rotation). See #126.
+    verificationPassed: verificationPassed && keyFiles.length === 0,
     durationMs,
     livenessResults: livenessRecord,
     aiToolsUpdated,
     ...(hasAdditionalFixes ? { additionalFixes } : {}),
     ...(scoreBefore !== undefined ? { scoreBefore } : {}),
     ...(scoreAfter !== undefined ? { scoreAfter } : {}),
+    ...(keyFiles.length > 0 ? { keyFiles } : {}),
   };
 
   if (options.format === 'json') {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
     printReport(report);
+    printKeyFileWarnings(keyFiles);
 
     // Offer backend upgrade only if currently on local/keychain vault
     if (report.migrated > 0 && !options.ci) {
@@ -1135,6 +1194,25 @@ function fixAiConfigExclusion(targetDir: string, dryRun?: boolean): string[] {
 }
 
 // --- Reporting ---
+
+/**
+ * Print a warning block for cryptographic key / cert files detected by
+ * `scanCryptoKeyFiles`. protect does not auto-rotate or re-encrypt binary
+ * key material; the user must untrack the file, add the extension to
+ * .gitignore, and rotate the key at its issuing CA / vault. Closes #126.
+ */
+function printKeyFileWarnings(keyFiles: KeyFileFinding[]): void {
+  if (keyFiles.length === 0) return;
+  process.stdout.write('\n' + bold(red('Cryptographic key / cert files detected')) + '\n');
+  process.stdout.write(dim('protect cannot rotate binary key material automatically. Surface only:\n'));
+  process.stdout.write(gray('-'.repeat(50)) + '\n');
+  for (const k of keyFiles) {
+    const sevLabel = k.severity === 'critical' ? red('CRITICAL') : yellow('MEDIUM  ');
+    process.stdout.write(`  ${sevLabel}  ${k.findingId}  ${k.relativePath}\n`);
+    process.stdout.write(dim(`    ${k.title} -- ${k.explanation}\n`));
+    process.stdout.write(dim(`    Fix: ${k.remediation}\n\n`));
+  }
+}
 
 function printReport(report: ProtectReport): void {
   process.stdout.write('\n' + bold('Migration Report') + '\n');
