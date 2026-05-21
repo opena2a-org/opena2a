@@ -306,17 +306,23 @@ export async function dispatchCommand(
       if (isNpmTarget(target)) {
         return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
       }
-      // Unrecognized target format -- show helpful error
-      process.stderr.write(`Unknown target: ${target}\n`);
-      process.stderr.write(`Accepted formats:\n`);
-      process.stderr.write(`  opena2a check express                  npm package\n`);
-      process.stderr.write(`  opena2a check @scope/pkg               scoped npm package\n`);
-      process.stderr.write(`  opena2a check skill:<name>             registered skill (rich block)\n`);
-      process.stderr.write(`  opena2a check mcp:<name>               registered MCP server (rich block)\n`);
-      process.stderr.write(`  opena2a check pip:requests             PyPI package\n`);
-      process.stderr.write(`  opena2a check owner/repo               GitHub repository\n`);
-      process.stderr.write(`  opena2a check ./path                   local directory\n`);
-      return 1;
+      // Local path (./path, ../path, /abs, ~/path, or .) — fall through
+      // to the scan adapter (hackmyagent secure <dir>). --help and the
+      // unknown-target error advertise this form; closes #120.
+      if (!isLocalPath(target)) {
+        // Unrecognized target format -- show helpful error
+        process.stderr.write(`Unknown target: ${target}\n`);
+        process.stderr.write(`Accepted formats:\n`);
+        process.stderr.write(`  opena2a check express                  npm package\n`);
+        process.stderr.write(`  opena2a check @scope/pkg               scoped npm package\n`);
+        process.stderr.write(`  opena2a check skill:<name>             registered skill (rich block)\n`);
+        process.stderr.write(`  opena2a check mcp:<name>               registered MCP server (rich block)\n`);
+        process.stderr.write(`  opena2a check pip:requests             PyPI package\n`);
+        process.stderr.write(`  opena2a check owner/repo               GitHub repository\n`);
+        process.stderr.write(`  opena2a check ./path                   local directory\n`);
+        return 1;
+      }
+      // Local path: fall through to INTENT_MAP['check'] -> scan adapter.
     }
   }
 
@@ -446,6 +452,22 @@ function getInstallHint(config: AdapterConfig): string {
 export function isRichTarget(target: string): boolean {
   if (target.startsWith('skill:') && target.length > 'skill:'.length) return true;
   if (target.startsWith('mcp:') && target.length > 'mcp:'.length) return true;
+  return false;
+}
+
+/**
+ * Detect whether a target is a local filesystem path the `check` command
+ * should treat as a directory scan (delegates to scan adapter).
+ *
+ * Accepted forms: `.`, `./path`, `../path`, `/abs/path`, `~/path`.
+ * Mirrors the documented forms in --help and the unknown-target error.
+ * Closes #120.
+ */
+export function isLocalPath(target: string): boolean {
+  if (target === '.' || target === '..') return true;
+  if (target.startsWith('./') || target.startsWith('../')) return true;
+  if (target.startsWith('/')) return true;
+  if (target.startsWith('~/') || target === '~') return true;
   return false;
 }
 
