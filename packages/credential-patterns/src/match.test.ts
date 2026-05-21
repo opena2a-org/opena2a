@@ -31,6 +31,15 @@ describe('isKnownExample (issue #50 — comment-marker precedence)', () => {
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
+
+  it('#127: treats the AWS canonical secret-key example wJalrXUtnFEMI... as a known example', () => {
+    // Paired with AKIAIOSFODNN7EXAMPLE in the AWS IAM User Guide canonical
+    // example. AWS docs reference verified 2026-05-21.
+    const line = 'const secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";';
+    const match = line.match(/wJalr[A-Za-z0-9/+]+EXAMPLEKEY/)!;
+    expect(match).not.toBeNull();
+    expect(isKnownExample(line, match)).toBe(true);
+  });
 });
 
 describe('isKnownExample (0.1.1 — block-comment markers)', () => {

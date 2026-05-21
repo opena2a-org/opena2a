@@ -115,8 +115,16 @@ export const CREDENTIAL_PREFIX_QUICK_CHECK = new RegExp(
  */
 export const KNOWN_EXAMPLE_KEYS = new Set([
   // AWS (official docs)
+  // Access keys: from IAM User Guide / SigV4 references.
   'AKIAIOSFODNN7EXAMPLE',
   'AKIAI44QH8DHBEXAMPLE',
+  // Secret access key paired with AKIAIOSFODNN7EXAMPLE in the canonical
+  // AWS docs example. Source verified 2026-05-21 against
+  // docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html
+  // ("Access keys consist of two parts: an access key ID (for example,
+  // AKIAIOSFODNN7EXAMPLE) and a secret access key (for example,
+  // wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY).") Closes #127 item 4 (AWS leg).
+  'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
   // OpenAI (from docs)
   'sk-proj-abc123',
 ]);
