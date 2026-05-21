@@ -13,6 +13,12 @@ export interface HygieneCheck {
   label: string;
   status: 'pass' | 'warn' | 'fail' | 'info';
   detail: string;
+  /**
+   * Structured items associated with the check (e.g. risky server names for
+   * the 'MCP high-risk tools' label). Scoring code should prefer
+   * `items.length` over parsing `detail` (the user-facing copy). Closes #125.
+   */
+  items?: string[];
 }
 
 export interface ScoreBreakdown {
@@ -70,6 +76,14 @@ export function calculateSecurityScore(
   const mcpToolsChecks = checks.filter(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
   let mcpServerCount = 0;
   for (const c of mcpToolsChecks) {
+    // Prefer the structured `items` count — `detail` is user-facing copy
+    // and changing its wording must not silently break the score model.
+    // Closes #125. Fall back to the legacy regex for back-compat with
+    // any producer that hasn't migrated to populating `items` yet.
+    if (c.items && c.items.length > 0) {
+      mcpServerCount += c.items.length;
+      continue;
+    }
     const m = c.detail.match(/(\d+)\s+server/);
     mcpServerCount += m ? parseInt(m[1], 10) : 1;
   }
