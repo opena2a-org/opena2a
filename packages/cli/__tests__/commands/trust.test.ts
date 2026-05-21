@@ -261,7 +261,10 @@ describe('trust', () => {
 
     expect(output).not.toContain('https://registry.opena2a.org');
     expect(output).not.toContain('Badge:');
-    expect(output).toContain('Registry launches soon');
+    // Post-#123: Registry is live; only the per-package profile URL is dead.
+    // The placeholder must not imply the Registry itself is offline.
+    expect(output).not.toContain('Registry launches soon');
+    expect(output).toContain('Profile: not available for this package');
   });
 
   it('falls back to formatted packageType when displayType is absent', async () => {
@@ -361,6 +364,55 @@ describe('trust', () => {
     const parsed = JSON.parse(output);
     expect(parsed.trustLevel).toBe('discovered');
     expect(parsed.trustScore).toBe(0.1);
+  });
+});
+
+describe('trust stale copy + zero-downloads (#123)', () => {
+  it('suppresses Downloads line when Registry returns 0 (stale backfill)', async () => {
+    const data = makeTrustResponse({
+      profileUrl: 'https://opena2a.org/agents/express',
+      supplyChain: {
+        criticalVulnerabilities: 0,
+        highVulnerabilities: 0,
+        mediumVulnerabilities: 0,
+        lowVulnerabilities: 0,
+        lastPublished: new Date().toISOString(),
+        maintainerCount: 5,
+        weeklyDownloads: 0,
+      },
+    });
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({ ok: true, status: 200, data });
+
+    const { output } = await captureStdout(() => trust({ packageName: 'express', ci: true, format: 'text' }));
+    expect(output).not.toMatch(/Downloads:\s+0\/week/);
+  });
+
+  it("does NOT emit 'Registry launches soon' for dead-host profile URLs", async () => {
+    const data = makeTrustResponse({ profileUrl: 'https://registry.oa2a.org/agents/express' });
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({ ok: true, status: 200, data });
+
+    const { output } = await captureStdout(() => trust({ packageName: 'express', ci: true, format: 'text' }));
+    expect(output).not.toContain('Registry launches soon');
+    expect(output).toContain('Profile: not available for this package');
+  });
+
+  it('shows real Downloads count when > 0', async () => {
+    const data = makeTrustResponse({
+      profileUrl: 'https://opena2a.org/agents/express',
+      supplyChain: {
+        criticalVulnerabilities: 0,
+        highVulnerabilities: 0,
+        mediumVulnerabilities: 0,
+        lowVulnerabilities: 0,
+        lastPublished: new Date().toISOString(),
+        maintainerCount: 5,
+        weeklyDownloads: 35_000_000,
+      },
+    });
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({ ok: true, status: 200, data });
+
+    const { output } = await captureStdout(() => trust({ packageName: 'express', ci: true, format: 'text' }));
+    expect(output).toContain('35,000,000/week');
   });
 });
 
