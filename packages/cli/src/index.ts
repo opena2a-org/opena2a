@@ -16,6 +16,16 @@ import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
 import { HMA_CHECK_COUNT } from './util/canonical.js';
+import {
+  isHelpRequest,
+  printSubcommandHelp,
+  GUARD_HELP,
+  SHIELD_HELP,
+  IDENTITY_HELP,
+  RUNTIME_HELP,
+  SKILL_HELP,
+  MCP_HELP,
+} from './util/subcommand-help.js';
 
 const VERSION = getVersion();
 // Wire-format tool name (analytics key in tool_usage_events). Matches the
@@ -356,6 +366,8 @@ analysis runs and results can be shared with the community.
   program
     .command('guard [subcommand] [args...]')
     .description('Config file integrity signing and verification (sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden)')
+    .allowUnknownOption(true)
+    .helpOption(false)
     .option('--files <files...>', 'Specific files to guard')
     .option('--dir <path>', 'Target directory')
     .option('--enforce', 'Quarantine on tampering (exit code 3)')
@@ -363,8 +375,16 @@ analysis runs and results can be shared with the community.
     .option('--heartbeats', 'Include HEARTBEAT.md files in signing/verification')
     .option('--fix', 'Auto-fix fixable issues (harden subcommand)')
     .option('--dry-run', 'Preview fixes without applying (harden subcommand)')
-    .action(async (subcommand: string | undefined, args: string[], opts) => {
+    .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
       const validSubs = ['sign', 'verify', 'status', 'watch', 'diff', 'policy', 'hook', 'resign', 'snapshot', 'harden'];
+      // Per-subcommand --help intercept (closes #132)
+      if (subcommand && isHelpRequest()) {
+        if (printSubcommandHelp('guard', subcommand, GUARD_HELP)) return;
+      }
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
       if (!subcommand) {
         process.stderr.write('Usage: opena2a guard <subcommand> [directory]\n\n');
         process.stderr.write('Subcommands:\n');
@@ -421,11 +441,21 @@ analysis runs and results can be shared with the community.
   program
     .command('runtime [subcommand] [directory]')
     .description('Agent runtime protection (start|status|tail|init)')
+    .allowUnknownOption(true)
+    .helpOption(false)
     .option('--config <path>', 'Path to ARP config file')
     .option('--count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
-    .action(async (subcommand: string | undefined, directory: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, directory: string | undefined, opts, cmd) => {
+      // Per-subcommand --help intercept (#132)
+      if (subcommand && isHelpRequest()) {
+        if (printSubcommandHelp('runtime', subcommand, RUNTIME_HELP)) return;
+      }
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
       if (!subcommand) {
         process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
         process.stderr.write('Subcommands:\n');
@@ -500,6 +530,8 @@ analysis runs and results can be shared with the community.
   program
     .command('identity [subcommand] [args...]')
     .description('Agent identity management (list|init|create|trust|audit|log|policy|check|sign|verify|integrate|detach|sync|connect|disconnect|tag|mcp|activity|suspend|reactivate)')
+    .allowUnknownOption(true)
+    .helpOption(false)
     .option('--name <name>', 'Agent name (for create)')
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
@@ -517,7 +549,15 @@ analysis runs and results can be shared with the community.
     .option('--tools <list>', 'Comma-separated tools to enable (attach)')
     .option('--all', 'Enable all detected tools (attach)')
     .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
-    .action(async (subcommand: string | undefined, args: string[], opts) => {
+    .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
+      // Per-subcommand --help intercept (#132)
+      if (subcommand && isHelpRequest()) {
+        if (printSubcommandHelp('identity', subcommand, IDENTITY_HELP)) return;
+      }
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
       if (!subcommand) {
         subcommand = 'list';
       }
@@ -557,6 +597,7 @@ analysis runs and results can be shared with the community.
     .command('shield [subcommand] [args...]')
     .description('Unified security orchestration ("shield init" runs full 11-step setup; also:|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage)')
     .allowUnknownOption(true)
+    .helpOption(false)
     .option('--dir <path>', 'Target directory')
     .option('--agent <name>', 'Agent name filter')
     .option('--count <n>', 'Event count (log)')
@@ -571,7 +612,15 @@ analysis runs and results can be shared with the community.
     .option('--report <path>', 'Write HTML posture report to file')
     .option('--shell-hook', 'Install shell preexec hook (shield init only)')
     .option('--ai-tools', 'Configure AI tool settings (shield init only)')
-    .action(async (subcommand: string | undefined, args: string[], opts) => {
+    .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
+      // Per-subcommand --help intercept (#132)
+      if (subcommand && isHelpRequest()) {
+        if (printSubcommandHelp('shield', subcommand, SHIELD_HELP)) return;
+      }
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
       if (!subcommand) {
         process.stderr.write('Usage: opena2a shield <subcommand>\n\n');
         process.stderr.write('Subcommands:\n');
@@ -1000,10 +1049,20 @@ Valid actions:
   program
     .command('skill [subcommand] [name]')
     .description('Skill management: create secure skills with signing and heartbeat')
+    .allowUnknownOption(true)
+    .helpOption(false)
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor (default: basic)')
     .option('--output <dir>', 'Output directory (default: current)')
     .option('--no-sign', 'Skip auto-signing of skill files')
-    .action(async (subcommand: string | undefined, name: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, name: string | undefined, opts, cmd) => {
+      // Per-subcommand --help intercept (#132)
+      if (subcommand && isHelpRequest()) {
+        if (printSubcommandHelp('skill', subcommand, SKILL_HELP)) return;
+      }
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
       if (!subcommand) {
         process.stderr.write('Usage: opena2a skill <subcommand> [name]\n\n');
         process.stderr.write('Subcommands:\n');
@@ -1057,8 +1116,18 @@ Valid actions:
   program
     .command('mcp [subcommand] [server]')
     .description('MCP server identity management (audit|sign|verify)')
+    .allowUnknownOption(true)
+    .helpOption(false)
     .option('--dir <path>', 'Target directory')
-    .action(async (subcommand: string | undefined, server: string | undefined, opts) => {
+    .action(async (subcommand: string | undefined, server: string | undefined, opts, cmd) => {
+      // Per-subcommand --help intercept (#132)
+      if (subcommand && isHelpRequest()) {
+        if (printSubcommandHelp('mcp', subcommand, MCP_HELP)) return;
+      }
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
       if (!subcommand) subcommand = 'audit';
       const { mcpCommand } = await import('./commands/mcp-audit.js');
       const globalOpts = program.opts();
