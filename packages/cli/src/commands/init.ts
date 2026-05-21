@@ -456,9 +456,10 @@ async function runHygieneChecks(
     checks.push(llmCheck);
   }
 
-  // AI-specific configuration scans
+  // AI-specific configuration scans. `items` is propagated to feed the
+  // structured-count path in scoring.ts (closes #125).
   for (const f of scanMcpConfig(dir)) {
-    checks.push({ label: f.label, status: f.status, detail: f.detail });
+    checks.push({ label: f.label, status: f.status, detail: f.detail, ...(f.items ? { items: f.items } : {}) });
   }
   const aiCfg = scanAiConfigFiles(dir);
   if (aiCfg) checks.push({ label: aiCfg.label, status: aiCfg.status, detail: aiCfg.detail });

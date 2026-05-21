@@ -74,9 +74,11 @@ export function runScoringChecks(dir: string, credCount: number): HygieneCheck[]
     checks.push({ label: 'Security config', status: 'info', detail: 'none' });
   }
 
-  // MCP config findings
+  // MCP config findings — pass `items` through so the score model can read
+  // structured server counts instead of parsing the user-facing detail
+  // string. Closes #125.
   for (const f of scanMcpConfig(dir)) {
-    checks.push({ label: f.label, status: f.status, detail: f.detail });
+    checks.push({ label: f.label, status: f.status, detail: f.detail, ...(f.items ? { items: f.items } : {}) });
   }
 
   // AI config exposure

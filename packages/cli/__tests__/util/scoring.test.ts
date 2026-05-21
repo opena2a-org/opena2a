@@ -129,3 +129,52 @@ describe('configuration bonus suppression covers all live-warn surfaces', () => 
     expect(breakdown.configuration.deduction).toBe(0);
   });
 });
+
+describe('MCP high-risk tools server-count source (#125)', () => {
+  it('prefers items.length over parsing the detail string', () => {
+    // detail says "1 server" but items has 5 entries — the structured count wins.
+    const checks: HygieneCheck[] = [
+      { label: 'Lock file', status: 'pass', detail: 'package-lock.json' },
+      { label: 'Security config', status: 'pass', detail: '.opena2a.yaml' },
+      {
+        label: 'MCP high-risk tools',
+        status: 'warn',
+        detail: '1 server with filesystem/shell access in mcp.json',
+        items: ['fs-server', 'shell-server', 'db-server', 'exec-server', 'bash-server'],
+      },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checks);
+    // 5 servers * 3 per-server = 15 (sub-cap), so environment.deduction includes 15.
+    expect(breakdown.environment.deduction).toBeGreaterThanOrEqual(15);
+    expect(breakdown.environment.detail).toContain('5 servers');
+  });
+
+  it('falls back to regex parse of detail when items is absent (back-compat)', () => {
+    const checks: HygieneCheck[] = [
+      { label: 'Lock file', status: 'pass', detail: 'package-lock.json' },
+      { label: 'Security config', status: 'pass', detail: '.opena2a.yaml' },
+      { label: 'MCP high-risk tools', status: 'warn', detail: '4 servers in mcp.json' },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checks);
+    expect(breakdown.environment.detail).toContain('4 servers');
+  });
+
+  it("doesn't undercount when detail copy changes shape (issue #125 scenario)", () => {
+    // Producer changes wording to "servers found: 4" — the legacy regex
+    // matches "4 server" inside "servers" anyway, but a "no number" wording
+    // like "multiple high-risk servers" would have fallen through to the
+    // `else 1` branch. With items the structured count is authoritative.
+    const checks: HygieneCheck[] = [
+      { label: 'Lock file', status: 'pass', detail: 'package-lock.json' },
+      { label: 'Security config', status: 'pass', detail: '.opena2a.yaml' },
+      {
+        label: 'MCP high-risk tools',
+        status: 'warn',
+        detail: 'multiple high-risk servers detected',
+        items: ['a', 'b', 'c', 'd'],
+      },
+    ];
+    const { breakdown } = calculateSecurityScore({}, checks);
+    expect(breakdown.environment.detail).toContain('4 servers');
+  });
+});
