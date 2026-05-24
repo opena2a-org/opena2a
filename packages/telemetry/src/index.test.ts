@@ -233,6 +233,64 @@ describe("successFromExitCode", () => {
   });
 });
 
+describe("successFromExitCode — semanticSuccessCodes ([CHIEF-CSR-018] + [CHIEF-CPO-022])", () => {
+  it("exit 2 with semanticSuccessCodes [2] = success (ai-trust not-found is a working outcome)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(2, [2])).toBe(true);
+  });
+  it("exit 3 with semanticSuccessCodes [2] = failure (only listed codes are semantic)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(3, [2])).toBe(false);
+  });
+  it("exit 1 with semanticSuccessCodes [2] = success (POSIX convention still applies)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(1, [2])).toBe(true);
+  });
+  it("exit 0 with semanticSuccessCodes [2] = success", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(0, [2])).toBe(true);
+  });
+  it("multiple semantic codes: [2, 3, 4] honored independently", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(2, [2, 3, 4])).toBe(true);
+    expect(tele.successFromExitCode(3, [2, 3, 4])).toBe(true);
+    expect(tele.successFromExitCode(4, [2, 3, 4])).toBe(true);
+    expect(tele.successFromExitCode(5, [2, 3, 4])).toBe(false);
+  });
+  it("out-of-range value in semanticSuccessCodes is still rejected (validation wins)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(256, [256])).toBe(false);
+    expect(tele.successFromExitCode(-1, [-1])).toBe(false);
+  });
+  it("non-finite value still rejected even if exit is otherwise listed (validation wins)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(Number.POSITIVE_INFINITY, [Number.POSITIVE_INFINITY as number])).toBe(false);
+    expect(tele.successFromExitCode("oops", [2])).toBe(false);
+  });
+  it("empty semanticSuccessCodes [] = same as undefined (no override)", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(2, [])).toBe(false);
+    expect(tele.successFromExitCode(0, [])).toBe(true);
+    expect(tele.successFromExitCode(1, [])).toBe(true);
+  });
+  it("undefined exit code with semanticSuccessCodes still treats as 0 = success", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(undefined, [2])).toBe(true);
+    expect(tele.successFromExitCode(null, [2])).toBe(true);
+  });
+  it("string exit code with semanticSuccessCodes parses then checks", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode("2", [2])).toBe(true);
+    expect(tele.successFromExitCode("3", [2])).toBe(false);
+  });
+  it("backward compatibility: omitting the second arg is identical to passing undefined", async () => {
+    const tele = await freshSdk();
+    expect(tele.successFromExitCode(2)).toBe(tele.successFromExitCode(2, undefined));
+    expect(tele.successFromExitCode(0)).toBe(tele.successFromExitCode(0, undefined));
+    expect(tele.successFromExitCode(127)).toBe(tele.successFromExitCode(127, undefined));
+  });
+});
+
 describe("install_id stability", () => {
   it("status() returns the same install_id across processes for the same machine", async () => {
     const a = await freshSdk();

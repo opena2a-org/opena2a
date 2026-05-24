@@ -26,8 +26,28 @@ tele.error("scan", "HMA_TIMEOUT");
 - `track(name, fields?)` fires a `command` event with the command name and optional `success` / `durationMs`.
 - `error(name, code)` fires an `error` event with the failure code.
 - `status()` returns `{ enabled, configPath, policyURL, installId }` for tools to build their own `--version` line and `telemetry` subcommand (see `@opena2a/cli-ui` helpers).
+- `successFromExitCode(exitCode, semanticSuccessCodes?)` translates `process.exitCode` to the `success` boolean. Default behavior follows POSIX security-tool convention (exit 0 and 1 = success; ≥ 2 = failure). The optional second argument lets dispatchers declare exit codes ≥ 2 that represent semantic outcomes (not crashes). See [crash-rate semantics](#crash-rate-semantics-for-success) below.
 
 All methods are fire-and-forget. Network failures, rate-limiting (429), and timeouts are swallowed. Telemetry never blocks the calling tool.
+
+## Crash-rate semantics for `success`
+
+Per [CHIEF-CSR-018] + [CHIEF-CPO-022], the `success` field in invocation telemetry follows **crash-rate semantics**: `success: false` means the command itself failed to execute (config error, network failure, exception, integrity violation) — NOT "the user got a result they didn't want."
+
+Some CLIs use exit codes ≥ 2 for semantic outcomes the command achieved correctly. Example: `ai-trust check <not-found-pkg>` exits 2 to signal "I checked, the package isn't in the registry." That's the command doing its job, not a crash. Pass those codes as the optional second argument so the dashboard signal reflects actual crash rate:
+
+```ts
+// POSIX default — exit 2 is a failure
+success: tele.successFromExitCode(process.exitCode),
+
+// ai-trust — exit 2 is a not-found outcome, not a crash
+success: tele.successFromExitCode(process.exitCode, [2]),
+
+// Multiple semantic codes are supported
+success: tele.successFromExitCode(process.exitCode, [2, 3]),
+```
+
+Validation always wins. Out-of-range values (< 0 or > 255), non-finite numbers, and unparseable strings continue to return `false` even when listed in `semanticSuccessCodes`. A programming-bug-tier value (e.g. `[256]`) is treated as a programming bug, not a semantic override.
 
 ## Disclosure surfaces
 
