@@ -19,7 +19,9 @@ concurrency:
 
 jobs:
   parity:
-    uses: opena2a-org/opena2a-parity/.github/workflows/parity.yml@main
+    # opena2a-parity moved from opena2a-org to opena2a-standards on 2026-05-24.
+    # Pinned to the current main SHA; bumps require an explicit, reviewable PR.
+    uses: opena2a-standards/opena2a-parity/.github/workflows/parity.yml@093dbda7def691db3b2f860216a008b43f8affb0
     with:
       hma_ref: main
       opena2a_ref: ${{ github.event.pull_request.head.sha || github.sha }}
