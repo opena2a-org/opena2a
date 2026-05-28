@@ -37,6 +37,22 @@ describe("runTelemetryCommand", () => {
     expect(input.setOptOut).not.toHaveBeenCalled();
   });
 
+  it("status hint suggests 'off' when telemetry is on", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: true }));
+    expect(out).toContain("dvaa telemetry off");
+    expect(out).toContain("OPENA2A_TELEMETRY=off");
+    expect(out).not.toContain("dvaa telemetry on'");
+    expect(out).not.toContain("OPENA2A_TELEMETRY=on");
+  });
+
+  it("status hint suggests 'on' when telemetry is off (papercut from DVAA 0.9.0 release-test)", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: false }));
+    expect(out).toContain("dvaa telemetry on");
+    expect(out).toContain("OPENA2A_TELEMETRY=on");
+    expect(out).not.toContain("dvaa telemetry off'");
+    expect(out).not.toContain("OPENA2A_TELEMETRY=off");
+  });
+
   it("'status' action behaves the same as no action", () => {
     const a = runTelemetryCommand(undefined, makeInput());
     const b = runTelemetryCommand("status", makeInput());
@@ -64,5 +80,29 @@ describe("runTelemetryCommand", () => {
     expect(out).toContain("Unknown action 'nuke'");
     expect(out).toContain("[on|off|status]");
     expect(input.setOptOut).not.toHaveBeenCalled();
+  });
+
+  it("'--help' prints usage instead of error (papercut from DVAA 0.9.0 release-test)", () => {
+    const input = makeInput();
+    const out = runTelemetryCommand("--help", input);
+    expect(out).not.toContain("Unknown action");
+    expect(out).toContain("dvaa telemetry [on|off|status]");
+    expect(out).toContain("Inspect or toggle");
+    expect(out).toContain("Actions:");
+    expect(out).toContain("on        Enable telemetry");
+    expect(out).toContain("off       Disable telemetry");
+    expect(out).toContain("status    Show current state");
+    expect(out).toContain("OPENA2A_TELEMETRY=off dvaa");
+    expect(input.setOptOut).not.toHaveBeenCalled();
+  });
+
+  it("'-h' is an alias for '--help'", () => {
+    const inputA = makeInput();
+    const inputB = makeInput();
+    const a = runTelemetryCommand("--help", inputA);
+    const b = runTelemetryCommand("-h", inputB);
+    expect(a).toBe(b);
+    expect(inputA.setOptOut).not.toHaveBeenCalled();
+    expect(inputB.setOptOut).not.toHaveBeenCalled();
   });
 });
