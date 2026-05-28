@@ -8,6 +8,10 @@
   - **`0.23.3`** ([hackmyagent#192](https://github.com/opena2a-org/hackmyagent/pull/192)) — Scanner NEMO-009 + AST-CRED-* false-positive suppressions (string-literal gating, integrity-manifest carve-outs, corpus-tier carve-out). Preserved-detection FP-suppress per the score-jump classification rule.
   - **`0.23.4`** ([hackmyagent#198](https://github.com/opena2a-org/hackmyagent/pull/198)) — `check pip:<pkg>` Registry lookups now use the bare PyPI package name (Registry stores PyPI under bare names; pre-fix `opena2a check pip:anthropic --format json` returned `found:false` for Registry-indexed PyPI packages despite the canonical record being live).
 - End-to-end effect: `opena2a check pip:anthropic --no-scan --json` and `opena2a check pip:anthropic --format json` both return the canonical Registry record (`found:true`, `packageType:"ai_tool"`, `trustLevel:2`).
+- **`@opena2a/cli-ui` pin `0.5.0` -> `0.5.1`** ([opena2a#172](https://github.com/opena2a-org/opena2a/pull/172)). Two telemetry-command papercuts fixed at the shared cli-ui layer (cli-ui PR #170): `opena2a telemetry --help` now prints proper usage instead of falling through to the parent `--help`; the on/off toggle hint flips to reflect current state. Caught originally by DVAA 0.9.0 release-test, fixed at root so all CLI consumers benefit. Zero-behavior diff for opena2a-cli surfaces; 1066 vitest tests still pass.
+
+### Internal
+- **`release.yml`: `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`** ([opena2a#172](https://github.com/opena2a-org/opena2a/pull/172)). `actions/checkout@v4`, `actions/setup-node@v4`, and `softprops/action-gh-release@v2` are JavaScript actions that run on Node 20 by default; GitHub forces them to Node 24 on 2026-06-02. Setting the env now silences the deprecation warning and avoids surprise breakage in June. The publish step inside `setup-node` was already on Node 24; this is purely about the actions' internal runtime.
 
 ## 0.10.3
 
