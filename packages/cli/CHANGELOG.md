@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.4
+
+### Dependencies
+- **Bundled `hackmyagent` bumped `0.22.3` -> `0.23.4`** ([opena2a-org/hackmyagent#198](https://github.com/opena2a-org/hackmyagent/pull/198)). Three releases of HMA fixes are now reflected in `opena2a check` end-to-end behavior:
+  - **`0.23.2`** ([hackmyagent#197](https://github.com/opena2a-org/hackmyagent/pull/197)) — `check pip:<pkg> --no-scan` no longer silently does a full PyPI download + scan; emits Registry-shape JSON identical to the npm path.
+  - **`0.23.3`** ([hackmyagent#192](https://github.com/opena2a-org/hackmyagent/pull/192)) — Scanner NEMO-009 + AST-CRED-* false-positive suppressions (string-literal gating, integrity-manifest carve-outs, corpus-tier carve-out). Preserved-detection FP-suppress per the score-jump classification rule.
+  - **`0.23.4`** ([hackmyagent#198](https://github.com/opena2a-org/hackmyagent/pull/198)) — `check pip:<pkg>` Registry lookups now use the bare PyPI package name (Registry stores PyPI under bare names; pre-fix `opena2a check pip:anthropic --format json` returned `found:false` for Registry-indexed PyPI packages despite the canonical record being live).
+- End-to-end effect: `opena2a check pip:anthropic --no-scan --json` and `opena2a check pip:anthropic --format json` both return the canonical Registry record (`found:true`, `packageType:"ai_tool"`, `trustLevel:2`).
+
 ## 0.10.3
 
 ### Bug Fixes
