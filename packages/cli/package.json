@@ -1,6 +1,6 @@
 {
   "name": "opena2a-cli",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "Unified CLI for the OpenA2A security platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,7 +26,7 @@
     "@opena2a/telemetry": "0.3.0",
     "ai-trust": "^0.2.23",
     "commander": "^13.1.0",
-    "hackmyagent": "0.22.3",
+    "hackmyagent": "0.23.4",
     "secretless-ai": "^0.14.1"
   },
   "optionalDependencies": {
