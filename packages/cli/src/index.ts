@@ -685,9 +685,15 @@ analysis runs and results can be shared with the community.
     .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
     .option('--deep', 'Enable LLM-assisted deep analysis')
     .option('--strict', 'Fail if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)')
+    .option('--explain', 'Print the 9-domain governance model (concept explainer) and exit')
     .action(async (directory: string | undefined, opts) => {
-      const { scanSoul } = await import('./commands/soul.js');
       const globalOpts = program.opts();
+      if (opts.explain) {
+        process.exitCode = await spawnHackmyagent(['scan-soul', '--explain']);
+        printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+        return;
+      }
+      const { scanSoul } = await import('./commands/soul.js');
       process.exitCode = await scanSoul({
         targetDir: opts.dir ?? directory ?? process.cwd(),
         ci: globalOpts.ci,
@@ -1340,6 +1346,41 @@ function spawnHmaCheck(
       npxChild.on('close', (code) => resolve(code ?? 1));
     });
 
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
+/**
+ * Pass-through delegate for hackmyagent CLI commands that opena2a-cli
+ * does not implement directly. Used for `scan-soul --explain` which is a
+ * CLI-level concept explainer (not exposed on the SoulScanner programmatic API).
+ */
+function spawnHackmyagent(args: string[]): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const hmaEnv = {
+      ...process.env,
+      HMA_CLI_PREFIX: 'opena2a',
+      HMA_CHECK_COMMAND: 'opena2a check',
+      HMA_FULL_SCAN_HINT: 'opena2a review',
+    };
+    const child = spawn('hackmyagent', args, {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      env: hmaEnv,
+    });
+    child.on('error', () => {
+      const npxChild = spawn('npx', ['hackmyagent', ...args], {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        env: hmaEnv,
+      });
+      npxChild.on('error', () => {
+        process.stderr.write('hackmyagent is not installed.\n');
+        process.stderr.write('Install: npm install -g hackmyagent\n');
+        resolve(1);
+      });
+      npxChild.on('close', (code) => resolve(code ?? 1));
+    });
     child.on('close', (code) => resolve(code ?? 1));
   });
 }
