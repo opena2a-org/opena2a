@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (queued for 0.10.5)
+
+### Features
+- **NanoMind classifier adapter for the natural-language layer.** New module `packages/cli/src/natural/nanomind-classifier.ts` plus types at `nanomind-types.ts` ports the aicomply 2.0 reference adapter to opena2a-cli. Speaks the frozen `@nanomind/daemon` v0.3.0 wire contract: HTTP POST to `127.0.0.1:47200/v1/infer`, strict schema validation, block rule `attackClass !== '' && confidence > 0.8` per AIM FGA Step 5. Returns a simple `{ blocked, attackClass, confidence, modelVersion, latencyMs } | null` shape; null on any failure (network, non-2xx, malformed, timeout) so callers silently fall back. Daemon `evidence` and `remediation` are deliberately dropped in the mapper because they can carry attacker-influenced bytes. Liveness probe `isNanoMindDaemonAvailable()` against `/health`. No router wiring in this drop; that lands in a follow-up. `MOCK_NANOMIND_URL` env honored for tests. 25 vitest tests pin: empty / whitespace short-circuit, blocked / not-blocked at the threshold boundary (strict `>` 0.8), schema rejection on missing fields / unknown enum / out-of-range confidence / negative latencyMs / malformed JSON / non-2xx, timeout abort, trust-boundary (ANSI + shell-payload bytes in `evidence` / `remediation` MUST NOT leak into the returned shape), `mapInferResponseToClassification` pure-mapper behavior, and the `MOCK_NANOMIND_URL` env override.
+
 ## 0.10.4
 
 ### Dependencies
