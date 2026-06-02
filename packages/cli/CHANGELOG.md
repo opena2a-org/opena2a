@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased (queued for 0.10.5)
+## 0.10.5
+
+### Dependencies
+- **Bundled `hackmyagent` bumped `0.23.4` -> `0.23.6`** ([opena2a-org/hackmyagent#214](https://github.com/opena2a-org/hackmyagent/pull/214)). End-to-end effect for opena2a-cli users:
+  - **`opena2a scan-soul`** no longer flags HIGH on the scaffold `hackmyagent create-skill` produces, and the `harden-soul -> scan-soul` rescan loop now lands at 100/100 HARDENED on the empty-tree gold path.
+  - Adversarial-review hardening on SOUL-OVERRIDE-001 (decoy-negation gate), AST-PROMPT-004 (sibling-decoy), LIFECYCLE-001 (realpath dedupe), and YAML-frontmatter strip on the prompt-analyzer noise filter all reach `opena2a check` via the bundled HMA.
+  - Skipped `0.23.5` (HMA's 0.23.5 release pivoted to 0.23.6 after the release-test surfaced two scanner FP paths; the 0.23.6 commit landed both fixes plus 4 adversarial-review issues).
+  - Known follow-up: [hackmyagent#216](https://github.com/opena2a-org/hackmyagent/issues/216) -- `scan-soul --profile <override>` returns 100/100 HARDENED on the malicious-corpus `kitchen-sink` fixture. Not a regression; default `scan-soul` correctly clamps + discloses scope.
+
+### Fixes
+- **`opena2a scan-soul --explain` is now a registered option that passes through to bundled hackmyagent.** Previously the wrapper's Commander parser rejected `--explain` with `unknown option`, leaving the concept-explainer block referenced in HMA findings a dead-end for opena2a-cli users. The fix adds the option to the scan-soul command and delegates to `hackmyagent scan-soul --explain` via a thin spawn helper. Pairs with HMA PR #209 (cited command namespaced with `hackmyagent` prefix) and HMA's `concept-explainer-command-references.test.ts` regression gate.
+
+## Earlier work shipping in 0.10.5
 
 ### Features
 - **NanoMind classifier adapter for the natural-language layer.** New module `packages/cli/src/natural/nanomind-classifier.ts` plus types at `nanomind-types.ts` ports the aicomply 2.0 reference adapter to opena2a-cli. Speaks the frozen `@nanomind/daemon` v0.3.0 wire contract: HTTP POST to `127.0.0.1:47200/v1/infer`, strict schema validation, block rule `attackClass !== '' && confidence > 0.8` per AIM FGA Step 5. Returns a simple `{ blocked, attackClass, confidence, modelVersion, latencyMs } | null` shape; null on any failure (network, non-2xx, malformed, timeout) so callers silently fall back. Daemon `evidence` and `remediation` are deliberately dropped in the mapper because they can carry attacker-influenced bytes. Liveness probe `isNanoMindDaemonAvailable()` against `/health`. No router wiring in this drop; that lands in a follow-up. `MOCK_NANOMIND_URL` env honored for tests.
