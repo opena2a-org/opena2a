@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (queued for 0.10.5)
+
+### Features
+- **NanoMind classifier adapter for the natural-language layer.** New module `packages/cli/src/natural/nanomind-classifier.ts` plus types at `nanomind-types.ts` ports the aicomply 2.0 reference adapter to opena2a-cli. Speaks the frozen `@nanomind/daemon` v0.3.0 wire contract: HTTP POST to `127.0.0.1:47200/v1/infer`, strict schema validation, block rule `attackClass !== '' && confidence > 0.8` per AIM FGA Step 5. Returns a simple `{ blocked, attackClass, confidence, modelVersion, latencyMs } | null` shape; null on any failure (network, non-2xx, malformed, timeout) so callers silently fall back. Daemon `evidence` and `remediation` are deliberately dropped in the mapper because they can carry attacker-influenced bytes. Liveness probe `isNanoMindDaemonAvailable()` against `/health`. No router wiring in this drop; that lands in a follow-up. `MOCK_NANOMIND_URL` env honored for tests.
+
+### Security
+- **Daemon communication restricted to loopback only.** Both `classifyWithNanoMindDaemon` and `isNanoMindDaemonAvailable` reject any `baseUrl` that is not `http(s)://(127.0.0.1|localhost|::1|[::1]):port` BEFORE issuing the request, so a misconfigured `MOCK_NANOMIND_URL` (or a future caller passing a malicious `baseUrl`) cannot exfiltrate user input to an external endpoint. Rejection returns `null` rather than throwing, preserving the silent-fallback contract.
+- **Response-body size cap (1 MiB) on `/v1/infer`.** A compromised or buggy daemon could return a multi-gigabyte body and OOM the caller; the adapter fast-rejects on `Content-Length > MAX_NANOMIND_RESPONSE_BYTES` and re-checks the actual body length post-read. Defense-in-depth against a hostile process bound to the loopback port.
+- 32 vitest tests pin the full contract: empty / whitespace short-circuit, blocked / not-blocked at the strict-`>`-0.8 threshold, schema rejection on missing fields / unknown enum / out-of-range confidence / negative latencyMs / malformed JSON / non-2xx, timeout abort with lower-bound assertion, trust-boundary (ANSI + shell-payload bytes in `evidence` / `remediation` MUST NOT leak into the returned shape), SSRF refusal on non-loopback URL / non-http scheme / malformed URL, response-size cap via declared `Content-Length` AND actual body length, `mapInferResponseToClassification` pure-mapper behavior, `isLocalhostHttpUrl` allow / reject coverage, and the `MOCK_NANOMIND_URL` env override.
+
 ## 0.10.4
 
 ### Dependencies
