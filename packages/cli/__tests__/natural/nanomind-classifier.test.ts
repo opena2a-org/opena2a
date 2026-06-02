@@ -327,7 +327,12 @@ describe('classifyWithNanoMindDaemon — failure modes return null', () => {
     });
     const elapsed = Date.now() - start;
     expect(result).toBeNull();
+    // Upper bound: prove the request did not hang past the timeout.
     expect(elapsed).toBeLessThan(2000);
+    // Lower bound: prove the timeout actually fired (rather than a
+    // fast-fail like connection refused making the test pass for the
+    // wrong reason). Allow 10ms slack for setTimeout granularity.
+    expect(elapsed).toBeGreaterThanOrEqual(90);
   });
 });
 
