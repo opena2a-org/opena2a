@@ -150,6 +150,26 @@ Three job categories: assess, protect, operate. Run any with `--help` for full f
 | `opena2a guard sign` | Sign and watch config files (`mcp.json`, `claude_desktop_config.json`, etc.). Alerts on unauthorized changes. |
 | `opena2a shield init` | One-shot 11-step setup: review, protect, identity, guard, secrets, runtime, policy, hooks. |
 
+#### Optional AAP gate on `protect`
+
+`protect` can be gated by the [Agent Authorization Protocol](https://github.com/opena2a-standards/agent-authorization-protocol). When `--grant` is set, the CLI presents an ATX and a grant reference to the local Secretless broker before any scan runs. The broker is the policy decision point; the CLI proceeds only if the broker authorizes.
+
+```bash
+opena2a protect \
+  --grant grant://opena2a-protect \
+  --atx ~/.opena2a/atx.json
+```
+
+Outcomes:
+
+- **Broker authorizes** -> protect proceeds.
+- **Broker denies (HTTP 403)** -> protect exits 3 with a one-line pointer to `~/.secretless-ai/policies/`. Per AAP §6.6 the denial is opaque; reasons live only in the broker's signed audit log.
+- **Broker unreachable** -> protect exits 4 with a `secretless broker start` hint.
+- **Broker returns an unexpected status** -> protect exits 6. The response body is never echoed to the user; reasons live only in the broker audit log.
+- **No `--grant` flag** -> protect runs exactly as before; the gate is opt-in.
+
+This integration newly defends **T-3002** (cross-tenant grant leakage), **T-3003** (over-broad credential scope), **T-3006** (credential leaking into agent context), and **T-8002** (audit attribution gap) at the CLI surface. The broker is the integrity-protected decision and audit point; the CLI carries no policy state.
+
 ### Operate
 
 | Command | What it does |

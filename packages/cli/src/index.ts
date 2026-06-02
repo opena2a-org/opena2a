@@ -251,6 +251,11 @@ Learn more: https://opena2a.org/docs`);
     .option('--skip-sign', 'Skip config signing phase')
     .option('--skip-git', 'Skip git hygiene fixes (.gitignore, .git/info/exclude)')
     .option('--dir <path>', 'Target directory')
+    .option('--grant <grant-ref>', 'Gate the scan through an AAP grant (e.g. grant://opena2a-protect)')
+    .option('--atx <path>', 'Path to a JSON ATX file (required with --grant)')
+    .option('--broker-socket <path>', 'Override the Secretless broker socket path')
+    .option('--broker-token <path>', 'Override the Secretless broker token file path')
+    .option('--grant-agent-id <id>', 'Agent ID sent to the broker (default: opena2a_protect_cli)')
     .action(async (directory: string | undefined, opts) => {
       const { protect: runProtect } = await import('./commands/protect.js');
       const globalOpts = program.opts();
@@ -265,6 +270,11 @@ Learn more: https://opena2a.org/docs`);
         skipSign: opts.skipSign,
         skipGit: opts.skipGit,
         report: opts.report,
+        grant: opts.grant,
+        atxPath: opts.atx,
+        brokerSocket: opts.brokerSocket,
+        brokerTokenPath: opts.brokerToken,
+        grantAgentId: opts.grantAgentId,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
