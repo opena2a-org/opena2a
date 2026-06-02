@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `protect --grant <grant-ref> --atx <path>`: opt-in Agent Authorization Protocol gate. Before any scan, `protect` presents an ATX to the local Secretless broker and proceeds only if the broker authorizes the grant. Hard-fails 3 with an actionable next step on a 403 opaque denial (AAP §6.6); 4 with a `secretless broker start` hint if the broker socket is unreachable. New `packages/cli/src/aap/` module (broker client) is the first TypeScript AAP consumer. Defends T-3002, T-3003, T-3006, T-8002 at the CLI surface.
 - `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing via ConfigGuard, HEARTBEAT.md generation, vitest test file, and GitHub Action template
 - `guard harden` subcommand: scan SKILL.md and HEARTBEAT.md files for security issues using HackMyAgent HardeningScanner, with `--fix` (auto-fix) and `--dry-run` (preview) flags
 - Docker adapter configurable port mapping for `train` command (full DVAA port range)

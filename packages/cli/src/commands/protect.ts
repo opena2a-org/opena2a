@@ -116,6 +116,20 @@ export interface ProtectOptions {
   skipSign?: boolean;
   /** Skip git hygiene fixes (.gitignore, .git/info/exclude) */
   skipGit?: boolean;
+  /**
+   * AAP grant reference (e.g. grant://opena2a-protect). When set, protect calls the
+   * local Secretless broker before any scan; the broker is the policy decision point
+   * and a 403 hard-fails this command. AAP §6.6 (uniform opaque denial).
+   */
+  grant?: string;
+  /** Path to a JSON file containing the agent's ATX. Required when `grant` is set. */
+  atxPath?: string;
+  /** Override the broker socket path (defaults to ~/.secretless-ai/broker.sock). */
+  brokerSocket?: string;
+  /** Override the broker token path (defaults to ~/.secretless-ai/broker.token). */
+  brokerTokenPath?: string;
+  /** Override the agent ID sent to the broker. Defaults to "opena2a_protect_cli". */
+  grantAgentId?: string;
 }
 
 // --- Credential patterns (shared module) ---
@@ -137,6 +151,7 @@ import { scanMcpCredentials, scanAiConfigFiles } from '../util/ai-config.js';
 import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { calculateSecurityScore } from '../util/scoring.js';
 import { runScoringChecks } from '../util/hygiene.js';
+import { BrokerClient, GrantDeniedError, BrokerGrantError } from '../aap/index.js';
 
 // --- Core logic ---
 
@@ -150,6 +165,11 @@ export async function protect(options: ProtectOptions): Promise<number> {
   if (!fs.existsSync(targetDir)) {
     process.stderr.write(red(`Target directory not found: ${targetDir}\n`));
     return 1;
+  }
+
+  if (options.grant) {
+    const gateResult = await aapGate(options, targetDir);
+    if (gateResult !== 0) return gateResult;
   }
 
   if (options.dryRun) {
@@ -1407,4 +1427,77 @@ function findProjectRoot(startPath: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * AAP gate. Calls the local Secretless broker before any scan. The broker is the
+ * policy decision point; protect proceeds only if the broker authorizes the
+ * `protect.scan` operation. AAP §6.6: a 403 is a uniform opaque denial and this
+ * command hard-fails with an actionable next step.
+ *
+ * Returns 0 on success (proceed with scan) or a non-zero exit code on failure.
+ */
+async function aapGate(options: ProtectOptions, targetDir: string): Promise<number> {
+  const grant = options.grant!;
+  const isJson = options.format === 'json';
+
+  if (!options.atxPath) {
+    process.stderr.write(red('--grant requires --atx <path-to-atx.json>\n'));
+    process.stderr.write(dim('  Issue an ATX from your AIM identity and pass its JSON file path.\n'));
+    return 2;
+  }
+
+  let atx: Record<string, unknown>;
+  try {
+    const raw = fs.readFileSync(options.atxPath, 'utf-8');
+    atx = JSON.parse(raw);
+  } catch (err) {
+    process.stderr.write(red(`Could not read ATX file at ${options.atxPath}: ${(err as Error).message}\n`));
+    return 2;
+  }
+
+  const client = new BrokerClient({
+    socketPath: options.brokerSocket,
+    tokenPath: options.brokerTokenPath,
+  });
+
+  try {
+    await client.grant({
+      agentId: options.grantAgentId ?? 'opena2a_protect_cli',
+      atx,
+      grant,
+      operation: { method: 'POST', path: '/protect/scan', query: { target: targetDir } },
+    });
+    if (!isJson && options.verbose) {
+      process.stdout.write(dim(`AAP broker authorized ${grant} for ${targetDir}\n`));
+    }
+    return 0;
+  } catch (err) {
+    if (err instanceof GrantDeniedError) {
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          status: 'aap-denied',
+          grant,
+          targetDir,
+          remediation: `Verify your broker policy binds ${grant} to your agent's trust class.`,
+        }) + '\n');
+      } else {
+        process.stderr.write(red(`AAP broker denied ${grant}\n`));
+        process.stderr.write('\n');
+        process.stderr.write(`The Secretless broker is the policy decision point for this operation.\n`);
+        process.stderr.write(`The broker returned an opaque denial; reasons live only in the broker's signed audit log (AAP §6.6).\n`);
+        process.stderr.write('\n');
+        process.stderr.write(`${bold('Next step:')} review the broker's grant policy for ${cyan(grant)}.\n`);
+        process.stderr.write(`  Default policy dir:  ~/.secretless-ai/policies/\n`);
+        process.stderr.write(`  Audit log:           ~/.secretless-ai/broker.audit.log\n`);
+      }
+      return 3;
+    }
+    if (err instanceof BrokerGrantError) {
+      process.stderr.write(red(`AAP broker unreachable: ${err.message}\n`));
+      process.stderr.write(dim('  Start the broker:  secretless broker start\n'));
+      return 4;
+    }
+    throw err;
+  }
 }

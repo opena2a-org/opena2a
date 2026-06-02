@@ -84,6 +84,11 @@ export async function dispatchCommand(
   // Handle 'protect' directly (not adapter-based — it orchestrates HMA + Secretless)
   if (command === 'protect') {
     const targetDir = args[0] ?? process.cwd();
+    const grantIdx = args.indexOf('--grant');
+    const atxIdx = args.indexOf('--atx');
+    const brokerSocketIdx = args.indexOf('--broker-socket');
+    const brokerTokenIdx = args.indexOf('--broker-token');
+    const agentIdIdx = args.indexOf('--grant-agent-id');
     return protect({
       targetDir,
       dryRun: args.includes('--dry-run'),
@@ -91,6 +96,11 @@ export async function dispatchCommand(
       ci: globalOptions.ci ?? false,
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
       skipVerify: args.includes('--skip-verify'),
+      grant: grantIdx >= 0 ? args[grantIdx + 1] : undefined,
+      atxPath: atxIdx >= 0 ? args[atxIdx + 1] : undefined,
+      brokerSocket: brokerSocketIdx >= 0 ? args[brokerSocketIdx + 1] : undefined,
+      brokerTokenPath: brokerTokenIdx >= 0 ? args[brokerTokenIdx + 1] : undefined,
+      grantAgentId: agentIdIdx >= 0 ? args[agentIdIdx + 1] : undefined,
     });
   }
 
