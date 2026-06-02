@@ -246,4 +246,127 @@ describe('opena2a protect --grant', () => {
     expect(parsed.grant).toBe('grant://opena2a-protect');
     expect(parsed.remediation).toMatch(/grant:\/\/opena2a-protect/);
   });
+
+  it('denial does NOT proceed to scan: a credential-bearing fixture file is byte-identical after exit 3', async () => {
+    broker.next = { status: 403, body: { error: 'denied' } };
+    const atxPath = writeAtxFixture(tmpDir);
+
+    // Seed the scan directory with a fake credential. If the gate is load-bearing
+    // the scan never runs, the file is never rewritten, and the byte-identical
+    // check passes. If the gate is decorative, protect's migration would replace
+    // the hardcoded string with an env-var reference and this test fails.
+    const credFile = path.join(scanDir, 'config.py');
+    const credBefore = 'API_KEY = "sk-FAKE-WOULD-BE-REWRITTEN-IF-SCAN-RAN"\n';
+    fs.writeFileSync(credFile, credBefore);
+
+    const exitCode = await protect({
+      targetDir: scanDir,
+      grant: 'grant://opena2a-protect',
+      atxPath,
+      brokerSocket: broker.socketPath,
+      brokerTokenPath: broker.tokenPath,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+    expect(exitCode).toBe(3);
+    expect(fs.readFileSync(credFile, 'utf-8')).toBe(credBefore);
+  });
+
+  it('500 response: returns exit 6 and does NOT echo the broker body to stderr (AAP §6.6)', async () => {
+    // A misbehaving or impostor broker tries to leak cross-tenant detail in a 500.
+    broker.next = {
+      status: 500,
+      body: { error: 'db: cross-tenant lookup for tenantA failed', secret_host: 'api.internal.example' },
+    };
+    const atxPath = writeAtxFixture(tmpDir);
+
+    const exitCode = await protect({
+      targetDir: scanDir,
+      grant: 'grant://opena2a-protect',
+      atxPath,
+      brokerSocket: broker.socketPath,
+      brokerTokenPath: broker.tokenPath,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    expect(exitCode).toBe(6);
+    // Status code is fine to surface; the body content is NOT.
+    expect(stderr).toMatch(/status 500/);
+    expect(stderr).not.toContain('cross-tenant');
+    expect(stderr).not.toContain('tenantA');
+    expect(stderr).not.toContain('api.internal.example');
+  });
+
+  it('rejects a structurally-invalid ATX before contacting the broker', async () => {
+    // null, primitive, missing fields, or wrong shape all reject locally.
+    const atxPath = path.join(tmpDir, 'bad-atx.json');
+    fs.writeFileSync(atxPath, JSON.stringify({ agentId: 'no-atc-version' }));
+
+    const exitCode = await protect({
+      targetDir: scanDir,
+      grant: 'grant://opena2a-protect',
+      atxPath,
+      brokerSocket: broker.socketPath,
+      brokerTokenPath: broker.tokenPath,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+    expect(exitCode).toBe(2);
+    expect(broker.calls).toBe(0); // local rejection
+    expect(stderr).toMatch(/not a valid ATX/);
+  });
+
+  it('rejects an oversized ATX file (>256 KiB) before reading it into memory', async () => {
+    const atxPath = path.join(tmpDir, 'huge-atx.json');
+    fs.writeFileSync(atxPath, 'x'.repeat(300 * 1024));
+
+    const exitCode = await protect({
+      targetDir: scanDir,
+      grant: 'grant://opena2a-protect',
+      atxPath,
+      brokerSocket: broker.socketPath,
+      brokerTokenPath: broker.tokenPath,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+    expect(exitCode).toBe(2);
+    expect(broker.calls).toBe(0);
+    expect(stderr).toMatch(/expected <= /);
+  });
+
+  it('sanitizes ANSI control characters in the grant reference for stderr output', async () => {
+    broker.next = { status: 403, body: { error: 'denied' } };
+    const atxPath = writeAtxFixture(tmpDir);
+    const evilGrant = 'grant://x\x1b[2J\x1b[H\x1b[31mFAKE FATAL\x1b[0m';
+
+    const exitCode = await protect({
+      targetDir: scanDir,
+      grant: evilGrant,
+      atxPath,
+      brokerSocket: broker.socketPath,
+      brokerTokenPath: broker.tokenPath,
+      ci: true,
+      skipVerify: true,
+      skipSign: true,
+      skipGit: true,
+    });
+
+    expect(exitCode).toBe(3);
+    // The ESC byte (0x1b) MUST NOT appear in user-visible stderr.
+    expect(stderr).not.toMatch(/\x1b\[2J/);
+    expect(stderr).not.toContain('\x1b[2J');
+    // The cyan() color codes the CLI itself adds are wrapped around a sanitized
+    // grant string, so the FAKE FATAL text is still printed but the C0 escapes
+    // that anchor the cursor-home + clear-screen attack are gone.
+    expect(stderr).toMatch(/AAP broker denied/);
+  });
 });

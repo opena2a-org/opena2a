@@ -20,6 +20,8 @@ import * as os from 'node:os';
 export const DEFAULT_SOCKET_PATH = path.join(os.homedir(), '.secretless-ai', 'broker.sock');
 export const DEFAULT_TOKEN_PATH = path.join(os.homedir(), '.secretless-ai', 'broker.token');
 
+const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MiB cap on broker response
+
 export class BrokerGrantError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
     super(message);
@@ -31,6 +33,19 @@ export class GrantDeniedError extends BrokerGrantError {
   constructor(public readonly grant: string) {
     super(`grant denied: ${grant}`);
     this.name = 'GrantDeniedError';
+  }
+}
+
+/**
+ * A broker responded with an unexpected status (not 200/401/403). Carries the
+ * status code but NEVER the response body: AAP §6.6 says the consumer must not
+ * surface broker-side detail, and a misbehaving or impostor broker can return
+ * sensitive content (cross-tenant table names, queries, hosts) in a 5xx body.
+ */
+export class BrokerUnexpectedStatusError extends BrokerGrantError {
+  constructor(public readonly status: number) {
+    super(`broker returned unexpected status ${status}`);
+    this.name = 'BrokerUnexpectedStatusError';
   }
 }
 
@@ -109,7 +124,11 @@ export class BrokerClient {
     if (status === 401) {
       throw new BrokerGrantError('broker rejected token (401); rotate broker.token');
     }
-    throw new BrokerGrantError(`broker returned unexpected status ${status}: ${text}`);
+    // AAP §6.6: do NOT interpolate the broker response body into the error
+    // surface. A non-403 response can carry sensitive broker-side context
+    // (cross-tenant detail, host names, query strings) that the consumer must
+    // not echo. The status code alone is enough for the user to triage.
+    throw new BrokerUnexpectedStatusError(status);
   }
 
   private requestRaw(
@@ -124,8 +143,21 @@ export class BrokerClient {
 
       const req = http.request(requestOptions, (res) => {
         const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
+        let bytes = 0;
+        let oversized = false;
+        res.on('data', (c: Buffer) => {
+          bytes += c.length;
+          if (bytes > MAX_RESPONSE_BYTES) {
+            if (!oversized) {
+              oversized = true;
+              req.destroy(new Error('broker response exceeded 1MiB cap'));
+            }
+            return;
+          }
+          chunks.push(c);
+        });
         res.on('end', () => {
+          if (oversized) return; // req.destroy already rejected
           resolve({
             status: res.statusCode ?? 0,
             text: Buffer.concat(chunks).toString('utf-8'),

@@ -151,7 +151,31 @@ import { scanMcpCredentials, scanAiConfigFiles } from '../util/ai-config.js';
 import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { calculateSecurityScore } from '../util/scoring.js';
 import { runScoringChecks } from '../util/hygiene.js';
-import { BrokerClient, GrantDeniedError, BrokerGrantError } from '../aap/index.js';
+import { BrokerClient, GrantDeniedError, BrokerGrantError, BrokerUnexpectedStatusError, DEFAULT_SOCKET_PATH } from '../aap/index.js';
+
+/**
+ * Strip ANSI / C0 control characters from a string before writing to stderr.
+ * The grant reference and broker-supplied error text are user-controlled and
+ * could otherwise inject terminal escape sequences (clear-screen, cursor-home,
+ * fake error text) into the user's session.
+ */
+function sanitizeForTty(s: string): string {
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '?');
+}
+
+/**
+ * Defensive structural check on the user-supplied ATX before forwarding to the
+ * broker. The broker also validates, but the broker's 400 carries response
+ * text we don't want to surface (per AAP §6.6); a same-process check returns
+ * a clear actionable message instead.
+ */
+function isStructurallyValidAtx(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.atcVersion === 'string' && typeof v.agentId === 'string';
+}
+
+const MAX_ATX_FILE_BYTES = 256 * 1024; // 256 KiB
 
 // --- Core logic ---
 
@@ -1438,7 +1462,7 @@ function findProjectRoot(startPath: string): string | null {
  * Returns 0 on success (proceed with scan) or a non-zero exit code on failure.
  */
 async function aapGate(options: ProtectOptions, targetDir: string): Promise<number> {
-  const grant = options.grant!;
+  const grant = sanitizeForTty(options.grant!);
   const isJson = options.format === 'json';
 
   if (!options.atxPath) {
@@ -1447,13 +1471,56 @@ async function aapGate(options: ProtectOptions, targetDir: string): Promise<numb
     return 2;
   }
 
-  let atx: Record<string, unknown>;
+  // Size cap before read: a misconfigured path could otherwise slurp /var/log/syslog into memory.
+  try {
+    const stat = fs.statSync(options.atxPath);
+    if (stat.size > MAX_ATX_FILE_BYTES) {
+      process.stderr.write(red(`ATX file at ${options.atxPath} is ${stat.size} bytes; expected <= ${MAX_ATX_FILE_BYTES}\n`));
+      return 2;
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      process.stderr.write(red(`ATX file not found: ${options.atxPath}\n`));
+      process.stderr.write(dim('  Pass --atx <path> pointing to a JSON ATX issued by your AIM identity.\n'));
+    } else if (code === 'EACCES') {
+      process.stderr.write(red(`Permission denied reading ATX file: ${options.atxPath}\n`));
+    } else {
+      process.stderr.write(red(`Could not read ATX file at ${options.atxPath}\n`));
+    }
+    return 2;
+  }
+
+  let atx: unknown;
   try {
     const raw = fs.readFileSync(options.atxPath, 'utf-8');
     atx = JSON.parse(raw);
   } catch (err) {
     process.stderr.write(red(`Could not read ATX file at ${options.atxPath}: ${(err as Error).message}\n`));
     return 2;
+  }
+  if (!isStructurallyValidAtx(atx)) {
+    process.stderr.write(red(`ATX file at ${options.atxPath} is not a valid ATX object (missing atcVersion or agentId)\n`));
+    return 2;
+  }
+
+  // Defense-in-depth: if the broker socket exists, refuse to talk to one not owned
+  // by the current user. Same-uid attacker is already trusted on this box; a stale
+  // 0777 dir from a prior install (or a multi-user shared box) is the realistic
+  // concern. Skip when the user explicitly overrode the socket path: they opted in.
+  const socketPath = options.brokerSocket ?? DEFAULT_SOCKET_PATH;
+  if (!options.brokerSocket) {
+    try {
+      const stat = fs.statSync(socketPath);
+      const myUid = typeof process.getuid === 'function' ? process.getuid() : -1;
+      if (myUid !== -1 && stat.uid !== myUid) {
+        process.stderr.write(red(`Refusing to connect to broker socket ${socketPath}: owned by uid ${stat.uid}, expected ${myUid}\n`));
+        process.stderr.write(dim('  This protects against impostor brokers on multi-user systems.\n'));
+        return 4;
+      }
+    } catch {
+      // Socket missing is handled later as a connection failure with a clearer message.
+    }
   }
 
   const client = new BrokerClient({
@@ -1465,7 +1532,7 @@ async function aapGate(options: ProtectOptions, targetDir: string): Promise<numb
     await client.grant({
       agentId: options.grantAgentId ?? 'opena2a_protect_cli',
       atx,
-      grant,
+      grant: options.grant!,
       operation: { method: 'POST', path: '/protect/scan', query: { target: targetDir } },
     });
     if (!isJson && options.verbose) {
@@ -1477,9 +1544,9 @@ async function aapGate(options: ProtectOptions, targetDir: string): Promise<numb
       if (isJson) {
         process.stdout.write(JSON.stringify({
           status: 'aap-denied',
-          grant,
+          grant: options.grant,
           targetDir,
-          remediation: `Verify your broker policy binds ${grant} to your agent's trust class.`,
+          remediation: `Verify your broker policy binds ${options.grant} to your agent's trust class.`,
         }) + '\n');
       } else {
         process.stderr.write(red(`AAP broker denied ${grant}\n`));
@@ -1493,11 +1560,19 @@ async function aapGate(options: ProtectOptions, targetDir: string): Promise<numb
       }
       return 3;
     }
+    if (err instanceof BrokerUnexpectedStatusError) {
+      // Generic: never echo the broker's body. The status code triages this for the user;
+      // the broker operator can read the matching audit-log entry for the real reason.
+      process.stderr.write(red(`AAP broker returned status ${err.status}; refusing to proceed.\n`));
+      process.stderr.write(dim('  Reasons live only in the broker audit log (~/.secretless-ai/broker.audit.log).\n'));
+      return 6;
+    }
     if (err instanceof BrokerGrantError) {
-      process.stderr.write(red(`AAP broker unreachable: ${err.message}\n`));
+      process.stderr.write(red(`AAP broker unreachable: ${sanitizeForTty(err.message)}\n`));
       process.stderr.write(dim('  Start the broker:  secretless broker start\n'));
       return 4;
     }
-    throw err;
+    process.stderr.write(red(`AAP gate failed unexpectedly: ${sanitizeForTty((err as Error).message)}\n`));
+    return 5;
   }
 }

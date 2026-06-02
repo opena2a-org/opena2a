@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import {
   BrokerClient,
   BrokerGrantError,
+  BrokerUnexpectedStatusError,
   GrantDeniedError,
 } from '../../src/aap/client.js';
 
@@ -170,6 +171,66 @@ describe('BrokerClient', () => {
         operation: { method: 'POST', path: '/scan' },
       }),
     ).rejects.toThrow(/rotate broker.token/);
+  });
+
+  it('throws BrokerUnexpectedStatusError on 5xx WITHOUT echoing the broker body (AAP §6.6)', async () => {
+    // A misbehaving / impostor broker leaks cross-tenant detail in the 500 body.
+    broker.next = { status: 500, body: { error: 'db: cross-tenant lookup for tenantA failed', secret_host: 'api.internal.example' } };
+    const client = new BrokerClient({
+      socketPath: broker.socketPath,
+      tokenPath: broker.tokenPath,
+    });
+
+    try {
+      await client.grant({
+        agentId: 'a',
+        atx: {},
+        grant: 'grant://opena2a-protect',
+        operation: { method: 'POST', path: '/scan' },
+      });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(BrokerUnexpectedStatusError);
+      const unexpected = err as BrokerUnexpectedStatusError;
+      expect(unexpected.status).toBe(500);
+      // The body MUST NOT be in the error message — AAP §6.6.
+      expect(unexpected.message).not.toContain('cross-tenant');
+      expect(unexpected.message).not.toContain('tenantA');
+      expect(unexpected.message).not.toContain('api.internal.example');
+    }
+  });
+
+  it('caps the response body at 1MiB instead of unbounded buffering', async () => {
+    // The broker is trusted, but an impostor could try to OOM the CLI with a 5GB body.
+    // Force-stream a >1MiB stub and assert the client doesn't accept it as a success.
+    broker.server.removeAllListeners('request');
+    broker.server.on('request', (req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        // 1.5 MiB of junk inside a fake JSON envelope.
+        const junk = Buffer.alloc(1.5 * 1024 * 1024, 0x41);
+        res.write(Buffer.from('{"result":"', 'utf-8'));
+        res.write(junk);
+        res.write(Buffer.from('"}', 'utf-8'));
+        res.end();
+      });
+    });
+
+    const client = new BrokerClient({
+      socketPath: broker.socketPath,
+      tokenPath: broker.tokenPath,
+    });
+
+    await expect(
+      client.grant({
+        agentId: 'a',
+        atx: {},
+        grant: 'grant://opena2a-protect',
+        operation: { method: 'POST', path: '/scan' },
+      }),
+    ).rejects.toBeInstanceOf(BrokerGrantError);
   });
 
   it('throws BrokerGrantError when the broker socket is unreachable', async () => {

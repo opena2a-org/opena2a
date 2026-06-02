@@ -1,6 +1,7 @@
 export {
   BrokerClient,
   BrokerGrantError,
+  BrokerUnexpectedStatusError,
   GrantDeniedError,
   DEFAULT_SOCKET_PATH,
   DEFAULT_TOKEN_PATH,
