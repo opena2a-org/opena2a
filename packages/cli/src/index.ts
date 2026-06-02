@@ -9,13 +9,15 @@ import { printBanner, printCompact } from './branding.js';
 import { classifyInput, dispatchCommand } from './router.js';
 import { handleSearch } from './semantic/index.js';
 import { handleContext } from './contextual/index.js';
-import { handleNaturalLanguage, matchIntent } from './natural/index.js';
+import { handleNaturalLanguage, matchIntent, formatClassifierBlock } from './natural/index.js';
+import type { NaturalLanguageBlock } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY } from './adapters/registry.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
 import { HMA_CHECK_COUNT } from './util/canonical.js';
+import { gray } from './util/colors.js';
 import {
   isHelpRequest,
   printSubcommandHelp,
@@ -50,8 +52,27 @@ async function main(): Promise<void> {
   // or `opena2a telemetry off`. See README \u00a7Telemetry. Disclosure surfaces:
   // README, --version line, telemetry subcommand, opena2a.org/telemetry.
   const tele = await import('@opena2a/telemetry');
-  const { versionLine, runTelemetryCommand } = await import('@opena2a/cli-ui');
+  const { versionLine, runTelemetryCommand, verdictColor, divider, sanitizeForTerminal } =
+    await import('@opena2a/cli-ui');
   await tele.init({ tool: TOOL, version: VERSION });
+
+  // Render the CISO-readable block message when the NanoMind classifier
+  // refuses a natural-language input at the trust boundary (CHIEF-CPO). All
+  // composition (line content, tone->color, modelVersion sanitization) lives
+  // in the pure, unit-tested `formatClassifierBlock`; here we only inject the
+  // shared cli-ui primitives and write the result. Only the canonical
+  // attackClass / confidence / sanitized modelVersion are shown -- never the
+  // user's adversarial bytes or the daemon's evidence/remediation strings.
+  const renderClassifierBlock = (block: NaturalLanguageBlock): void => {
+    process.stdout.write(
+      formatClassifierBlock(block, {
+        verdictColor,
+        divider,
+        gray,
+        sanitize: sanitizeForTerminal,
+      }) + '\n',
+    );
+  };
 
   const program = new Command();
 
@@ -1166,11 +1187,13 @@ Valid actions:
         return;
 
       case 'natural': {
-        const command = await handleNaturalLanguage(classified.value);
-        if (command) {
-          const parts = command.replace('opena2a ', '').split(' ');
-          const exitCode = await dispatchCommand(parts[0], parts.slice(1), program.opts());
-          process.exitCode = exitCode;
+        const result = await handleNaturalLanguage(classified.value);
+        if (result !== null && typeof result !== 'string') {
+          renderClassifierBlock(result);
+          process.exitCode = 1;
+        } else if (typeof result === 'string') {
+          const parts = result.replace('opena2a ', '').split(' ');
+          process.exitCode = await dispatchCommand(parts[0], parts.slice(1), program.opts());
         }
         return;
       }
@@ -1205,12 +1228,22 @@ Valid actions:
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');
     const nlMatch = matchIntent(fullPhrase);
+    // The classifier gate lives inside handleNaturalLanguage and runs FIRST,
+    // so any phrase that reaches it (here, or the unconditional quoted/`~`
+    // path above) is classified before it can become a command. A phrase that
+    // misses matchIntent is NOT a trust-boundary hole: it falls through to
+    // Commander, which has no catch-all/default command, so an unknown first
+    // word errors out ("unknown command") and never dispatches. Only an
+    // already-registered first word bypasses this block -- and that is an
+    // explicit command invocation, not free-form text becoming a command.
     if (nlMatch) {
-      const command = await handleNaturalLanguage(fullPhrase);
-      if (command) {
-        const parts = command.replace('opena2a ', '').split(' ');
-        const exitCode = await dispatchCommand(parts[0], parts.slice(1), program.opts());
-        process.exitCode = exitCode;
+      const result = await handleNaturalLanguage(fullPhrase);
+      if (result !== null && typeof result !== 'string') {
+        renderClassifierBlock(result);
+        process.exitCode = 1;
+      } else if (typeof result === 'string') {
+        const parts = result.replace('opena2a ', '').split(' ');
+        process.exitCode = await dispatchCommand(parts[0], parts.slice(1), program.opts());
       }
       return;
     }
