@@ -13,6 +13,7 @@ import { handleNaturalLanguage, matchIntent, formatClassifierBlock } from './nat
 import type { NaturalLanguageBlock } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY } from './adapters/registry.js';
+import { CORE_COMMAND_NAMES } from './natural/known-commands.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
@@ -153,7 +154,7 @@ Smart Features:
   $ opena2a ~<query>             Search commands (e.g. opena2a ~drift)
   $ opena2a ?                    Get smart recommendations for your project
   $ opena2a find secrets         Natural language command matching
-  $ opena2a detect credentials   Natural language command matching
+  $ opena2a audit my project     Natural language command matching
 
 Telemetry:
   Anonymous usage telemetry is on. Disable: OPENA2A_TELEMETRY=off
@@ -1226,10 +1227,7 @@ Valid actions:
   // valid commands like `opena2a scan secure` always reach Commander.
   const KNOWN_COMMANDS = [
     ...Object.keys(ADAPTER_REGISTRY),
-    'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
-    'config', 'self-register', 'verify', 'baselines', 'benchmark',
-    'check', 'status', 'publish', 'detect', 'mcp', 'demo', 'setup', 'watch',
-    'trust', 'claim', 'create', 'login', 'logout', 'whoami',
+    ...CORE_COMMAND_NAMES,
   ];
   if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
     const fullPhrase = rawArgs.join(' ');
