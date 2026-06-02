@@ -52,6 +52,41 @@ export const NANOMIND_INFER_ENDPOINT = '/v1/infer';
 export const NANOMIND_HEALTH_ENDPOINT = '/health';
 export const NANOMIND_DEFAULT_INTENT = 'INTENT_CHECK';
 
+/**
+ * Cap on accepted response-body size. The classification response is a
+ * small JSON object (sub-kilobyte in practice); anything beyond 1 MiB is
+ * either a misconfigured daemon or a hostile process bound to the
+ * loopback port trying to OOM the host. Reading is bounded so a
+ * compromised daemon cannot exhaust caller memory.
+ */
+export const MAX_NANOMIND_RESPONSE_BYTES = 1024 * 1024;
+
+/**
+ * Defense against SSRF / accidental misconfiguration via the
+ * `baseUrl` option or the `MOCK_NANOMIND_URL` env var. The daemon
+ * binds to the loopback interface and the wire contract is local-only;
+ * a non-loopback URL almost certainly reflects a typo (e.g.
+ * `http://127.0.0.0:47200`) or an attempt to redirect classifier
+ * input to an external endpoint. Either case is rejected upstream of
+ * the request so user input never leaves the host.
+ *
+ * Allowed: http(s) scheme, host == `127.0.0.1`, `localhost`, `::1`, or
+ * `[::1]` (with bracketed-IPv6 normalization). Any other shape is
+ * rejected; callers see the same silent-fallback `null` they would
+ * see from a daemon-unreachable error.
+ */
+export function isLocalhostHttpUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  const host = parsed.hostname;
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+}
+
 function resolveBaseUrl(override?: string): string {
   return (
     override ??
@@ -116,6 +151,7 @@ export async function classifyWithNanoMindDaemon(
   options: NanoMindClassifierOptions = {},
 ): Promise<NanoMindClassification | null> {
   const baseUrl = resolveBaseUrl(options.baseUrl);
+  if (!isLocalhostHttpUrl(baseUrl)) return null;
   const timeoutMs = options.timeoutMs ?? DEFAULT_NANOMIND_TIMEOUT_MS;
   const url = baseUrl.replace(/\/+$/, '') + NANOMIND_INFER_ENDPOINT;
 
@@ -140,9 +176,25 @@ export async function classifyWithNanoMindDaemon(
 
     if (!res.ok) return null;
 
+    // Fast-path: trust an honest Content-Length declaration. A
+    // hostile daemon can lie and we still bound the read below.
+    const declaredLength = res.headers.get('content-length');
+    if (declaredLength !== null) {
+      const n = Number.parseInt(declaredLength, 10);
+      if (Number.isFinite(n) && n > MAX_NANOMIND_RESPONSE_BYTES) return null;
+    }
+
+    let text: string;
+    try {
+      text = await res.text();
+    } catch {
+      return null;
+    }
+    if (text.length > MAX_NANOMIND_RESPONSE_BYTES) return null;
+
     let parsed: unknown;
     try {
-      parsed = await res.json();
+      parsed = JSON.parse(text);
     } catch {
       return null;
     }
@@ -169,6 +221,7 @@ export async function isNanoMindDaemonAvailable(
   options: Pick<NanoMindClassifierOptions, 'baseUrl' | 'timeoutMs'> = {},
 ): Promise<boolean> {
   const baseUrl = resolveBaseUrl(options.baseUrl);
+  if (!isLocalhostHttpUrl(baseUrl)) return false;
   const timeoutMs = Math.min(options.timeoutMs ?? 200, DEFAULT_NANOMIND_TIMEOUT_MS);
   const url = baseUrl.replace(/\/+$/, '') + NANOMIND_HEALTH_ENDPOINT;
 

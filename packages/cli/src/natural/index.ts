@@ -4,9 +4,11 @@ export { llmFallback, handleNaturalLanguage } from './llm-fallback.js';
 export {
   classifyWithNanoMindDaemon,
   isNanoMindDaemonAvailable,
+  isLocalhostHttpUrl,
   mapInferResponseToClassification,
   DEFAULT_NANOMIND_DAEMON_URL,
   DEFAULT_NANOMIND_TIMEOUT_MS,
+  MAX_NANOMIND_RESPONSE_BYTES,
   NANOMIND_INFER_ENDPOINT,
   NANOMIND_HEALTH_ENDPOINT,
   NANOMIND_DEFAULT_INTENT,

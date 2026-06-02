@@ -31,8 +31,10 @@ import type { AddressInfo } from 'node:net';
 
 import {
   classifyWithNanoMindDaemon,
+  isLocalhostHttpUrl,
   isNanoMindDaemonAvailable,
   mapInferResponseToClassification,
+  MAX_NANOMIND_RESPONSE_BYTES,
   NANOMIND_INFER_ENDPOINT,
   NANOMIND_HEALTH_ENDPOINT,
 } from '../../src/natural/nanomind-classifier.js';
@@ -416,6 +418,112 @@ describe('isNanoMindDaemonAvailable', () => {
       timeoutMs: 100,
     });
     expect(ok).toBe(false);
+  });
+});
+
+describe('isLocalhostHttpUrl — SSRF defense', () => {
+  it('accepts the default daemon URL', () => {
+    expect(isLocalhostHttpUrl('http://127.0.0.1:47200')).toBe(true);
+  });
+
+  it('accepts localhost / ::1 / [::1] on http and https', () => {
+    expect(isLocalhostHttpUrl('http://localhost:47200')).toBe(true);
+    expect(isLocalhostHttpUrl('https://localhost:47200')).toBe(true);
+    expect(isLocalhostHttpUrl('http://[::1]:47200')).toBe(true);
+  });
+
+  it('rejects non-loopback hosts', () => {
+    expect(isLocalhostHttpUrl('http://example.com:47200')).toBe(false);
+    expect(isLocalhostHttpUrl('http://10.0.0.5:47200')).toBe(false);
+    expect(isLocalhostHttpUrl('http://169.254.169.254:80')).toBe(false);
+    expect(isLocalhostHttpUrl('http://127.0.0.0:47200')).toBe(false);
+  });
+
+  it('rejects non-http(s) schemes', () => {
+    expect(isLocalhostHttpUrl('file:///etc/passwd')).toBe(false);
+    expect(isLocalhostHttpUrl('ftp://localhost:47200')).toBe(false);
+    expect(isLocalhostHttpUrl('javascript:alert(1)')).toBe(false);
+  });
+
+  it('rejects malformed URLs', () => {
+    expect(isLocalhostHttpUrl('not-a-url')).toBe(false);
+    expect(isLocalhostHttpUrl('')).toBe(false);
+  });
+});
+
+describe('classifyWithNanoMindDaemon — SSRF refusal', () => {
+  it('returns null without making a network call when baseUrl is non-loopback', async () => {
+    const daemon = await spawn((_req, respond) => respond(200, validResponse()));
+    // Point at the mock listener but via an attacker-controlled hostname.
+    // Since the helper rejects non-loopback URLs, the listener must
+    // never see a request.
+    const result = await classifyWithNanoMindDaemon('hello', {
+      baseUrl: 'http://attacker.example:47200',
+    });
+    expect(result).toBeNull();
+    expect(daemon.receivedRequests).toHaveLength(0);
+  });
+
+  it('returns null for non-http scheme without making a network call', async () => {
+    const daemon = await spawn((_req, respond) => respond(200, validResponse()));
+    const result = await classifyWithNanoMindDaemon('hello', {
+      baseUrl: 'file:///etc/passwd',
+    });
+    expect(result).toBeNull();
+    expect(daemon.receivedRequests).toHaveLength(0);
+  });
+});
+
+describe('classifyWithNanoMindDaemon — response size cap', () => {
+  it('returns null when Content-Length declares a body over the cap', async () => {
+    const daemon = await spawn((_req, respond) => {
+      // Lie about content-length to assert the fast-path rejection
+      // fires before we read the body.
+      respond(200, validResponse());
+    });
+    // Need to use a custom handler that controls the Content-Length
+    // header directly. The spawn helper uses JSON serialization, so
+    // wire a raw http server here instead.
+    const { createServer } = await import('node:http');
+    const server = createServer((req, res) => {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.setHeader('content-length', String(MAX_NANOMIND_RESPONSE_BYTES + 1));
+      res.end(JSON.stringify(validResponse()));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const addr = server.address() as { port: number };
+    try {
+      const result = await classifyWithNanoMindDaemon('hello', {
+        baseUrl: `http://127.0.0.1:${addr.port}`,
+      });
+      expect(result).toBeNull();
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+    void daemon; // spawn cleanup runs in afterEach
+  });
+
+  it('returns null when the response body exceeds the cap regardless of Content-Length', async () => {
+    const { createServer } = await import('node:http');
+    const server = createServer((req, res) => {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      // Do NOT set content-length. Write an oversized payload that
+      // looks like JSON but blows the cap by megabytes of padding.
+      const padding = '0'.repeat(MAX_NANOMIND_RESPONSE_BYTES + 100);
+      res.end(`{"junk":"${padding}"}`);
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const addr = server.address() as { port: number };
+    try {
+      const result = await classifyWithNanoMindDaemon('hello', {
+        baseUrl: `http://127.0.0.1:${addr.port}`,
+      });
+      expect(result).toBeNull();
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });
 
