@@ -1,7 +1,7 @@
 parity=green
-score.opena2a=31
-score.hma=31
-severities.opena2a={"critical":4,"high":6,"low":1,"medium":3}
-severities.hma={"critical":4,"high":6,"low":1,"medium":3}
+score.opena2a=30
+score.hma=30
+severities.opena2a={"critical":5,"high":5,"low":1,"medium":3}
+severities.hma={"critical":5,"high":5,"low":1,"medium":3}
 checkIds.opena2a=AST-CRED-001,AST-INJECT-001,AST-PROMPT-001,AST-PROMPT-003,AST-PROMPT-004,DEP-001,GIT-001,SKILL-001,SKILL-003,SKILL-020,SKILL-022,SUPPLY-001,SUPPLY-002,SUPPLY-004
 checkIds.hma=AST-CRED-001,AST-INJECT-001,AST-PROMPT-001,AST-PROMPT-003,AST-PROMPT-004,DEP-001,GIT-001,SKILL-001,SKILL-003,SKILL-020,SKILL-022,SUPPLY-001,SUPPLY-002,SUPPLY-004

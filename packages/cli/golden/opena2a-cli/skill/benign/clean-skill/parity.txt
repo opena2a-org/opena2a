@@ -1,7 +1,7 @@
 parity=green
-score.opena2a=72
-score.hma=72
-severities.opena2a={"low":1,"medium":8}
-severities.hma={"low":1,"medium":8}
-checkIds.opena2a=AST-PROMPT-003,AST-PROMPT-004,DEP-001,GIT-001,SKILL-001,SKILL-020,SUPPLY-001,SUPPLY-002,SUPPLY-004
-checkIds.hma=AST-PROMPT-003,AST-PROMPT-004,DEP-001,GIT-001,SKILL-001,SKILL-020,SUPPLY-001,SUPPLY-002,SUPPLY-004
+score.opena2a=73
+score.hma=73
+severities.opena2a={"low":1,"medium":7}
+severities.hma={"low":1,"medium":7}
+checkIds.opena2a=AST-PROMPT-003,DEP-001,GIT-001,SKILL-001,SKILL-020,SUPPLY-001,SUPPLY-002,SUPPLY-004
+checkIds.hma=AST-PROMPT-003,DEP-001,GIT-001,SKILL-001,SKILL-020,SUPPLY-001,SUPPLY-002,SUPPLY-004
