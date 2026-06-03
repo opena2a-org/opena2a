@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
+import { createLineRebrander } from '../util/rebrand.js';
 
 export class SpawnAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -29,11 +30,12 @@ export class SpawnAdapter implements Adapter {
 
       let stdout = '';
       let stderr = '';
+      const rebrander = options.rebrand ? createLineRebrander() : null;
 
       child.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stdout += chunk;
-        if (!options.quiet) process.stdout.write(chunk);
+        if (!options.quiet) process.stdout.write(rebrander ? rebrander.push(chunk) : chunk);
       });
 
       child.stderr?.on('data', (data: Buffer) => {
@@ -43,10 +45,12 @@ export class SpawnAdapter implements Adapter {
       });
 
       child.on('error', (err) => {
+        if (rebrander && !options.quiet) process.stdout.write(rebrander.flush());
         resolve({ exitCode: 1, stdout, stderr: stderr + err.message });
       });
 
       child.on('close', (code) => {
+        if (rebrander && !options.quiet) process.stdout.write(rebrander.flush());
         resolve({ exitCode: code ?? 1, stdout, stderr });
       });
     });

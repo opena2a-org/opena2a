@@ -393,9 +393,18 @@ export async function dispatchCommand(
     adapterArgs.push('--contribute');
   }
 
+  // Rebrand bundled-tool command citations in delegated stdout to opena2a form
+  // (issue #190). Only for spawn adapters (ai-trust `registry`/`publish`) and
+  // never in JSON mode, where rewriting could corrupt machine-readable output.
+  const rebrand = adapter.config.method === 'spawn'
+    && globalOptions.format !== 'json'
+    && globalOptions.format !== 'sarif'
+    && !adapterArgs.includes('--json');
+
   const result = await adapter.run({
     args: adapterArgs,
     ...globalOptions,
+    rebrand,
     cwd: globalOptions.cwd ?? process.cwd(),
   });
 

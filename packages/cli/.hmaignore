@@ -1,0 +1,49 @@
+# .hmaignore -- opena2a-cli HackMyAgent self-scan suppressions.
+#
+# Every entry below was triaged as a FALSE POSITIVE on this tool's own code in
+# issue #188 (github.com/opena2a-org/opena2a/issues/188). No genuine finding is
+# suppressed. Do NOT add a real finding here; fix real findings in source.
+#
+# Format (per HMA scanner): lines starting with `#` are comments; bare lines are
+# path prefixes (relative to the scan target, e.g. `hackmyagent secure packages/cli`);
+# lines starting with `!` are check IDs suppressed across the scan.
+
+# --- Non-shipped dev/test code (npm `files` ships dist/ + README only) ---
+# Test fixtures intentionally embed the exact threat patterns the scanners look
+# for (eval() blocks, exec() calls) as INPUT, to assert detection fires. The
+# patterns are string literals fed to scanSkillFile/scanners, never executed.
+# Clears NEMO-009 (eval fixture) and the NEMO-008 test pairing.
+__tests__
+# Release-smoke harness spreads process.env into a child it fully controls to
+# run the deterministic corpus locally. Not shipped. Clears one NEMO-007.
+scripts
+
+# --- Subprocess launchers: full env passthrough is by design ---
+# The adapters spawn bundled OpenA2A tools, the user's own docker/python image,
+# or the agent under the user's control. The child is trusted and needs the
+# inherited environment (PATH, ANTHROPIC_API_KEY, registry bearer tokens) to
+# run; narrowing to PATH+NODE_ENV would break delegation. Not an env leak to an
+# adversary. Clears the adapters' NEMO-007.
+src/adapters
+# shield/llm-backend spawns the local `claude` CLI (haiku, single turn) for
+# optional defense-in-depth semantic analysis; it needs the inherited env to
+# authenticate. Same by-design rationale. Clears NEMO-007 here.
+src/shield/llm-backend.ts
+
+# --- File-scoped suppressions (heuristics that misfire on these files) ---
+# Scoped to the exact FP files rather than a project-wide `!CHECKID`, so a
+# genuine future NEMO-008/MEM-006 elsewhere in the tool still surfaces.
+#
+# NEMO-008 (TOCTOU) pairs a "verify"-like token in one file with an exec in an
+# UNRELATED file. The token here is the JSDoc line "selfcheck: Run integrity
+# checks" in shield.ts; opena2a-cli never verifies-then-executes the same
+# artifact (`guard` hashes files for tamper REPORTING and never runs them).
+src/commands/shield.ts
+# MEM-006 ("memory store without input sanitization") matches `.push()` into the
+# transient in-memory report arrays `tampered` (guard-snapshots.ts) and `diffs`
+# (guard.ts). Those arrays are built per-invocation purely for stdout rendering;
+# they are never persisted and never sent to an LLM, and the only input field is
+# a filePath drawn from the tool's own signature store. opena2a-cli has no
+# LLM-memory persistence layer for this check to protect.
+src/commands/guard.ts
+src/commands/guard-snapshots.ts

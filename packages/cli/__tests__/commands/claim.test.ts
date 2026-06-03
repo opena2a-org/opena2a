@@ -384,7 +384,10 @@ describe('claim', () => {
     expect(output).toContain('Claimed successfully');
     expect(output).toContain('claimed');
     expect(output).toContain('Next steps');
-    expect(output).toContain('hackmyagent scan');
+    // Next-step suggestion uses the opena2a-prefixed form, not the bundled
+    // tool name (issue #190).
+    expect(output).toContain('opena2a scan . --publish');
+    expect(output).not.toContain('hackmyagent scan');
     expect(output).toContain('badge.svg');
   });
 

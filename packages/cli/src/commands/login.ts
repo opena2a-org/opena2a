@@ -48,6 +48,26 @@ export async function login(options: LoginOptions): Promise<number> {
     return 0;
   }
 
+  // Device-code login requires an interactive browser to approve the code.
+  // In --ci / non-interactive mode there is no browser, so polling would block
+  // until the device code expires. Fail fast with a non-zero exit and point at
+  // the non-interactive auth path instead of hanging the CI job.
+  if (options.ci) {
+    if (isJson) {
+      console.log(JSON.stringify({
+        error: 'interactive_required',
+        message: 'Browser login is unavailable in --ci mode. Pass --api-key to server commands, or run "opena2a login" interactively to cache credentials.',
+        serverUrl,
+      }));
+    } else {
+      console.error('Browser login is unavailable in --ci mode (the device-code flow needs a browser).');
+      console.error('For non-interactive use, pass an API key directly to server commands, e.g.:');
+      console.error('  opena2a identity list --server cloud --api-key <key>');
+      console.error('Or run "opena2a login" once on a workstation to cache credentials in the keychain.');
+    }
+    return 1;
+  }
+
   const client = new AimClient(serverUrl);
 
   // Step 1: Check server health

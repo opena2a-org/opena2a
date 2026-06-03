@@ -10,6 +10,7 @@
  */
 
 import { bold, green, yellow, red, dim, cyan, gray } from '../util/colors.js';
+import { rebrandBundledCommands } from '../util/rebrand.js';
 import { Spinner } from '../util/spinner.js';
 import { validateRegistryUrl } from '../util/validate-registry-url.js';
 import type { TrustLookupResponse } from './atp-types.js';
@@ -324,7 +325,9 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     process.stdout.write(`  Scan Status:  ${statusColor(scan.status)}\n`);
     process.stdout.write(`  Findings:     ${scan.findingsCount ?? 0} (${scan.highCount ?? 0} high)\n`);
     if (scan.actionRequired) {
-      process.stdout.write(`  Action:       ${yellow(scan.actionRequired)}\n`);
+      // Registry data may cite a bundled tool (e.g. "hackmyagent scan <pkg>");
+      // show the opena2a-prefixed form the user actually has (issue #190).
+      process.stdout.write(`  Action:       ${yellow(rebrandBundledCommands(scan.actionRequired))}\n`);
     }
     process.stdout.write(`  Last Scanned: ${formatRelativeTime(scan.lastScannedAt)}\n`);
   } else {

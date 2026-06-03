@@ -1060,7 +1060,7 @@ function getContextualTip(
   if (report.securityScore >= 90) {
     return {
       text: `Strong baseline. HackMyAgent runs ${HMA_CHECK_COUNT} checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.`,
-      command: 'npx hackmyagent secure',
+      command: 'opena2a secure',
     };
   }
   if (report.securityScore >= 70) {

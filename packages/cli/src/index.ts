@@ -47,6 +47,12 @@ const telemetryStartedAt = new Map<string, number>();
 // command strings for the `check` next-steps footer (HMA_CHECK_COMMAND,
 // HMA_FULL_SCAN_HINT) are set per-spawn in spawnHmaCheck / spawnHmaCheckFromRouter.
 process.env.HMA_CLI_PREFIX = 'opena2a';
+// Forward-compat: ai-trust and cryptoserve do not yet honor a prefix env (so
+// opena2a-cli also rebrands their delegated stdout, see util/rebrand.ts), but
+// set the analogous vars now so the rebrand becomes a no-op once they do.
+// Tracked upstream in their repos.
+process.env.AI_TRUST_CLI_PREFIX = 'opena2a';
+process.env.CRYPTOSERVE_CLI_PREFIX = 'opena2a';
 
 async function main(): Promise<void> {
   // Tier-1 anonymous usage telemetry \u2014 default ON; opt-out via OPENA2A_TELEMETRY=off
@@ -180,8 +186,8 @@ Learn more: https://opena2a.org/docs`);
         if (args.includes('--help') || args.includes('-h')) {
           const pkgLabel = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
           process.stdout.write(`${name} - ${config.description}\n\n`);
-          process.stdout.write(`This command delegates to ${pkgLabel}.\n`);
-          process.stdout.write(`Run \`npx ${pkgLabel} --help\` for full subcommand documentation.\n\n`);
+          process.stdout.write(`This command runs the bundled ${pkgLabel} engine.\n`);
+          process.stdout.write(`See https://opena2a.org/docs for full documentation.\n\n`);
           // For Docker/Python adapters, don't delegate --help (would launch containers)
           if (config.method === 'docker' || config.method === 'python') {
             process.exitCode = 0;

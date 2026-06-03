@@ -723,9 +723,9 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
       if (zeroFactors.length > 0) {
         process.stdout.write('\n' + bold('  How to improve:') + '\n');
         const factorSuggestions: Record<string, string> = {
-          secretsManaged: 'npx secretless-ai init',
+          secretsManaged: 'opena2a secrets init',
           configSigned: 'opena2a guard sign',
-          skillsVerified: 'npx hackmyagent secure',
+          skillsVerified: 'opena2a secure',
           networkControlled: 'opena2a runtime --init',
           heartbeatMonitored: 'opena2a shield init',
         };
@@ -1601,10 +1601,10 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
 
 function getToolSuggestion(tool: string): string | null {
   switch (tool) {
-    case 'Secretless': return 'npx secretless-ai init';
+    case 'Secretless': return 'opena2a secrets init';
     case 'ConfigGuard': return 'opena2a guard sign';
     case 'ARP': return 'opena2a runtime --init';
-    case 'HMA': return 'npx hackmyagent secure';
+    case 'HMA': return 'opena2a secure';
     case 'Shield': return 'opena2a shield init';
     default: return null;
   }
