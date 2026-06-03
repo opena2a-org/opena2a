@@ -456,7 +456,7 @@ export async function claim(options: ClaimOptions): Promise<number> {
 
       process.stdout.write('\n');
       process.stdout.write(bold('Next steps:') + '\n');
-      process.stdout.write(`  Run \`hackmyagent scan . --publish\` to improve your trust score\n`);
+      process.stdout.write(`  Run \`opena2a scan . --publish\` to improve your trust score\n`);
 
       const badgeUrl = claimData.profileUrl.replace('/agents/', '/v1/trust/') + '/badge.svg';
       process.stdout.write(`  Add badge to README:\n`);

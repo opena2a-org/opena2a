@@ -1067,7 +1067,7 @@ function computeRecoverySummary(
         { name: 'Shield', score: shieldScore, weight: 0.22, action: 'opena2a shield init' },
         { name: 'Hygiene', score: trustScore, weight: 0.25, action: 'opena2a init' },
         { name: 'Config integrity', score: guardScore, weight: 0.12, action: 'opena2a guard sign' },
-        { name: 'HMA scan', score: hmaScore, weight: 0.08, action: 'npx hackmyagent scan' },
+        { name: 'HMA scan', score: hmaScore, weight: 0.08, action: 'opena2a scan' },
         { name: 'Shadow AI', score: shadowAiScore, weight: 0.15, action: 'opena2a detect' },
       ]
     : [

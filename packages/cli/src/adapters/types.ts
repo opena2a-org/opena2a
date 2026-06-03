@@ -33,6 +33,12 @@ export interface RunOptions {
   deep?: boolean;
   analm?: boolean;
   staticOnly?: boolean;
+  /**
+   * Rewrite bundled-tool command citations in the child's stdout to their
+   * `opena2a`-prefixed form (issue #190). Applied line-buffered so streaming is
+   * preserved. Callers must leave this off in --json mode.
+   */
+  rebrand?: boolean;
 }
 
 export interface RunResult {
