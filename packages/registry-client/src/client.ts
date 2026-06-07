@@ -177,9 +177,18 @@ export class RegistryClient {
     submission: ScanSubmission,
     signer?: FirstPartySigner,
   ): Promise<PublishResponse> {
-    const body = signer
-      ? { ...submission, ...signer.sign(submission) }
-      : submission;
+    let body: ScanSubmission = submission;
+    if (signer) {
+      // Stamping provenance must never crash a publish. If the signer rejects the scan
+      // (e.g. a non-integer score, a key that failed self-verification), fall through to an
+      // unsigned publish — the registry records it as community (the same fail-closed
+      // outcome as an unverifiable claim), rather than dropping the scan entirely.
+      try {
+        body = { ...submission, ...signer.sign(submission) };
+      } catch {
+        body = submission;
+      }
+    }
     const url = `${this.baseUrl}/api/v1/trust/publish`;
     return this.request<PublishResponse>(url, {
       method: "POST",

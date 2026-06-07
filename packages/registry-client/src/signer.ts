@@ -62,6 +62,32 @@ export function strongCanonical(
   return `${scan.name}|${version}|${scan.score}|${scan.maxScore}|${source}|${nonce}|${signedAt}`;
 }
 
+// The pipe is the canonical field delimiter; a field carrying one (or a newline / control
+// char) would make the signed string ambiguous. The Go server rebuilds the canonical from
+// the same parsed fields so an embedded pipe still byte-matches — this is defense in depth,
+// not a known exploit — but we refuse to sign such a field rather than emit an ambiguous
+// canonical.
+const CANONICAL_FIELD_FORBIDDEN = /[|\r\n\x00-\x1F\x7F]/;
+
+function assertCanonicalField(value: string, label: string): void {
+  if (CANONICAL_FIELD_FORBIDDEN.test(value)) {
+    throw new Error(
+      `FirstPartySigner: ${label} contains a pipe, newline, or control character and cannot be signed`,
+    );
+  }
+}
+
+// score/maxScore are formatted as bare integers in the canonical to match the Go server's
+// %d formatting. A float ("90.5"), NaN, or Infinity would diverge from the server byte
+// string and silently fail verification (→ community), so reject anything non-integer.
+function assertCanonicalInteger(value: number, label: string): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `FirstPartySigner: ${label} must be a non-negative integer to sign (got ${value})`,
+    );
+  }
+}
+
 /**
  * Coerce a raw Ed25519 secret into the 64-byte tweetnacl secret key (seed||publicKey).
  *
@@ -131,6 +157,24 @@ export class FirstPartySigner {
     this.source = options.source;
     this.generateNonce = options.generateNonce ?? randomUUID;
     this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
+
+    // Self-verify: sign a fixed probe and confirm it verifies under the derived public
+    // key. Catches a corrupted 64-byte secret key (whose embedded public-key bytes don't
+    // match the signing half) loudly at construction, instead of silently emitting
+    // signatures the server downgrades to community. (A 32-byte value that is actually a
+    // public key used as a seed still yields a self-consistent — but wrong — keypair; that
+    // case is undetectable here and is caught by the server allowlist, which fails closed.)
+    const probe = Buffer.from("opena2a-first-party-signer-selfcheck", "utf-8");
+    const ok = nacl.sign.detached.verify(
+      probe,
+      nacl.sign.detached(probe, this.secretKey),
+      Buffer.from(this.publicKeyB64, "base64"),
+    );
+    if (!ok) {
+      throw new Error(
+        "FirstPartySigner: secret key failed self-verification (corrupted or malformed key)",
+      );
+    }
   }
 
   /** The base64 public key to register in the server's FIRST_PARTY_SCANNER_PUBKEYS. */
@@ -143,7 +187,16 @@ export class FirstPartySigner {
    * signedAt, so a signer instance can sign many publishes.
    */
   sign(scan: SignableScan): FirstPartyProvenance {
+    // Validate the fields that flow into the signed canonical. score/maxScore must be
+    // integers (Go server formats with %d); name/version/nonce must not carry the pipe
+    // delimiter or control chars. We refuse to sign rather than emit a canonical the
+    // server would reject (silent community downgrade) or that is ambiguous.
+    assertCanonicalField(scan.name, "name");
+    assertCanonicalField(scan.version ?? "", "version");
+    assertCanonicalInteger(scan.score, "score");
+    assertCanonicalInteger(scan.maxScore, "maxScore");
     const nonce = this.generateNonce();
+    assertCanonicalField(nonce, "nonce");
     const signedAt = this.now();
     const canonical = strongCanonical(scan, this.source, nonce, signedAt);
     const signature = nacl.sign.detached(
@@ -205,7 +258,16 @@ export function firstPartySignerFromEnv(
 ): FirstPartySigner | undefined {
   const env = options.env ?? process.env;
   const keyEnv = options.keyEnv ?? "OPENA2A_FIRST_PARTY_KEY";
-  const secretKey = decodeSecretKey(env[keyEnv] ?? "");
-  if (!secretKey) return undefined;
-  return new FirstPartySigner({ secretKey, source: options.source });
+  // Fail closed: an unset, malformed, or unusable key yields undefined (the caller then
+  // publishes as community) rather than throwing. A misconfigured CI key must never crash
+  // a publish; the staging-verify step (rows landing as community instead of the claimed
+  // source) is where a wrong-but-valid key is caught. Use `new FirstPartySigner` directly
+  // if you want construction to throw on a bad key.
+  try {
+    const secretKey = decodeSecretKey(env[keyEnv] ?? "");
+    if (!secretKey) return undefined;
+    return new FirstPartySigner({ secretKey, source: options.source });
+  } catch {
+    return undefined;
+  }
 }
