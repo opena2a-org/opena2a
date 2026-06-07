@@ -14,3 +14,15 @@ export type {
   ScanSubmission,
   TrustAnswer,
 } from "./types.js";
+export {
+  FirstPartySigner,
+  firstPartySignerFromEnv,
+  decodeSecretKey,
+  strongCanonical,
+  type FirstPartyProvenance,
+  type FirstPartySignerOptions,
+  type SignableScan,
+  type SignerFromEnvOptions,
+  type PrivilegedSource,
+  type ScanSource,
+} from "./signer.js";

@@ -170,16 +170,27 @@ export async function submitScanReport(
   try {
     validateRegistryUrl(registryUrl);
 
-    const { RegistryClient, RegistryApiError } = await import('@opena2a/registry-client');
+    const { RegistryClient, RegistryApiError, firstPartySignerFromEnv } =
+      await import('@opena2a/registry-client');
     const client = new RegistryClient({
       baseUrl: registryUrl,
       userAgent: `opena2a-cli/${getVersion()}`,
       cache: false,
     });
 
+    // First-party provenance: only when run in our own CI with the signing key in the
+    // environment. End-user CLI runs (no key) publish as community — the safe default,
+    // since those scans genuinely ARE community. opena2a-cli is NOT first_party_scanner;
+    // its first-party context is `ci`.
+    const signer = firstPartySignerFromEnv({
+      keyEnv: 'OPENA2A_CLI_SIGNING_KEY',
+      source: 'ci',
+    });
+
     try {
       const result = await client.publishScan({
         name: report.packageName,
+        version: report.packageVersion,
         type: report.packageType,
         score: report.overallScore,
         maxScore: 100,
@@ -196,7 +207,7 @@ export async function submitScanReport(
         })),
         scanTimestamp: new Date().toISOString(),
         verdict: report.verdict === 'fail' ? 'fail' : report.verdict === 'warnings' ? 'warn' : 'pass',
-      });
+      }, signer);
 
       if (verbose && result.publishId) {
         process.stderr.write(dim(`Published to registry (${result.publishId.slice(0, 8)})\n`));

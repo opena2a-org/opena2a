@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/registry-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "HTTP client for the OpenA2A Registry trust query endpoints. Shared by hackmyagent, opena2a-cli, and ai-trust.",
   "type": "module",
   "main": "dist/index.js",
@@ -17,6 +17,9 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
