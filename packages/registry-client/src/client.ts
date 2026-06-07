@@ -11,6 +11,7 @@ import type {
   ScanSubmission,
   TrustAnswer,
 } from "./types.js";
+import type { FirstPartySigner } from "./signer.js";
 
 const NULL_UUID = "00000000-0000-0000-0000-000000000000";
 const MAX_PACKAGE_NAME_LENGTH = 512;
@@ -164,13 +165,25 @@ export class RegistryClient {
   }
 
   /**
-   * Publish scan results to the community registry. Never cached.
+   * Publish scan results to the registry. Never cached.
+   *
+   * Pass a {@link FirstPartySigner} to self-tag privileged provenance: the signer stamps
+   * `source`/`nonce`/`signedAt`/`signature`/`publicKey` onto the submission over the
+   * server's strong canonical. Without a signer the scan is published as community (the
+   * safe default). A signed claim the server can't verify (key not allowlisted, stale,
+   * replayed) is silently downgraded to community by the registry — never rejected.
    */
-  async publishScan(submission: ScanSubmission): Promise<PublishResponse> {
+  async publishScan(
+    submission: ScanSubmission,
+    signer?: FirstPartySigner,
+  ): Promise<PublishResponse> {
+    const body = signer
+      ? { ...submission, ...signer.sign(submission) }
+      : submission;
     const url = `${this.baseUrl}/api/v1/trust/publish`;
     return this.request<PublishResponse>(url, {
       method: "POST",
-      body: JSON.stringify(submission),
+      body: JSON.stringify(body),
       headers: { "Content-Type": "application/json" },
     });
   }

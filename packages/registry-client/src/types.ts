@@ -60,6 +60,11 @@ export interface ScanFinding {
 
 export interface ScanSubmission {
   name: string;
+  /**
+   * Package version. Bound by the first-party signature (it is part of the strong
+   * canonical), so it MUST match what is sent in the body. Omit for unversioned scans.
+   */
+  version?: string;
   score: number;
   maxScore: number;
   findings: ScanFinding[];
@@ -73,6 +78,17 @@ export interface ScanSubmission {
   durationMs?: number;
   signature?: string;
   publicKey?: string;
+  /**
+   * Provenance class. Privileged values (first_party_scanner|ci|partner) are honored by
+   * the registry ONLY when the publish is first-party-signed (source/nonce/signedAt bound
+   * by the signature). Anything else, or an unsigned privileged claim, is recorded as
+   * community (fail-closed). Omit for organic community scans.
+   */
+  source?: string;
+  /** Single-use anti-replay nonce, set by the first-party signer. */
+  nonce?: string;
+  /** Unix time in seconds at signing, set by the first-party signer. */
+  signedAt?: number;
 }
 
 export interface PublishResponse {

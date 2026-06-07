@@ -18,6 +18,9 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "typescript": "^5.7.0",
