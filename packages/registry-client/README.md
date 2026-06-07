@@ -8,7 +8,9 @@ HTTP client for the [OpenA2A Registry](https://api.oa2a.org) trust query endpoin
 npm install @opena2a/registry-client
 ```
 
-Consumers pin exact versions (no caret) per the OpenA2A supply-chain policy. Use `"@opena2a/registry-client": "0.1.0"` in `dependencies`.
+Consumers pin exact versions (no caret) per the OpenA2A supply-chain policy. Use `"@opena2a/registry-client": "0.2.0"` in `dependencies`.
+
+This package is ESM-only (`"type": "module"`). Consumers must use ESM (`"type": "module"` in their `package.json`, or `.mjs`/`.mts` files).
 
 ## Usage
 
@@ -55,6 +57,38 @@ const result = await client.publishScan({
   scanTimestamp: new Date().toISOString(),
 });
 ```
+
+Unsigned publishes are recorded by the registry as `community` (the safe default).
+
+### First-party provenance signing
+
+To self-tag a privileged provenance class (`first_party_scanner | ci | partner`), pass a
+`FirstPartySigner` as the second argument to `publishScan`. The signer stamps
+`source`/`nonce`/`signedAt`/`signature`/`publicKey` over the registry's strong canonical
+(`name|version|score|maxScore|source|nonce|signedAt`). The registry honors the claimed
+`source` only when the signing key is on its `FIRST_PARTY_SCANNER_PUBKEYS` allowlist and
+the signature, single-use nonce, and freshness window all check out — otherwise it fails
+closed and records the scan as `community` (no error).
+
+```ts
+import { RegistryClient, firstPartySignerFromEnv, FirstPartySigner } from "@opena2a/registry-client";
+
+// Recommended: build the signer from a secret in the environment (never commit the key).
+// Returns undefined when the env var is unset, so end-user runs publish as community.
+const signer = firstPartySignerFromEnv({
+  keyEnv: "MY_SCANNER_SIGNING_KEY", // base64/hex Ed25519 32-byte seed or 64-byte secret key
+  source: "first_party_scanner",
+});
+
+await client.publishScan(submission, signer);
+
+// Or construct directly from a raw key (e.g. for tests):
+const direct = new FirstPartySigner({ secretKey: seed32, source: "ci" });
+console.log(direct.publicKey); // base64 — register this in FIRST_PARTY_SCANNER_PUBKEYS
+```
+
+`signedAt` is stamped in Unix seconds; each `sign()` mints a fresh single-use nonce. The
+tweetnacl signature is byte-compatible with the registry's Go `crypto/ed25519` verifier.
 
 ## Design constraints
 
