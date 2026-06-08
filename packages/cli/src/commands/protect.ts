@@ -142,6 +142,8 @@ import {
   isPlaceholderSecretValue,
   refineCredentialLabel,
   loadCanonicalPatterns,
+  loadCanonicalAllowlist,
+  collectCatalogMatches,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
 import {
@@ -720,8 +722,10 @@ export async function protect(options: ProtectOptions): Promise<number> {
 async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]> {
   const matches: CredentialMatch[] = [];
   const seen = new Set<string>(); // dedup by value+file
-  // Loaded once before the walk so per-value label refinement stays synchronous.
+  // Loaded once before the walk so per-value label refinement + catalog
+  // detection stay synchronous inside the walkFiles callback.
   const catalog = await loadCanonicalPatterns();
+  const isKnownExample = await loadCanonicalAllowlist();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -784,6 +788,11 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
         }
       }
     }
+
+    // Breadth pass: catch the catalog credential types the local patterns miss
+    // (Slack, Stripe, Groq, GitLab, …), deduped against the local matches above
+    // so overlapping providers keep their richer local label (#130).
+    collectCatalogMatches(lines, filePath, catalog, isKnownExample, seen, matches);
   });
 
   return matches;
