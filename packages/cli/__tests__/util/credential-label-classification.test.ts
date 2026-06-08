@@ -85,19 +85,52 @@ describe('classifyCredentialValue', () => {
 describe('refineCredentialLabel', () => {
   const fallback = { title: 'OpenAI API Key', envVarPrefix: 'OPENAI_API_KEY' };
 
-  it('refines the CRED-002 catch-all to the precise provider', () => {
-    expect(refineCredentialLabel('CRED-002', OPENROUTER_KEY, fallback, catalog)).toEqual({
-      title: 'OpenRouter API Key',
-      envVarPrefix: 'OPENROUTER_API_KEY',
-    });
+  it('refines the CRED-002 catch-all to the precise provider, with matching prose', () => {
+    const refined = refineCredentialLabel('CRED-002', OPENROUTER_KEY, fallback, catalog);
+    expect(refined.title).toBe('OpenRouter API Key');
+    expect(refined.envVarPrefix).toBe('OPENROUTER_API_KEY');
+    // Prose is provider-neutral and must NOT name a different provider than the title.
+    expect(refined.explanation).toContain('OpenRouter API Key');
+    expect(refined.explanation).not.toMatch(/OpenAI/);
+    expect(refined.businessImpact).not.toMatch(/OpenAI/);
   });
 
-  it('refines a CRED-004 generic assignment value (Stripe) to the precise provider', () => {
+  it('refines a CRED-004 generic assignment value (Stripe) to the precise provider, with matching prose', () => {
     const generic = { title: 'Generic API Key in Assignment', envVarPrefix: 'API_KEY' };
-    expect(refineCredentialLabel('CRED-004', STRIPE_LIVE_KEY, generic, catalog)).toEqual({
-      title: 'Stripe Live Key',
-      envVarPrefix: 'STRIPE_SECRET_KEY',
-    });
+    const refined = refineCredentialLabel('CRED-004', STRIPE_LIVE_KEY, generic, catalog);
+    expect(refined.title).toBe('Stripe Live Key');
+    expect(refined.envVarPrefix).toBe('STRIPE_SECRET_KEY');
+    // The generic "Generic API key …" prose must be replaced so it names Stripe.
+    expect(refined.explanation).toContain('Stripe Live Key');
+    expect(refined.explanation).not.toMatch(/Generic API key/i);
+  });
+
+  it('does not name a provider in the prose that contradicts the refined title (regression P2-1)', () => {
+    // P2-1 from the 0.10.8 release test: refined Type "OpenRouter API Key" shipped
+    // with "Why: OpenAI API key … grants full OpenAI API access" — a self-contradiction.
+    // For every refinable catch-all whose value resolves to a DIFFERENT provider,
+    // the refined prose must reference the refined title and no other vendor.
+    const cases: Array<{ id: string; value: string; expectTitle: string; forbid: RegExp }> = [
+      { id: 'CRED-002', value: OPENROUTER_KEY, expectTitle: 'OpenRouter API Key', forbid: /OpenAI/ },
+      { id: 'CRED-004', value: STRIPE_LIVE_KEY, expectTitle: 'Stripe Live Key', forbid: /OpenAI|Generic API key/i },
+      { id: 'CRED-004', value: STRIPE_TEST_KEY, expectTitle: 'Stripe Test Key', forbid: /OpenAI|Generic API key/i },
+    ];
+    for (const c of cases) {
+      const refined = refineCredentialLabel(c.id, c.value, { title: 'OpenAI API Key', envVarPrefix: 'OPENAI_API_KEY' }, catalog);
+      expect(refined.title).toBe(c.expectTitle);
+      expect(refined.explanation).toBeDefined();
+      expect(refined.explanation).toContain(c.expectTitle);
+      expect(refined.explanation).not.toMatch(c.forbid);
+      expect(refined.businessImpact).not.toMatch(/OpenAI/);
+    }
+  });
+
+  it('leaves prose absent (caller keeps local copy) when the title is unchanged', () => {
+    // CRED-002 fallback already titled "OpenAI API Key"; a value the catalog also
+    // calls "OpenAI API Key" produces no title change, so no prose override.
+    const same = refineCredentialLabel('CRED-002', 'sk-test-short', fallback, catalog);
+    expect(same).toEqual(fallback);
+    expect((same as { explanation?: string }).explanation).toBeUndefined();
   });
 
   it('keeps the local label for non-refinable specific patterns', () => {
@@ -162,5 +195,28 @@ describe('quickCredentialScan label routing (integration)', () => {
     expect(m).toBeDefined();
     expect(m!.title).toMatch(/OpenAI/);
     expect(m!.envVar).toBe('OPENAI_API_KEY');
+  });
+
+  it('renders explanation/impact prose that matches the refined title (regression P2-1)', async () => {
+    // The rendered "Why:"/"Impact:" come from match.explanation/businessImpact.
+    // An OpenRouter key must not carry "OpenAI" rationale.
+    write('llm.js', `const apiKey = "${OPENROUTER_KEY}";`);
+    const matches = await quickCredentialScan(tmpDir);
+    const m = matches.find(x => x.value === OPENROUTER_KEY);
+    expect(m).toBeDefined();
+    expect(m!.title).toBe('OpenRouter API Key');
+    expect(m!.explanation).toBeDefined();
+    expect(m!.explanation).toContain('OpenRouter API Key');
+    expect(m!.explanation).not.toMatch(/OpenAI/);
+    expect(m!.businessImpact).not.toMatch(/OpenAI/);
+  });
+
+  it('keeps rich local Anthropic prose (no refinement → no neutralization)', async () => {
+    write('anthropic.js', `const apiKey = "${ANTHROPIC_KEY}";`);
+    const matches = await quickCredentialScan(tmpDir);
+    const m = matches.find(x => x.value === ANTHROPIC_KEY);
+    expect(m).toBeDefined();
+    // CRED-001 is not refinable; its specific copy is preserved verbatim.
+    expect(m!.explanation).toContain('Claude models');
   });
 });

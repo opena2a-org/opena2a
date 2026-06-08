@@ -776,8 +776,10 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
             envVar,
             severity: pattern.severity,
             title: refined.title,
-            explanation: pattern.explanation,
-            businessImpact: pattern.businessImpact,
+            // Refined prose is present only when the title changed; otherwise
+            // keep the local pattern's richer provider-specific copy.
+            explanation: refined.explanation ?? pattern.explanation,
+            businessImpact: refined.businessImpact ?? pattern.businessImpact,
           });
         }
       }
