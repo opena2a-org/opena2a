@@ -33,6 +33,19 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   // ── Cloud Providers (category: cloud) ─────────────────────────────────
   { id: 'aws-access', name: 'AWS Access Key', regex: /AKIA[0-9A-Z]{16}/, envPrefix: 'AWS_ACCESS_KEY_ID', category: 'cloud' },
   { id: 'aws-sts', name: 'AWS STS Temporary Key', regex: /ASIA[0-9A-Z]{16}/, envPrefix: 'AWS_ACCESS_KEY_ID', category: 'cloud' },
+  // AWS secret access key: 40-char [A-Za-z0-9/+] with NO prefix, so it must be
+  // name-gated or it floods on every base64 blob/hash. The credential NAME is
+  // matched first and the VALUE is captured in group 1 (a forward scan — a
+  // variable-width lookbehind was measured >50ms on adversarial input). Two name
+  // anchors, both ending in `key`: `aws … secret|private … key`, and the
+  // AWS-specific full phrase `secret[_ ]access[_ ]key` (catches JS-SDK
+  // `secretAccessKey` and Terraform `secret_access_key` with no nearby `aws`).
+  // The `key` token rejects `aws secretsmanager arn:` / etag false positives.
+  // Consumers that need just the value read match[1]; `.replace`-based maskers
+  // over-mask the name token (fail-safe). The `wJalr…EXAMPLEKEY` docs value
+  // (which contains EXAMPLE) and `xxx`/`example`/… placeholders are caught by
+  // PLACEHOLDER_INDICATORS, so isKnownExample suppresses them.
+  { id: 'aws-secret', name: 'AWS Secret Access Key', regex: /(?:aws.{0,16}(?:secret|private).{0,16}key|secret[_\s.-]?access[_\s.-]?key)["'\s]*[:=]+>?\s*["']?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+])/i, envPrefix: 'AWS_SECRET_ACCESS_KEY', category: 'cloud' },
   { id: 'gcp-service-account', name: 'GCP Service Account JSON', regex: /"type"\s*:\s*"service_account"/, envPrefix: 'GOOGLE_APPLICATION_CREDENTIALS', category: 'cloud' },
   { id: 'digitalocean', name: 'DigitalOcean PAT', regex: /dop_v1_[a-f0-9]{64}/, envPrefix: 'DIGITALOCEAN_TOKEN', category: 'cloud' },
   { id: 'heroku', name: 'Heroku API Key', regex: /HRKU-[a-zA-Z0-9_-]{30,}/, envPrefix: 'HEROKU_API_KEY', category: 'cloud' },

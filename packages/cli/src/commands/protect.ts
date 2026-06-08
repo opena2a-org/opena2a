@@ -139,6 +139,7 @@ import {
   SKIP_DIRS,
   SKIP_EXTENSIONS,
   walkFiles,
+  isPlaceholderSecretValue,
   type CredentialPattern,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
@@ -742,6 +743,10 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
         while ((match = re.exec(line)) !== null) {
           // For capture group patterns, use group 1; otherwise full match
           const value = match[1] ?? match[0];
+          // Name-gated patterns (e.g. AWS secret key) match a prefix-less value
+          // by name only, so drop placeholder / low-entropy values (the AWS docs
+          // `wJalr…EXAMPLEKEY`, `xxxx…`) — not real exposures.
+          if (pattern.nameGated && isPlaceholderSecretValue(value)) continue;
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;

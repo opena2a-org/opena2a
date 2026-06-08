@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { quickCredentialScan, SKIP_FILENAME_PATTERNS, TEMPLATE_ENV_FILES } from '../../src/util/credential-patterns.js';
+import { quickCredentialScan, SKIP_FILENAME_PATTERNS, TEMPLATE_ENV_FILES, isPlaceholderSecretValue } from '../../src/util/credential-patterns.js';
 
 // Real-shaped placeholder credentials. These are the values that triggered
 // the 7 false positives surfaced during the 2026-04-29 `opena2a review` audit
@@ -218,6 +218,47 @@ describe('quickCredentialScan: template env files are skipped (placeholders, not
     const matches = quickCredentialScan(tmpDir);
     expect(matches.length).toBeGreaterThan(0);
     expect(matches.every(m => !m.filePath.includes('.env.example'))).toBe(true);
+  });
+});
+
+describe('name-gated AWS secret access key (CRED-005)', () => {
+  const REAL = 'abcdEFGH1234ijklMNOP5678qrstUVWX90ABcdef'; // 40-char, high-entropy
+
+  it('flags a real AWS secret keyed by name', () => {
+    write('creds.py', `aws_secret_access_key = "${REAL}"\n`);
+    const m = quickCredentialScan(tmpDir);
+    expect(m.length).toBeGreaterThan(0);
+    expect(m[0].findingId).toBe('CRED-005');
+  });
+
+  it('flags JS-SDK `secretAccessKey` and Terraform `secret_access_key` (no nearby "aws")', () => {
+    write('client.js', `const c = new AWS.S3({ secretAccessKey: "${REAL}" });\n`);
+    write('main.tf', `provider "aws" {\n  secret_access_key = "${REAL}"\n}\n`);
+    expect(quickCredentialScan(tmpDir).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does NOT flag the AWS docs example secret (contains EXAMPLE)', () => {
+    write('docs.env', 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n');
+    expect(quickCredentialScan(tmpDir).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
+  });
+
+  it('does NOT flag low-entropy sentinels (40 x\'s / 40 zeros)', () => {
+    write('a.py', `aws_secret_access_key = "${'x'.repeat(40)}"\n`);
+    write('b.py', `aws_secret_access_key = "${'0'.repeat(40)}"\n`);
+    expect(quickCredentialScan(tmpDir).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
+  });
+
+  it('does NOT flag a bare 40-char blob with no credential name', () => {
+    write('blob.js', `const data = "${REAL}";\n`);
+    expect(quickCredentialScan(tmpDir).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
+  });
+
+  it('isPlaceholderSecretValue: catches EXAMPLE/sentinel, passes real keys', () => {
+    expect(isPlaceholderSecretValue('wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe(true);
+    expect(isPlaceholderSecretValue('x'.repeat(40))).toBe(true);
+    expect(isPlaceholderSecretValue('0'.repeat(40))).toBe(true);
+    expect(isPlaceholderSecretValue('YOUR_SECRET_KEY_HERE')).toBe(true);
+    expect(isPlaceholderSecretValue(REAL)).toBe(false);
   });
 });
 
