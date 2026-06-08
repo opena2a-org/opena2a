@@ -92,3 +92,87 @@ describe('createLineRebrander (streaming, line-buffered)', () => {
     expect(r.flush()).toBe('tail without newline: opena2a registry x');
   });
 });
+
+// issue #191: import-adapter (secretless-ai) + python-adapter (cryptoserve)
+// help/usage surfaces, plus the adversarial non-citation cases that a bare
+// program-name rule would corrupt.
+describe('rebrandBundledCommands — #191 import/python surfaces', () => {
+  describe('secretless-ai (all verbs -> opena2a secrets)', () => {
+    it('rewrites verbs (bare and npx) to opena2a secrets <verb>', () => {
+      expect(rebrandBundledCommands('npx secretless-ai scan')).toBe('opena2a secrets scan');
+      expect(rebrandBundledCommands('secretless-ai init')).toBe('opena2a secrets init');
+      expect(rebrandBundledCommands('secretless-ai verify --all')).toBe('opena2a secrets verify --all');
+    });
+
+    it('keeps hyphenated subcommands intact (longest-first)', () => {
+      expect(rebrandBundledCommands('secretless-ai scan-history')).toBe('opena2a secrets scan-history');
+      expect(rebrandBundledCommands('secretless-ai clean-history')).toBe('opena2a secrets clean-history');
+    });
+  });
+
+  describe('cryptoserve (all verbs -> opena2a crypto)', () => {
+    it('rewrites verbs (bare and npx) to opena2a crypto <verb>', () => {
+      expect(rebrandBundledCommands('cryptoserve login')).toBe('opena2a crypto login');
+      expect(rebrandBundledCommands('cryptoserve scan . --push')).toBe('opena2a crypto scan . --push');
+      expect(rebrandBundledCommands('cryptoserve hash-password')).toBe('opena2a crypto hash-password');
+    });
+
+    it('rewrites the bare-program Usage line (placeholder, not a real verb)', () => {
+      expect(rebrandBundledCommands('  Usage: cryptoserve <command> [options]'))
+        .toBe('  Usage: opena2a crypto <command> [options]');
+    });
+  });
+
+  describe('hackmyagent check verb (added in #191)', () => {
+    it('rewrites check to opena2a check', () => {
+      expect(rebrandBundledCommands('$ hackmyagent check <package>')).toBe('$ opena2a check <package>');
+    });
+  });
+
+  describe('ADVERSARIAL — must NOT corrupt non-citation tool mentions', () => {
+    it('preserves a Python import statement (verbatim from cryptoserve help)', () => {
+      // `import` is not a cryptoserve CLI verb, so `cryptoserve import` never matches.
+      const code = 'from cryptoserve import CryptoServe';
+      expect(rebrandBundledCommands(code)).toBe(code);
+    });
+
+    it('preserves a class constructor reference', () => {
+      const code = 'crypto = CryptoServe(app_name="my-app")';
+      expect(rebrandBundledCommands(code)).toBe(code);
+    });
+
+    it('preserves package-install lines', () => {
+      expect(rebrandBundledCommands('npm install secretless-ai')).toBe('npm install secretless-ai');
+      expect(rebrandBundledCommands('pip install cryptoserve')).toBe('pip install cryptoserve');
+      expect(rebrandBundledCommands('npm i -g hackmyagent')).toBe('npm i -g hackmyagent');
+    });
+
+    it('preserves JS module specifiers (a quote, not a verb, follows the name)', () => {
+      const code = "import { AttackScanner } from 'hackmyagent';";
+      expect(rebrandBundledCommands(code)).toBe(code);
+      const code2 = "const sl = require('secretless-ai');";
+      expect(rebrandBundledCommands(code2)).toBe(code2);
+    });
+
+    it('preserves bare program mentions with no following verb', () => {
+      expect(rebrandBundledCommands('Powered by cryptoserve.')).toBe('Powered by cryptoserve.');
+      expect(rebrandBundledCommands('See the secretless-ai docs')).toBe('See the secretless-ai docs');
+    });
+
+    it('does NOT rewrite a tool token embedded in a larger token (left anchor)', () => {
+      // `\b` would match inside these at the `-`/`/` boundary; the lookbehind
+      // requires a true token start, so a scoped/forked name or path survives.
+      expect(rebrandBundledCommands('my-secretless-ai scan')).toBe('my-secretless-ai scan');
+      expect(rebrandBundledCommands('@myorg/secretless-ai scan')).toBe('@myorg/secretless-ai scan');
+      expect(rebrandBundledCommands('tools/cryptoserve scan')).toBe('tools/cryptoserve scan');
+      expect(rebrandBundledCommands('my-ai-trust check x')).toBe('my-ai-trust check x');
+    });
+
+    it('does NOT half-rewrite a real-but-unmapped hyphenated subcommand (right anchor)', () => {
+      // `hackmyagent check-metadata` is a real HMA verb opena2a does not expose;
+      // it must stay intact, not become the nonexistent `opena2a check-metadata`.
+      expect(rebrandBundledCommands('hackmyagent check-metadata')).toBe('hackmyagent check-metadata');
+      expect(rebrandBundledCommands('hackmyagent scan-soul')).toBe('hackmyagent scan-soul');
+    });
+  });
+});

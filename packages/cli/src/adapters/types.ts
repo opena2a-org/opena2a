@@ -19,6 +19,13 @@ export interface AdapterConfig {
   description: string;
   /** Commander aliases for this command (e.g. scan exposes `secure` so HMA's prefix-substituted Next Steps text resolves). */
   aliases?: string[];
+  /**
+   * Whether the bundled tool accepts a `--format <fmt>` flag for structured
+   * output. Default (undefined) = true. Set false for tools that reject it so
+   * the router does not inject `--format json` and crash the delegated call
+   * (e.g. `ai-trust check` has no `--format`/`--json` option -- issue #191).
+   */
+  acceptsFormatFlag?: boolean;
 }
 
 export interface RunOptions {
