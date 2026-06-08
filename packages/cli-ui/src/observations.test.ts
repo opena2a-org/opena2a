@@ -149,6 +149,41 @@ describe('buildVerdict', () => {
     expect(v.message).toContain('project');
   });
 
+  it('remote needs-fix verdict drops the `secure --fix` suffix (third-party code)', () => {
+    const local = buildVerdict(
+      { critical: 0, high: 0, medium: 1, low: 0 },
+      { kind: 'library' },
+      [{ severity: 'medium', name: 'Weak rate limit', file: 'api.ts' }],
+    );
+    const remote = buildVerdict(
+      { critical: 0, high: 0, medium: 1, low: 0 },
+      { kind: 'library', remote: true },
+      [{ severity: 'medium', name: 'Weak rate limit', file: 'api.ts' }],
+    );
+    expect(local.message).toContain('secure --fix');
+    // The user does not own a downloaded package's code — never tell them to fix it.
+    expect(remote.message).not.toContain('secure --fix');
+    expect(remote.message).toMatch(/review .* before depending on it/i);
+    expect(remote.status).toBe('needs-fix');
+  });
+
+  it('remote critical/high verdicts use depend/review guidance, not self-fix', () => {
+    const crit = buildVerdict(
+      { critical: 1, high: 0, medium: 0, low: 0 },
+      { kind: 'library', remote: true },
+      [{ severity: 'critical', name: 'RCE', file: 'index.js' }],
+    );
+    const high = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'library', remote: true },
+      [{ severity: 'high', name: 'Unsafe eval', file: 'index.js' }],
+    );
+    expect(crit.message).not.toContain('production'); // not the local "Fix before using in production"
+    expect(crit.message).toMatch(/do not depend on this package/i);
+    expect(high.message).not.toContain('rescan'); // not the local "Fix, then rescan"
+    expect(high.message).toMatch(/review before depending|vetted version/i);
+  });
+
   it('falls back to severity-count when findings array not passed', () => {
     const v = buildVerdict({ critical: 2, high: 0, medium: 0, low: 0 }, { kind: 'library' });
     expect(v.status).toBe('unsafe');

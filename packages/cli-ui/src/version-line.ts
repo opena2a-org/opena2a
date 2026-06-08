@@ -31,13 +31,49 @@ export interface VersionLineInput {
  */
 export function versionLine(input: VersionLineInput): string {
   const head = `${input.tool} ${input.version}`;
-  if (!input.telemetry) return head;
-  const state = input.telemetry.enabled ? chalk.green("on") : chalk.dim("off");
-  const policy = input.telemetry.policyURL.replace(/^https?:\/\//, "");
-  const tail = chalk.dim(
+  const tail = telemetryDisclosure(input.telemetry);
+  return tail ? `${head}\n${tail}` : head;
+}
+
+/**
+ * Stream-split variant of {@link versionLine}.
+ *
+ * Returns the bare version on `stdout` and the telemetry disclosure on
+ * `stderr` (or `null` when no telemetry status is supplied). Wire it so a
+ * script doing `tool --version` (captures stdout) gets a clean, single-line
+ * version string, while the privacy disclosure still prints to the terminal
+ * via stderr — it remains a disclosure surface, just off the parseable stream.
+ *
+ *   const v = versionLineParts({ tool, version, telemetry: tele.status() });
+ *   program.option("-v, --version", "Output the version number");
+ *   program.on("option:version", () => {
+ *     process.stdout.write(v.stdout + "\n");
+ *     if (v.stderr) process.stderr.write(v.stderr + "\n");
+ *     process.exit(0);
+ *   });
+ *
+ * Use the manual `option:version` handler rather than Commander's `.version()`
+ * so the two streams stay separate and ordering is deterministic — Commander's
+ * built-in handler writes everything to stdout and exits.
+ */
+export function versionLineParts(input: VersionLineInput): {
+  stdout: string;
+  stderr: string | null;
+} {
+  return {
+    stdout: `${input.tool} ${input.version}`,
+    stderr: telemetryDisclosure(input.telemetry),
+  };
+}
+
+/** The "Telemetry: on/off (opt-out: …)" disclosure line, or null when no status. */
+function telemetryDisclosure(telemetry?: TelemetryStatusLike): string | null {
+  if (!telemetry) return null;
+  const state = telemetry.enabled ? chalk.green("on") : chalk.dim("off");
+  const policy = telemetry.policyURL.replace(/^https?:\/\//, "");
+  return chalk.dim(
     `Telemetry: ${state}${chalk.dim(
       ` (opt-out: OPENA2A_TELEMETRY=off  •  details: ${policy})`,
     )}`,
   );
-  return `${head}\n${tail}`;
 }

@@ -71,6 +71,7 @@ export {
 } from "./next-steps.js";
 export {
   versionLine,
+  versionLineParts,
   type TelemetryStatusLike,
   type VersionLineInput,
 } from "./version-line.js";
