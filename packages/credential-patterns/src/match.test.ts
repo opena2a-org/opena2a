@@ -362,3 +362,45 @@ describe('findRealMatch (0.1.1 — multi-real per-pattern-category coverage)', (
     });
   }
 });
+
+describe('isKnownExample — name-gated value-awareness + entropy floor (aws-secret 0.1.2)', () => {
+  const awsSecret = CREDENTIAL_PATTERNS.find(p => p.id === 'aws-secret')!;
+  const REAL = 'abcdEFGH1234ijklMNOP5678qrstUVWX90ABcdef'; // 40-char, high entropy
+  const matchOf = (line: string) =>
+    line.match(new RegExp(awsSecret.regex.source, awsSecret.regex.flags + 'g'))
+      ? [...line.matchAll(new RegExp(awsSecret.regex.source, awsSecret.regex.flags + 'g'))][0]
+      : null;
+
+  it('aws-secret pattern exists with a capturing group for the value', () => {
+    expect(awsSecret).toBeTruthy();
+    const m = matchOf(`aws_secret_access_key = "${REAL}"`);
+    expect(m?.[1]).toBe(REAL);
+  });
+
+  it('a real name-gated AWS secret is NOT a known example (findRealMatch returns it)', () => {
+    const line = `aws_secret_access_key = "${REAL}"`;
+    expect(isKnownExample(line, matchOf(line)!)).toBe(false);
+    expect(findRealMatch(line, awsSecret)).not.toBeNull();
+  });
+
+  it('the AWS docs example secret IS suppressed via the captured value (KNOWN_EXAMPLE_KEYS)', () => {
+    const line = 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+    expect(isKnownExample(line, matchOf(line)!)).toBe(true);
+    expect(findRealMatch(line, awsSecret)).toBeNull();
+  });
+
+  it('low-entropy sentinels (40 zeros / DEADBEEF run) are suppressed by the entropy floor', () => {
+    for (const v of ['0'.repeat(40), 'DEADBEEF'.repeat(5)]) {
+      const line = `aws_secret_access_key = "${v}"`;
+      expect(isKnownExample(line, matchOf(line)!), `value=${v}`).toBe(true);
+      expect(findRealMatch(line, awsSecret)).toBeNull();
+    }
+  });
+
+  it('value-only patterns (no group 1) are unaffected — a real AKIA key still matches', () => {
+    const akia = CREDENTIAL_PATTERNS.find(p => p.id === 'aws-access')!;
+    const line = 'AKIAREALKEY1234567890';
+    const m = line.match(akia.regex)!;
+    expect(isKnownExample(line, m)).toBe(false); // match[1] undefined -> match[0], unchanged
+  });
+});

@@ -2,6 +2,19 @@
 
 All notable changes to `@opena2a/credential-patterns` will be documented in this file.
 
+## 0.1.2 — 2026-06-08
+
+Name-gated AWS secret-access-key detection (ports hackmyagent's scanner rule to the shared catalog).
+
+### New pattern
+
+- **`aws-secret` (AWS Secret Access Key).** AWS secret keys are 40-char `[A-Za-z0-9/+]` values with no distinctive prefix, so a value-only regex would flood on every base64 blob/hash. This pattern is **name-gated**: it matches the 40-char value only when `aws … secret|private … key` or the AWS-specific full phrase `secret[_ ]access[_ ]key` precedes it (the latter catches JS-SDK `secretAccessKey` and Terraform `secret_access_key` with no nearby `aws`). The value is captured in group 1; `match[0]` includes the name token, so `.replace`-based maskers over-mask the name (fail-safe). A forward capture group is used rather than a lookbehind because a variable-width lookbehind exceeded the package's 50 ms ReDoS perf budget.
+
+### `isKnownExample`
+
+- **Value-aware.** Now reads the captured value (`match[1] ?? match[0]`) so the example/placeholder checks apply to the secret value of a name-gated match, not the `name = value` whole. Value-only patterns (no group 1) are unchanged.
+- **Low-entropy floor.** A name-gated value of ≥20 chars with ≤6 distinct characters (e.g. `0000…`, `DEADBEEF…`) is treated as a placeholder. A real ≥20-char secret never has so few distinct characters, so genuine keys are unaffected. The `wJalr…EXAMPLEKEY` docs secret remains covered by `KNOWN_EXAMPLE_KEYS`, and `xxx`/`example`/… by `PLACEHOLDER_INDICATORS`.
+
 ## 0.1.1 — 2026-04-30
 
 False-positive suppression release driven by `secretless-ai status` dogfooding inside the `hackmyagent` repo (4/4 reported findings were tutorial fixtures, JSDoc comments, or block-comment context that the 0.1.0 allowlist branches did not cover).
