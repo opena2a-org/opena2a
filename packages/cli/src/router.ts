@@ -411,7 +411,11 @@ export async function dispatchCommand(
   // Track scan count and prompt to contribute after enough scans.
   // This runs on EVERY scan so the prompt can fire when threshold is reached.
   try {
-    await recordScanAndMaybePrompt();
+    await recordScanAndMaybePrompt({
+      machineReadable: globalOptions.format === 'json'
+        || globalOptions.format === 'sarif'
+        || globalOptions.ci === true,
+    });
   } catch {
     // Non-critical -- never block on contribution failures
   }

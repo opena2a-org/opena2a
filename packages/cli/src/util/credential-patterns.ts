@@ -51,7 +51,13 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-001',
     title: 'Anthropic API Key',
-    pattern: /sk-ant-api\d{2}-[A-Za-z0-9_-]{80,}/g,
+    // The `sk-ant-api\d{2}-` prefix is highly specific to Anthropic, so a 20+ char
+    // body is enough signal — matching the OpenAI floor (CRED-002 below) instead of
+    // requiring the full ~95-char production length. A shorter floor catches the
+    // realistic fake/short keys that 80+ silently skipped while OpenAI's sibling key
+    // was flagged on the same line (issue #184: asymmetric coverage). No legitimate
+    // non-credential string carries this prefix, so the lower floor adds no FPs.
+    pattern: /sk-ant-api\d{2}-[A-Za-z0-9_-]{20,}/g,
     envVarPrefix: 'ANTHROPIC_API_KEY',
     severity: 'critical',
     explanation: 'Anthropic API key hardcoded in source. Anyone who reads this file can use your Anthropic account and access Claude models.',

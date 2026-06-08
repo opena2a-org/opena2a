@@ -1,8 +1,22 @@
 # Changelog
 
-## 0.10.8
+## 0.10.9
+
+Consolidated release. `0.10.8` was published to npm from a version-bump commit that
+predated the credential-label work and six other merged PRs, so the label/prose fixes
+below ship for the first time here. Also batches three small fixes surfaced by the
+release test and the open-issue triage. Three already-fixed issues are closed against
+this release (#176 `scan-soul --explain`, #183 `attack --local` citation, #182 `check`
+reporting SAFE on hardcoded credentials). Five architectural issues (#175 composite
+verdict, #124 score representations, #111 shield event-log hardening, #130 protect/scan
+detector divergence, #191 bundled-tool help rebrand) are tracked as separate design work.
 
 ### Fixes
+- **`protect` / `review` / `init` detect a short `sk-ant-api03-` Anthropic key** ([#184](https://github.com/opena2a-org/opena2a/issues/184)). The `CRED-001` pattern required an 80+ char body, so a realistic short/fake key (`sk-ant-api03-FAKE_…`, 28 chars) was silently skipped while the OpenAI key on the very next line was flagged — an asymmetric coverage gap exactly where users expect the strongest coverage. The `sk-ant-api\d{2}-` prefix is highly specific to Anthropic, so the body floor is lowered to 20 chars (matching the OpenAI `CRED-002` floor). A bare prefix with no body is still not flagged (no false positives), and full-length production keys are unaffected. Regression tests in `__tests__/util/credential-label-classification.test.ts`.
+- **The contribute prompt no longer corrupts machine-readable output.** `check`/`review`/`detect`/`identity` wrote an interactive "Your scans help the community…" prompt to stderr after enough scans, so `opena2a check --json 2>&1 | jq` merged the banner into the parsed stream and broke it. `recordScanAndMaybePrompt` now suppresses the prompt in machine-readable mode (`--json` / `--format json|sarif` / `--ci`) and whenever stdout is not a TTY; the scan count is still recorded so the prompt fires on a later interactive run. Surfaced by the 0.10.8 fresh-user release test.
+- **`init` empty-project Verify command no longer errors.** The `ENV-DOTENV` finding (".env not in .gitignore") suggested `cat .gitignore | grep -c '.env'`, which fails with "No such file or directory" on a project that has no `.gitignore`. The Verify command is now `grep -c '\.env' .gitignore 2>/dev/null || echo 0`, which prints `0` (correctly reading as ".env not ignored") and exits cleanly when `.gitignore` is absent. New `__tests__/commands/init-verify-command.test.ts`. Surfaced by the 0.10.8 fresh-user release test.
+
+### Fixes (first shipped here — were merged after the stale 0.10.8 publish)
 - **`protect` / `review` / `init` no longer mislabel every `sk-` credential as "OpenAI API Key".** The local catch-all pattern (`CRED-002`) matched any non-Anthropic `sk-` token and surfaced it as `OpenAI API Key` with an `OPENAI_API_KEY` env var — wrong for OpenRouter (`sk-or-v1-…`) and any future `sk-`-prefixed provider, and the generic-assignment bucket (`CRED-004`) labelled Stripe keys (`sk_live_…` / `sk_test_…`) as a generic "API Key". The displayed label and suggested env var for those two generic buckets are now routed through the canonical `@opena2a/credential-patterns` catalog, which orders specific prefixes before catch-alls, so the precise provider is recovered (Anthropic / OpenAI Project / OpenAI Legacy / OpenRouter / Stripe …). Detection is unchanged — only the label of values the scanner already flagged is refined; the deliberate "(Gemini drift risk)" / "(Bedrock drift risk)" framing on the Google/AWS patterns is preserved. The ESM-only catalog is loaded once per scan via a dynamic `import()` (this CLI is CommonJS), with a graceful fallback to the local label if it cannot be loaded. New regression test `__tests__/util/credential-label-classification.test.ts` covers `sk-ant-…`, OpenRouter, OpenAI, and Stripe `sk_live_…` / `sk_test_…` fixtures.
 - **The `Why:` / `Impact:` rationale no longer contradicts a refined credential label.** When the refined `Type` named a different provider than the local pattern (e.g. `OpenRouter API Key`), the explanation still read "OpenAI API key … grants full OpenAI API access", and Stripe keys kept the generic "Generic API key found in a variable assignment" copy. `refineCredentialLabel` now also swaps to provider-neutral prose keyed off the refined title whenever the title changes, so the displayed `Why:`/`Impact:` always agree with the label (the catalog carries no prose, so neutral-but-correct is preferred over inventing provider-specific copy). Non-refined findings (Anthropic, GitHub, AWS/Google drift) keep their richer local copy verbatim. Caught by the 0.10.8 fresh-user release test.
 

@@ -219,4 +219,26 @@ describe('quickCredentialScan label routing (integration)', () => {
     // CRED-001 is not refinable; its specific copy is preserved verbatim.
     expect(m!.explanation).toContain('Claude models');
   });
+
+  // Issue #184: a short sk-ant-api03- key (under the old 80-char floor) was
+  // silently skipped while the OpenAI key on the same line was flagged. The
+  // prefix is specific enough that a 20+ char body must be detected too.
+  it('detects a short sk-ant-api03- key alongside an OpenAI key (#184)', async () => {
+    const shortAnthropic = 'sk-ant-api03-FAKE_VERIFY_XYZ_NOT_REAL_KEY'; // 28-char body
+    write('.env', `ANTHROPIC_API_KEY=${shortAnthropic}\nOPENAI_API_KEY=sk-FAKE_NOT_REAL_KEY_VERIFY_XYZ\n`);
+    const matches = await quickCredentialScan(tmpDir);
+    const anth = matches.find(x => x.value === shortAnthropic);
+    expect(anth).toBeDefined();
+    expect(anth!.findingId).toBe('CRED-001');
+    expect(anth!.title).toBe('Anthropic API Key');
+    expect(anth!.envVar).toBe('ANTHROPIC_API_KEY');
+    // The OpenAI sibling is still detected (no regression).
+    expect(matches.some(x => x.findingId === 'CRED-002')).toBe(true);
+  });
+
+  it('does not flag a bare sk-ant-api03- prefix with no key body (#184 no-FP)', async () => {
+    write('doc.js', `const note = 'set the sk-ant-api03- prefix';`);
+    const matches = await quickCredentialScan(tmpDir);
+    expect(matches.some(x => x.findingId === 'CRED-001')).toBe(false);
+  });
 });
