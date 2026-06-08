@@ -35,6 +35,14 @@ export interface SurfaceSummary {
   artifactsCompiled?: number;
   /** Named artifacts detected, e.g. "MCP config", "SOUL.md". */
   detected?: string[];
+  /**
+   * True when the scanned artifact is a downloaded third-party package
+   * (e.g. `check pip:requests`), not the user's own working tree. The verdict
+   * guidance then avoids telling the user to `secure --fix` code they don't
+   * own — the findings live in the package, so the action is review / choose
+   * a different version, not auto-remediate. Defaults to local (false).
+   */
+  remote?: boolean;
 }
 
 /** Per-artifact summary displayed in the Artifacts block.
@@ -242,25 +250,39 @@ export function buildVerdict(
   const extraCount = Math.max(0, total - 1);
   const extraSuffix = extraCount > 0 ? ` + ${extraCount} more` : '';
 
+  // For a downloaded third-party package the findings are in code the user
+  // does not own, so the closing guidance is review / avoid, never "fix it
+  // yourself" or `secure --fix`.
+  const remote = surface.remote === true;
+
   if (critical > 0) {
     const leadText = lead ? formatLead(lead) : `${critical} critical issue${critical > 1 ? 's' : ''}`;
+    const guidance = remote
+      ? 'Do not depend on this package as-is.'
+      : 'Fix before using in production.';
     return {
       status: 'unsafe',
-      message: `Not safe to ship. ${leadText}${extraSuffix}. Fix before using in production.`,
+      message: `Not safe to ship. ${leadText}${extraSuffix}. ${guidance}`,
     };
   }
   if (high > 0) {
     const leadText = lead ? formatLead(lead) : `${high} high-severity issue${high > 1 ? 's' : ''}`;
+    const guidance = remote
+      ? 'Review before depending on it, or choose a vetted version.'
+      : 'Fix, then rescan.';
     return {
       status: 'unsafe',
-      message: `Not safe as-is. ${leadText}${extraSuffix}. Fix, then rescan.`,
+      message: `Not safe as-is. ${leadText}${extraSuffix}. ${guidance}`,
     };
   }
   // medium or low only
   const leadText = lead ? formatLead(lead) : `${total} finding${total > 1 ? 's' : ''}`;
+  const guidance = remote
+    ? 'These are in the package\'s own code — review them before depending on it.'
+    : 'Run `secure --fix` to auto-remediate where possible.';
   return {
     status: 'needs-fix',
-    message: `Usable with caveats. ${leadText}${extraSuffix}. Run \`secure --fix\` to auto-remediate where possible.`,
+    message: `Usable with caveats. ${leadText}${extraSuffix}. ${guidance}`,
   };
 }
 
