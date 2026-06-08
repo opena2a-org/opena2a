@@ -400,7 +400,7 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   // Composite score
   const hmaAvailable = hmaData?.available ?? false;
-  const compositeScore = computeCompositeScore(
+  const weightedComposite = computeCompositeScore(
     initData.trustScore,
     credScore,
     guardScore,
@@ -409,6 +409,17 @@ export async function review(options: ReviewOptions): Promise<number> {
     hmaAvailable,
     detectData.governanceScore,
   );
+  // Dominant-analyzer floor (#175): force the composite verdict to agree in
+  // direction with the harshest target-malice analyzer. Shield Analysis is
+  // excluded (baseline-25 posture, not a target-malice signal). See
+  // applyDominantAnalyzerFloor.
+  const compositeScore = applyDominantAnalyzerFloor(weightedComposite, [
+    { name: 'Project Scan', score: initData.trustScore, ran: true },
+    { name: 'Credentials', score: credScore, ran: true },
+    { name: 'Config Integrity', score: guardScore, ran: true },
+    { name: 'HMA Scan', score: hmaAvailable ? hmaData!.score : 0, ran: hmaAvailable },
+    { name: 'Shadow AI', score: detectData.governanceScore, ran: true },
+  ]);
   const grade = scoreToGrade(compositeScore);
   const recoverySummary = computeRecoverySummary(
     initData.trustScore, credScore, guardScore,
@@ -1037,6 +1048,52 @@ function computeCompositeScore(
     shieldScore * 0.20 +
     shadowAiScore * 0.15,
   );
+}
+
+/** The critical band. An analyzer scoring below this is reporting a critical
+ *  problem with the *target*, and the composite must not present a verdict
+ *  that disagrees in direction. See #175. */
+export const CRITICAL_BAND = 30;
+
+/** One analyzer's contribution to the dominant-analyzer floor. */
+export interface FloorParticipant {
+  name: string;
+  score: number;
+  /** false when the analyzer was skipped/unavailable — excluded from the floor. */
+  ran: boolean;
+}
+
+/**
+ * Dominant-analyzer floor (#175, [CHIEF-CDS] Option A).
+ *
+ * The composite is a weighted average, so a single analyzer reporting a
+ * critical problem (e.g. HMA `secure` 0/100, Shadow AI 0/100 on a kitchen-sink
+ * fixture) can be out-voted by clean dimensions and float the composite into an
+ * "improving" band. That is a DIRECTION disagreement: `opena2a review` says
+ * recoverable while `opena2a check` says 0/100. This floor forces direction
+ * agreement — when any participating analyzer lands in the critical band, the
+ * composite is clamped down to the lowest such score.
+ *
+ * IMPORTANT — Shield Analysis is deliberately NOT a participant. Its posture
+ * score has a baseline of 25 for any user who has not run `opena2a shield init`
+ * (see runShieldPhase), so a low Shield score signals "defensive tooling not
+ * set up", not "this project is malicious". Including it would clamp every
+ * clean project on a Shield-less machine down to ~25. Only analyzers that
+ * measure how dangerous the *target itself* is participate: Project Scan,
+ * Credentials, Config Integrity, HMA Scan, Shadow AI. Each only reaches the
+ * critical band on a genuine critical signal, so the floor cannot wrongly
+ * downgrade a borderline-but-recoverable project (whose analyzers sit in the
+ * 30–70 range).
+ */
+export function applyDominantAnalyzerFloor(
+  composite: number,
+  participants: FloorParticipant[],
+): number {
+  const scores = participants.filter(p => p.ran).map(p => p.score);
+  if (scores.length === 0) return composite;
+  const minScore = Math.min(...scores);
+  if (minScore < CRITICAL_BAND) return Math.min(composite, minScore);
+  return composite;
 }
 
 function scoreToGrade(score: number): string {

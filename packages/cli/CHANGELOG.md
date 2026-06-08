@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+- **`review` composite verdict now agrees in direction with its harshest analyzer** ([#175](https://github.com/opena2a-org/opena2a/issues/175)). On a kitchen-sink fixture, `opena2a review` reported `67/100 "improving"` (recoverable) while `opena2a check` reported `0/100` with 34 critical findings — a direction disagreement that could lead a fresh user to conclude a fully-malicious project was salvageable. The composite is a weighted average, so HMA `secure` (0/100) and Shadow AI governance (0/100) were out-voted by the clean Project Scan / Credentials / Config Integrity dimensions. A **dominant-analyzer floor** ([CHIEF-CDS] Option A) now clamps the composite down to the lowest analyzer score whenever any target-malice analyzer lands in the critical band (`< 30`). Shield Analysis is deliberately **excluded** from the floor — its posture score has a baseline of 25 for any user who has not run `opena2a shield init`, so including it would clamp every clean project on a Shield-less machine down to ~25. The floor cannot wrongly downgrade a borderline-but-recoverable project: each participating analyzer (Project Scan, Credentials, Config Integrity, HMA Scan, Shadow AI) only reaches the critical band on a genuine critical signal. Kitchen-sink now correctly reports `0/100 needs-attention` (with and without HMA installed); benign and buggy-recoverable fixtures are unaffected. New `applyDominantAnalyzerFloor` regression tests in `__tests__/commands/review.test.ts`.
+
 ## 0.10.10
 
 ### Added

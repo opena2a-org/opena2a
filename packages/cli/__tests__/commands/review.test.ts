@@ -5,6 +5,8 @@ import * as os from 'node:os';
 import {
   review,
   aggregateFindings,
+  applyDominantAnalyzerFloor,
+  CRITICAL_BAND,
   type CredentialPhaseData,
   type ShieldPhaseData,
   type HmaPhaseData,
@@ -457,5 +459,103 @@ describe('aggregateFindings', () => {
     expect(result).toHaveLength(1);
     expect(result[0].source).toBe('hma');
     expect(result[0].severity).toBe('critical');
+  });
+});
+
+describe('applyDominantAnalyzerFloor (#175 dominant-analyzer floor)', () => {
+  // Mirrors the kitchen-sink repro: HMA `secure` and Shadow AI both report
+  // 0/100 (critical band) while the weighted composite floats to 67
+  // ("improving"). The floor must clamp the composite down to the harshest
+  // analyzer so the verdict cannot disagree in direction with `opena2a check`.
+  it('clamps composite to the lowest critical-band analyzer (kitchen-sink)', () => {
+    const weighted = 67;
+    const floored = applyDominantAnalyzerFloor(weighted, [
+      { name: 'Project Scan', score: 100, ran: true },
+      { name: 'Credentials', score: 100, ran: true },
+      { name: 'Config Integrity', score: 100, ran: true },
+      { name: 'HMA Scan', score: 0, ran: true },
+      { name: 'Shadow AI', score: 0, ran: true },
+    ]);
+    expect(floored).toBe(0);
+  });
+
+  it('fires even without HMA when Shadow AI is in the critical band', () => {
+    const floored = applyDominantAnalyzerFloor(76, [
+      { name: 'Project Scan', score: 100, ran: true },
+      { name: 'Credentials', score: 100, ran: true },
+      { name: 'Config Integrity', score: 100, ran: true },
+      { name: 'HMA Scan', score: 0, ran: false }, // skipped -> excluded
+      { name: 'Shadow AI', score: 0, ran: true },
+    ]);
+    expect(floored).toBe(0);
+  });
+
+  it('ignores skipped analyzers (skip score of 0 must not floor a clean project)', () => {
+    // Clean project, HMA skipped. Skipped HMA carries score 0 but ran:false,
+    // so it must NOT clamp the composite.
+    const floored = applyDominantAnalyzerFloor(72, [
+      { name: 'Project Scan', score: 85, ran: true },
+      { name: 'Credentials', score: 100, ran: true },
+      { name: 'Config Integrity', score: 50, ran: true },
+      { name: 'HMA Scan', score: 0, ran: false },
+      { name: 'Shadow AI', score: 100, ran: true },
+    ]);
+    expect(floored).toBe(72);
+  });
+
+  it('does NOT downgrade a borderline-but-recoverable project (all analyzers >= 30)', () => {
+    // Adversarial check: a project with real-but-recoverable issues sits in
+    // the 30-70 band on every analyzer. The floor must leave it untouched so
+    // the recovery-framed verdict survives.
+    const floored = applyDominantAnalyzerFloor(58, [
+      { name: 'Project Scan', score: 70, ran: true },
+      { name: 'Credentials', score: 50, ran: true },
+      { name: 'Config Integrity', score: 50, ran: true },
+      { name: 'HMA Scan', score: 60, ran: true },
+      { name: 'Shadow AI', score: 65, ran: true },
+    ]);
+    expect(floored).toBe(58);
+  });
+
+  it('Shield baseline-25 is excluded as a participant (no false downgrade)', () => {
+    // Shield Analysis is never passed as a participant by review(). A clean
+    // project on a Shield-less machine has Shield posture 25 but must keep its
+    // composite. This asserts the documented contract: a 25-scoring Shield is
+    // simply absent from the participant list.
+    const floored = applyDominantAnalyzerFloor(70, [
+      { name: 'Project Scan', score: 85, ran: true },
+      { name: 'Credentials', score: 100, ran: true },
+      { name: 'Config Integrity', score: 50, ran: true },
+      { name: 'Shadow AI', score: 100, ran: true },
+      // Shield (25) intentionally NOT here — see applyDominantAnalyzerFloor docs
+    ]);
+    expect(floored).toBe(70);
+  });
+
+  it('clamps down but never raises the composite', () => {
+    // If the weighted composite is already below the min analyzer, keep it.
+    const floored = applyDominantAnalyzerFloor(10, [
+      { name: 'Credentials', score: 25, ran: true },
+      { name: 'Shadow AI', score: 100, ran: true },
+    ]);
+    expect(floored).toBe(10);
+  });
+
+  it('a single critical credential leak (score 75) does not floor; three (score 25) do', () => {
+    // 1 critical cred => credScore 75, above CRITICAL_BAND, no floor.
+    expect(applyDominantAnalyzerFloor(88, [
+      { name: 'Credentials', score: 75, ran: true },
+      { name: 'Shadow AI', score: 100, ran: true },
+    ])).toBe(88);
+    // 3 critical creds => credScore 25, below CRITICAL_BAND, floor fires.
+    expect(applyDominantAnalyzerFloor(70, [
+      { name: 'Credentials', score: 25, ran: true },
+      { name: 'Shadow AI', score: 100, ran: true },
+    ])).toBe(25);
+  });
+
+  it('CRITICAL_BAND boundary: exactly 30 does not floor, 29 does', () => {
+    expect(applyDominantAnalyzerFloor(80, [{ name: 'X', score: CRITICAL_BAND, ran: true }])).toBe(80);
+    expect(applyDominantAnalyzerFloor(80, [{ name: 'X', score: CRITICAL_BAND - 1, ran: true }])).toBe(CRITICAL_BAND - 1);
   });
 });
