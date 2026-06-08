@@ -317,6 +317,187 @@ export function refineCredentialLabel(
   };
 }
 
+/**
+ * Severity for a canonical-catalog credential, keyed by its `category`. The
+ * `@opena2a/credential-patterns` catalog carries no severity, so protect/review
+ * derive one here. Account-takeover-class secrets (LLM keys, cloud/infra,
+ * payment, auth) are critical; repo/registry and messaging tokens are high;
+ * observability keys are medium. [CHIEF-CDS] — change behind a Phase 4.5 review.
+ */
+export const CATALOG_CATEGORY_SEVERITY: Record<string, string> = {
+  'ai-ml': 'critical',
+  'cloud': 'critical',
+  'payment': 'critical',
+  'auth': 'critical',
+  'developer': 'high',
+  'communication': 'high',
+  'database': 'high',
+  'monitoring': 'medium',
+};
+
+/** Severity for a catalog category; unknown/absent categories default to `high`. */
+export function catalogSeverityForCategory(category?: string): string {
+  return CATALOG_CATEGORY_SEVERITY[category ?? ''] ?? 'high';
+}
+
+/**
+ * Catalog pattern IDs the migration scanner surfaces — a fail-SAFE, opt-in
+ * allowlist (NOT an exclude-list). `protect` auto-migrates (rewrites files), so
+ * a new catalog pattern must be reviewed before it can drive that flow; an
+ * exclude-list would auto-enrol every future addition.
+ *
+ * INCLUDED: patterns whose match is a STRONG, near-unique credential signal by
+ * itself (distinctive prefix/structure). EXCLUDED on purpose:
+ *   - Value-shape-only patterns that match benign content (Phase 4.5 review):
+ *     `supabase` (any HS256 JWT incl. PUBLIC anon keys, mislabelled "Service
+ *     Key"), `telegram-bot` (`numeric:35char` cache keys/snowflakes), `twilio`
+ *     (`SK`+32hex == any MD5/etag), `grafana` (`glc_`+base64 blob), and the
+ *     connection strings `mongodb`/`postgres`/`mysql`/`redis` (`://[^\s]{10,}`
+ *     matches even a credential-LESS `postgres://localhost/db`). These need
+ *     name/context gating only HMA's semantic layer has — they stay HMA-only.
+ *   - Patterns a dedicated local scanner already owns with richer framing:
+ *     `aws-access`/`aws-secret` (local DRIFT-002/CRED-005), `google` (local
+ *     DRIFT-001 "Gemini drift"), `anthropic`/`openai-legacy` (local CRED-001/2).
+ *     Keeping them here would only risk severity drift vs the local decision.
+ *   - Name-gated patterns whose match[0] is `Name=value` (NOT a bare secret) and
+ *     that ship no capture group, so `m[1] ?? m[0]` is the whole
+ *     `AccountKey=<base64>=` span: `azure`. protect would vault the wrong value
+ *     AND corrupt the surrounding `;`-delimited connection string on rewrite
+ *     (Phase 4.5 re-review). Same rationale as `aws-secret` — HMA's semantic
+ *     layer owns name-gated values. EVERY included pattern below is a pure
+ *     value-shape prefix whose m[0] IS the migratable secret.
+ *   - `pem-private-key` (key material — {@link scanCryptoKeyFiles}, extension-
+ *     based) and `gcp-service-account` (structural JSON marker, not migratable).
+ *   - Short underscore vendor prefixes with a loose floor — `groq` (gsk_),
+ *     `replicate` (r8_), `huggingface` (hf_), `fireworks` (fw_), all
+ *     `<prefix>[alnum]{20,}` — match a separator-free mixedCase identifier of
+ *     that vendor's SDK (a benign `hf_modelDownloadProgressBar` fires). The
+ *     floor sits far below the real key length, so for an AUTO-MIGRATING
+ *     scanner the FP-rewrite risk outweighs the breadth gain; `scan` (HMA
+ *     semantic) still surfaces them. Tightening the catalog floors to the real
+ *     key length would let them back in safely (package-side follow-up).
+ *
+ * The kept prefixes are either hyphenated (rare in identifiers: `sk-proj-`,
+ * `sk-or-v1-`, `pplx-`, `glpat-`), long (`dckr_pat_`, `lin_api_`, `sntrys_`),
+ * or carry a high length floor (`pypi-`{50,}, `nfp_`{40,}, `npm_`{36}), so a
+ * benign identifier of that exact shape is implausible.
+ */
+export const BREADTH_DETECT_IDS = new Set([
+  // ai-ml (anthropic/openai-legacy owned by local; groq/replicate/huggingface/
+  // fireworks excluded — loose-floor short underscore prefixes, see above)
+  'openai-proj', 'openrouter', 'perplexity',
+  // cloud (aws-access/aws-secret owned by local; azure name-gated; supabase a JWT FP)
+  'aws-sts', 'digitalocean', 'heroku', 'fly-io', 'netlify',
+  // communication (telegram-bot/twilio are shape-only FPs)
+  'slack', 'slack-webhook', 'slack-app', 'discord-bot', 'discord-webhook', 'sendgrid',
+  // developer (github-pat/app `gh[ps]_` owned by local CRED-003; gho_/ghr_/fine are not)
+  'github-fine', 'github-oauth', 'github-refresh', 'gitlab', 'gitlab-pipeline',
+  'gitlab-runner', 'npm', 'pypi', 'dockerhub', 'bitbucket',
+  // payment
+  'stripe-test', 'stripe-restricted', 'stripe', 'stripe-webhook', 'square',
+  // auth (google AIza owned by local DRIFT-001; pem-private-key is key material)
+  'google-oauth', 'firebase-fcm',
+  // monitoring (grafana glc_ blob is a shape-only FP)
+  'newrelic', 'newrelic-insight', 'sentry', 'linear',
+]);
+
+/** Signature of the package's `isKnownExample` allowlist predicate. */
+export type IsKnownExample = (line: string, match: RegExpMatchArray) => boolean;
+
+/**
+ * Lazily import the package's allowlist predicate (`isKnownExample`), which
+ * recognises the SAME known-example / placeholder / low-entropy / localhost+demo
+ * values the catalog ships. Memoised; resolves to `null` if the ESM-only package
+ * can't be loaded so callers degrade to local-pattern-only detection rather than
+ * crash.
+ */
+let _isKnownExample: Promise<IsKnownExample | null> | null = null;
+export function loadCanonicalAllowlist(): Promise<IsKnownExample | null> {
+  if (!_isKnownExample) {
+    _isKnownExample = import('@opena2a/credential-patterns')
+      .then(m => (m.isKnownExample as IsKnownExample) ?? null)
+      .catch(() => null);
+  }
+  return _isKnownExample;
+}
+
+/** True when the matched value is already an env-var reference (process.env.X, ${X}, …). */
+export function isEnvVarReference(line: string, matchIndex: number): boolean {
+  const before = line.slice(0, matchIndex);
+  return /process\.env\.\w*$/.test(before) ||
+    /\$\{?\w*$/.test(before) ||
+    /os\.environ\[['"]?\w*$/.test(before) ||
+    /getenv\(['"]?\w*$/.test(before);
+}
+
+/** Derive a unique env-var name from a prefix, numbering collisions (BASE, BASE_2, …). */
+export function deriveEnvVarName(base: string, existingMatches: CredentialMatch[]): string {
+  const existing = existingMatches.filter(m => m.envVar.startsWith(base));
+  return existing.length === 0 ? base : `${base}_${existing.length + 1}`;
+}
+
+/**
+ * Detect credentials in `lines` using the canonical `@opena2a/credential-patterns`
+ * catalog (issue #130: protect/review/init detected only ~7 local patterns while
+ * `scan` finds ~57). Additive + deduped against `seen` (`value:filePath`), so a
+ * value the local patterns already flagged keeps its richer local label and is
+ * NOT re-reported here. Mutates `matches` and `seen` in place.
+ *
+ * Only patterns in the fail-safe {@link BREADTH_DETECT_IDS} allowlist run, so
+ * value-shape-only FP-prone matchers (Supabase JWTs, telegram `id:hash`, twilio
+ * `SK`+hex, bare connection strings, grafana blobs) are left to HMA's semantic
+ * layer. ALL real matches per line are surfaced (not just the first), each
+ * filtered through the package's `isKnownExample` allowlist (known-example /
+ * placeholder / low-entropy / localhost+demo values). Degrades to a no-op if the
+ * allowlist predicate failed to load.
+ */
+export function collectCatalogMatches(
+  lines: string[],
+  filePath: string,
+  catalog: CanonicalCredentialPattern[],
+  isKnownExample: IsKnownExample | null,
+  seen: Set<string>,
+  matches: CredentialMatch[],
+): void {
+  if (!isKnownExample || catalog.length === 0) return;
+  const breadth = catalog.filter(cp => BREADTH_DETECT_IDS.has(cp.id));
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    for (const cp of breadth) {
+      // Promote to /g so matchAll yields EVERY occurrence on the line — two real
+      // secrets of the same pattern on one line must both surface (the local
+      // pass iterates exhaustively too; the breadth pass must not under-report).
+      const re = cp.regex.flags.includes('g')
+        ? cp.regex
+        : new RegExp(cp.regex.source, cp.regex.flags + 'g');
+      re.lastIndex = 0;
+      for (const m of line.matchAll(re)) {
+        if (isKnownExample(line, m)) continue;
+        const value = m[1] ?? m[0];
+        const dedupKey = `${value}:${filePath}`;
+        if (seen.has(dedupKey)) continue;
+        // Already an env-var reference (process.env.X / ${X}) — not an exposure.
+        if (m.index != null && isEnvVarReference(line, m.index)) continue;
+        seen.add(dedupKey);
+        const envVar = deriveEnvVarName(cp.envPrefix, matches);
+        matches.push({
+          value,
+          filePath,
+          line: i + 1,
+          findingId: `CRED-CAT-${cp.id}`,
+          envVar,
+          severity: catalogSeverityForCategory(cp.category),
+          title: cp.name,
+          // The catalog ships no prose, so neutral-but-correct copy keyed off the
+          // precise provider name (vs inventing provider-specific claims).
+          explanation: `${cp.name} hardcoded in source. Anyone who can read this file can use it to access the associated account.`,
+          businessImpact: 'Grants access to the associated service. Migrate to an environment variable and rotate the credential.',
+        });
+      }
+    }
+  }
+}
+
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
 
 /**
@@ -423,8 +604,10 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
 export async function quickCredentialScan(targetDir: string): Promise<CredentialMatch[]> {
   const matches: CredentialMatch[] = [];
   const seen = new Set<string>();
-  // Loaded once before the walk so per-value label refinement stays synchronous.
+  // Loaded once before the walk so per-value label refinement + catalog
+  // detection stay synchronous inside the walkFiles callback.
   const catalog = await loadCanonicalPatterns();
+  const isKnownExample = await loadCanonicalAllowlist();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -486,6 +669,11 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
         }
       }
     }
+
+    // Breadth pass: catch the catalog credential types the local patterns miss
+    // (Slack, Stripe, Groq, GitLab, …), deduped against the local matches above
+    // so overlapping providers keep their richer local label (#130).
+    collectCatalogMatches(lines, filePath, catalog, isKnownExample, seen, matches);
   });
 
   return matches;
