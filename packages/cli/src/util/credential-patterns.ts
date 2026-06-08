@@ -264,18 +264,51 @@ export function classifyCredentialValue(
 }
 
 /**
+ * A (possibly refined) credential label. `explanation`/`businessImpact` are only
+ * populated when a refinement actually changed the title, in which case they
+ * carry provider-neutral prose; otherwise they are absent and the caller keeps
+ * the local pattern's richer provider-specific copy.
+ */
+export interface RefinedCredentialLabel {
+  title: string;
+  envVarPrefix: string;
+  explanation?: string;
+  businessImpact?: string;
+}
+
+/**
  * Apply {@link classifyCredentialValue} to a local match, but only for the
- * generic/catch-all buckets in {@link REFINABLE_FINDING_IDS}. Returns the
- * (possibly refined) `{ title, envVarPrefix }` to use for the match.
+ * generic/catch-all buckets in {@link REFINABLE_FINDING_IDS}.
+ *
+ * When the catalog recovers a DIFFERENT provider than the local pattern's title
+ * (e.g. "OpenRouter API Key" in place of CRED-002's "OpenAI API Key", or "Stripe
+ * Live Key" in place of CRED-004's "Generic API Key in Assignment"), the local
+ * pattern's `explanation`/`businessImpact` prose now names the wrong provider or
+ * is generic. To avoid shipping a label that contradicts its own rationale
+ * ("OpenRouter API Key … grants full OpenAI API access"), this also returns
+ * provider-neutral prose keyed off the refined title. The catalog carries no
+ * prose of its own, so neutral-but-correct is the safe choice over inventing
+ * provider-specific copy.
+ *
+ * When the catalog agrees with the local title (no real change) or nothing
+ * matches, the fallback is returned unchanged and the caller keeps its local
+ * prose.
  */
 export function refineCredentialLabel(
   findingId: string,
   value: string,
   fallback: { title: string; envVarPrefix: string },
   catalog: CanonicalCredentialPattern[],
-): { title: string; envVarPrefix: string } {
+): RefinedCredentialLabel {
   if (!REFINABLE_FINDING_IDS.has(findingId)) return fallback;
-  return classifyCredentialValue(value, catalog) ?? fallback;
+  const classified = classifyCredentialValue(value, catalog);
+  if (!classified || classified.title === fallback.title) return fallback;
+  return {
+    title: classified.title,
+    envVarPrefix: classified.envVarPrefix,
+    explanation: `${classified.title} hardcoded in source. Anyone who can read this file can use it to access the associated account.`,
+    businessImpact: 'Grants access to the associated service. Migrate to an environment variable and rotate the credential.',
+  };
 }
 
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
@@ -439,8 +472,10 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
             envVar,
             severity: pattern.severity,
             title: refined.title,
-            explanation: pattern.explanation,
-            businessImpact: pattern.businessImpact,
+            // Refined prose is present only when the title changed; otherwise
+            // keep the local pattern's richer provider-specific copy.
+            explanation: refined.explanation ?? pattern.explanation,
+            businessImpact: refined.businessImpact ?? pattern.businessImpact,
           });
         }
       }
