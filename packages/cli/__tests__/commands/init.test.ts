@@ -570,12 +570,15 @@ describe('init', () => {
       const { output: benignOut } = await captureStdout(() => init({ targetDir: benignDir, format: 'json' }));
       const benign = JSON.parse(benignOut);
 
-      // Buggy: 1 hardcoded credential in .env.example
+      // Buggy: 1 hardcoded credential in a source file. (Must be a real
+      // credential surface, NOT .env.example — template env files hold
+      // placeholders and are intentionally not scanned; see
+      // credential-patterns TEMPLATE_ENV_FILES.)
       const buggyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-buggy-'));
       fs.writeFileSync(path.join(buggyDir, 'package.json'), JSON.stringify({ name: 'bg' }));
       fs.writeFileSync(path.join(buggyDir, '.gitignore'), '.env\n');
       const fakeKey = 'sk-ant-api03-' + 'Q'.repeat(85);
-      fs.writeFileSync(path.join(buggyDir, '.env.example'), `KEY=${fakeKey}\n`);
+      fs.writeFileSync(path.join(buggyDir, 'config.ts'), `const KEY = "${fakeKey}";\n`);
 
       const { output: buggyOut } = await captureStdout(() => init({ targetDir: buggyDir, format: 'json' }));
       const buggy = JSON.parse(buggyOut);

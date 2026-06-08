@@ -136,6 +136,26 @@ export const SKIP_FILENAME_PATTERNS: RegExp[] = [
   /^demo[-_].*\.(?:sh|ts|js|py)$/i,
 ];
 
+/**
+ * Canonical list of template env files. They hold PLACEHOLDER values by
+ * convention (e.g. `OPENAI_API_KEY=sk-your-key-here`), are meant to be
+ * committed and edited, and per the project Secretless policy are explicitly
+ * NOT credential surfaces — scanning them produces noisy CRITICAL false
+ * positives (a `sk-…` placeholder is not a real exposure).
+ *
+ * Enforcement: these names are simply omitted from `SCAN_DOTFILES` in
+ * `walkFiles`, so the existing "dot-name not in the allowlist is skipped" rule
+ * excludes them — no separate skip branch (which would also have skipped a
+ * directory of the same name). Real env files (`.env`, `.env.local`,
+ * `.env.production`, …) stay in the allowlist and still scan. Detecting a real
+ * secret accidentally pasted into a template is the wrong layer (use
+ * git-secrets / a pre-commit hook), not the migration scanner. Exported so
+ * callers/tests share one source of truth for "what is a template env file".
+ */
+export const TEMPLATE_ENV_FILES = new Set([
+  '.env.example', '.env.sample', '.env.template', '.env.dist',
+]);
+
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
 
 /**
@@ -205,8 +225,15 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
     if (a === r || a.startsWith(r + path.sep)) return;
   }
 
-  // Dot-files to scan (credential sources)
-  const SCAN_DOTFILES = new Set(['.env', '.env.example', '.env.local', '.env.development', '.env.production', '.env.staging', '.env.test']);
+  // Dot-files to scan (credential sources). This is an explicit allowlist:
+  // any dot-name NOT listed here is skipped by the rule below (files AND
+  // directories alike — hidden dirs like .git/.vscode/.config are never
+  // recursed). Template env files (TEMPLATE_ENV_FILES: .env.example/.sample/
+  // .template/.dist) are deliberately OMITTED — they hold placeholders, not
+  // live secrets, so a `sk-…` value in them is not a real exposure. Do NOT
+  // add a template name here: it would re-introduce the .env.example CRITICAL
+  // false positive (opena2a-cli 0.10.8 fresh-user finding).
+  const SCAN_DOTFILES = new Set(['.env', '.env.local', '.env.development', '.env.production', '.env.staging', '.env.test']);
 
   for (const entry of entries) {
     if (entry.name.startsWith('.') && !SCAN_DOTFILES.has(entry.name)) continue;
