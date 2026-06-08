@@ -27,6 +27,13 @@ export { translateDownloadError } from "./translate-error.js";
 export { mapScanStatusForMeter } from "./scan-status.js";
 
 export {
+  CHECK_FIELD_GUIDE,
+  checkJsonSchema,
+  type CheckFieldDoc,
+  type CheckFieldSource,
+} from "./check-json-schema.js";
+
+export {
   buildCheckOutput,
   buildNotFoundOutput,
   type BuildCheckOutputInput,
