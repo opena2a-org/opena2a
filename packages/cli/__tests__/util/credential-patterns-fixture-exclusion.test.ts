@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { quickCredentialScan, SKIP_FILENAME_PATTERNS } from '../../src/util/credential-patterns.js';
+import { quickCredentialScan, SKIP_FILENAME_PATTERNS, TEMPLATE_ENV_FILES } from '../../src/util/credential-patterns.js';
 
 // Real-shaped placeholder credentials. These are the values that triggered
 // the 7 false positives surfaced during the 2026-04-29 `opena2a review` audit
@@ -160,6 +160,64 @@ describe('quickCredentialScan: fixture/demo files are silently skipped', () => {
     );
     const matches = quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
+  });
+});
+
+// Regression: template env files (.env.example / .sample / .template / .dist)
+// hold placeholder values by convention and are meant to be committed. Scanning
+// them produced CRITICAL false positives (surfaced 2026-06-08 by the
+// opena2a-cli 0.10.8 fresh-user release test, where `protect`/`init` flagged
+// `.env.example:1` as a CRITICAL OpenAI key). Real env files still scan.
+describe('quickCredentialScan: template env files are skipped (placeholders, not secrets)', () => {
+  const PLACEHOLDER = `OPENAI_API_KEY=${FIXTURE_OPENAI_KEY}`; // real-shaped placeholder
+
+  for (const tmpl of [...TEMPLATE_ENV_FILES]) {
+    it(`skips ${tmpl} (no findings even with a real-shaped placeholder)`, () => {
+      write(tmpl, PLACEHOLDER + '\n');
+      expect(quickCredentialScan(tmpDir)).toHaveLength(0);
+    });
+  }
+
+  it('STILL scans a real .env file (regression guard — that is where protect migrates from)', () => {
+    write('.env', PLACEHOLDER + '\n');
+    const matches = quickCredentialScan(tmpDir);
+    expect(matches.length).toBeGreaterThan(0);
+    expect(matches[0].findingId).toBe('CRED-002');
+  });
+
+  it('STILL scans .env.local and .env.production (live env files, not templates)', () => {
+    write('.env.local', PLACEHOLDER + '\n');
+    write('.env.production', PLACEHOLDER + '\n');
+    expect(quickCredentialScan(tmpDir).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('TEMPLATE_ENV_FILES covers the four conventional template names', () => {
+    expect([...TEMPLATE_ENV_FILES].sort()).toEqual(
+      ['.env.dist', '.env.example', '.env.sample', '.env.template'],
+    );
+  });
+
+  it('STILL scans a real .env nested in a normal subdirectory (subtree scanning intact)', () => {
+    // Guard against an over-broad skip: only template FILES are excluded, never
+    // whole subtrees. A real secret in config/.env must still be found.
+    write('config/.env', PLACEHOLDER + '\n');
+    expect(quickCredentialScan(tmpDir).length).toBeGreaterThan(0);
+  });
+
+  it('a DIRECTORY named .env.example is treated as a normal hidden dir (documents, does not special-case)', () => {
+    // Documents the intended behavior: because the exclusion is enforced via
+    // SCAN_DOTFILES omission (not a name-keyed skip branch), a dir named like a
+    // template is handled by the same rule as any other hidden directory
+    // (.git, .vscode) — not recursed. NOTE: this is a documentation test, not a
+    // regression guard for the over-broad name-skip an earlier draft had — that
+    // draft was behaviorally identical for a template-named entry, so no fixture
+    // can distinguish them. The real guards are the subtree-scanning test above
+    // and the real-.env tests. Per adversarial-review verifier feedback.
+    write('.env.example/.env', PLACEHOLDER + '\n');     // inside a hidden dir → not scanned
+    write('visible/.env', PLACEHOLDER + '\n');           // normal dir → scanned
+    const matches = quickCredentialScan(tmpDir);
+    expect(matches.length).toBeGreaterThan(0);
+    expect(matches.every(m => !m.filePath.includes('.env.example'))).toBe(true);
   });
 });
 
