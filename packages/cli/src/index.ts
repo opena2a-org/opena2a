@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   // or `opena2a telemetry off`. See README \u00a7Telemetry. Disclosure surfaces:
   // README, --version line, telemetry subcommand, opena2a.org/telemetry.
   const tele = await import('@opena2a/telemetry');
-  const { versionLine, runTelemetryCommand, verdictColor, divider, sanitizeForTerminal } =
+  const { versionLineParts, runTelemetryCommand, verdictColor, divider, sanitizeForTerminal } =
     await import('@opena2a/cli-ui');
   await tele.init({ tool: TOOL, version: VERSION });
 
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
   program
     .name('opena2a')
     .description('Open-source security platform for AI agents')
-    .version(versionLine({ tool: 'opena2a', version: VERSION, telemetry: tele.status() }), '-v, --version')
+    .option('-v, --version', 'Output the version number')
     .option('--ci', 'CI mode (no interactive prompts, machine-readable output)')
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
@@ -167,6 +167,17 @@ Telemetry:
   Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute
 
 Learn more: https://opena2a.org/docs`);
+
+  // Stream-split --version (cli-ui 0.5.2): bare `opena2a x.y.z` to stdout
+  // (single parseable line), telemetry disclosure to stderr. Use a manual
+  // `option:version` handler rather than Commander's `.version()`, which
+  // writes everything to stdout and exits.
+  const vparts = versionLineParts({ tool: 'opena2a', version: VERSION, telemetry: tele.status() });
+  program.on('option:version', () => {
+    process.stdout.write(vparts.stdout + '\n');
+    if (vparts.stderr) process.stderr.write(vparts.stderr + '\n');
+    process.exit(0);
+  });
 
   // Register all adapter-backed commands
   for (const [name, config] of Object.entries(ADAPTER_REGISTRY)) {
