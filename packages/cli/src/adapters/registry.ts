@@ -27,6 +27,9 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'ai-trust',
     subcommand: 'check',
     description: 'Query OpenA2A Trust Registry for package security data',
+    // `ai-trust check` exposes no `--format`/`--json` option; injecting
+    // `--format json` makes it exit with "unknown option '--format'" (#191).
+    acceptsFormatFlag: false,
   },
   train: {
     name: 'train',

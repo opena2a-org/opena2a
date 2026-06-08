@@ -372,9 +372,18 @@ export async function dispatchCommand(
     return 1;
   }
 
-  // Inject global flags into adapter args so downstream tools receive them
+  // Inject global flags into adapter args so downstream tools receive them.
+  // Skip adapters whose bundled tool rejects `--format` (e.g. ai-trust check),
+  // which would otherwise crash with "unknown option '--format'" (#191). For
+  // those, surface a one-line note so a user piping --json isn't left guessing.
   if (globalOptions.format && globalOptions.format !== 'text' && !adapterArgs.includes('--format') && !adapterArgs.includes('--json')) {
-    adapterArgs.push('--format', globalOptions.format);
+    if (adapter.config.acceptsFormatFlag === false) {
+      process.stderr.write(
+        `Note: 'opena2a ${command}' does not support ${globalOptions.format} output yet; showing text.\n`,
+      );
+    } else {
+      adapterArgs.push('--format', globalOptions.format);
+    }
   }
   if (globalOptions.deep && !adapterArgs.includes('--deep')) {
     adapterArgs.push('--deep');
@@ -394,12 +403,24 @@ export async function dispatchCommand(
   }
 
   // Rebrand bundled-tool command citations in delegated stdout to opena2a form
-  // (issue #190). Only for spawn adapters (ai-trust `registry`/`publish`) and
-  // never in JSON mode, where rewriting could corrupt machine-readable output.
-  const rebrand = adapter.config.method === 'spawn'
+  // (issues #190, #191). Applies to every adapter method that streams a bundled
+  // tool's stdout through us: spawn (ai-trust registry/publish), import
+  // (hackmyagent scan / secretless-ai secrets -- both fall through to the spawn
+  // fallback today), and python (cryptoserve crypto). Never in JSON/SARIF mode,
+  // where rewriting could corrupt machine-readable output -- and that includes a
+  // tool-native `--format json|sarif` passed straight through in adapterArgs
+  // (which never sets globalOptions.format), not just the opena2a `--json` flag.
+  const fmtIdx = adapterArgs.indexOf('--format');
+  const passthroughStructured = fmtIdx >= 0
+    && (adapterArgs[fmtIdx + 1] === 'json' || adapterArgs[fmtIdx + 1] === 'sarif');
+  const rebrandableMethod = adapter.config.method === 'spawn'
+    || adapter.config.method === 'import'
+    || adapter.config.method === 'python';
+  const rebrand = rebrandableMethod
     && globalOptions.format !== 'json'
     && globalOptions.format !== 'sarif'
-    && !adapterArgs.includes('--json');
+    && !adapterArgs.includes('--json')
+    && !passthroughStructured;
 
   const result = await adapter.run({
     args: adapterArgs,

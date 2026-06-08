@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
+import { createLineRebrander } from '../util/rebrand.js';
 
 export class PythonAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -30,11 +31,15 @@ export class PythonAdapter implements Adapter {
 
       let stdout = '';
       let stderr = '';
+      // Rebrand cryptoserve command citations (Usage lines, `cryptoserve <verb>`)
+      // to opena2a form when asked (issue #191). Line-buffered so streaming is
+      // preserved; never enabled in JSON mode (the router gates it off).
+      const rebrander = options.rebrand ? createLineRebrander() : null;
 
       child.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stdout += chunk;
-        if (!options.quiet) process.stdout.write(chunk);
+        if (!options.quiet) process.stdout.write(rebrander ? rebrander.push(chunk) : chunk);
       });
 
       child.stderr?.on('data', (data: Buffer) => {
@@ -44,10 +49,12 @@ export class PythonAdapter implements Adapter {
       });
 
       child.on('error', (err) => {
+        if (rebrander && !options.quiet) process.stdout.write(rebrander.flush());
         resolve({ exitCode: 1, stdout, stderr: stderr + err.message });
       });
 
       child.on('close', (code) => {
+        if (rebrander && !options.quiet) process.stdout.write(rebrander.flush());
         resolve({ exitCode: code ?? 1, stdout, stderr });
       });
     });
