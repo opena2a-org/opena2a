@@ -27,9 +27,11 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'ai-trust',
     subcommand: 'check',
     description: 'Query OpenA2A Trust Registry for package security data',
-    // `ai-trust check` exposes no `--format`/`--json` option; injecting
-    // `--format json` makes it exit with "unknown option '--format'" (#191).
-    acceptsFormatFlag: false,
+    // `ai-trust check` emits JSON via a bare `--json` (not `--format json`),
+    // so the router injects `--json` for `opena2a registry <pkg> --json` and
+    // skips `--format` injection (which would crash with "unknown option
+    // '--format'"). sarif is unsupported and surfaces a one-line note (#191).
+    jsonOutputFlag: '--json',
   },
   train: {
     name: 'train',

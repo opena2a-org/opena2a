@@ -3,19 +3,23 @@ import { ADAPTER_REGISTRY } from '../../src/adapters/registry.js';
 
 /**
  * issue #191: the router injects `--format <fmt>` for non-text output, but
- * `ai-trust check` (the `registry` adapter) has no such flag and exits with
- * "unknown option '--format'". The adapter must opt out via
- * `acceptsFormatFlag: false` so the router skips injection (and surfaces a
- * one-line note instead of crashing).
+ * `ai-trust check` (the `registry` adapter) has no `--format` flag — it emits
+ * JSON via a bare `--json`. The adapter declares `jsonOutputFlag: '--json'` so
+ * the router injects `--json` for json output (instead of `--format json`,
+ * which would crash with "unknown option '--format'") and notes any other
+ * unsupported format.
  */
-describe('AdapterConfig.acceptsFormatFlag — #191 registry --json crash', () => {
-  it('registry (ai-trust check) opts out of --format injection', () => {
-    expect(ADAPTER_REGISTRY['registry'].acceptsFormatFlag).toBe(false);
+describe('AdapterConfig.jsonOutputFlag — #191 registry --json', () => {
+  it('registry (ai-trust check) emits JSON via --json, not --format', () => {
+    expect(ADAPTER_REGISTRY['registry'].jsonOutputFlag).toBe('--json');
+    // No longer a blanket opt-out: json IS supported now (via --json).
+    expect(ADAPTER_REGISTRY['registry'].acceptsFormatFlag).toBeUndefined();
   });
 
-  it('scan (hackmyagent) keeps default --format support (does not opt out)', () => {
-    // undefined or true both mean "inject --format"; just assert it is not false,
+  it('scan (hackmyagent) keeps default --format support (no jsonOutputFlag)', () => {
+    // undefined acceptsFormatFlag + no jsonOutputFlag means "inject --format",
     // so hackmyagent's working `--format json` path is not regressed.
+    expect(ADAPTER_REGISTRY['scan'].jsonOutputFlag).toBeUndefined();
     expect(ADAPTER_REGISTRY['scan'].acceptsFormatFlag).not.toBe(false);
   });
 });

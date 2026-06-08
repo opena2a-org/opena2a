@@ -373,11 +373,21 @@ export async function dispatchCommand(
   }
 
   // Inject global flags into adapter args so downstream tools receive them.
-  // Skip adapters whose bundled tool rejects `--format` (e.g. ai-trust check),
-  // which would otherwise crash with "unknown option '--format'" (#191). For
-  // those, surface a one-line note so a user piping --json isn't left guessing.
+  // Adapters fall into three cases for structured output:
+  //   - jsonOutputFlag set (e.g. ai-trust check `--json`): inject that flag for
+  //     json; any other format (sarif) is unsupported -> one-line note.
+  //   - acceptsFormatFlag === false: tool rejects `--format` entirely -> note.
+  //   - default: inject `--format <fmt>` (hackmyagent, cryptoserve, ...).
   if (globalOptions.format && globalOptions.format !== 'text' && !adapterArgs.includes('--format') && !adapterArgs.includes('--json')) {
-    if (adapter.config.acceptsFormatFlag === false) {
+    if (adapter.config.jsonOutputFlag) {
+      if (globalOptions.format === 'json') {
+        adapterArgs.push(adapter.config.jsonOutputFlag);
+      } else {
+        process.stderr.write(
+          `Note: 'opena2a ${command}' does not support ${globalOptions.format} output yet; showing text.\n`,
+        );
+      }
+    } else if (adapter.config.acceptsFormatFlag === false) {
       process.stderr.write(
         `Note: 'opena2a ${command}' does not support ${globalOptions.format} output yet; showing text.\n`,
       );

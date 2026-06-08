@@ -22,10 +22,17 @@ export interface AdapterConfig {
   /**
    * Whether the bundled tool accepts a `--format <fmt>` flag for structured
    * output. Default (undefined) = true. Set false for tools that reject it so
-   * the router does not inject `--format json` and crash the delegated call
-   * (e.g. `ai-trust check` has no `--format`/`--json` option -- issue #191).
+   * the router does not inject `--format json` and crash the delegated call.
    */
   acceptsFormatFlag?: boolean;
+  /**
+   * Flag the bundled tool uses to emit JSON when it does NOT take `--format`
+   * (e.g. `ai-trust check` emits JSON via a bare `--json`, issue #191). When
+   * set, the router injects this flag for `--json`/`format: 'json'` instead of
+   * `--format json`, and surfaces a one-line note for unsupported formats
+   * (e.g. sarif). Takes precedence over `acceptsFormatFlag` for json output.
+   */
+  jsonOutputFlag?: string;
 }
 
 export interface RunOptions {
