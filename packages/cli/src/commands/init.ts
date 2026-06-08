@@ -887,7 +887,9 @@ function generateNextSteps(
 
 // --- Verification & Recommendation helpers ---
 
-function getVerificationCommand(
+// Exported for regression testing of the per-finding Verify command strings
+// (e.g. the ENV-DOTENV command must not error on a project with no .gitignore).
+export function getVerificationCommand(
   finding: GroupedFinding,
   reportDir: string,
 ): string | null {
@@ -925,7 +927,11 @@ function getVerificationCommand(
     return 'curl -s http://127.0.0.1:11434/api/tags | head -c 200';
   }
   if (finding.findingId === 'ENV-DOTENV') {
-    return "cat .gitignore | grep -c '.env'";
+    // Robust to a missing .gitignore: grep on an absent file exits non-zero and
+    // writes to stderr ("No such file"), so a bare `cat .gitignore | grep` errors
+    // on an empty/new project (issue: 0.10.8 release-test P3). Suppress the error
+    // and print 0 — which correctly reads as ".env is not ignored".
+    return "grep -c '\\.env' .gitignore 2>/dev/null || echo 0";
   }
   if (finding.findingId === 'MCP-TOOLS') {
     // Show the first MCP config file found

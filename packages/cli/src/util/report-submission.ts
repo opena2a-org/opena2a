@@ -261,12 +261,20 @@ export async function getRegistryUrl(): Promise<string> {
  * Only prompts after 3+ scans, and not if the user already opted in or recently
  * dismissed the prompt. This lets us demonstrate value first.
  */
-export async function recordScanAndMaybePrompt(): Promise<void> {
+export async function recordScanAndMaybePrompt(
+  opts: { machineReadable?: boolean } = {},
+): Promise<void> {
   try {
     const mod = await loadShared();
     mod.incrementScanCount();
 
-    if (mod.shouldPromptContribute()) {
+    // The contribute prompt is interactive guidance written to stderr. Never emit
+    // it in machine-readable mode (--json / --format json|sarif / --ci) or when
+    // stdout is not a TTY — otherwise a `check --json 2>&1 | jq` merges the banner
+    // into the parsed stream and breaks it (issue: 0.10.8 release-test P2). The
+    // scan count is still recorded so the prompt fires on a later interactive run.
+    const machineReadable = opts.machineReadable === true || !process.stdout.isTTY;
+    if (!machineReadable && mod.shouldPromptContribute()) {
       printContributePrompt();
       // Mark as shown so it doesn't repeat every scan
       mod.dismissContributePrompt();
