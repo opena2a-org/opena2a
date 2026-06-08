@@ -15,6 +15,13 @@ export interface CredentialPattern {
   severity: string;
   explanation: string;
   businessImpact: string;
+  /**
+   * Name-gated patterns match a prefix-less value (e.g. a 40-char AWS secret
+   * access key) only by the credential NAME, so the captured value must pass a
+   * placeholder / low-entropy check — otherwise the AWS docs example
+   * (`wJalr…EXAMPLEKEY`) and sentinels (`xxxx…`) would be flagged as real.
+   */
+  nameGated?: boolean;
 }
 
 export interface CredentialMatch {
@@ -80,9 +87,17 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-005',
     title: 'AWS Secret Access Key',
-    pattern: /(?:AWS_SECRET_ACCESS_KEY|aws[_-]?secret[_-]?access[_-]?key|secretAccessKey|SecretAccessKey)\s*[:=]\s*['"]?([A-Za-z0-9+\/]{40})['"]?/g,
+    // Name-gated (the value has no prefix). Two anchors ending in `key`:
+    // `aws … secret|private … key` and the AWS-specific full phrase
+    // `secret[_ ]access[_ ]key` (covers JS-SDK `secretAccessKey` and Terraform
+    // `secret_access_key` with no nearby `aws`). The `key` token rejects
+    // `aws secretsmanager arn:` / etag FPs; value captured in group 1. The
+    // placeholder/low-entropy suppression (nameGated) drops the AWS docs
+    // example + sentinel values. Mirrors HMA's canonical scanner.
+    pattern: /(?:aws.{0,16}(?:secret|private).{0,16}key|secret[_\s.-]?access[_\s.-]?key)["'\s]*[:=]+>?\s*['"]?([A-Za-z0-9+/]{40})(?![A-Za-z0-9+/])/gi,
     envVarPrefix: 'AWS_SECRET_ACCESS_KEY',
     severity: 'critical',
+    nameGated: true,
     explanation: 'AWS Secret Access Key hardcoded in source. Combined with an Access Key ID, this grants full programmatic AWS access to all authorized services.',
     businessImpact: 'Full AWS API access. Migrate to environment variables and rotate the key pair immediately.',
   },
@@ -155,6 +170,23 @@ export const SKIP_FILENAME_PATTERNS: RegExp[] = [
 export const TEMPLATE_ENV_FILES = new Set([
   '.env.example', '.env.sample', '.env.template', '.env.dist',
 ]);
+
+/**
+ * True when a name-gated credential value is a placeholder/sentinel rather than
+ * a real secret. Used for prefix-less patterns (e.g. AWS secret access key)
+ * where the value alone can't be trusted: catches the AWS docs example
+ * (`wJalr…EXAMPLEKEY`), `YOUR_…`/`REPLACE_ME` templates, and low-entropy fillers
+ * (`xxxx…`, `0000…`). A real 40-char base64 key has ~30+ distinct chars, far
+ * above the entropy floor, so this never suppresses a genuine key.
+ */
+export function isPlaceholderSecretValue(value: string): boolean {
+  if (/FAKE|EXAMPLE|PLACEHOLDER|DUMMY|YOUR[_-]?(?:KEY|SECRET|TOKEN)|REPLACE[_-]?ME|INSERT[_-]?HERE|SAMPLE|CHANGE[_-]?ME|TEST[_-]?(?:KEY|SECRET)/i.test(value)) {
+    return true;
+  }
+  // Low-entropy fillers (40 `x`s, 40 `0`s, repeated short runs).
+  if (new Set(value).size <= 6) return true;
+  return false;
+}
 
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
 
@@ -280,6 +312,10 @@ export function quickCredentialScan(targetDir: string): CredentialMatch[] {
         let match: RegExpExecArray | null;
         while ((match = re.exec(line)) !== null) {
           const value = match[1] ?? match[0];
+          // Name-gated patterns match a prefix-less value purely by name, so a
+          // placeholder / low-entropy value (AWS docs `wJalr…EXAMPLEKEY`,
+          // `xxxx…`, `0000…`) must be dropped — it's not a real exposure.
+          if (pattern.nameGated && isPlaceholderSecretValue(value)) continue;
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;
