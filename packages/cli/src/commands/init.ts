@@ -132,7 +132,7 @@ export async function init(options: InitOptions): Promise<number> {
 
   // 2. Quick credential scan (source files + MCP configs)
   if (isTTY) spinner.update('Scanning for credentials...');
-  const credentialMatches = quickCredentialScan(targetDir);
+  const credentialMatches = await quickCredentialScan(targetDir);
 
   // Scan MCP config files for credentials (these are skipped by walkFiles)
   const mcpCreds = scanMcpCredentials(targetDir);

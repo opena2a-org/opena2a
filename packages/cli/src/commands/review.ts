@@ -301,7 +301,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Phase 2: Credential Scan (reuses Phase 1 credential data)
   const phase2Start = Date.now();
   progress(2, 'Checking credentials...');
-  const credentialData = runCredentialPhase(targetDir);
+  const credentialData = await runCredentialPhase(targetDir);
   const phase2Ms = Date.now() - phase2Start;
   const credScore = computeCredentialScore(credentialData);
   const phase2Status = credentialData.totalFindings === 0 ? 'pass'
@@ -592,7 +592,7 @@ export async function review(options: ReviewOptions): Promise<number> {
 
 async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   const project = detectProject(targetDir);
-  const credentialMatches = quickCredentialScan(targetDir);
+  const credentialMatches = await quickCredentialScan(targetDir);
   const credsBySeverity: Record<string, number> = {};
   for (const m of credentialMatches) {
     credsBySeverity[m.severity] = (credsBySeverity[m.severity] || 0) + 1;
@@ -645,8 +645,8 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   };
 }
 
-function runCredentialPhase(targetDir: string): CredentialPhaseData {
-  const matches = quickCredentialScan(targetDir);
+async function runCredentialPhase(targetDir: string): Promise<CredentialPhaseData> {
+  const matches = await quickCredentialScan(targetDir);
   const bySeverity: Record<string, number> = {};
   for (const m of matches) {
     bySeverity[m.severity] = (bySeverity[m.severity] || 0) + 1;

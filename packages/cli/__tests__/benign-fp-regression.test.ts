@@ -53,19 +53,19 @@ describe('benign FPR regression — credential detection', () => {
     }
   });
 
-  it('b01: empty package.json — no findings', () => {
+  it('b01: empty package.json — no findings', async () => {
     const dir = fixture('b01', { 'package.json': '{}\n' });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b02: README mentions API_KEY without an actual key — no findings', () => {
+  it('b02: README mentions API_KEY without an actual key — no findings', async () => {
     const dir = fixture('b02', {
       'README.md': '# App\n\nSet `API_KEY` in your environment before running.\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b03: .env.example with placeholder values — no findings', () => {
+  it('b03: .env.example with placeholder values — no findings', async () => {
     const dir = fixture('b03', {
       '.env.example': [
         'ANTHROPIC_API_KEY=your-key-here',
@@ -73,10 +73,10 @@ describe('benign FPR regression — credential detection', () => {
         'GITHUB_TOKEN=ghp_change_this',
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b04: code reads keys via process.env — no findings', () => {
+  it('b04: code reads keys via process.env — no findings', async () => {
     const dir = fixture('b04', {
       'app.js': [
         "const apiKey = process.env.ANTHROPIC_API_KEY;",
@@ -84,10 +84,10 @@ describe('benign FPR regression — credential detection', () => {
         "if (!apiKey) throw new Error('missing ANTHROPIC_API_KEY');",
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b05: comment showing key shape but no real key — no findings', () => {
+  it('b05: comment showing key shape but no real key — no findings', async () => {
     const dir = fixture('b05', {
       'docs.md': [
         '# How to set credentials',
@@ -96,29 +96,29 @@ describe('benign FPR regression — credential detection', () => {
         'GitHub PATs look like `ghp_...`.',
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b06: test fixture with key-shaped content under test/ — no findings (SKIP_DIRS)', () => {
+  it('b06: test fixture with key-shaped content under test/ — no findings (SKIP_DIRS)', async () => {
     const dir = fixture('b06', {
       'test/fixture.js': [
         "const fakeKey = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';",
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b07: vendored content under node_modules — no findings (SKIP_DIRS)', () => {
+  it('b07: vendored content under node_modules — no findings (SKIP_DIRS)', async () => {
     const dir = fixture('b07', {
       'node_modules/sample-pkg/index.js': [
         "const example = 'AKIAIOSFODNN7EXAMPLE';",
         "module.exports = { example };",
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b08: code-block in markdown docs — no findings on shape-only example', () => {
+  it('b08: code-block in markdown docs — no findings on shape-only example', async () => {
     const dir = fixture('b08', {
       'docs/setup.md': [
         '# Setup',
@@ -129,10 +129,10 @@ describe('benign FPR regression — credential detection', () => {
         '```',
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b09: template placeholder syntax — no findings', () => {
+  it('b09: template placeholder syntax — no findings', async () => {
     const dir = fixture('b09', {
       'config.template.json': [
         '{',
@@ -141,10 +141,10 @@ describe('benign FPR regression — credential detection', () => {
         '}',
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('b10: regex literal showing key shape — no findings', () => {
+  it('b10: regex literal showing key shape — no findings', async () => {
     const dir = fixture('b10', {
       'patterns.js': [
         "// match Anthropic keys",
@@ -153,14 +153,14 @@ describe('benign FPR regression — credential detection', () => {
         "const GOOGLE_KEY_RE = /AIza[0-9A-Za-z_-]{35,}/g;",
       ].join('\n') + '\n',
     });
-    expect(getHighCriticalFindings(quickCredentialScan(dir))).toEqual([]);
+    expect(getHighCriticalFindings(await quickCredentialScan(dir))).toEqual([]);
   });
 
-  it('positive control: real-shaped Anthropic key SHOULD fire (sanity check on the gate)', () => {
+  it('positive control: real-shaped Anthropic key SHOULD fire (sanity check on the gate)', async () => {
     const dir = fixture('positive', {
       'app.js': "const apiKey = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';\n",
     });
-    const findings = getHighCriticalFindings(quickCredentialScan(dir));
+    const findings = getHighCriticalFindings(await quickCredentialScan(dir));
     expect(findings.length).toBeGreaterThan(0);
     expect(findings.some((f) => f.findingId === 'CRED-001')).toBe(true);
   });

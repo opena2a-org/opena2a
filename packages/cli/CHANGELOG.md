@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.8
+
+### Fixes
+- **`protect` / `review` / `init` no longer mislabel every `sk-` credential as "OpenAI API Key".** The local catch-all pattern (`CRED-002`) matched any non-Anthropic `sk-` token and surfaced it as `OpenAI API Key` with an `OPENAI_API_KEY` env var — wrong for OpenRouter (`sk-or-v1-…`) and any future `sk-`-prefixed provider, and the generic-assignment bucket (`CRED-004`) labelled Stripe keys (`sk_live_…` / `sk_test_…`) as a generic "API Key". The displayed label and suggested env var for those two generic buckets are now routed through the canonical `@opena2a/credential-patterns` catalog, which orders specific prefixes before catch-alls, so the precise provider is recovered (Anthropic / OpenAI Project / OpenAI Legacy / OpenRouter / Stripe …). Detection is unchanged — only the label of values the scanner already flagged is refined; the deliberate "(Gemini drift risk)" / "(Bedrock drift risk)" framing on the Google/AWS patterns is preserved. The ESM-only catalog is loaded once per scan via a dynamic `import()` (this CLI is CommonJS), with a graceful fallback to the local label if it cannot be loaded. New regression test `__tests__/util/credential-label-classification.test.ts` covers `sk-ant-…`, OpenRouter, OpenAI, and Stripe `sk_live_…` / `sk_test_…` fixtures.
+
 ## 0.10.7
 
 Resolves three follow-ups surfaced by the `0.10.6` release test (#188, #189, #190). No bundled-tool version change; the `release-smoke:corpus` goldens are unchanged.

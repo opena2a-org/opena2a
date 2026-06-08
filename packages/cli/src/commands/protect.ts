@@ -140,7 +140,8 @@ import {
   SKIP_EXTENSIONS,
   walkFiles,
   isPlaceholderSecretValue,
-  type CredentialPattern,
+  refineCredentialLabel,
+  loadCanonicalPatterns,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
 import {
@@ -205,7 +206,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
   const spinner = new Spinner('Scanning for credentials...');
   spinner.start();
 
-  let matches = scanForCredentials(targetDir);
+  let matches = await scanForCredentials(targetDir);
 
   // Also scan MCP config files (skipped by walkFiles due to dot-file/JSON filtering)
   const mcpCreds = scanMcpCredentials(targetDir);
@@ -563,7 +564,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
       spinner.start();
     }
 
-    const remainingMatches = scanForCredentials(targetDir)
+    const remainingMatches = (await scanForCredentials(targetDir))
       .filter(m => {
         // Exclude .env files from verification -- credentials are supposed to be there
         const basename = path.basename(m.filePath);
@@ -716,9 +717,11 @@ export async function protect(options: ProtectOptions): Promise<number> {
 
 // --- Scanning ---
 
-function scanForCredentials(targetDir: string): CredentialMatch[] {
+async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]> {
   const matches: CredentialMatch[] = [];
   const seen = new Set<string>(); // dedup by value+file
+  // Loaded once before the walk so per-value label refinement stays synchronous.
+  const catalog = await loadCanonicalPatterns();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -755,7 +758,15 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
           // Skip if it looks like an env var reference already
           if (isEnvVarReference(line, match.index)) continue;
 
-          const envVar = deriveEnvVarName(pattern, filePath, matches);
+          // Refine the catch-all label (CRED-002/CRED-004) against the canonical
+          // `@opena2a/credential-patterns` catalog so OpenRouter (`sk-or-v1-…`) and
+          // Stripe (`sk_live_…`) aren't surfaced as "OpenAI API Key". Specific
+          // patterns (Anthropic, GitHub, AWS/Google drift) keep their local label.
+          const refined = refineCredentialLabel(pattern.id, value, {
+            title: pattern.title,
+            envVarPrefix: pattern.envVarPrefix,
+          }, catalog);
+          const envVar = deriveEnvVarName(refined.envVarPrefix, matches);
 
           matches.push({
             value,
@@ -764,7 +775,7 @@ function scanForCredentials(targetDir: string): CredentialMatch[] {
             findingId: pattern.id,
             envVar,
             severity: pattern.severity,
-            title: pattern.title,
+            title: refined.title,
             explanation: pattern.explanation,
             businessImpact: pattern.businessImpact,
           });
@@ -786,11 +797,9 @@ function isEnvVarReference(line: string, matchIndex: number): boolean {
 }
 
 function deriveEnvVarName(
-  pattern: CredentialPattern,
-  _filePath: string,
+  base: string,
   existingMatches: CredentialMatch[]
 ): string {
-  const base = pattern.envVarPrefix;
   const existing = existingMatches.filter(m => m.envVar.startsWith(base));
 
   if (existing.length === 0) return base;

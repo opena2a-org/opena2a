@@ -91,7 +91,7 @@ export async function shieldInit(options: {
   let credentialFindings = 0;
   try {
     const { quickCredentialScan } = await import('../util/credential-patterns.js');
-    const matches = quickCredentialScan(targetDir);
+    const matches = await quickCredentialScan(targetDir);
     credentialFindings = matches.length;
     if (isText) {
       if (matches.length === 0) {
