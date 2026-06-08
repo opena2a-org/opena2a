@@ -67,10 +67,20 @@ function isExampleInComment(line: string): boolean {
  * AKIAIOSFODNN7EXAMPLE.
  */
 export function isKnownExample(line: string, match: RegExpMatchArray): boolean {
-  const value = match[0];
+  // Prefer the captured value (group 1) when a pattern is name-gated — its
+  // match[0] is "name = value", so the example/placeholder checks must run on
+  // the value, not the whole match. Value-only patterns have no group 1 and
+  // fall back to match[0] unchanged.
+  const value = match[1] ?? match[0];
   if (KNOWN_EXAMPLE_KEYS.has(value)) return true;
   const lower = value.toLowerCase();
   if (PLACEHOLDER_INDICATORS.some(p => lower.includes(p))) return true;
+  // Low-entropy filler keyed by a credential name (e.g. `aws_secret_access_key
+  // = "0000…"` / `DEADBEEF…`): a real ≥20-char secret never has so few distinct
+  // characters (random base64 of a 40-char key has ~30+), so this can't suppress
+  // a genuine key. Guards name-gated patterns whose value alone can't be trusted
+  // by shape.
+  if (value.length >= 20 && new Set(value).size <= 6) return true;
   if (isLocalhostDemoConnectionString(value)) return true;
   if (isExampleInComment(line)) return true;
   return false;
