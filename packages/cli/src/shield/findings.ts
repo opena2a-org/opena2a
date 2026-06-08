@@ -297,7 +297,7 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
  * a configguard event whose absolute target is the scanned dir itself.
  * Defending against arbitrary forged events requires verifying the event
  * hash chain (`verifyEventChain`) at review time and excluding events past
- * a break — the deeper "Option 2" in issue #111, tracked as a follow-up.
+ * a break — the deeper "Option 2" of issue #111, tracked as issue #204.
  * The fail-closed rule below closes only the relative/non-absolute
  * configguard manufacture vector (#111 Option 1).
  *
