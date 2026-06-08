@@ -41,18 +41,25 @@ const NON_TRACKED_COMMANDS = new Set<string>(['telemetry', 'help']);
 // Per-invocation start times keyed by subcommand name (preAction → postAction).
 const telemetryStartedAt = new Map<string, number>();
 
-// Tell downstream tools (hackmyagent, secretless) to use 'opena2a' in user-facing messages.
-// HMA_CLI_PREFIX is the *binary-level* prefix — HMA appends verbs to it
-// ("${prefix} rollback <dir>"), so it must be just "opena2a" here. The full
-// command strings for the `check` next-steps footer (HMA_CHECK_COMMAND,
-// HMA_FULL_SCAN_HINT) are set per-spawn in spawnHmaCheck / spawnHmaCheckFromRouter.
+// Tell downstream bundled tools to render their command citations in
+// `opena2a …` form. Each `*_CLI_PREFIX` holds the EXACT command-path string
+// that replaces the tool's own invocation token; the tool appends its verb
+// (`${prefix} <verb>`). The value reflects where the tool sits in opena2a's
+// command tree, so the prefixes are NOT all bare "opena2a":
+//   - hackmyagent verbs (secure/scan/check) are opena2a TOP-LEVEL commands, so
+//     HMA_CLI_PREFIX is just "opena2a" ("${prefix} secure"). The full check
+//     next-steps strings (HMA_CHECK_COMMAND, HMA_FULL_SCAN_HINT) are still set
+//     per-spawn in spawnHmaCheck / spawnHmaCheckFromRouter.
+//   - secretless is reached as `opena2a secrets <verb>`.
+//   - cryptoserve is reached as `opena2a crypto <verb>`.
+//   - ai-trust's `check` command IS opena2a's top-level `registry <pkg>`
+//     (no `check` verb), so the prefix stands in for the whole `ai-trust check`.
+// These mirror util/rebrand.ts exactly, so once each bundled tool honors its
+// var natively (issue #191) the consumer-side rebrander is a no-op safety net.
 process.env.HMA_CLI_PREFIX = 'opena2a';
-// Forward-compat: ai-trust and cryptoserve do not yet honor a prefix env (so
-// opena2a-cli also rebrands their delegated stdout, see util/rebrand.ts), but
-// set the analogous vars now so the rebrand becomes a no-op once they do.
-// Tracked upstream in their repos.
-process.env.AI_TRUST_CLI_PREFIX = 'opena2a';
-process.env.CRYPTOSERVE_CLI_PREFIX = 'opena2a';
+process.env.SECRETLESS_CLI_PREFIX = 'opena2a secrets';
+process.env.CRYPTOSERVE_CLI_PREFIX = 'opena2a crypto';
+process.env.AI_TRUST_CLI_PREFIX = 'opena2a registry';
 
 async function main(): Promise<void> {
   // Tier-1 anonymous usage telemetry \u2014 default ON; opt-out via OPENA2A_TELEMETRY=off
