@@ -188,6 +188,96 @@ export function isPlaceholderSecretValue(value: string): boolean {
   return false;
 }
 
+/**
+ * Local finding IDs whose label is a generic/catch-all bucket and so should be
+ * refined against the canonical `@opena2a/credential-patterns` catalog:
+ *
+ *   - CRED-002 ("OpenAI API Key") matches `sk-(?!ant-)…` — a broad rule that
+ *     labels EVERY non-Anthropic `sk-` token "OpenAI API Key", which is wrong for
+ *     OpenRouter (`sk-or-v1-`) and any future `sk-`-prefixed provider.
+ *   - CRED-004 ("Generic API Key in Assignment") captures whatever sits inside
+ *     `api_key = "…"`, so the value may be a Stripe (`sk_live_…`), Slack, etc.
+ *
+ * The other local patterns are intentionally specific (Anthropic, GitHub) or
+ * carry deliberate framing the catalog lacks — DRIFT-001/002 say "(Gemini drift
+ * risk)" / "(Bedrock drift risk)" — so they are NOT refined.
+ */
+const REFINABLE_FINDING_IDS = new Set(['CRED-002', 'CRED-004']);
+
+/**
+ * Minimal shape of a `@opena2a/credential-patterns` catalog entry. Declared
+ * locally so this CommonJS module needs no static (type) import from that
+ * ESM-only package — the catalog is pulled in at runtime via a dynamic
+ * `import()` (see {@link loadCanonicalPatterns}).
+ */
+export interface CanonicalCredentialPattern {
+  id: string;
+  name: string;
+  regex: RegExp;
+  envPrefix: string;
+  category?: string;
+}
+
+/**
+ * Lazily import the canonical catalog from the ESM-only
+ * `@opena2a/credential-patterns` package. This CLI is CommonJS, so a static
+ * `import` would emit a `require()` that fails on an ESM target — the dynamic
+ * `import()` is the supported bridge. The resolved array is memoised, so the
+ * package is loaded at most once per process. On any import failure (e.g. the
+ * dependency is absent in a degraded install) it resolves to `[]`, and every
+ * caller falls back to its local label rather than crashing.
+ */
+let _canonicalPatterns: Promise<CanonicalCredentialPattern[]> | null = null;
+export function loadCanonicalPatterns(): Promise<CanonicalCredentialPattern[]> {
+  if (!_canonicalPatterns) {
+    _canonicalPatterns = import('@opena2a/credential-patterns')
+      .then(m => m.CREDENTIAL_PATTERNS as CanonicalCredentialPattern[])
+      .catch(() => []);
+  }
+  return _canonicalPatterns;
+}
+
+/**
+ * Map a raw credential value onto the canonical catalog to recover the precise
+ * provider label and env-var prefix. The catalog orders specific prefixes before
+ * catch-alls (`sk-ant-` / `sk-proj-` / `sk-or-v1-` before `sk-[48,]`; Stripe
+ * `sk_live_`/`sk_test_` are their own entries), so the FIRST entry whose regex
+ * matches the value is the correct provider.
+ *
+ * Returns null when nothing in the catalog matches — callers keep their local
+ * label. Detection is unchanged: this only relabels values the local scanner
+ * already flagged, never widens or narrows what gets flagged.
+ */
+export function classifyCredentialValue(
+  value: string,
+  catalog: CanonicalCredentialPattern[],
+): { title: string; envVarPrefix: string } | null {
+  for (const p of catalog) {
+    // The catalog regexes are non-global, but clone defensively so a stray `g`
+    // flag can't leak `lastIndex` state across calls.
+    const re = new RegExp(p.regex.source, p.regex.flags.replace('g', ''));
+    if (re.test(value)) {
+      return { title: p.name, envVarPrefix: p.envPrefix };
+    }
+  }
+  return null;
+}
+
+/**
+ * Apply {@link classifyCredentialValue} to a local match, but only for the
+ * generic/catch-all buckets in {@link REFINABLE_FINDING_IDS}. Returns the
+ * (possibly refined) `{ title, envVarPrefix }` to use for the match.
+ */
+export function refineCredentialLabel(
+  findingId: string,
+  value: string,
+  fallback: { title: string; envVarPrefix: string },
+  catalog: CanonicalCredentialPattern[],
+): { title: string; envVarPrefix: string } {
+  if (!REFINABLE_FINDING_IDS.has(findingId)) return fallback;
+  return classifyCredentialValue(value, catalog) ?? fallback;
+}
+
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
 
 /**
@@ -291,9 +381,11 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
 
 // --- Quick scan (used by init) ---
 
-export function quickCredentialScan(targetDir: string): CredentialMatch[] {
+export async function quickCredentialScan(targetDir: string): Promise<CredentialMatch[]> {
   const matches: CredentialMatch[] = [];
   const seen = new Set<string>();
+  // Loaded once before the walk so per-value label refinement stays synchronous.
+  const catalog = await loadCanonicalPatterns();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -328,7 +420,14 @@ export function quickCredentialScan(targetDir: string): CredentialMatch[] {
             /os\.environ\[['"]?\w*$/.test(before) ||
             /getenv\(['"]?\w*$/.test(before)) continue;
 
-          const base = pattern.envVarPrefix;
+          // Refine the catch-all label (CRED-002/CRED-004) against the canonical
+          // catalog so a `sk-or-v1-…` / Stripe `sk_live_…` value isn't surfaced
+          // as "OpenAI API Key". Specific patterns keep their local label.
+          const refined = refineCredentialLabel(pattern.id, value, {
+            title: pattern.title,
+            envVarPrefix: pattern.envVarPrefix,
+          }, catalog);
+          const base = refined.envVarPrefix;
           const existing = matches.filter(m => m.envVar.startsWith(base));
           const envVar = existing.length === 0 ? base : `${base}_${existing.length + 1}`;
 
@@ -339,7 +438,7 @@ export function quickCredentialScan(targetDir: string): CredentialMatch[] {
             findingId: pattern.id,
             envVar,
             severity: pattern.severity,
-            title: pattern.title,
+            title: refined.title,
             explanation: pattern.explanation,
             businessImpact: pattern.businessImpact,
           });

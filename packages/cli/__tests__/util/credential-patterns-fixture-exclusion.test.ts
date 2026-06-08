@@ -32,24 +32,24 @@ function write(rel: string, body: string): string {
 describe('credential-patterns: SKIP_FILENAME_PATTERNS regex correctness', () => {
   const matches = (name: string) => SKIP_FILENAME_PATTERNS.some(re => re.test(name));
 
-  it('matches *.test.ts / *.test.tsx / *.test.js / *.test.jsx / *.test.mjs / *.test.cjs / *.test.py', () => {
+  it('matches *.test.ts / *.test.tsx / *.test.js / *.test.jsx / *.test.mjs / *.test.cjs / *.test.py', async () => {
     for (const ext of ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py']) {
       expect(matches(`dlp.test.${ext}`)).toBe(true);
     }
   });
 
-  it('matches *.spec.* equivalents', () => {
+  it('matches *.spec.* equivalents', async () => {
     for (const ext of ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py']) {
       expect(matches(`dlp.spec.${ext}`)).toBe(true);
     }
   });
 
-  it('matches Go and Python *_test conventions', () => {
+  it('matches Go and Python *_test conventions', async () => {
     expect(matches('dlp_test.go')).toBe(true);
     expect(matches('dlp_test.py')).toBe(true);
   });
 
-  it('matches demo-* scripts (sh / ts / js / py)', () => {
+  it('matches demo-* scripts (sh / ts / js / py)', async () => {
     expect(matches('demo-setup.sh')).toBe(true);
     expect(matches('demo_setup.sh')).toBe(true);
     expect(matches('demo-setup.ts')).toBe(true);
@@ -57,7 +57,7 @@ describe('credential-patterns: SKIP_FILENAME_PATTERNS regex correctness', () => 
     expect(matches('demo-setup.py')).toBe(true);
   });
 
-  it('does NOT match production source files', () => {
+  it('does NOT match production source files', async () => {
     expect(matches('dlp.ts')).toBe(false);
     expect(matches('protect.ts')).toBe(false);
     expect(matches('handler.go')).toBe(false);
@@ -65,7 +65,7 @@ describe('credential-patterns: SKIP_FILENAME_PATTERNS regex correctness', () => 
     expect(matches('setup.sh')).toBe(false);
   });
 
-  it('does NOT match files that merely contain "test" or "demo" in the middle', () => {
+  it('does NOT match files that merely contain "test" or "demo" in the middle', async () => {
     expect(matches('greatest.ts')).toBe(false);
     expect(matches('contestant.ts')).toBe(false);
     expect(matches('redemo.sh')).toBe(false);
@@ -73,73 +73,73 @@ describe('credential-patterns: SKIP_FILENAME_PATTERNS regex correctness', () => 
 });
 
 describe('quickCredentialScan: fixture/demo files are silently skipped', () => {
-  it('skips *.test.ts files alongside source (the dlp.test.ts case)', () => {
+  it('skips *.test.ts files alongside source (the dlp.test.ts case)', async () => {
     write('packages/aim-core/src/dlp/dlp.ts', 'export const x = 1;');
     write('packages/aim-core/src/dlp/dlp.test.ts',
       `const realShape = "${FIXTURE_OPENAI_KEY}";\n` +
       `const aws = "${FIXTURE_AWS_KEY}";\n` +
       `const gh = "${FIXTURE_GITHUB_TOKEN}";\n`,
     );
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
   });
 
-  it('skips *.spec.ts files alongside source', () => {
+  it('skips *.spec.ts files alongside source', async () => {
     write('src/auth/token.ts', 'export const t = 1;');
     write('src/auth/token.spec.ts', `const k = "${FIXTURE_OPENAI_KEY}";`);
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
   });
 
-  it('skips files in vhs/ directory (terminal-recording demo asset convention)', () => {
+  it('skips files in vhs/ directory (terminal-recording demo asset convention)', async () => {
     write('docs/vhs/setup-lab.sh',
       `# VHS demo recording — placeholder creds for terminal capture\n` +
       `export OPENAI_API_KEY="${FIXTURE_OPENAI_KEY}"\n` +
       `export AWS_ACCESS_KEY_ID="${FIXTURE_AWS_KEY}"\n`,
     );
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
   });
 
-  it('skips demo-*.sh scripts (the scripts/demo-setup.sh case)', () => {
+  it('skips demo-*.sh scripts (the scripts/demo-setup.sh case)', async () => {
     write('scripts/demo-setup.sh', `OPENAI_API_KEY="${FIXTURE_OPENAI_KEY}"`);
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
   });
 
-  it('skips Go _test.go files (e.g. handler_test.go)', () => {
+  it('skips Go _test.go files (e.g. handler_test.go)', async () => {
     write('cmd/api/handler_test.go', `var key = "${FIXTURE_AWS_KEY}"`);
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
   });
 
-  it('STILL detects credentials in production source files (regression guard)', () => {
+  it('STILL detects credentials in production source files (regression guard)', async () => {
     write('src/config.ts',
       `// real production code path — must NOT be skipped\n` +
       `const apiKey = "${FIXTURE_OPENAI_KEY}";\n`,
     );
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches.length).toBeGreaterThan(0);
     expect(matches[0].findingId).toBe('CRED-002');
   });
 
-  it('STILL detects credentials in non-test shell scripts (regression guard)', () => {
+  it('STILL detects credentials in non-test shell scripts (regression guard)', async () => {
     // setup.sh (no demo- prefix) is production tooling — must keep firing
     write('scripts/setup.sh', `export OPENAI_API_KEY="${FIXTURE_OPENAI_KEY}"`);
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches.length).toBeGreaterThan(0);
   });
 
-  it('does NOT skip a production file just because a sibling is a test file', () => {
+  it('does NOT skip a production file just because a sibling is a test file', async () => {
     write('src/auth/token.ts', `const real = "${FIXTURE_OPENAI_KEY}";`);
     write('src/auth/token.test.ts', `const fixture = "${FIXTURE_OPENAI_KEY}";`);
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(1);
     expect(matches[0].filePath).toMatch(/token\.ts$/);
     expect(matches[0].filePath).not.toMatch(/\.test\.ts$/);
   });
 
-  it('reproduces the exact 2026-04-29 audit FP set: 7 fixtures across 3 file paths → 0 findings', () => {
+  it('reproduces the exact 2026-04-29 audit FP set: 7 fixtures across 3 file paths → 0 findings', async () => {
     // Mirrors the user's `opena2a review` self-scan output:
     //   - 3 OpenAI keys (dlp.test.ts, setup-lab.sh, demo-setup.sh)
     //   - 2 AWS keys   (dlp.test.ts, setup-lab.sh)
@@ -158,7 +158,7 @@ describe('quickCredentialScan: fixture/demo files are silently skipped', () => {
     write('scripts/demo-setup.sh',
       `export OPENAI_API_KEY="${FIXTURE_OPENAI_KEY}"\n`,
     );
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches).toHaveLength(0);
   });
 });
@@ -172,39 +172,39 @@ describe('quickCredentialScan: template env files are skipped (placeholders, not
   const PLACEHOLDER = `OPENAI_API_KEY=${FIXTURE_OPENAI_KEY}`; // real-shaped placeholder
 
   for (const tmpl of [...TEMPLATE_ENV_FILES]) {
-    it(`skips ${tmpl} (no findings even with a real-shaped placeholder)`, () => {
+    it(`skips ${tmpl} (no findings even with a real-shaped placeholder)`, async () => {
       write(tmpl, PLACEHOLDER + '\n');
-      expect(quickCredentialScan(tmpDir)).toHaveLength(0);
+      expect(await quickCredentialScan(tmpDir)).toHaveLength(0);
     });
   }
 
-  it('STILL scans a real .env file (regression guard — that is where protect migrates from)', () => {
+  it('STILL scans a real .env file (regression guard — that is where protect migrates from)', async () => {
     write('.env', PLACEHOLDER + '\n');
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches.length).toBeGreaterThan(0);
     expect(matches[0].findingId).toBe('CRED-002');
   });
 
-  it('STILL scans .env.local and .env.production (live env files, not templates)', () => {
+  it('STILL scans .env.local and .env.production (live env files, not templates)', async () => {
     write('.env.local', PLACEHOLDER + '\n');
     write('.env.production', PLACEHOLDER + '\n');
-    expect(quickCredentialScan(tmpDir).length).toBeGreaterThanOrEqual(2);
+    expect((await quickCredentialScan(tmpDir)).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('TEMPLATE_ENV_FILES covers the four conventional template names', () => {
+  it('TEMPLATE_ENV_FILES covers the four conventional template names', async () => {
     expect([...TEMPLATE_ENV_FILES].sort()).toEqual(
       ['.env.dist', '.env.example', '.env.sample', '.env.template'],
     );
   });
 
-  it('STILL scans a real .env nested in a normal subdirectory (subtree scanning intact)', () => {
+  it('STILL scans a real .env nested in a normal subdirectory (subtree scanning intact)', async () => {
     // Guard against an over-broad skip: only template FILES are excluded, never
     // whole subtrees. A real secret in config/.env must still be found.
     write('config/.env', PLACEHOLDER + '\n');
-    expect(quickCredentialScan(tmpDir).length).toBeGreaterThan(0);
+    expect((await quickCredentialScan(tmpDir)).length).toBeGreaterThan(0);
   });
 
-  it('a DIRECTORY named .env.example is treated as a normal hidden dir (documents, does not special-case)', () => {
+  it('a DIRECTORY named .env.example is treated as a normal hidden dir (documents, does not special-case)', async () => {
     // Documents the intended behavior: because the exclusion is enforced via
     // SCAN_DOTFILES omission (not a name-keyed skip branch), a dir named like a
     // template is handled by the same rule as any other hidden directory
@@ -215,7 +215,7 @@ describe('quickCredentialScan: template env files are skipped (placeholders, not
     // and the real-.env tests. Per adversarial-review verifier feedback.
     write('.env.example/.env', PLACEHOLDER + '\n');     // inside a hidden dir → not scanned
     write('visible/.env', PLACEHOLDER + '\n');           // normal dir → scanned
-    const matches = quickCredentialScan(tmpDir);
+    const matches = await quickCredentialScan(tmpDir);
     expect(matches.length).toBeGreaterThan(0);
     expect(matches.every(m => !m.filePath.includes('.env.example'))).toBe(true);
   });
@@ -224,36 +224,36 @@ describe('quickCredentialScan: template env files are skipped (placeholders, not
 describe('name-gated AWS secret access key (CRED-005)', () => {
   const REAL = 'abcdEFGH1234ijklMNOP5678qrstUVWX90ABcdef'; // 40-char, high-entropy
 
-  it('flags a real AWS secret keyed by name', () => {
+  it('flags a real AWS secret keyed by name', async () => {
     write('creds.py', `aws_secret_access_key = "${REAL}"\n`);
-    const m = quickCredentialScan(tmpDir);
+    const m = await quickCredentialScan(tmpDir);
     expect(m.length).toBeGreaterThan(0);
     expect(m[0].findingId).toBe('CRED-005');
   });
 
-  it('flags JS-SDK `secretAccessKey` and Terraform `secret_access_key` (no nearby "aws")', () => {
+  it('flags JS-SDK `secretAccessKey` and Terraform `secret_access_key` (no nearby "aws")', async () => {
     write('client.js', `const c = new AWS.S3({ secretAccessKey: "${REAL}" });\n`);
     write('main.tf', `provider "aws" {\n  secret_access_key = "${REAL}"\n}\n`);
-    expect(quickCredentialScan(tmpDir).length).toBeGreaterThanOrEqual(2);
+    expect((await quickCredentialScan(tmpDir)).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('does NOT flag the AWS docs example secret (contains EXAMPLE)', () => {
+  it('does NOT flag the AWS docs example secret (contains EXAMPLE)', async () => {
     write('docs.env', 'AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n');
-    expect(quickCredentialScan(tmpDir).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
+    expect((await quickCredentialScan(tmpDir)).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
   });
 
-  it('does NOT flag low-entropy sentinels (40 x\'s / 40 zeros)', () => {
+  it('does NOT flag low-entropy sentinels (40 x\'s / 40 zeros)', async () => {
     write('a.py', `aws_secret_access_key = "${'x'.repeat(40)}"\n`);
     write('b.py', `aws_secret_access_key = "${'0'.repeat(40)}"\n`);
-    expect(quickCredentialScan(tmpDir).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
+    expect((await quickCredentialScan(tmpDir)).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
   });
 
-  it('does NOT flag a bare 40-char blob with no credential name', () => {
+  it('does NOT flag a bare 40-char blob with no credential name', async () => {
     write('blob.js', `const data = "${REAL}";\n`);
-    expect(quickCredentialScan(tmpDir).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
+    expect((await quickCredentialScan(tmpDir)).filter(m => m.findingId === 'CRED-005')).toHaveLength(0);
   });
 
-  it('isPlaceholderSecretValue: catches EXAMPLE/sentinel, passes real keys', () => {
+  it('isPlaceholderSecretValue: catches EXAMPLE/sentinel, passes real keys', async () => {
     expect(isPlaceholderSecretValue('wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe(true);
     expect(isPlaceholderSecretValue('x'.repeat(40))).toBe(true);
     expect(isPlaceholderSecretValue('0'.repeat(40))).toBe(true);
