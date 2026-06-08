@@ -25,7 +25,7 @@ node dist/index.js -v
 node dist/index.js --version
 ```
 
-`--version` should be a two-line disclosure (version + telemetry status, brand-model split per 0.9.0 telemetry canary). `--help` lists every registered command and the global flags.
+`--version` is stream-split as of cli-ui 0.5.2: the bare version (`opena2a 0.x.x`) prints to **stdout** as a single parseable line, and the telemetry disclosure prints to **stderr**. `node dist/index.js --version 2>/dev/null` must show exactly one line. `--help` lists every registered command and the global flags.
 
 ## Composite review
 

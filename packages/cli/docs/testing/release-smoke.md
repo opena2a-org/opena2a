@@ -16,16 +16,24 @@ node dist/index.js --help  # banner + commands list, no panics
 ## 1. Help and version
 
 ```bash
-node dist/index.js --version
+node dist/index.js --version              # version on stdout + telemetry on stderr
+node dist/index.js --version 2>/dev/null  # stdout ONLY: single clean line `opena2a 0.x.x`
+node dist/index.js --version 2>&1 1>/dev/null  # stderr ONLY: telemetry disclosure
 ```
 
-Expected output (exactly two lines for the `--version` invocation):
+As of cli-ui 0.5.2 the `--version` output is stream-split: the bare version
+goes to **stdout** as a single parseable line, the telemetry disclosure to
+**stderr**:
 ```
+# stdout
 opena2a 0.10.0
+# stderr
 Telemetry: on (opt-out: OPENA2A_TELEMETRY=off  •  details: opena2a.org/telemetry)
 ```
 
-If the second line is missing, `versionLine()` isn't wired or the SDK init failed silently.
+If the stderr line is missing, `versionLineParts()` isn't wired or the SDK init
+failed silently. If the telemetry line leaks into stdout, the manual
+`option:version` handler regressed back to Commander's `.version()`.
 
 ## 2. Telemetry — disclosure surfaces and opt-out (3 min)
 
@@ -39,7 +47,7 @@ rm -f ~/.config/opena2a/telemetry.json
 
 | # | Command | Expected |
 |---|---------|----------|
-| 2.1 | `opena2a --version` | `opena2a 0.10.0` then `Telemetry: on (opt-out: OPENA2A_TELEMETRY=off  •  details: opena2a.org/telemetry)` |
+| 2.1 | `opena2a --version` | `opena2a 0.10.0` on **stdout** (single line) + `Telemetry: on (opt-out: OPENA2A_TELEMETRY=off  •  details: opena2a.org/telemetry)` on **stderr**. `--version 2>/dev/null` shows only the version; `--version 2>&1 1>/dev/null` shows only the telemetry line. |
 | 2.2 | `opena2a telemetry status` | `opena2a telemetry`, then `state: on`, install_id, config path, policy URL, toggle hint |
 | 2.3 | `opena2a telemetry off` | `Telemetry disabled for opena2a.` Then `--version` shows `Telemetry: off`. `~/.config/opena2a/telemetry.json` has `"enabled": false`. |
 | 2.4 | `opena2a telemetry on` | Re-enables persistently. |
