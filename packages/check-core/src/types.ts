@@ -107,6 +107,21 @@ export interface CheckInput {
  * Canonical `check` output. Emitted as JSON directly by each CLI's
  * `--json` path. Matches hackmyagent's buildCheckJsonOutput order so the
  * byte-equality parity contract holds.
+ *
+ * This object can carry up to THREE orthogonal axes — do not confuse them
+ * (issue #124). The full contract, including which field to gate CI on,
+ * lives in `check-json-schema.ts` (`CHECK_FIELD_GUIDE` / `checkJsonSchema`):
+ *
+ *   - LOCAL-SCAN axis: `score`/`maxScore`/`findings` — 0..100, what the
+ *     local static scan measured. `score: 100` means "local scan found
+ *     nothing", NOT "the registry trusts this package".
+ *   - REGISTRY-TRUST axis: `trustScore` (0..1, continuous input),
+ *     `trustLevel` (0..4 ordinal, DERIVED from trustScore + hard gates —
+ *     gate on this), and `verdict` (the string label of `trustLevel`).
+ *     A high `trustScore` does not imply a high `trustLevel`.
+ *   - REGISTRY-SCAN-STATE axis: `scanStatus`. `scanStatus: "pending"` next
+ *     to `score: 100` is not a contradiction — local scan ran, registry's
+ *     server-side scan has not.
  */
 export interface CheckOutput {
   name: string;
@@ -115,14 +130,18 @@ export interface CheckOutput {
 
   /** Scan-sourced fields (present when scan data is attached). */
   projectType?: string;
+  /** Local-scan result, 0..100. NOT a registry trust verdict — see CHECK_FIELD_GUIDE. */
   score?: number;
   maxScore?: number;
   findings?: unknown[];
   version?: string;
 
   /** Registry-sourced fields (present when registry.found === true). */
+  /** Canonical registry trust ordinal (0..4: Blocked..Verified). Gate registry trust on this. */
   trustLevel?: number;
+  /** Continuous trust input (0..1) that, with hard gates, yields trustLevel. A high score ≠ a high level. */
   trustScore?: number;
+  /** String label of trustLevel ("blocked".."verified"). */
   verdict?: string;
   scanStatus?: string;
   packageType?: string;
