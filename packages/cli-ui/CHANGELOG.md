@@ -1,9 +1,6 @@
 # Changelog — @opena2a/cli-ui
 
-## Unreleased
-
-> Ships as 0.5.2 — the version bump + lockfile update happen at publish time
-> (`npm version patch`), together with the consumer pin bumps.
+## 0.5.2
 
 ### Added
 - `versionLineParts({ tool, version, telemetry })` — stream-split variant of `versionLine`. Returns `{ stdout, stderr }`: the bare `tool x.y.z` on `stdout` and the "Telemetry: on/off (opt-out: …)" disclosure on `stderr` (or `null`). Lets a consumer keep `tool --version` stdout script-clean (single line, no telemetry) while the privacy disclosure still prints to the terminal via stderr — it stays a disclosure surface, just off the parseable stream. Consumers wire it with a manual `program.on("option:version", …)` handler instead of Commander's `.version()` so the two streams stay separate. `versionLine` is unchanged (still returns the 2-line string) for back-compat.
