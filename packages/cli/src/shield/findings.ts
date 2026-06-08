@@ -290,6 +290,17 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
  * inherits 288 cross-project tamper events and the report looks broken
  * (issue #109 sub-item 1).
  *
+ * SCOPE BOUNDARY — this is a path-scoping filter, NOT a forged-log
+ * defense. It cannot stop an attacker who can write to events.jsonl from
+ * forging events under a non-configguard `source` (e.g. `source:'shield'`
+ * + `category:'integrity'` + `severity:'critical'` => SHIELD-INT-002), or
+ * a configguard event whose absolute target is the scanned dir itself.
+ * Defending against arbitrary forged events requires verifying the event
+ * hash chain (`verifyEventChain`) at review time and excluding events past
+ * a break — the deeper "Option 2" of issue #111, tracked as issue #204.
+ * The fail-closed rule below closes only the relative/non-absolute
+ * configguard manufacture vector (#111 Option 1).
+ *
  * Scope of this filter (intentionally narrow):
  * - Only `event.source === 'configguard'` events with an absolute-path
  *   `target` are subject to scoping. Those events use `target` as the
@@ -301,10 +312,17 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
  *   indicator. Filtering those by path would suppress legitimate
  *   cross-cutting findings (e.g. an ARP event for `/usr/bin/curl`
  *   spawned inside the scan target).
- * - ConfigGuard events with a non-absolute `target` (`guard watch`
- *   emits relative paths like `package.json`) are kept. They cannot
- *   be reliably scoped without writer-side changes; that's tracked
- *   as a residual issue separate from this PR.
+ * - ConfigGuard events with a non-absolute `target` are DROPPED, not
+ *   kept (symmetric scoping, fail-closed — issue #111). Post-#110 every
+ *   finding-producing configguard writer (guard.ts verify/watch) emits
+ *   an absolute target via `path.join(targetDir, sig.filePath)` with an
+ *   already-resolved `targetDir`. A non-absolute target on a configguard
+ *   event is therefore a legacy or injected/corrupted log line — e.g. an
+ *   attacker with write access to `~/.opena2a/shield/events.jsonl` can
+ *   inject `source:'configguard', outcome:'blocked', target:'../../etc/passwd'`
+ *   to manufacture a SHIELD-INT-001 critical. We cannot prove such a
+ *   target is in scope (its base directory is unknown), so we exclude it.
+ *   Same-project tampers remain visible via `guard diff` / `guard verify`.
  *
  * No filesystem I/O — `path.resolve` only consults `process.cwd()`
  * when `targetDir` is relative.
@@ -317,7 +335,9 @@ export function filterEventsToTarget(
   return events.filter(event => {
     if (event.source !== 'configguard') return true;
     const target = event.target ?? '';
-    if (!isAbsolutePathLike(target)) return true;
+    // Fail closed: a configguard event whose target is not absolute-path-like
+    // cannot be proven in-scope, so it is dropped (issue #111).
+    if (!isAbsolutePathLike(target)) return false;
     const normalizedEventTarget = path.resolve(target);
     if (normalizedEventTarget === normalizedTarget) return true;
     const rel = path.relative(normalizedTarget, normalizedEventTarget);

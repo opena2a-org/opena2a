@@ -75,19 +75,52 @@ describe('filterEventsToTarget — configguard scoping', () => {
     expect(filtered).toHaveLength(1);
   });
 
-  it('keeps configguard events whose target is empty or relative (defensive — writer-side fix in #110)', () => {
-    // guard.ts no longer emits sig.filePath (relative) as the target — #110
-    // landed the fix to emit `path.join(targetDir, sig.filePath)` (absolute).
-    // The filter still cannot scope relative paths reliably, so it keeps
-    // them defensively. Any future writer that emits relative is filed as
-    // its own bug.
+  it('drops configguard events whose target is empty or relative (fail-closed — #111)', () => {
+    // Post-#110 every finding-producing configguard writer emits an absolute
+    // target. A non-absolute configguard target is a legacy or injected log
+    // line that cannot be proven in scope, so it is dropped (issue #111).
     const events = [
       makeEvent({ target: '' }),
       makeEvent({ target: 'package.json' }),
       makeEvent({ target: '.opena2a/config.yaml' }),
     ];
     const filtered = filterEventsToTarget(events, '/Users/foo/projectA');
-    expect(filtered).toHaveLength(3);
+    expect(filtered).toHaveLength(0);
+  });
+
+  it('#111: drops an injected configguard event with a relative-traversal target when scanning any directory', () => {
+    // Attacker writes a forged event to ~/.opena2a/shield/events.jsonl with a
+    // relative-traversal target to manufacture a SHIELD-INT-001 critical.
+    // The filter must drop it regardless of which directory is being scanned.
+    const injected = makeEvent({
+      source: 'configguard',
+      outcome: 'blocked',
+      action: 'tamper-detected',
+      target: '../../etc/passwd',
+    });
+    for (const scanDir of ['/Users/foo/projectA', '/tmp/empty', '.', '/']) {
+      expect(filterEventsToTarget([injected], scanDir)).toHaveLength(0);
+    }
+  });
+
+  it('#111: an injected relative-traversal configguard event does NOT classify to SHIELD-INT-001', () => {
+    // End-to-end: the forged event must not survive scoping into a critical
+    // finding. classifyEvents over the *filtered* stream must yield nothing.
+    const injected = makeEvent({
+      source: 'configguard',
+      outcome: 'blocked',
+      action: 'tamper-detected',
+      target: '../../../../etc/passwd',
+    });
+    const scoped = filterEventsToTarget([injected], '/Users/foo/projectA');
+    const findings = classifyEvents(scoped);
+    expect(findings.find(f => f.finding.id === 'SHIELD-INT-001')).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('#111: a windows-style relative traversal target is also dropped', () => {
+    const injected = makeEvent({ source: 'configguard', outcome: 'blocked', target: '..\\..\\windows\\system32' });
+    expect(filterEventsToTarget([injected], '/Users/foo/projectA')).toHaveLength(0);
   });
 
   it('#110: guard.watch absolute-path events scope correctly to the scan target', () => {
