@@ -115,6 +115,42 @@ describe("buildCheckOutput", () => {
     expect(out.analystFindings).toBeUndefined();
   });
 
+  it("omits analystEscalations and coverageSweep when absent (parity shape unchanged)", () => {
+    const out = buildCheckOutput({
+      name: "express",
+      type: "npm-package",
+      scan: { ...baseScan, analystEscalations: [] },
+    });
+    expect("analystEscalations" in out).toBe(false);
+    expect("coverageSweep" in out).toBe(false);
+  });
+
+  it("emits analystEscalations and coverageSweep after analystFindings (--nanomind path)", () => {
+    const sweep = { candidates: 3, swept: 3, skipped: 0, nullVerdicts: 0, policy: "abstention-gated" };
+    const escalations = [{ file: "notes.txt", routed: "attack", attackClass: "injection" }];
+    const out = buildCheckOutput({
+      name: "express",
+      type: "npm-package",
+      scan: { ...baseScan, analystFindings: [{ id: "x" }], analystEscalations: escalations, coverageSweep: sweep },
+    });
+    expect(out.analystEscalations).toEqual(escalations);
+    expect(out.coverageSweep).toEqual(sweep);
+    const keys = Object.keys(out);
+    expect(keys.indexOf("analystEscalations")).toBeGreaterThan(keys.indexOf("analystFindings"));
+    expect(keys.indexOf("coverageSweep")).toBe(keys.indexOf("analystEscalations") + 1);
+  });
+
+  it("emits coverageSweep even when the sweep escalated nothing (accounting is not optional)", () => {
+    const sweep = { candidates: 2, swept: 2, skipped: 0, nullVerdicts: 0, policy: "abstention-gated" };
+    const out = buildCheckOutput({
+      name: "express",
+      type: "npm-package",
+      scan: { ...baseScan, coverageSweep: sweep },
+    });
+    expect(out.coverageSweep).toEqual(sweep);
+    expect("analystEscalations" in out).toBe(false);
+  });
+
   it("does not merge registry when found=false", () => {
     const out = buildCheckOutput({
       name: "ghost",

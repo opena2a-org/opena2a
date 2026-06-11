@@ -45,6 +45,15 @@ export interface ScanResult {
   findings: unknown[];
   analystFindings?: Array<Record<string, unknown>>;
   version?: string;
+  /**
+   * Advisory analyst escalations from the --nanomind coverage sweep
+   * (abstention-gated: escalate-only, never part of score/exit). Only
+   * producers running with --nanomind populate these; parity fixtures
+   * (no --nanomind) never carry them.
+   */
+  analystEscalations?: Array<Record<string, unknown>>;
+  /** Coverage-sweep accounting (candidates/swept/skipped/nullVerdicts/policy). */
+  coverageSweep?: Record<string, unknown>;
 }
 
 /**
@@ -151,6 +160,16 @@ export interface CheckOutput {
 
   /** Optional analyst annotations from NanoMind. */
   analystFindings?: Array<Record<string, unknown>>;
+
+  /**
+   * Advisory analyst escalations from the --nanomind coverage sweep.
+   * Emitted AFTER `analystFindings` and only when non-empty, so the
+   * byte-equality parity contract (fixtures never pass --nanomind)
+   * is unaffected.
+   */
+  analystEscalations?: Array<Record<string, unknown>>;
+  /** Coverage-sweep accounting; emitted only when the sweep ran (--nanomind). */
+  coverageSweep?: Record<string, unknown>;
 
   /**
    * Optional rich-context narrative (skill + mcp v1). Always emitted

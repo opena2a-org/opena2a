@@ -2,6 +2,29 @@
 
 All notable changes to `@opena2a/check-core`.
 
+## 0.3.0 — 2026-06-10
+
+Carries the --nanomind advisory escalation channel through `check --json`
+(Phase A P1 analyst-wiring follow-up). Producers running `check
+<npm|pypi|github> --nanomind --json` previously computed
+`analystEscalations`/`coverageSweep` and then dropped them at
+`buildCheckOutput`.
+
+### Added
+- `ScanResult.analystEscalations?` / `ScanResult.coverageSweep?` —
+  optional advisory fields from the abstention-gated analyst coverage
+  sweep. Escalate-only channel: never part of score, findings, or exit
+  code.
+- `CheckOutput.analystEscalations?` / `CheckOutput.coverageSweep?` —
+  emitted after `analystFindings` (escalations only when non-empty;
+  sweep accounting whenever the sweep ran), before `narrative`.
+- `CHECK_FIELD_GUIDE` + JSON Schema entries for both fields, with
+  explicit do-not-gate-CI guidance on `analystEscalations`.
+
+### Parity
+- Byte-equality contract unaffected: parity fixtures never pass
+  `--nanomind`, so the new keys are absent there.
+
 ## 0.2.0 — 2026-04-27
 
 Adds the rich-context narrative wire types, the static secret-rotation

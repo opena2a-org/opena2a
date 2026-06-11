@@ -176,6 +176,18 @@ export const CHECK_FIELD_GUIDE: Record<string, CheckFieldDoc> = {
     source: "local-scan",
     description: "Optional NanoMind analyst annotations layered on the local scan.",
   },
+  analystEscalations: {
+    source: "local-scan",
+    description:
+      "Advisory escalations from the --nanomind analyst coverage sweep (abstention-gated). Each names a file the structural scan did NOT flag but the analyst routed to attack/abstain — for human review. Never part of score, findings, or exit code; present only when --nanomind ran and the sweep escalated something.",
+    gating:
+      "Do NOT gate CI on this — it is an advisory human-review channel, not a verdict.",
+  },
+  coverageSweep: {
+    source: "local-scan",
+    description:
+      "Coverage-sweep accounting (candidates, swept, skipped, nullVerdicts, policy) so a capped or daemon-degraded sweep is never silently partial. Present only when --nanomind ran.",
+  },
   narrative: {
     source: "meta",
     description:
