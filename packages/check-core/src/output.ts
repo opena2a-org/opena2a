@@ -38,7 +38,8 @@ export interface BuildCheckOutputInput {
  *   projectType, score, maxScore, findings, version,     (scan path)
  *   trustLevel, trustScore, verdict, scanStatus,          (registry)
  *   packageType, lastScannedAt, communityScans, cveCount,
- *   analystFindings
+ *   analystFindings,
+ *   analystEscalations, coverageSweep                     (--nanomind only)
  */
 export function buildCheckOutput(input: BuildCheckOutputInput): CheckOutput {
   const { name, type, scan, registry, narrative } = input;
@@ -69,6 +70,16 @@ export function buildCheckOutput(input: BuildCheckOutputInput): CheckOutput {
 
   if (scan?.analystFindings && scan.analystFindings.length) {
     out.analystFindings = scan.analystFindings;
+  }
+
+  // --nanomind-only advisory channel: escalations (when non-empty) then the
+  // sweep accounting (when present). Parity fixtures never pass --nanomind,
+  // so these keys are absent there and the byte-equality contract holds.
+  if (scan?.analystEscalations && scan.analystEscalations.length) {
+    out.analystEscalations = scan.analystEscalations;
+  }
+  if (scan?.coverageSweep !== undefined) {
+    out.coverageSweep = scan.coverageSweep;
   }
 
   // narrative is the LAST key so the byte-equality parity contract

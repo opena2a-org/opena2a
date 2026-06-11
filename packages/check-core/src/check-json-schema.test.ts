@@ -19,6 +19,8 @@ describe("check-json contract", () => {
     findings: [],
     version: "4.18.2",
     analystFindings: [{ id: "x" }],
+    analystEscalations: [{ file: "notes.txt", routed: "attack" }],
+    coverageSweep: { candidates: 1, swept: 1, skipped: 0, nullVerdicts: 0, policy: "abstention-gated" },
   };
 
   // Every optional field set, so any newly-copied field in output.ts
