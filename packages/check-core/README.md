@@ -10,17 +10,14 @@ One implementation of:
 - canonical `CheckOutput` + `NotFoundOutput` JSON shape
 - registry-first, scan-on-miss orchestrator (pluggable adapters)
 
-Rendering stays in [`@opena2a/cli-ui`](../cli-ui). This package is data only.
+Rendering stays in [`@opena2a/cli-ui`](https://www.npmjs.com/package/@opena2a/cli-ui). This package is data only.
 
 ## Why
 
 Three CLIs emit `check --json`. Before 0.18.3 their outputs disagreed on
 five load-bearing fields (trustLevel, verdict, packageType, scanStatus,
-name). M2 closed that by convention; M3 closes it by construction — there
-is exactly one implementation, and every CLI imports it.
-
-Parent design: [`briefs/cli-consolidation.md`](https://github.com/opena2a-org/opena2a-org-public/blob/main/briefs/cli-consolidation.md).
-Milestone: [CA-034] M3.
+name). This package is the single shared implementation every CLI imports,
+so the wire shape cannot drift between them.
 
 ## API
 
@@ -109,6 +106,23 @@ import { CHECK_FIELD_GUIDE, checkJsonSchema } from "@opena2a/check-core";
 CHECK_FIELD_GUIDE.score.gating;      // "Gate on this for 'did my local static checks pass'..."
 CHECK_FIELD_GUIDE.trustLevel.source; // "registry"
 ```
+
+### `--nanomind` fields (advisory, never gate)
+
+When a CLI runs `check`/`secure` with `--nanomind`, the NanoMind analyst
+coverage sweep can layer extra keys onto the found result. They are
+**advisory only** — never part of `score`, `findings`, or the exit code.
+
+| Field | Source | What it carries |
+|-------|--------|-----------------|
+| `analystFindings` | local-scan | NanoMind analyst annotations layered on the local scan. |
+| `analystEscalations` | local-scan | Abstention-gated escalations from the sweep. Each names a file the structural scan did **not** flag but the analyst routed to attack/abstain, for human review. Present only when `--nanomind` ran and the sweep escalated something. |
+| `coverageSweep` | local-scan | Sweep accounting (`candidates`, `swept`, `skipped`, `nullVerdicts`, `policy`) so a capped or daemon-degraded sweep is never silently partial. Present only when `--nanomind` ran. |
+| `narrative` | meta | Optional rich-context narrative (skill + mcp v1). Always emitted last so byte-equality holds when absent. |
+
+Do **not** gate CI on `analystEscalations` — it is a human-review channel,
+not a verdict. The authoritative per-field guidance is exported in
+`CHECK_FIELD_GUIDE`.
 
 **1.0.0 (deferred breaking change, CHIEF-CA + CHIEF-CPO):** the flat object
 namespaces the two layers — `{ localScan: { score, maxScore, findings },
