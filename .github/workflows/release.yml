@@ -14,6 +14,7 @@ on:
       - 'check-core-v*'
       - 'telemetry-v*'
       - 'credential-patterns-v*'
+      - 'atx-verify-v*'
 
 permissions:
   contents: write
@@ -81,6 +82,7 @@ jobs:
           publish_if_new packages/check-core @opena2a/check-core
           publish_if_new packages/telemetry @opena2a/telemetry
           publish_if_new packages/credential-patterns @opena2a/credential-patterns
+          publish_if_new packages/atx-verify @opena2a/atx-verify
           echo "=== Published this run ==="
           cat /tmp/published.txt
           echo "=== Skipped (version already on npm) ==="
