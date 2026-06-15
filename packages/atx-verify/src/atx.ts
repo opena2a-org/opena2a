@@ -95,6 +95,16 @@ export interface AtxPublicKey {
   algorithm: 'Ed25519' | 'ML-DSA-65' | string;
   /** hex-encoded raw public key (32 bytes for Ed25519). */
   publicKeyHex: string;
+  /**
+   * Optional DID-URL identifying the key and its controller, e.g.
+   * `did:opena2a:authority:opena2a.org#key-1`. When present (contains `#`), the
+   * key is BOUND to its controller DID: it may only verify signatures for
+   * credentials issued by that controller (or, for v1.1, an issuerChain
+   * authority). This stops one trusted issuer's key from satisfying a credential
+   * issued under a different DID. A key without a `#` fragment is unbound and is
+   * eligible for any issuer (back-compat for single-issuer anchor sets).
+   */
+  keyId?: string;
 }
 
 /** Trust anchors the verifier evaluates against (in production: fetched from AIM/Registry). */
@@ -207,8 +217,18 @@ export class LocalAtxVerifier implements AtxVerifier {
     } else {
       payload = canonicalPayload(atx);
     }
+    // Key↔issuer binding: a key may verify a signature for this credential only
+    // if it is controlled by one of the credential's authorities — the issuer,
+    // plus the issuerChain authorities for v1.1 (where the chain is signed; v1.0
+    // chain is unsigned/forgeable, so only the issuer counts). A key whose keyId
+    // is not a DID-URL (no '#') is unbound and stays eligible (back-compat).
+    const authoritySet = new Set<string>([atx.issuerDid]);
+    if (isV11) {
+      for (const did of atx.issuerChain ?? []) authoritySet.add(did);
+    }
     const edKeys = this.anchors.publicKeys
       .filter((k) => k.algorithm === 'Ed25519')
+      .filter((k) => keyEligible(k.keyId, authoritySet))
       .map((k) => ed25519FromRawHex(k.publicKeyHex))
       .filter((k): k is crypto.KeyObject => k !== null);
 
@@ -265,6 +285,26 @@ export class LocalAtxVerifier implements AtxVerifier {
 
 function reject(rejectCategory: RejectCategory, reason: string): AtxVerificationResult {
   return { valid: false, rejectCategory, reason };
+}
+
+/**
+ * Whether a key may verify a signature for an issuer in `authoritySet`. Binding
+ * applies only to keys whose keyId is a DID-URL (contains '#', naming a
+ * controller DID): such a key is eligible only if its controller is in the set.
+ * A key without a '#' fragment (or no keyId) expresses no controller and is
+ * treated as unbound (legacy single-issuer configs), so it stays eligible.
+ */
+function keyEligible(keyId: string | undefined, authoritySet: Set<string>): boolean {
+  if (!keyId || !keyId.includes('#')) {
+    return true;
+  }
+  return authoritySet.has(controllerDid(keyId));
+}
+
+/** The DID portion of a keyId DID-URL (everything before the first '#'). */
+function controllerDid(keyId: string): string {
+  const i = keyId.indexOf('#');
+  return i >= 0 ? keyId.slice(0, i) : keyId;
 }
 
 /**

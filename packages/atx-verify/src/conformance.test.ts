@@ -24,7 +24,7 @@ interface Fixture {
   verifierState: {
     clockRfc3339: string;
     trustedIssuers: string[];
-    publicKeys: Array<{ algorithm: string; publicKeyHex: string }>;
+    publicKeys: Array<{ algorithm: string; publicKeyHex: string; keyId?: string }>;
     crl?: { entries: Array<{ agentId: string; reason?: string }> };
   };
   expected: { verifyResult: 'ACCEPT' | 'REJECT'; rejectCategory?: string };
@@ -38,6 +38,7 @@ const FIXTURE_FILES = [
   'expired.json',
   'revoked.json',
   'wrong-issuer.json',
+  'cross-issuer-key.json',
 ] as const;
 
 function loadFixture(file: string): Fixture {
@@ -50,7 +51,7 @@ function anchorsFromFixture(f: Fixture): AtxTrustAnchors {
   return {
     trustedIssuers: f.verifierState.trustedIssuers,
     publicKeys: f.verifierState.publicKeys.map(
-      (k): AtxPublicKey => ({ algorithm: k.algorithm, publicKeyHex: k.publicKeyHex }),
+      (k): AtxPublicKey => ({ algorithm: k.algorithm, publicKeyHex: k.publicKeyHex, keyId: k.keyId }),
     ),
     crl: f.verifierState.crl,
     now: () => clock,
