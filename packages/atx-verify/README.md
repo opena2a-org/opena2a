@@ -50,7 +50,16 @@ import { LocalAtxVerifier, type AtxTrustAnchors } from "@opena2a/atx-verify";
 
 const anchors: AtxTrustAnchors = {
   trustedIssuers: ["did:opena2a:authority:opena2a.org"],
-  publicKeys: [{ algorithm: "Ed25519", publicKeyHex: "<32-byte hex>" }],
+  publicKeys: [
+    {
+      algorithm: "Ed25519",
+      publicKeyHex: "<32-byte hex>",
+      // Recommended: a DID-URL keyId binds the key to its controller so it can
+      // only verify credentials issued by that DID. Required to be safe with a
+      // MULTI-issuer anchor set (see "Key-to-issuer binding" below).
+      keyId: "did:opena2a:authority:opena2a.org#key-1",
+    },
+  ],
   crl: { entries: [] },
 };
 
@@ -63,6 +72,20 @@ if (result.valid) {
   //   | UNTRUSTED_ISSUER | SIGNATURE_INVALID | MALFORMED
 }
 ```
+
+## Key-to-issuer binding
+
+A signature is only accepted from a key controlled by the credential's issuer.
+A configured key whose `keyId` is a DID-URL (contains `#`) is **bound** to its
+controller DID and may only verify credentials issued by that DID — or, for
+v1.1 (where `issuerChain` is signed), by an authority named in the chain. This
+prevents one trusted issuer's key from satisfying a credential issued under a
+different issuer's DID.
+
+A key with no `keyId`, or a `keyId` without a `#` fragment, is treated as
+**unbound** and stays eligible for any issuer — safe for a single-issuer anchor
+set, but supply DID-URL `keyId`s whenever the anchor set holds keys for more
+than one issuer.
 
 ## Conformance
 
