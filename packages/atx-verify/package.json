@@ -1,0 +1,38 @@
+{
+  "name": "@opena2a/atx-verify",
+  "version": "0.1.0",
+  "description": "Spec-compliant offline verifier for ATX (Agent Trust eXtension) credentials — Ed25519 signature verification over the canonical payload (v1.0 pipe / v1.1 JCS RFC 8785), expiry, revocation, issuer-trust, and issuer-chain checks. Byte-for-byte interoperable with the Go and Python reference verifiers.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "canonicalize": "2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.8"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opena2a-org/opena2a.git",
+    "directory": "packages/atx-verify"
+  },
+  "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/atx-verify",
+  "license": "Apache-2.0"
+}
