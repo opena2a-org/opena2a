@@ -1,6 +1,6 @@
 {
   "name": "opena2a-cli",
-  "version": "0.10.10",
+  "version": "0.10.11",
   "description": "Unified CLI for the OpenA2A security platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
-    "@opena2a/aicomply": "2.1.0",
+    "@opena2a/aicomply": "2.2.0",
     "@opena2a/cli-ui": "0.5.2",
     "@opena2a/contribute": "0.1.0",
     "@opena2a/credential-patterns": "0.1.2",
