@@ -139,7 +139,7 @@ Quick start:
   $ opena2a shield init             Full 11-step security setup
 
 Commands by category:
-  Scan & Harden:  init, scan, check, detect, protect, benchmark, harden-skill
+  Scan & Harden:  init, scan, check, detect, protect, comply, benchmark, harden-skill
   Identity:       identity, skill, mcp, trust, claim
   Governance:     scan-soul, harden-soul, guard, shield
   Runtime:        runtime, review, status, baselines
@@ -152,6 +152,7 @@ Quick Start:
   $ opena2a shield init          Full 11-step security setup (scan, protect, sign, policy, hooks)
   $ opena2a init                 Read-only security assessment (no changes to your project)
   $ opena2a protect              Detect and migrate hardcoded credentials
+  $ opena2a comply               Classify content for PII/credentials before it reaches an LLM
   $ opena2a guard sign           Sign config files for tamper detection
   $ opena2a check express        Check npm package against Registry + HMA
   $ opena2a scan secure          Run ${HMA_CHECK_COUNT} security checks on your AI agent
@@ -300,6 +301,36 @@ Learn more: https://opena2a.org/docs`);
         brokerSocket: opts.brokerSocket,
         brokerTokenPath: opts.brokerToken,
         grantAgentId: opts.grantAgentId,
+      });
+      printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
+    });
+
+  // Comply command (direct): inline PII/credential/regulated-data classifier.
+  // Delegates detection to the @opena2a/aicomply library's comply() API and
+  // renders the verdict in opena2a house-style. Usable as a CI gate.
+  program
+    .command('comply [files...]')
+    .description('Classify content for PII, credentials, and regulated data before it reaches an LLM')
+    .option('-q, --quiet', 'Print only the verdict line')
+    .addHelpText('after', `
+Examples:
+  $ opena2a comply ./support-ticket.txt             Scan a file
+  $ echo "My SSN is 123-45-6789" | opena2a comply   Pipe content from stdin
+  $ opena2a comply src/*.log --json                 Machine-readable output
+  $ cat transcript.txt | opena2a comply -q          Verdict line only
+
+Exit codes (CI gate): 0 CLEAN · 1 VIOLATION/DENY · 2 usage error.
+Detection is the @opena2a/aicomply engine. Python? pip install aicomply.
+`)
+    .action(async (files: string[], opts: { quiet?: boolean }) => {
+      const { runComply } = await import('./commands/comply.js');
+      const globalOpts = program.opts();
+      process.exitCode = await runComply({
+        files: files ?? [],
+        ci: globalOpts.ci,
+        format: globalOpts.format as 'text' | 'json',
+        quiet: opts.quiet || globalOpts.quiet,
+        verbose: globalOpts.verbose,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });

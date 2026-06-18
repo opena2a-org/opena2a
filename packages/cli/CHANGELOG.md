@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.10
+
+### Added
+- **`opena2a comply` — inline compliance classifier.** A new top-level command that classifies content for PII, credentials, and regulated data before an agent forwards it to a hosted LLM. Detection and verdict are delegated to the `@opena2a/aicomply` engine (the shared source of truth); the command collects sources (files or stdin) and renders the verdict in opena2a house-style. Output is always masked — the raw detected value never reaches stdout or the JSON output, even though the command's whole purpose is to keep sensitive data out of an LLM. Usable as a CI gate: exit `0` CLEAN, `1` VIOLATION/DENY, `2` usage error. Supports `--json`, `--quiet`, and stdin (`echo "…" | opena2a comply`). On a CLEAN verdict the command still states which classification layers ran and how to enable the semantic Guard layer (CISO Rule 11 — no dead ends). Python users can reach the same engine with `pip install aicomply`. New `__tests__/commands/comply.test.ts` (8 tests, including a mask-integrity assertion) and a built-binary dispatch smoke (`npm run release-smoke:comply`).
+
 ## 0.10.9
 
 Consolidated release. `0.10.8` was published to npm from a version-bump commit that

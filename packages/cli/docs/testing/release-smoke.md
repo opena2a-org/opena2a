@@ -202,6 +202,30 @@ Fail the release if any of the assertions in this section regress. Plaintext
 tokens leaking back into `~/.opena2a/auth.json` after a clean keychain login
 is a P0 release-blocker.
 
+## 6. `comply` dispatch + mask integrity (1 min)
+
+`opena2a comply` (added 0.10.10) delegates to the `@opena2a/aicomply` engine.
+Per the org "End-to-End Smoke after dispatch changes" rule, run it through the
+**built** `dist/index.js`. The dedicated harness asserts the four invariants a
+user and a CI gate depend on — the most important being **mask integrity**: the
+raw detected secret must never reach stdout or the JSON output.
+
+```bash
+npm run build
+npm run release-smoke:comply   # all assertions pass; exit 0
+```
+
+| # | Assertion |
+|---|-----------|
+| 6.1 | Benign content -> exit 0, verdict `CLEAN`. |
+| 6.2 | PII content -> exit 1, verdict `VIOLATION`. |
+| 6.3 | The raw secret (`123-45-6789`) never appears in text output (mask integrity). |
+| 6.4 | `--json` is a parseable array with `verdict: "VIOLATION"` and no raw leak. |
+| 6.5 | An unreadable path -> exit 2 (usage error), not a crash. |
+
+Fail the release if any assertion fails. A raw-secret leak is a P0 — the command
+exists to keep sensitive data out of an LLM, so it must not print it itself.
+
 ## When this checklist isn't enough
 
 - If the diff touches `src/router.ts` or any subcommand action — also run the relevant subcommand against a real target (`opena2a check express`, `opena2a status`, etc.) — telemetry hooks fire on the postAction phase, so a broken hook only surfaces with a real action.
