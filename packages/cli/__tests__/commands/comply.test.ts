@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { runComply, maskValue } from '../../src/commands/comply.js';
+import { runComply, maskValue, MAX_INPUT_BYTES } from '../../src/commands/comply.js';
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
   const chunks: string[] = [];
@@ -76,6 +76,13 @@ describe('comply command', () => {
     expect(output).toContain('SSN');
     // The full secret must never reach stdout.
     expect(output).not.toContain(SSN);
+    // Mask-integrity bound (H2): no run of 4+ consecutive digits from the SSN
+    // survives masking. The raw value is `123456789` once dashes are dropped;
+    // any 4-digit window appearing would mean the mask revealed too much.
+    const digits = SSN.replace(/-/g, '');
+    for (let i = 0; i + 4 <= digits.length; i++) {
+      expect(output).not.toContain(digits.slice(i, i + 4));
+    }
   });
 
   it('emits valid JSON with masked values and no raw secret', async () => {
@@ -120,20 +127,38 @@ describe('comply command', () => {
     expect(exitCode).toBe(1);
     expect(['VIOLATION', 'DENY']).toContain(output.trim());
   });
+
+  it('fails closed (exit 2) on an oversize file rather than OOM-reading it', async () => {
+    // Just over the cap; assert it errors out instead of reading the whole file.
+    const big = path.join(tmpDir, 'big.txt');
+    fs.writeFileSync(big, Buffer.alloc(MAX_INPUT_BYTES + 1, 0x61));
+    const { exitCode, output } = await captureStderr(() => runComply({ files: [big] }));
+    expect(exitCode).toBe(2);
+    expect(output).toContain('limit');
+  });
 });
 
 describe('maskValue', () => {
-  it('masks short values entirely', () => {
-    expect(maskValue('ab')).toBe('••');
+  it('masks short values (<= 8 chars) ENTIRELY — a fixed head would leak most of a short secret', () => {
     expect(maskValue('')).toBe('•');
+    expect(maskValue('ab')).toBe('••');
+    expect(maskValue('hunter2')).toBe('•••••••'); // 7 chars, fully masked
+    expect(maskValue('password')).toBe('••••••••'); // 8 chars, fully masked
+    // A short secret must not surface any of its characters.
+    expect(maskValue('sk-12345')).not.toMatch(/[a-z0-9]/i);
   });
 
-  it('keeps a head and short tail but hides the middle, never the full value', () => {
-    const secret = 'sk-1234567890abcdef';
+  it('reveals at most a 3-char head + 2-char tail for longer values, never the middle', () => {
+    const secret = 'sk-1234567890abcdef'; // 19 chars
     const masked = maskValue(secret);
-    expect(masked.startsWith('sk-1')).toBe(true);
-    expect(masked).toContain('•');
+    expect(masked.startsWith('sk-')).toBe(true);
+    expect(masked.endsWith('ef')).toBe(true);
     expect(masked).not.toBe(secret);
-    expect(masked).not.toContain('567890abc');
+    // The middle is fully hidden.
+    expect(masked).not.toContain('1234');
+    expect(masked).not.toContain('7890ab');
+    // Revealed (non-bullet) characters are a small fraction of the value.
+    const revealed = masked.replace(/•/g, '').length;
+    expect(revealed).toBeLessThanOrEqual(5);
   });
 });

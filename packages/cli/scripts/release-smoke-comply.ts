@@ -32,6 +32,19 @@ const CLI = resolve(__dirname, '..', 'dist', 'index.js');
 const SSN = '123-45-6789';
 let failures = 0;
 
+/**
+ * The mask must not reveal a meaningful slice of the secret. Assert no run of
+ * 4+ consecutive SSN digits survives in the output (a weaker "is the literal
+ * dashed string present" check would pass even if the mask leaked most digits).
+ */
+function maskIntegrityHolds(output: string): boolean {
+  const digits = SSN.replace(/-/g, '');
+  for (let i = 0; i + 4 <= digits.length; i++) {
+    if (output.includes(digits.slice(i, i + 4))) return false;
+  }
+  return true;
+}
+
 function fail(msg: string): void {
   process.stderr.write(`  FAIL: ${msg}\n`);
   failures++;
@@ -74,8 +87,8 @@ function main(): void {
   const pii = runComply([], `My SSN is ${SSN}`);
   if (pii.status === 1 && /VIOLATION/.test(pii.stdout)) pass('PII content -> exit 1, VIOLATION');
   else fail(`PII expected exit 1 + VIOLATION, got exit ${pii.status}`);
-  if (!pii.stdout.includes(SSN)) pass('mask integrity: raw secret absent from text output');
-  else fail('mask integrity BREACH: raw secret leaked to stdout');
+  if (maskIntegrityHolds(pii.stdout)) pass('mask integrity: no 4-digit SSN window in text output');
+  else fail('mask integrity BREACH: too much of the SSN leaked to stdout');
 
   // 3. --json -> parseable, masked, no raw leak.
   const json = runComply(['--json'], `SSN ${SSN}`);
@@ -94,8 +107,8 @@ function main(): void {
   } else {
     fail(`--json expected exit 1 + parseable VIOLATION array, got exit ${json.status}`);
   }
-  if (!json.stdout.includes(SSN)) pass('mask integrity: raw secret absent from JSON output');
-  else fail('mask integrity BREACH: raw secret leaked to JSON');
+  if (maskIntegrityHolds(json.stdout)) pass('mask integrity: no 4-digit SSN window in JSON output');
+  else fail('mask integrity BREACH: too much of the SSN leaked to JSON');
 
   // 4. Unreadable path -> exit 2 (usage), not a crash.
   const tmp = mkdtempSync(join(tmpdir(), 'comply-smoke-'));
