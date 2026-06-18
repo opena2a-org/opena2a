@@ -6,6 +6,7 @@ import {
   review,
   aggregateFindings,
   applyDominantAnalyzerFloor,
+  buildFloorParticipants,
   CRITICAL_BAND,
   type CredentialPhaseData,
   type ShieldPhaseData,
@@ -557,5 +558,66 @@ describe('applyDominantAnalyzerFloor (#175 dominant-analyzer floor)', () => {
   it('CRITICAL_BAND boundary: exactly 30 does not floor, 29 does', () => {
     expect(applyDominantAnalyzerFloor(80, [{ name: 'X', score: CRITICAL_BAND, ran: true }])).toBe(80);
     expect(applyDominantAnalyzerFloor(80, [{ name: 'X', score: CRITICAL_BAND - 1, ran: true }])).toBe(CRITICAL_BAND - 1);
+  });
+
+  // M1 regression: a malformed analyzer payload (NaN score) must not silently
+  // disable the floor (NaN < 30 is false). Non-finite scores are filtered out.
+  it('ignores non-finite scores instead of disabling the floor', () => {
+    // NaN HMA score is dropped; the real critical Credentials score still floors.
+    expect(applyDominantAnalyzerFloor(70, [
+      { name: 'HMA Scan', score: NaN, ran: true },
+      { name: 'Credentials', score: 0, ran: true },
+    ])).toBe(0);
+    // If the ONLY participant is non-finite, the composite is left untouched
+    // (no clamp) rather than producing NaN.
+    expect(applyDominantAnalyzerFloor(70, [
+      { name: 'HMA Scan', score: NaN, ran: true },
+    ])).toBe(70);
+    expect(applyDominantAnalyzerFloor(70, [
+      { name: 'HMA Scan', score: Infinity, ran: true },
+    ])).toBe(70);
+  });
+});
+
+describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
+  const base = { trustScore: 90, credScore: 90, guardScore: 90, hmaScore: 90, hmaAvailable: true };
+
+  it('includes only the four target-scoped analyzers, never Shield or Shadow AI', () => {
+    const names = buildFloorParticipants(base).map(p => p.name);
+    expect(names).toEqual(['Project Scan', 'Credentials', 'Config Integrity', 'HMA Scan']);
+    // H1 regression: Shadow AI / governance is host-polluted (ps aux) and must
+    // NOT be a floor participant, or a clean repo on a dev box running AI tools
+    // would be wrongly clamped to a critical verdict.
+    expect(names).not.toContain('Shadow AI');
+    expect(names).not.toContain('Shield Analysis');
+    expect(names).not.toContain('Shield');
+  });
+
+  it('H1: a critical Shadow-AI/governance score cannot clamp a clean project', () => {
+    // Simulate a clean repo (trust/cred/config/HMA all healthy) on a machine
+    // whose governance score tanked to 18 from ambient host agents. Because
+    // governance is not a participant, the floor leaves the composite alone.
+    const participants = buildFloorParticipants({ ...base, trustScore: 88, credScore: 92, guardScore: 90, hmaScore: 85 });
+    expect(applyDominantAnalyzerFloor(82, participants)).toBe(82);
+  });
+
+  it('HMA participates only when it ran; its score is coerced finite', () => {
+    expect(buildFloorParticipants({ ...base, hmaAvailable: false }).find(p => p.name === 'HMA Scan')!.ran).toBe(false);
+    expect(buildFloorParticipants({ ...base, hmaAvailable: true }).find(p => p.name === 'HMA Scan')!.ran).toBe(true);
+    // NaN HMA score is coerced to 0 at construction so it never reaches the floor as NaN.
+    expect(buildFloorParticipants({ ...base, hmaScore: NaN }).find(p => p.name === 'HMA Scan')!.score).toBe(0);
+  });
+
+  it('kitchen-sink shape: HMA 0 floors the composite to 0 when HMA ran', () => {
+    // trust/cred/config clean, HMA critical — the real kitchen-sink profile.
+    const participants = buildFloorParticipants({ trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 0, hmaAvailable: true });
+    expect(applyDominantAnalyzerFloor(67, participants)).toBe(0);
+  });
+
+  it('C1: without HMA, the same kitchen-sink shape is NOT floored (verdict is provisional)', () => {
+    // Documents the degraded-mode behavior: HMA is the only critical signal for
+    // this shape, so when it does not run the floor cannot fire. review() warns.
+    const participants = buildFloorParticipants({ trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 0, hmaAvailable: false });
+    expect(applyDominantAnalyzerFloor(67, participants)).toBe(67);
   });
 });

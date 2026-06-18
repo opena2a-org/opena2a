@@ -410,16 +410,19 @@ export async function review(options: ReviewOptions): Promise<number> {
     detectData.governanceScore,
   );
   // Dominant-analyzer floor (#175): force the composite verdict to agree in
-  // direction with the harshest target-malice analyzer. Shield Analysis is
-  // excluded (baseline-25 posture, not a target-malice signal). See
-  // applyDominantAnalyzerFloor.
-  const compositeScore = applyDominantAnalyzerFloor(weightedComposite, [
-    { name: 'Project Scan', score: initData.trustScore, ran: true },
-    { name: 'Credentials', score: credScore, ran: true },
-    { name: 'Config Integrity', score: guardScore, ran: true },
-    { name: 'HMA Scan', score: hmaAvailable ? hmaData!.score : 0, ran: hmaAvailable },
-    { name: 'Shadow AI', score: detectData.governanceScore, ran: true },
-  ]);
+  // direction with the harshest *target-malice* analyzer. Only analyzers whose
+  // critical-band score unambiguously means "the target itself is dangerous"
+  // participate — see buildFloorParticipants for which are in/out and why.
+  const compositeScore = applyDominantAnalyzerFloor(
+    weightedComposite,
+    buildFloorParticipants({
+      trustScore: initData.trustScore,
+      credScore,
+      guardScore,
+      hmaScore: hmaAvailable ? hmaData!.score : 0,
+      hmaAvailable,
+    }),
+  );
   const grade = scoreToGrade(compositeScore);
   const recoverySummary = computeRecoverySummary(
     initData.trustScore, credScore, guardScore,
@@ -542,6 +545,21 @@ export async function review(options: ReviewOptions): Promise<number> {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(dim(`  [observations] skipped — ${msg}\n`));
     }
+  }
+
+  // Degraded-mode notice (#175 / C1): the dominant-analyzer floor relies on HMA
+  // `secure` as its deepest target-malice signal. When HMA did not run, a
+  // malicious project that only HMA would catch is NOT floored, so this verdict
+  // can read more reassuring than a full scan would. Say so plainly (CISO Rule
+  // 11 — no misleading verdicts) and give the one command that fixes it.
+  if (!hmaAvailable) {
+    const how = options.skipHma
+      ? 'Re-run without --skip-hma'
+      : 'Install it: npm i -g hackmyagent';
+    process.stdout.write(
+      yellow('  Provisional verdict — deep scan (HMA) did not run.\n') +
+      dim(`  Lightweight checks only; HMA-only threats are not reflected. ${how}.\n\n`),
+    );
   }
 
   // Generate HTML report
@@ -1063,33 +1081,76 @@ export interface FloorParticipant {
   ran: boolean;
 }
 
+/** Inputs needed to build the dominant-analyzer floor participant set. */
+export interface FloorParticipantInputs {
+  trustScore: number;
+  credScore: number;
+  guardScore: number;
+  hmaScore: number;
+  hmaAvailable: boolean;
+}
+
 /**
- * Dominant-analyzer floor (#175, [CHIEF-CDS] Option A).
+ * Build the participant set for the dominant-analyzer floor (#175, [CHIEF-CDS]).
+ *
+ * Only analyzers whose critical-band score is an *unambiguous target-malice
+ * signal* participate — a low score must mean "the target itself is dangerous",
+ * never "the developer's environment is unconfigured". Two analyzers are
+ * deliberately EXCLUDED:
+ *
+ *   - Shield Analysis: posture score has a baseline of 25 for any user who has
+ *     not run `opena2a shield init` (see runShieldPhase). A low Shield score
+ *     signals "defensive tooling not set up", not target malice.
+ *   - Shadow AI / governance: governanceScore is partly derived from a host
+ *     process scan (runDetectPhase → scanProcesses → `ps aux`), so it reflects
+ *     AI tools running on the *developer's machine* (Claude Code, Cursor, …),
+ *     not the scanned project. A clean repo on a dev box running ungoverned
+ *     agents can drop governanceScore below the critical band, which would
+ *     wrongly clamp the verdict (#175 follow-up — false-positive). Until the
+ *     governance score is split into target-local vs host-ambient components it
+ *     is not a trustworthy floor signal.
+ *
+ * Remaining participants — Project Scan (trust), Credentials, Config Integrity,
+ * HMA Scan — are all scoped to the target. HMA Scan only participates when it
+ * actually ran (`hmaAvailable`); its score is coerced to a finite number so a
+ * malformed HMA payload cannot poison the floor with NaN.
+ *
+ * NOTE: with Shadow AI removed, a target whose only critical signal is what HMA
+ * `secure` catches is floored ONLY by HMA. When HMA does not run, the caller
+ * must surface that the verdict is provisional (see review() degraded-mode
+ * warning) rather than present a non-floored "improving" score.
+ */
+export function buildFloorParticipants(inputs: FloorParticipantInputs): FloorParticipant[] {
+  const hmaScore = Number.isFinite(inputs.hmaScore) ? inputs.hmaScore : 0;
+  return [
+    { name: 'Project Scan', score: inputs.trustScore, ran: true },
+    { name: 'Credentials', score: inputs.credScore, ran: true },
+    { name: 'Config Integrity', score: inputs.guardScore, ran: true },
+    { name: 'HMA Scan', score: hmaScore, ran: inputs.hmaAvailable },
+  ];
+}
+
+/**
+ * Dominant-analyzer floor (#175, [CHIEF-CDS]).
  *
  * The composite is a weighted average, so a single analyzer reporting a
- * critical problem (e.g. HMA `secure` 0/100, Shadow AI 0/100 on a kitchen-sink
- * fixture) can be out-voted by clean dimensions and float the composite into an
- * "improving" band. That is a DIRECTION disagreement: `opena2a review` says
- * recoverable while `opena2a check` says 0/100. This floor forces direction
- * agreement — when any participating analyzer lands in the critical band, the
- * composite is clamped down to the lowest such score.
+ * critical problem (e.g. HMA `secure` 0/100 on a kitchen-sink fixture) can be
+ * out-voted by clean dimensions and float the composite into an "improving"
+ * band. That is a DIRECTION disagreement: `opena2a review` says recoverable
+ * while `opena2a check` says 0/100. This floor forces direction agreement —
+ * when any participating analyzer lands in the critical band, the composite is
+ * clamped down to the lowest such score. See buildFloorParticipants for which
+ * analyzers participate and why.
  *
- * IMPORTANT — Shield Analysis is deliberately NOT a participant. Its posture
- * score has a baseline of 25 for any user who has not run `opena2a shield init`
- * (see runShieldPhase), so a low Shield score signals "defensive tooling not
- * set up", not "this project is malicious". Including it would clamp every
- * clean project on a Shield-less machine down to ~25. Only analyzers that
- * measure how dangerous the *target itself* is participate: Project Scan,
- * Credentials, Config Integrity, HMA Scan, Shadow AI. Each only reaches the
- * critical band on a genuine critical signal, so the floor cannot wrongly
- * downgrade a borderline-but-recoverable project (whose analyzers sit in the
- * 30–70 range).
+ * Non-finite participant scores are filtered out so a malformed analyzer payload
+ * cannot silently disable the floor (NaN < 30 is false, which would otherwise
+ * skip the clamp entirely).
  */
 export function applyDominantAnalyzerFloor(
   composite: number,
   participants: FloorParticipant[],
 ): number {
-  const scores = participants.filter(p => p.ran).map(p => p.score);
+  const scores = participants.filter(p => p.ran && Number.isFinite(p.score)).map(p => p.score);
   if (scores.length === 0) return composite;
   const minScore = Math.min(...scores);
   if (minScore < CRITICAL_BAND) return Math.min(composite, minScore);
