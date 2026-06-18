@@ -8,6 +8,10 @@ import {
   applyDominantAnalyzerFloor,
   buildFloorParticipants,
   targetGovernanceFloorScore,
+  shieldCompositeScore,
+  shieldRiskFloorScore,
+  governanceCompositeScore,
+  credentialFloorScore,
   CRITICAL_BAND,
   type CredentialPhaseData,
   type ShieldPhaseData,
@@ -60,10 +64,12 @@ describe('review', () => {
 
     expect(exitCode).toBe(0);
     const report = JSON.parse(output);
-    // Score depends on Shield product detection and guard signing status.
-    // A clean project without Shield products or signatures scores ~65-75.
-    expect(report.compositeScore).toBeGreaterThanOrEqual(60);
-    expect(['strong', 'good', 'moderate', 'improving']).toContain(report.grade);
+    // Adoption-as-recovery (#175 follow-up): a clean project must NOT be scored
+    // down for opt-in tooling it hasn't adopted (unsigned configs, no Shield
+    // setup, no registered identity). It should clear the "good" band even with
+    // none of that set up. Regression guard for the whole adoption-penalty fix.
+    expect(report.compositeScore).toBeGreaterThanOrEqual(80);
+    expect(['strong', 'good']).toContain(report.grade);
     expect(report.phases).toHaveLength(6);
   });
 
@@ -271,7 +277,10 @@ describe('review', () => {
       ci: true,
     }));
 
-    expect(exitCode).toBe(0);
+    // A confirmed critical credential drives the dominant-analyzer floor, so the
+    // verdict is "needs attention" (composite < 50 → exit 1). The credential must
+    // not be diluted to a passing verdict by the neutralized adoption dimensions.
+    expect(exitCode).toBe(1);
     expect(output).toContain('Categories');
     // The cli-ui classifier maps CRED-* into the "credentials" bucket.
     const categoriesLine = output.split('\n').find(l => l.includes('Categories')) ?? '';
@@ -624,17 +633,18 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
   const base = {
     trustScore: 90, credScore: 90, guardScore: 90, hmaScore: 90, hmaAvailable: true,
     projectGovernanceScore: 100, projectGovernanceRan: false,
+    shieldRiskScore: 100, shieldRiskRan: false,
   };
 
-  it('includes only target-scoped analyzers, never Shield or the host-polluted Shadow AI', () => {
+  it('includes only target-scoped analyzers, never the host-polluted Shadow AI or adoption baselines', () => {
     const names = buildFloorParticipants(base).map(p => p.name);
-    expect(names).toEqual(['Project Scan', 'Credentials', 'Config Integrity', 'HMA Scan', 'Project Governance']);
+    expect(names).toEqual(['Project Scan', 'Credentials', 'Config Integrity', 'HMA Scan', 'Project Governance', 'Shield Runtime Risk']);
     // H1 regression: the raw "Shadow AI" governanceScore is host-polluted (ps aux)
     // and must NOT be a floor participant. Only the target-local slice
-    // ("Project Governance") participates.
+    // ("Project Governance") and genuine runtime risk ("Shield Runtime Risk")
+    // participate — never the adoption baseline posture.
     expect(names).not.toContain('Shadow AI');
     expect(names).not.toContain('Shield Analysis');
-    expect(names).not.toContain('Shield');
   });
 
   it('H1: a host-driven low governance score cannot clamp a clean project', () => {
@@ -652,6 +662,7 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
     const participants = buildFloorParticipants({
       trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 90, hmaAvailable: true,
       projectGovernanceScore: 0, projectGovernanceRan: true,
+      shieldRiskScore: 100, shieldRiskRan: false,
     });
     expect(applyDominantAnalyzerFloor(72, participants)).toBe(0);
   });
@@ -710,5 +721,78 @@ describe('targetGovernanceFloorScore (#175 — target-local governance only)', (
       mcpServers: [],
       aiConfigs: [{ risk: 'critical' }],
     })).toEqual({ score: 0, ran: true });
+  });
+});
+
+describe('adoption-as-recovery composite scoring (#175 follow-up)', () => {
+  const sev = (severity: string) => ({ finding: { severity } });
+
+  describe('shieldCompositeScore (weighted-average input)', () => {
+    it('is neutral (90) when Shield is unconfigured / has no findings — posture is ignored', () => {
+      // baseline posture on a Shield-less machine must NOT drag the composite, and
+      // a well-set-up Shield must NOT inflate the TARGET-risk score either.
+      expect(shieldCompositeScore({ classifiedFindings: [] })).toBe(90);
+    });
+    it('is reduced by genuine runtime findings at their severity (incl. medium)', () => {
+      expect(shieldCompositeScore({ classifiedFindings: [sev('critical')] })).toBe(60); // 90-30
+      expect(shieldCompositeScore({ classifiedFindings: [sev('high')] })).toBe(75);     // 90-15
+      expect(shieldCompositeScore({ classifiedFindings: [sev('medium')] })).toBe(84);   // 90-6 (not neutralized)
+      expect(shieldCompositeScore({ classifiedFindings: [sev('critical'), sev('critical'), sev('critical')] })).toBe(0); // clamped
+    });
+  });
+
+  describe('shieldRiskFloorScore (floor participant — real runtime risk only)', () => {
+    it('does NOT participate for an unconfigured Shield or medium/low-only findings', () => {
+      expect(shieldRiskFloorScore({ classifiedFindings: [] })).toEqual({ score: 100, ran: false });
+      expect(shieldRiskFloorScore({ classifiedFindings: [sev('medium')] })).toEqual({ score: 100, ran: false });
+      expect(shieldRiskFloorScore({ classifiedFindings: [sev('low')] })).toEqual({ score: 100, ran: false });
+    });
+    it('participates in the critical band on a genuine critical/high runtime finding', () => {
+      const crit = shieldRiskFloorScore({ classifiedFindings: [sev('critical')] });
+      expect(crit.ran).toBe(true);
+      expect(crit.score).toBeLessThan(CRITICAL_BAND);
+      const high = shieldRiskFloorScore({ classifiedFindings: [sev('high')] });
+      expect(high.ran).toBe(true);
+      expect(high.score).toBeLessThan(CRITICAL_BAND);
+    });
+    it('SECURITY: a real Shield critical floors the composite to "needs attention" (not a false good)', () => {
+      const shieldRisk = shieldRiskFloorScore({ classifiedFindings: [sev('critical')] });
+      // otherwise-clean project, but a real Shield runtime critical fired
+      const participants = buildFloorParticipants({
+        trustScore: 95, credScore: 100, guardScore: 90, hmaScore: 90, hmaAvailable: true,
+        projectGovernanceScore: 100, projectGovernanceRan: false,
+        shieldRiskScore: shieldRisk.score, shieldRiskRan: shieldRisk.ran,
+      });
+      expect(applyDominantAnalyzerFloor(91, participants)).toBeLessThan(CRITICAL_BAND);
+    });
+  });
+
+  describe('governanceCompositeScore', () => {
+    it('is neutral-high when no target-local critical governance signal fired', () => {
+      // no-identity / no-SOUL / ambient host agents must NOT penalize the composite
+      expect(governanceCompositeScore({ score: 100, ran: false })).toBe(90);
+      expect(governanceCompositeScore({ score: 20, ran: false })).toBe(90);
+    });
+    it('reflects the target-local critical score when one fired', () => {
+      expect(governanceCompositeScore({ score: 0, ran: true })).toBe(0);
+    });
+  });
+
+  describe('credentialFloorScore', () => {
+    it('does not clamp when there are no critical/high credential findings', () => {
+      expect(credentialFloorScore(92, {})).toBe(92);
+      expect(credentialFloorScore(92, { medium: 2, low: 1 })).toBe(92);
+    });
+    it('SECURITY: a confirmed critical OR high credential enters the critical band (cannot dilute to good)', () => {
+      expect(credentialFloorScore(75, { critical: 1 })).toBeLessThan(CRITICAL_BAND);
+      expect(credentialFloorScore(85, { high: 1 })).toBeLessThan(CRITICAL_BAND);
+      expect(credentialFloorScore(70, { high: 2 })).toBeLessThan(CRITICAL_BAND);
+      // critical is at least as severe as high
+      expect(credentialFloorScore(75, { critical: 1 }))
+        .toBeLessThanOrEqual(credentialFloorScore(85, { high: 1 }));
+    });
+    it('never raises the score (only clamps down)', () => {
+      expect(credentialFloorScore(10, { critical: 1 })).toBe(10);
+    });
   });
 });

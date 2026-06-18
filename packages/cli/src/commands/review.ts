@@ -405,37 +405,50 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   // Composite score
   const hmaAvailable = hmaData?.available ?? false;
+  // Adoption-as-recovery (not penalty): a clean target must not be scored down
+  // for opt-in OpenA2A tooling it simply hasn't adopted. Shield posture and the
+  // raw governance score conflate "the target is dangerous" with "the developer
+  // hasn't set up Shield / registered an identity / signed configs". For the
+  // composite we use risk-only views — neutral-high unless a genuine target-risk
+  // signal fired — and surface adoption as recovery opportunities instead. See
+  // shieldCompositeScore / governanceCompositeScore.
+  const projectGovernance = targetGovernanceFloorScore(detectData);
+  const shieldComposite = shieldCompositeScore(shieldData);
+  const shieldRisk = shieldRiskFloorScore(shieldData);
+  const governanceComposite = governanceCompositeScore(projectGovernance);
+  const credFloorScore = credentialFloorScore(credScore, credentialData.bySeverity);
   const weightedComposite = computeCompositeScore(
     initData.trustScore,
     credScore,
     guardScore,
-    shieldData.postureScore,
+    shieldComposite,
     hmaAvailable ? hmaData!.score : 0,
     hmaAvailable,
-    detectData.governanceScore,
+    governanceComposite,
   );
   // Dominant-analyzer floor (#175): force the composite verdict to agree in
   // direction with the harshest *target-malice* analyzer. Only analyzers whose
   // critical-band score unambiguously means "the target itself is dangerous"
   // participate — see buildFloorParticipants for which are in/out and why.
-  const projectGovernance = targetGovernanceFloorScore(detectData);
   const compositeScore = applyDominantAnalyzerFloor(
     weightedComposite,
     buildFloorParticipants({
       trustScore: initData.trustScore,
-      credScore,
+      credScore: credFloorScore,
       guardScore,
       hmaScore: hmaAvailable ? hmaData!.score : 0,
       hmaAvailable,
       projectGovernanceScore: projectGovernance.score,
       projectGovernanceRan: projectGovernance.ran,
+      shieldRiskScore: shieldRisk.score,
+      shieldRiskRan: shieldRisk.ran,
     }),
   );
   const grade = scoreToGrade(compositeScore);
   const recoverySummary = computeRecoverySummary(
     initData.trustScore, credScore, guardScore,
-    shieldData.postureScore, hmaAvailable ? hmaData!.score : 0,
-    hmaAvailable, compositeScore, detectData.governanceScore,
+    shieldComposite, hmaAvailable ? hmaData!.score : 0,
+    hmaAvailable, compositeScore, governanceComposite,
   );
 
   // Aggregate findings
@@ -1044,10 +1057,103 @@ function computeCredentialScore(data: CredentialPhaseData): number {
 
 function computeGuardScore(data: GuardPhaseData): number {
   if (data.signatureStatus === 'valid') return 100;
-  if (data.signatureStatus === 'unsigned') return 50;
-  // tampered
+  // "unsigned" is the DEFAULT state of any project that hasn't adopted config
+  // signing — an opt-in feature, not a security defect. Score it as neutral-good
+  // (adoption-as-recovery, not penalty); reserve low scores for actual tampering.
+  // Signing remains a small recovery opportunity (see computeRecoverySummary).
+  if (data.signatureStatus === 'unsigned') return 90;
+  // tampered — a signature exists but files changed under it. Real integrity problem.
   const penalty = data.tamperedFiles.length * 20;
   return Math.max(0, 100 - penalty);
+}
+
+/** Severity histogram of Shield's classified runtime findings. */
+function shieldFindingCounts(classifiedFindings: { finding: { severity: string } }[]): {
+  critical: number; high: number; medium: number;
+} {
+  let critical = 0, high = 0, medium = 0;
+  for (const cf of classifiedFindings) {
+    const s = cf.finding.severity;
+    if (s === 'critical') critical++;
+    else if (s === 'high') high++;
+    else if (s === 'medium') medium++;
+  }
+  return { critical, high, medium };
+}
+
+/**
+ * Shield posture for the COMPOSITE weighted average (adoption-as-recovery, #175).
+ *
+ * The raw postureScore is dominated by whether the developer has SET UP Shield
+ * on their machine (active tools, loaded policy, shell integration, signing dir)
+ * — environment state, not how dangerous the scanned target is. Using it
+ * directly drags every clean project on a Shield-less machine down (~40–55), and
+ * even WITH a real critical finding the posture stays ~75 (a false "good"). So
+ * the composite ignores posture entirely: it starts neutral (90, no penalty for
+ * un-adopted Shield) and is reduced ONLY by genuine classified RUNTIME findings
+ * on the target. Critical/high findings additionally drive the dominant-analyzer
+ * floor (see shieldRiskFloorScore) so they can pull the verdict to "needs
+ * attention", which the weighted average alone cannot.
+ */
+export function shieldCompositeScore(shield: {
+  classifiedFindings: { finding: { severity: string } }[];
+}): number {
+  const { critical, high, medium } = shieldFindingCounts(shield.classifiedFindings);
+  return Math.max(0, Math.min(100, 90 - critical * 30 - high * 15 - medium * 6));
+}
+
+/**
+ * Shield RUNTIME-RISK floor signal (adoption-as-recovery, #175).
+ *
+ * Only the genuine target-risk slice of Shield participates in the dominant-
+ * analyzer floor — NOT the adoption baseline (which is exactly why the raw
+ * posture was excluded from the floor). A classified critical/high runtime
+ * finding is a real attack signal on the target and must be able to pull the
+ * verdict to "needs attention"; absence of such a finding (un-configured Shield,
+ * or only medium/low) does not participate (`ran: false`) and cannot clamp a
+ * clean repo.
+ */
+export function shieldRiskFloorScore(shield: {
+  classifiedFindings: { finding: { severity: string } }[];
+}): { score: number; ran: boolean } {
+  const { critical, high } = shieldFindingCounts(shield.classifiedFindings);
+  if (critical > 0) return { score: CRITICAL_BAND - 10, ran: true };
+  if (high > 0) return { score: CRITICAL_BAND - 5, ran: true };
+  return { score: 100, ran: false };
+}
+
+/**
+ * Shadow-AI governance for the COMPOSITE (adoption-as-recovery, #175 follow-up).
+ *
+ * The raw governanceScore deducts for no registered identity / no SOUL.md
+ * (adoption) and for ambient host AI processes from `ps aux` (environment) —
+ * neither means the scanned target is dangerous. For the composite, governance
+ * contributes a penalty only when a TARGET-LOCAL critical signal fired (the same
+ * in-repo critical MCP / AI-config check the dominant-analyzer floor uses);
+ * otherwise it is neutral-high. Registering an identity / adding a SOUL.md stays
+ * a recovery opportunity, not a composite penalty.
+ */
+export function governanceCompositeScore(projectGovernance: { score: number; ran: boolean }): number {
+  return projectGovernance.ran ? projectGovernance.score : 90;
+}
+
+/**
+ * Credentials floor score (adoption-as-recovery, #175 follow-up).
+ *
+ * A confirmed real credential exposure is a target-malice signal, not an
+ * adoption gap. With the adoption dimensions neutralized, such a finding would
+ * otherwise be diluted to a "good" verdict by the weighted average (one finding
+ * moves the composite only a few points). So the dominant-analyzer floor sees a
+ * critical-band credential score — a committed production secret must pull the
+ * verdict to "needs attention". Both critical and high severities floor: the
+ * scanner already suppresses examples/placeholders, so a surviving high-severity
+ * match is a real secret. Medium/low hints use the real credScore (no clamp).
+ * The weighted-average composite keeps using the real credScore separately.
+ */
+export function credentialFloorScore(credScore: number, bySeverity: Record<string, number>): number {
+  if ((bySeverity['critical'] ?? 0) > 0) return Math.min(credScore, CRITICAL_BAND - 10);
+  if ((bySeverity['high'] ?? 0) > 0) return Math.min(credScore, CRITICAL_BAND - 5);
+  return credScore;
 }
 
 function computeCompositeScore(
@@ -1107,6 +1213,12 @@ export interface FloorParticipantInputs {
   /** True only when a target-local critical governance signal exists, so a
    *  clean repo never participates via governance. */
   projectGovernanceRan: boolean;
+  /** Shield runtime-risk floor score (see shieldRiskFloorScore) — the genuine
+   *  target-risk slice of Shield (classified critical/high runtime findings),
+   *  never the adoption baseline posture. */
+  shieldRiskScore: number;
+  /** True only when a classified critical/high Shield runtime finding fired. */
+  shieldRiskRan: boolean;
 }
 
 /**
@@ -1161,11 +1273,13 @@ export function targetGovernanceFloorScore(detect: {
  * declarations and never from the host process scan.
  *
  * Participants — Project Scan (trust), Credentials, Config Integrity, HMA Scan,
- * and Project Governance — are all scoped to the target. HMA Scan only
- * participates when it actually ran (`hmaAvailable`); Project Governance only
- * when a target-local critical signal exists (`projectGovernanceRan`). HMA's
- * score is coerced to a finite number so a malformed HMA payload cannot poison
- * the floor with NaN.
+ * Project Governance, and Shield Runtime Risk — are all scoped to the target.
+ * HMA Scan only participates when it actually ran (`hmaAvailable`); Project
+ * Governance only when a target-local critical signal exists
+ * (`projectGovernanceRan`); Shield Runtime Risk only when a classified
+ * critical/high runtime finding fired (`shieldRiskRan`) — NOT the adoption
+ * baseline posture. HMA's score is coerced to a finite number so a malformed
+ * HMA payload cannot poison the floor with NaN.
  *
  * NOTE: a target whose only critical signal is what HMA `secure` catches (and
  * which declares no in-repo critical MCP/config) is floored ONLY by HMA. When
@@ -1181,6 +1295,7 @@ export function buildFloorParticipants(inputs: FloorParticipantInputs): FloorPar
     { name: 'Config Integrity', score: inputs.guardScore, ran: true },
     { name: 'HMA Scan', score: hmaScore, ran: inputs.hmaAvailable },
     { name: 'Project Governance', score: inputs.projectGovernanceScore, ran: inputs.projectGovernanceRan },
+    { name: 'Shield Runtime Risk', score: inputs.shieldRiskScore, ran: inputs.shieldRiskRan },
   ];
 }
 
