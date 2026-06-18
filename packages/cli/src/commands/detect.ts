@@ -380,8 +380,16 @@ export function scanMcpServers(targetDir: string): DetectedMcpServer[] {
 
   servers.push(...scanClaudePluginMcpServers());
 
-  const claudeProjectMcp = path.join(home, '.claude', '.mcp.json');
-  servers.push(...parseMcpConfig(claudeProjectMcp, 'Claude Code (project)'));
+  // ~/.claude/.mcp.json is the user's HOST-global Claude config, not the scanned
+  // project. Label it (global) — matching the sibling .claude/mcp_servers.json
+  // entry and the documented intent in governance-scoring (global/machine-wide
+  // servers are shown for awareness but are NOT project-local). Mislabeling it
+  // "(project)" made the host file count toward every project-local check
+  // (governance score, review's dominant-analyzer floor, report submission), so
+  // a server in the developer's personal config could penalize/clamp an
+  // unrelated clean project. See #175.
+  const claudeGlobalMcp = path.join(home, '.claude', '.mcp.json');
+  servers.push(...parseMcpConfig(claudeGlobalMcp, 'Claude Code (global)'));
 
   const vscodeExtDir = path.join(home, '.vscode', 'extensions');
   try {

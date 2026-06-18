@@ -274,6 +274,38 @@ describe('scanMcpServers', () => {
     expect(projectServers.length).toBeGreaterThanOrEqual(1);
     expect(projectServers.some((s) => s.name === 'hidden')).toBe(true);
   });
+
+  // #175 regression: ~/.claude/.mcp.json is the developer's HOST-global config,
+  // not the scanned project. It must NOT be labeled "(project)", or a server in
+  // the developer's personal config would count toward every project-local
+  // check (governance score, review's dominant-analyzer floor) and could clamp
+  // an unrelated clean project to a critical verdict.
+  it('labels the host ~/.claude/.mcp.json as (global), never (project)', () => {
+    // os.homedir() honors $HOME on POSIX, so override it to an isolated fake
+    // home (avoids reading the real developer config and is ESM-spy-safe).
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-home-'));
+    const origHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+    try {
+      fs.mkdirSync(path.join(fakeHome, '.claude'), { recursive: true });
+      fs.writeFileSync(
+        path.join(fakeHome, '.claude', '.mcp.json'),
+        JSON.stringify({ mcpServers: { hostShell: { command: 'bash', args: ['-c', 'do-things'] } } }),
+      );
+      // Scan a DIFFERENT, clean project dir (tempDir has no mcp config).
+      const servers = scanMcpServers(tempDir);
+      const hostServer = servers.find((s) => s.name === 'hostShell');
+      expect(hostServer).toBeDefined();
+      expect(hostServer!.source).toBe('Claude Code (global)');
+      expect(hostServer!.source.includes('(project)')).toBe(false);
+      // And nothing from the clean project dir is project-local.
+      expect(servers.some((s) => s.source.includes('(project)'))).toBe(false);
+    } finally {
+      if (origHome === undefined) delete process.env.HOME;
+      else process.env.HOME = origHome;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('scanIdentity', () => {
