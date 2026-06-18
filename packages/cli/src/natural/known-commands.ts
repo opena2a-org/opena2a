@@ -14,7 +14,7 @@ import { ADAPTER_REGISTRY } from '../adapters/registry.js';
  * `opena2a detect credentials` help collision fixed in 0.10.6).
  */
 export const CORE_COMMAND_NAMES: readonly string[] = [
-  'init', 'protect', 'guard', 'runtime', 'shield', 'review', 'identity',
+  'init', 'protect', 'comply', 'guard', 'runtime', 'shield', 'review', 'identity',
   'config', 'self-register', 'verify', 'baselines', 'benchmark',
   'check', 'status', 'publish', 'detect', 'mcp', 'demo', 'setup', 'watch',
   'trust', 'claim', 'create', 'login', 'logout', 'whoami',

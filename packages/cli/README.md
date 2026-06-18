@@ -51,6 +51,7 @@ opena2a                             # Interactive guided wizard (no args)
 | `opena2a detect --export-csv` | Asset inventory for CMDB/ServiceNow |
 | `opena2a init` | Read-only security assessment with trust score |
 | `opena2a protect` | Fix everything — credentials, .gitignore, config signing |
+| `opena2a comply` | Classify content for PII, credentials, and regulated data before it reaches an LLM |
 | `opena2a watch` | Live tail of agent activity events |
 | `opena2a identity create` | Cryptographic identity for your project |
 | `opena2a identity mcp attach` | Auto-discover and attach MCP servers |
@@ -71,6 +72,7 @@ Each command routes to a specialized tool, installed on first use:
 | `identity` | [AIM](https://github.com/opena2a-org/agent-identity-management) | Cryptographic identity, audit logs, trust scoring |
 | `scan` | [HackMyAgent](https://github.com/opena2a-org/hackmyagent) | 204 security checks, attack simulation, auto-fix |
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
+| `comply` | [AIComply](https://github.com/opena2a-org/aicomply) | Inline PII/credential/regulated-data classifier for agent I/O. Python? `pip install aicomply` |
 | `mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
 | `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
