@@ -208,6 +208,136 @@ describe('buildVerdict', () => {
     expect(v.message).toContain('API key exposed in .env:2');
     expect(v.message).not.toContain('+ ');
   });
+
+  // #221: reconcile the severity verdict with the composite band so a
+  // good-band score never sits beside an absolute "Not safe as-is".
+  it('softens a high-only verdict to "Good overall" when the composite is in the good band', () => {
+    const v = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [{ severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' }],
+      93,
+    );
+    // No longer the absolute red verdict — coherent with a 93 composite.
+    expect(v.status).toBe('needs-fix');
+    expect(v.message).not.toContain('Not safe');
+    expect(v.message).toContain('Good overall (93/100)');
+    expect(v.message).toContain('1 item to harden');
+    expect(v.message).toContain('Incomplete .gitignore');
+    expect(v.message).toContain('Harden these, then rescan.');
+  });
+
+  it('pluralizes and names the lead when several high items remain in the good band', () => {
+    const v = buildVerdict(
+      { critical: 0, high: 3, medium: 0, low: 0 },
+      { kind: 'project' },
+      [
+        { severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' },
+        { severity: 'high', name: 'Unsigned config', file: 'mcp.json' },
+        { severity: 'high', name: 'No Shield policy', file: '.' },
+      ],
+      85,
+    );
+    expect(v.status).toBe('needs-fix');
+    expect(v.message).toContain('Good overall (85/100)');
+    expect(v.message).toContain('3 items to harden');
+    expect(v.message).toContain('Incomplete .gitignore');
+    expect(v.message).toContain('+ 2 more');
+  });
+
+  it('keeps "Not safe as-is" for a high finding when the composite is below the good band', () => {
+    const v = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [{ severity: 'high', name: 'Hardcoded credential', file: 'config.ts', line: 9 }],
+      42,
+    );
+    expect(v.status).toBe('unsafe');
+    expect(v.message).toContain('Not safe as-is');
+    expect(v.message).not.toContain('Good overall');
+  });
+
+  it('never softens when a critical is present, even with a high composite (defense in depth)', () => {
+    const v = buildVerdict(
+      { critical: 1, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [
+        { severity: 'critical', name: 'RCE', file: 'index.js' },
+        { severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' },
+      ],
+      95,
+    );
+    expect(v.status).toBe('unsafe');
+    expect(v.message).toContain('Not safe to ship');
+    expect(v.message).not.toContain('Good overall');
+  });
+
+  it('uses depend/review guidance when softening a remote package in the good band', () => {
+    const v = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'library', remote: true },
+      [{ severity: 'high', name: 'Broad MCP scope', file: 'mcp.json' }],
+      88,
+    );
+    expect(v.status).toBe('needs-fix');
+    expect(v.message).toContain('Good overall (88/100)');
+    expect(v.message).toContain('Review these before depending on it.');
+    expect(v.message).not.toContain('rescan');
+  });
+
+  it('does not soften on a non-finite composite (Infinity/NaN) — keeps "Not safe as-is"', () => {
+    for (const bad of [Infinity, -Infinity, NaN]) {
+      const v = buildVerdict(
+        { critical: 0, high: 1, medium: 0, low: 0 },
+        { kind: 'project' },
+        [{ severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' }],
+        bad,
+      );
+      expect(v.status).toBe('unsafe');
+      expect(v.message).toContain('Not safe as-is');
+      expect(v.message).not.toContain('Good overall');
+    }
+  });
+
+  it('rounds a non-integer composite in the softened message', () => {
+    const v = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [{ severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' }],
+      90.6,
+    );
+    expect(v.message).toContain('Good overall (91/100)');
+    expect(v.message).not.toContain('90.6');
+  });
+
+  it('does not soften at the band edge below 80 (79) but does at 80', () => {
+    const below = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [{ severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' }],
+      79,
+    );
+    const at = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [{ severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' }],
+      80,
+    );
+    expect(below.status).toBe('unsafe');
+    expect(below.message).toContain('Not safe as-is');
+    expect(at.status).toBe('needs-fix');
+    expect(at.message).toContain('Good overall (80/100)');
+  });
+
+  it('is back-compatible: a high finding with no composite stays "Not safe as-is"', () => {
+    const v = buildVerdict(
+      { critical: 0, high: 1, medium: 0, low: 0 },
+      { kind: 'project' },
+      [{ severity: 'high', name: 'Incomplete .gitignore', file: '.gitignore' }],
+    );
+    expect(v.status).toBe('unsafe');
+    expect(v.message).toContain('Not safe as-is');
+  });
 });
 
 describe('renderObservationsBlock with artifacts', () => {

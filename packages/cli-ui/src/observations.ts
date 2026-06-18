@@ -211,11 +211,33 @@ export interface VerdictFinding {
  *
  * Never uses letter grades. Anchors to an action per CISO philosophy rule
  * #10 (feedback_cli_ciso_philosophy.md).
+ *
+ * `compositeScore` (optional, 0-100) is the caller's overall *target-risk*
+ * number. When supplied, it reconciles the severity histogram with the headline
+ * score so the two stop disagreeing in direction (#221): a high-only verdict
+ * (NO criticals) on a project that scores in the good band (>= 80) is reframed
+ * from an absolute "Not safe as-is" to a coherent "Good overall (N/100) — M to
+ * harden" instead of sitting in red beside a green 93.
+ *
+ * [CHIEF-CDS] design posture: when a composite is supplied, IT is the source of
+ * truth for the verdict *direction*, because the caller's composite is already
+ * severity-weighted AND floor-aware — a confirmed credential/malicious finding
+ * drives the dominant-analyzer floor and pulls the composite below the band, so
+ * those never reach this branch and keep their "not safe" verdict. A HIGH that
+ * the composite still scores >= 80 is, by that measure, a low-risk item to
+ * harden — not a blocker. The finding is NOT hidden: it stays in the findings
+ * list, is named as the lead here, and the status is `needs-fix` (warning), not
+ * `safe`. This only ever *softens* a high-only verdict to a caution; it never
+ * returns `safe` and never inverts a low score upward. Criticals are excluded
+ * entirely (they keep "Not safe to ship") so a mis-rated danger is never
+ * softened on the strength of the composite alone. Omit `compositeScore` and the
+ * verdict is purely severity-driven (back-compat for callers without one).
  */
 export function buildVerdict(
   severity: { critical: number; high: number; medium: number; low: number },
   surface: SurfaceSummary,
   findings?: VerdictFinding[],
+  compositeScore?: number,
 ): { status: VerdictStatus; message: string } {
   const { critical, high, medium, low } = severity;
   const total = critical + high + medium + low;
@@ -267,6 +289,22 @@ export function buildVerdict(
   }
   if (high > 0) {
     const leadText = lead ? formatLead(lead) : `${high} high-severity issue${high > 1 ? 's' : ''}`;
+    // Reconcile with the composite: a good-band score (>= 80) with no criticals
+    // means the project is usable overall and these HIGHs are items to harden,
+    // not a "not safe" blocker (#221). Credential/malicious HIGHs floor the
+    // composite below 80, so they never reach this softened branch. Require a
+    // finite score so a malformed/Infinity composite cannot trip the softening
+    // (mirrors the floor's Number.isFinite guard in review.ts).
+    if (typeof compositeScore === 'number' && Number.isFinite(compositeScore) && compositeScore >= 80) {
+      const itemWord = total > 1 ? 'items' : 'item';
+      const guidance = remote
+        ? 'Review these before depending on it.'
+        : 'Harden these, then rescan.';
+      return {
+        status: 'needs-fix',
+        message: `Good overall (${Math.round(compositeScore)}/100). ${total} ${itemWord} to harden: ${leadText}${extraSuffix}. ${guidance}`,
+      };
+    }
     const guidance = remote
       ? 'Review before depending on it, or choose a vetted version.'
       : 'Fix, then rescan.';
