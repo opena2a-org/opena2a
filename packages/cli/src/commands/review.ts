@@ -552,6 +552,9 @@ export async function review(options: ReviewOptions): Promise<number> {
       { critical: sevCounts.critical, high: sevCounts.high, medium: sevCounts.medium, low: sevCounts.low },
       { kind: projectLabel },
       verdictFindings,
+      // Pass the composite (target-risk) score so the verdict line reconciles
+      // with the headline band instead of disagreeing in direction (#221).
+      compositeScore,
     );
     const { lines } = cliUi.renderObservationsBlock({
       surfaces: { kind: projectLabel },
