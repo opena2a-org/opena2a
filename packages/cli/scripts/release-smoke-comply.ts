@@ -90,6 +90,20 @@ function main(): void {
   if (maskIntegrityHolds(pii.stdout)) pass('mask integrity: no 4-digit SSN window in text output');
   else fail('mask integrity BREACH: too much of the SSN leaked to stdout');
 
+  // 2b. Bare provider API key (regression for the 0.10.10 gap: comply scanned
+  //     a bare sk-ant key CLEAN until @opena2a/aicomply 2.2.0). The literal
+  //     word FAKE keeps this out of any real-secret scanner. Asserts the key is
+  //     flagged AND never echoed raw.
+  const PROVIDER_KEY = `sk-ant-api03-FAKE${'0'.repeat(91)}`;
+  const cred = runComply([], `the agent leaked ${PROVIDER_KEY} in its output`);
+  if (cred.status === 1 && /VIOLATION/.test(cred.stdout) && /CREDENTIAL/.test(cred.stdout)) {
+    pass('bare provider key (sk-ant) -> exit 1, VIOLATION, CREDENTIAL');
+  } else {
+    fail(`provider key expected exit 1 + VIOLATION + CREDENTIAL, got exit ${cred.status}`);
+  }
+  if (!cred.stdout.includes(PROVIDER_KEY)) pass('mask integrity: raw provider key not in text output');
+  else fail('mask integrity BREACH: raw provider key leaked to stdout');
+
   // 3. --json -> parseable, masked, no raw leak.
   const json = runComply(['--json'], `SSN ${SSN}`);
   let parsed: unknown;
