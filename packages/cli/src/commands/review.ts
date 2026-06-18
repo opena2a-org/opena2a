@@ -78,6 +78,11 @@ export interface ReviewReport {
   projectType: string;
   phases: PhaseResult[];
   compositeScore: number;
+  /** True when the deepest target-malice analyzer (HMA) did not run, so the
+   *  dominant-analyzer floor could not see HMA-only threats and the verdict is
+   *  not authoritative. Machine consumers should treat a passing score with
+   *  `provisional: true` as "not fully scanned", not "clean". See #175. */
+  provisional: boolean;
   grade: string; // kept for backward compat in JSON; not displayed as letter grade in CLI/HTML
   recoverySummary: RecoverySummary;
   findings: ReviewFinding[];
@@ -413,6 +418,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // direction with the harshest *target-malice* analyzer. Only analyzers whose
   // critical-band score unambiguously means "the target itself is dangerous"
   // participate — see buildFloorParticipants for which are in/out and why.
+  const projectGovernance = targetGovernanceFloorScore(detectData);
   const compositeScore = applyDominantAnalyzerFloor(
     weightedComposite,
     buildFloorParticipants({
@@ -421,6 +427,8 @@ export async function review(options: ReviewOptions): Promise<number> {
       guardScore,
       hmaScore: hmaAvailable ? hmaData!.score : 0,
       hmaAvailable,
+      projectGovernanceScore: projectGovernance.score,
+      projectGovernanceRan: projectGovernance.ran,
     }),
   );
   const grade = scoreToGrade(compositeScore);
@@ -444,6 +452,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     projectType: initData.projectType,
     phases,
     compositeScore,
+    provisional: !hmaAvailable,
     grade,
     recoverySummary,
     findings,
@@ -463,6 +472,24 @@ export async function review(options: ReviewOptions): Promise<number> {
     if (sev in sevCounts) sevCounts[sev]++;
   }
   const totalFindings = findings.length;
+
+  // Degraded-mode notice (#175 / C1): the dominant-analyzer floor's deepest
+  // target-malice signal is HMA `secure`. When HMA did not run, a malicious
+  // project that only HMA would catch is NOT floored, so this verdict can read
+  // more reassuring than a full scan would. Emit to STDERR so it is visible on
+  // every output path — including `--json` (whose JSON stays on stdout, with a
+  // top-level `provisional: true` flag) and `--ci` — and so it appears above
+  // the verdict rather than scrolling past below it (CISO Rule 11 — no
+  // misleading verdicts).
+  if (!hmaAvailable) {
+    const how = options.skipHma
+      ? 'Re-run without --skip-hma'
+      : 'Install it: npm i -g hackmyagent';
+    process.stderr.write(
+      yellow('  Provisional verdict — deep scan (HMA) did not run.\n') +
+      dim(`  Lightweight checks only; HMA-only threats are not reflected. ${how}.\n\n`),
+    );
+  }
 
   if (options.format === 'json') {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
@@ -545,21 +572,6 @@ export async function review(options: ReviewOptions): Promise<number> {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(dim(`  [observations] skipped — ${msg}\n`));
     }
-  }
-
-  // Degraded-mode notice (#175 / C1): the dominant-analyzer floor relies on HMA
-  // `secure` as its deepest target-malice signal. When HMA did not run, a
-  // malicious project that only HMA would catch is NOT floored, so this verdict
-  // can read more reassuring than a full scan would. Say so plainly (CISO Rule
-  // 11 — no misleading verdicts) and give the one command that fixes it.
-  if (!hmaAvailable) {
-    const how = options.skipHma
-      ? 'Re-run without --skip-hma'
-      : 'Install it: npm i -g hackmyagent';
-    process.stdout.write(
-      yellow('  Provisional verdict — deep scan (HMA) did not run.\n') +
-      dim(`  Lightweight checks only; HMA-only threats are not reflected. ${how}.\n\n`),
-    );
   }
 
   // Generate HTML report
@@ -1088,6 +1100,38 @@ export interface FloorParticipantInputs {
   guardScore: number;
   hmaScore: number;
   hmaAvailable: boolean;
+  /** Target-local governance floor score (see targetGovernanceFloorScore) —
+   *  derived ONLY from in-repo critical MCP servers / AI configs, never the
+   *  host process scan. */
+  projectGovernanceScore: number;
+  /** True only when a target-local critical governance signal exists, so a
+   *  clean repo never participates via governance. */
+  projectGovernanceRan: boolean;
+}
+
+/**
+ * Target-local governance floor signal (#175 follow-up).
+ *
+ * `detectData.governanceScore` is NOT a safe floor input because it blends a
+ * host process scan (`ps aux`) — which reflects the developer's machine, not
+ * the scanned project. This helper extracts ONLY the target-local critical
+ * signals that runDetectPhase also surfaces as critical findings: an in-repo
+ * (`source` contains "(project)"), unverified MCP server declared at the
+ * `critical` risk tier, or an AI config file at the `critical` risk tier
+ * (credential references). When either is present the target itself is
+ * dangerous, so governance participates in the floor at score 0; otherwise it
+ * does not participate (`ran: false`) and cannot clamp a clean repo.
+ */
+export function targetGovernanceFloorScore(detect: {
+  mcpServers: { risk: string; source: string; verified: boolean }[];
+  aiConfigs: { risk: string }[];
+}): { score: number; ran: boolean } {
+  const projectCriticalMcp = detect.mcpServers.some(
+    s => s.risk === 'critical' && !s.verified && s.source.includes('(project)'),
+  );
+  const criticalConfig = detect.aiConfigs.some(c => c.risk === 'critical');
+  if (projectCriticalMcp || criticalConfig) return { score: 0, ran: true };
+  return { score: 100, ran: false };
 }
 
 /**
@@ -1101,24 +1145,33 @@ export interface FloorParticipantInputs {
  *   - Shield Analysis: posture score has a baseline of 25 for any user who has
  *     not run `opena2a shield init` (see runShieldPhase). A low Shield score
  *     signals "defensive tooling not set up", not target malice.
- *   - Shadow AI / governance: governanceScore is partly derived from a host
- *     process scan (runDetectPhase → scanProcesses → `ps aux`), so it reflects
- *     AI tools running on the *developer's machine* (Claude Code, Cursor, …),
- *     not the scanned project. A clean repo on a dev box running ungoverned
- *     agents can drop governanceScore below the critical band, which would
- *     wrongly clamp the verdict (#175 follow-up — false-positive). Until the
- *     governance score is split into target-local vs host-ambient components it
- *     is not a trustworthy floor signal.
+ *   - Shadow AI / governance (the raw governanceScore): partly derived from a
+ *     host process scan (runDetectPhase → scanProcesses → `ps aux`), so it
+ *     reflects AI tools running on the *developer's machine* (Claude Code,
+ *     Cursor, …), not the scanned project. A clean repo on a dev box running
+ *     ungoverned agents can drop governanceScore below the critical band, which
+ *     would wrongly clamp the verdict (#175 follow-up — false-positive). The
+ *     governanceScore as a whole is therefore NOT a floor input.
  *
- * Remaining participants — Project Scan (trust), Credentials, Config Integrity,
- * HMA Scan — are all scoped to the target. HMA Scan only participates when it
- * actually ran (`hmaAvailable`); its score is coerced to a finite number so a
- * malformed HMA payload cannot poison the floor with NaN.
+ * Governance is NOT dropped entirely, though — that would narrow detection (a
+ * target whose only critical signal is an in-repo malicious MCP server / AI
+ * config would escape the floor). Instead the *target-local* slice of
+ * governance participates via `projectGovernanceScore` (see
+ * targetGovernanceFloorScore), which is computed only from in-repo critical
+ * declarations and never from the host process scan.
  *
- * NOTE: with Shadow AI removed, a target whose only critical signal is what HMA
- * `secure` catches is floored ONLY by HMA. When HMA does not run, the caller
- * must surface that the verdict is provisional (see review() degraded-mode
- * warning) rather than present a non-floored "improving" score.
+ * Participants — Project Scan (trust), Credentials, Config Integrity, HMA Scan,
+ * and Project Governance — are all scoped to the target. HMA Scan only
+ * participates when it actually ran (`hmaAvailable`); Project Governance only
+ * when a target-local critical signal exists (`projectGovernanceRan`). HMA's
+ * score is coerced to a finite number so a malformed HMA payload cannot poison
+ * the floor with NaN.
+ *
+ * NOTE: a target whose only critical signal is what HMA `secure` catches (and
+ * which declares no in-repo critical MCP/config) is floored ONLY by HMA. When
+ * HMA does not run, the caller must surface that the verdict is provisional
+ * (see review() degraded-mode warning + `provisional` JSON flag) rather than
+ * present a non-floored "improving" score.
  */
 export function buildFloorParticipants(inputs: FloorParticipantInputs): FloorParticipant[] {
   const hmaScore = Number.isFinite(inputs.hmaScore) ? inputs.hmaScore : 0;
@@ -1127,6 +1180,7 @@ export function buildFloorParticipants(inputs: FloorParticipantInputs): FloorPar
     { name: 'Credentials', score: inputs.credScore, ran: true },
     { name: 'Config Integrity', score: inputs.guardScore, ran: true },
     { name: 'HMA Scan', score: hmaScore, ran: inputs.hmaAvailable },
+    { name: 'Project Governance', score: inputs.projectGovernanceScore, ran: inputs.projectGovernanceRan },
   ];
 }
 

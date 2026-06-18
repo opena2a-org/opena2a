@@ -7,6 +7,7 @@ import {
   aggregateFindings,
   applyDominantAnalyzerFloor,
   buildFloorParticipants,
+  targetGovernanceFloorScore,
   CRITICAL_BAND,
   type CredentialPhaseData,
   type ShieldPhaseData,
@@ -64,6 +65,46 @@ describe('review', () => {
     expect(report.compositeScore).toBeGreaterThanOrEqual(60);
     expect(['strong', 'good', 'moderate', 'improving']).toContain(report.grade);
     expect(report.phases).toHaveLength(6);
+  });
+
+  it('C1: --skip-hma sets report.provisional=true and emits a stderr notice', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let output = '';
+    try {
+      ({ output } = await captureStdout(() => review({
+        targetDir: tempDir, format: 'json', autoOpen: false, skipHma: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    // The machine path (--json) carries the provisional signal as a field...
+    const report = JSON.parse(output);
+    expect(report.provisional).toBe(true);
+    // ...and a human watching the terminal sees the notice on stderr (not mixed
+    // into the JSON on stdout).
+    const stderr = stderrChunks.join('');
+    expect(stderr).toMatch(/Provisional verdict/);
+    expect(stderr).toMatch(/did not run/);
+    expect(output).not.toMatch(/Provisional verdict/); // stdout JSON stays clean
+  });
+
+  it('a full scan (HMA ran) is not marked provisional', async () => {
+    // When HMA is available the report must NOT be flagged provisional. We can't
+    // guarantee HMA is installed in CI, so assert the contract: provisional
+    // mirrors !hmaAvailable.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    const { output } = await captureStdout(() => review({
+      targetDir: tempDir, format: 'json', autoOpen: false, skipHma: true,
+    }));
+    const report = JSON.parse(output);
+    expect(report.provisional).toBe(!(report.hmaData?.available ?? false));
   });
 
   it('project with credentials returns lower score', async () => {
@@ -580,25 +621,39 @@ describe('applyDominantAnalyzerFloor (#175 dominant-analyzer floor)', () => {
 });
 
 describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
-  const base = { trustScore: 90, credScore: 90, guardScore: 90, hmaScore: 90, hmaAvailable: true };
+  const base = {
+    trustScore: 90, credScore: 90, guardScore: 90, hmaScore: 90, hmaAvailable: true,
+    projectGovernanceScore: 100, projectGovernanceRan: false,
+  };
 
-  it('includes only the four target-scoped analyzers, never Shield or Shadow AI', () => {
+  it('includes only target-scoped analyzers, never Shield or the host-polluted Shadow AI', () => {
     const names = buildFloorParticipants(base).map(p => p.name);
-    expect(names).toEqual(['Project Scan', 'Credentials', 'Config Integrity', 'HMA Scan']);
-    // H1 regression: Shadow AI / governance is host-polluted (ps aux) and must
-    // NOT be a floor participant, or a clean repo on a dev box running AI tools
-    // would be wrongly clamped to a critical verdict.
+    expect(names).toEqual(['Project Scan', 'Credentials', 'Config Integrity', 'HMA Scan', 'Project Governance']);
+    // H1 regression: the raw "Shadow AI" governanceScore is host-polluted (ps aux)
+    // and must NOT be a floor participant. Only the target-local slice
+    // ("Project Governance") participates.
     expect(names).not.toContain('Shadow AI');
     expect(names).not.toContain('Shield Analysis');
     expect(names).not.toContain('Shield');
   });
 
-  it('H1: a critical Shadow-AI/governance score cannot clamp a clean project', () => {
-    // Simulate a clean repo (trust/cred/config/HMA all healthy) on a machine
-    // whose governance score tanked to 18 from ambient host agents. Because
-    // governance is not a participant, the floor leaves the composite alone.
+  it('H1: a host-driven low governance score cannot clamp a clean project', () => {
+    // Clean repo (trust/cred/config/HMA healthy) on a machine whose RAW
+    // governance tanked from ambient host agents. The raw governanceScore is
+    // never passed in; projectGovernanceRan is false (no in-repo critical
+    // signal), so the floor leaves the composite alone.
     const participants = buildFloorParticipants({ ...base, trustScore: 88, credScore: 92, guardScore: 90, hmaScore: 85 });
     expect(applyDominantAnalyzerFloor(82, participants)).toBe(82);
+  });
+
+  it('H1-collateral: a target-local critical governance signal STILL floors (no detection narrowing)', () => {
+    // A repo whose only critical signal is an in-repo malicious MCP server:
+    // trust/cred/config/HMA all clean, but projectGovernance fires.
+    const participants = buildFloorParticipants({
+      trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 90, hmaAvailable: true,
+      projectGovernanceScore: 0, projectGovernanceRan: true,
+    });
+    expect(applyDominantAnalyzerFloor(72, participants)).toBe(0);
   });
 
   it('HMA participates only when it ran; its score is coerced finite', () => {
@@ -608,16 +663,52 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
     expect(buildFloorParticipants({ ...base, hmaScore: NaN }).find(p => p.name === 'HMA Scan')!.score).toBe(0);
   });
 
+  it('Project Governance participates only when a target-local critical signal exists', () => {
+    expect(buildFloorParticipants(base).find(p => p.name === 'Project Governance')!.ran).toBe(false);
+    expect(buildFloorParticipants({ ...base, projectGovernanceRan: true, projectGovernanceScore: 0 })
+      .find(p => p.name === 'Project Governance')!.ran).toBe(true);
+  });
+
   it('kitchen-sink shape: HMA 0 floors the composite to 0 when HMA ran', () => {
     // trust/cred/config clean, HMA critical — the real kitchen-sink profile.
-    const participants = buildFloorParticipants({ trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 0, hmaAvailable: true });
+    const participants = buildFloorParticipants({ ...base, trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 0, hmaAvailable: true });
     expect(applyDominantAnalyzerFloor(67, participants)).toBe(0);
   });
 
-  it('C1: without HMA, the same kitchen-sink shape is NOT floored (verdict is provisional)', () => {
-    // Documents the degraded-mode behavior: HMA is the only critical signal for
-    // this shape, so when it does not run the floor cannot fire. review() warns.
-    const participants = buildFloorParticipants({ trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 0, hmaAvailable: false });
+  it('C1: without HMA (and no target-local gov signal), kitchen-sink shape is NOT floored (verdict provisional)', () => {
+    // Documents degraded mode: HMA is the only critical signal for this shape,
+    // so when it does not run the floor cannot fire. review() emits the
+    // provisional notice + sets report.provisional=true.
+    const participants = buildFloorParticipants({ ...base, trustScore: 100, credScore: 100, guardScore: 100, hmaScore: 0, hmaAvailable: false });
     expect(applyDominantAnalyzerFloor(67, participants)).toBe(67);
+  });
+});
+
+describe('targetGovernanceFloorScore (#175 — target-local governance only)', () => {
+  it('does not fire for a clean repo (no in-repo critical MCP/config)', () => {
+    expect(targetGovernanceFloorScore({ mcpServers: [], aiConfigs: [] })).toEqual({ score: 100, ran: false });
+    // a verified / non-critical / non-project MCP server does not fire
+    expect(targetGovernanceFloorScore({
+      mcpServers: [{ risk: 'critical', source: 'host (system)', verified: false }],
+      aiConfigs: [{ risk: 'low' }],
+    })).toEqual({ score: 100, ran: false });
+    expect(targetGovernanceFloorScore({
+      mcpServers: [{ risk: 'critical', source: 'mcp.json (project)', verified: true }],
+      aiConfigs: [],
+    })).toEqual({ score: 100, ran: false });
+  });
+
+  it('fires (score 0) on an in-repo unverified critical MCP server', () => {
+    expect(targetGovernanceFloorScore({
+      mcpServers: [{ risk: 'critical', source: 'mcp.json (project)', verified: false }],
+      aiConfigs: [],
+    })).toEqual({ score: 0, ran: true });
+  });
+
+  it('fires (score 0) on a critical AI config (credential references)', () => {
+    expect(targetGovernanceFloorScore({
+      mcpServers: [],
+      aiConfigs: [{ risk: 'critical' }],
+    })).toEqual({ score: 0, ran: true });
   });
 });
