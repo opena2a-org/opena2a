@@ -8,6 +8,8 @@ import {
   applyDominantAnalyzerFloor,
   buildFloorParticipants,
   targetGovernanceFloorScore,
+  shieldCompositeScore,
+  governanceCompositeScore,
   CRITICAL_BAND,
   type CredentialPhaseData,
   type ShieldPhaseData,
@@ -60,10 +62,12 @@ describe('review', () => {
 
     expect(exitCode).toBe(0);
     const report = JSON.parse(output);
-    // Score depends on Shield product detection and guard signing status.
-    // A clean project without Shield products or signatures scores ~65-75.
-    expect(report.compositeScore).toBeGreaterThanOrEqual(60);
-    expect(['strong', 'good', 'moderate', 'improving']).toContain(report.grade);
+    // Adoption-as-recovery (#175 follow-up): a clean project must NOT be scored
+    // down for opt-in tooling it hasn't adopted (unsigned configs, no Shield
+    // setup, no registered identity). It should clear the "good" band even with
+    // none of that set up. Regression guard for the whole adoption-penalty fix.
+    expect(report.compositeScore).toBeGreaterThanOrEqual(80);
+    expect(['strong', 'good']).toContain(report.grade);
     expect(report.phases).toHaveLength(6);
   });
 
@@ -271,7 +275,10 @@ describe('review', () => {
       ci: true,
     }));
 
-    expect(exitCode).toBe(0);
+    // A confirmed critical credential drives the dominant-analyzer floor, so the
+    // verdict is "needs attention" (composite < 50 → exit 1). The credential must
+    // not be diluted to a passing verdict by the neutralized adoption dimensions.
+    expect(exitCode).toBe(1);
     expect(output).toContain('Categories');
     // The cli-ui classifier maps CRED-* into the "credentials" bucket.
     const categoriesLine = output.split('\n').find(l => l.includes('Categories')) ?? '';
@@ -710,5 +717,34 @@ describe('targetGovernanceFloorScore (#175 — target-local governance only)', (
       mcpServers: [],
       aiConfigs: [{ risk: 'critical' }],
     })).toEqual({ score: 0, ran: true });
+  });
+});
+
+describe('adoption-as-recovery composite scoring (#175 follow-up)', () => {
+  describe('shieldCompositeScore', () => {
+    it('is neutral-high when Shield is unconfigured / has no real risk findings', () => {
+      // baseline posture (~40) on a Shield-less machine must NOT drag the composite
+      expect(shieldCompositeScore({ postureScore: 40, classifiedFindings: [] })).toBe(90);
+      expect(shieldCompositeScore({ postureScore: 55, classifiedFindings: [] })).toBe(90);
+      // a well-configured Shield keeps its higher posture
+      expect(shieldCompositeScore({ postureScore: 95, classifiedFindings: [] })).toBe(95);
+    });
+    it('reflects posture when Shield surfaced a genuine critical/high runtime risk', () => {
+      expect(shieldCompositeScore({ postureScore: 35, classifiedFindings: [{ finding: { severity: 'critical' } }] })).toBe(35);
+      expect(shieldCompositeScore({ postureScore: 20, classifiedFindings: [{ finding: { severity: 'high' } }] })).toBe(20);
+      // medium/low findings are not target-critical → still neutral
+      expect(shieldCompositeScore({ postureScore: 40, classifiedFindings: [{ finding: { severity: 'medium' } }] })).toBe(90);
+    });
+  });
+
+  describe('governanceCompositeScore', () => {
+    it('is neutral-high when no target-local critical governance signal fired', () => {
+      // no-identity / no-SOUL / ambient host agents must NOT penalize the composite
+      expect(governanceCompositeScore({ score: 100, ran: false })).toBe(90);
+      expect(governanceCompositeScore({ score: 20, ran: false })).toBe(90);
+    });
+    it('reflects the target-local critical score when one fired', () => {
+      expect(governanceCompositeScore({ score: 0, ran: true })).toBe(0);
+    });
   });
 });

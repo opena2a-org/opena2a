@@ -405,25 +405,43 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   // Composite score
   const hmaAvailable = hmaData?.available ?? false;
+  // Adoption-as-recovery (not penalty): a clean target must not be scored down
+  // for opt-in OpenA2A tooling it simply hasn't adopted. Shield posture and the
+  // raw governance score conflate "the target is dangerous" with "the developer
+  // hasn't set up Shield / registered an identity / signed configs". For the
+  // composite we use risk-only views — neutral-high unless a genuine target-risk
+  // signal fired — and surface adoption as recovery opportunities instead. See
+  // shieldCompositeScore / governanceCompositeScore.
+  const projectGovernance = targetGovernanceFloorScore(detectData);
+  const shieldComposite = shieldCompositeScore(shieldData);
+  const governanceComposite = governanceCompositeScore(projectGovernance);
+  // A confirmed CRITICAL credential exposure is a target-malice signal, not an
+  // adoption gap. With the adoption dimensions neutralized, one such finding
+  // would otherwise be diluted to a "good" verdict by the weighted average. So
+  // the FLOOR (direction-agreement) sees a critical-band credential score —
+  // a committed production key must pull the verdict to "needs attention" — even
+  // though the weighted-average composite still uses the real credScore. Gated
+  // on critical severity (the scanner already suppresses examples/placeholders).
+  const credCritical = (credentialData.bySeverity['critical'] ?? 0) > 0;
+  const credFloorScore = credCritical ? Math.min(credScore, CRITICAL_BAND - 5) : credScore;
   const weightedComposite = computeCompositeScore(
     initData.trustScore,
     credScore,
     guardScore,
-    shieldData.postureScore,
+    shieldComposite,
     hmaAvailable ? hmaData!.score : 0,
     hmaAvailable,
-    detectData.governanceScore,
+    governanceComposite,
   );
   // Dominant-analyzer floor (#175): force the composite verdict to agree in
   // direction with the harshest *target-malice* analyzer. Only analyzers whose
   // critical-band score unambiguously means "the target itself is dangerous"
   // participate — see buildFloorParticipants for which are in/out and why.
-  const projectGovernance = targetGovernanceFloorScore(detectData);
   const compositeScore = applyDominantAnalyzerFloor(
     weightedComposite,
     buildFloorParticipants({
       trustScore: initData.trustScore,
-      credScore,
+      credScore: credFloorScore,
       guardScore,
       hmaScore: hmaAvailable ? hmaData!.score : 0,
       hmaAvailable,
@@ -434,8 +452,8 @@ export async function review(options: ReviewOptions): Promise<number> {
   const grade = scoreToGrade(compositeScore);
   const recoverySummary = computeRecoverySummary(
     initData.trustScore, credScore, guardScore,
-    shieldData.postureScore, hmaAvailable ? hmaData!.score : 0,
-    hmaAvailable, compositeScore, detectData.governanceScore,
+    shieldComposite, hmaAvailable ? hmaData!.score : 0,
+    hmaAvailable, compositeScore, governanceComposite,
   );
 
   // Aggregate findings
@@ -1044,10 +1062,50 @@ function computeCredentialScore(data: CredentialPhaseData): number {
 
 function computeGuardScore(data: GuardPhaseData): number {
   if (data.signatureStatus === 'valid') return 100;
-  if (data.signatureStatus === 'unsigned') return 50;
-  // tampered
+  // "unsigned" is the DEFAULT state of any project that hasn't adopted config
+  // signing — an opt-in feature, not a security defect. Score it as neutral-good
+  // (adoption-as-recovery, not penalty); reserve low scores for actual tampering.
+  // Signing remains a small recovery opportunity (see computeRecoverySummary).
+  if (data.signatureStatus === 'unsigned') return 90;
+  // tampered — a signature exists but files changed under it. Real integrity problem.
   const penalty = data.tamperedFiles.length * 20;
   return Math.max(0, 100 - penalty);
+}
+
+/**
+ * Shield posture for the COMPOSITE (adoption-as-recovery, #175 follow-up).
+ *
+ * The raw postureScore is dominated by whether the developer has SET UP Shield
+ * on their machine (active tools, loaded policy, shell integration, signing dir)
+ * — environment state, not how dangerous the scanned target is. Using it
+ * directly drags every clean project on a Shield-less machine down (~40–55).
+ * For a target-risk verdict, Shield only contributes a penalty when it surfaced
+ * a genuine classified critical/high RUNTIME risk finding; otherwise it is
+ * neutral-high. "Set up Shield" remains a recovery opportunity, not a penalty.
+ */
+export function shieldCompositeScore(shield: {
+  postureScore: number;
+  classifiedFindings: { finding: { severity: string } }[];
+}): number {
+  const hasRealRisk = shield.classifiedFindings.some(
+    cf => cf.finding.severity === 'critical' || cf.finding.severity === 'high',
+  );
+  return hasRealRisk ? shield.postureScore : Math.max(shield.postureScore, 90);
+}
+
+/**
+ * Shadow-AI governance for the COMPOSITE (adoption-as-recovery, #175 follow-up).
+ *
+ * The raw governanceScore deducts for no registered identity / no SOUL.md
+ * (adoption) and for ambient host AI processes from `ps aux` (environment) —
+ * neither means the scanned target is dangerous. For the composite, governance
+ * contributes a penalty only when a TARGET-LOCAL critical signal fired (the same
+ * in-repo critical MCP / AI-config check the dominant-analyzer floor uses);
+ * otherwise it is neutral-high. Registering an identity / adding a SOUL.md stays
+ * a recovery opportunity, not a composite penalty.
+ */
+export function governanceCompositeScore(projectGovernance: { score: number; ran: boolean }): number {
+  return projectGovernance.ran ? projectGovernance.score : 90;
 }
 
 function computeCompositeScore(
