@@ -29,7 +29,7 @@
     "@opena2a/telemetry": "0.3.0",
     "ai-trust": "^0.2.23",
     "commander": "^13.1.0",
-    "hackmyagent": "0.23.6",
+    "hackmyagent": "0.23.11",
     "secretless-ai": "^0.14.1"
   },
   "optionalDependencies": {
