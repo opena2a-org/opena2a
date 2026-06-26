@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`opena2a admin sensors` — operator tooling for the telemetry sensor-network enrollment inbox.** A thin admin consumer over the Registry's internal vetting endpoints so a human admin can list self-serve enrollments awaiting approval (`list-pending`, aliases `pending`/`ls`), promote one to a verified sensor (`approve <sensorId>`), or reject/revoke one (`reject <sensorId>`) — without hand-rolling `curl` and the internal master key. The admin key is read from `--api-key`, then `OPENA2A_INTERNAL_API_KEY`, then `INTERNAL_API_KEY`, and is never printed (Bearer header only). Because the key is the Registry internal admin key, the destination is **host-pinned**: it is sent only to the default `https://api.oa2a.org` or a host the operator explicitly types via `--registry` — never inherited from an ambient `OPENA2A_REGISTRY_URL` or user-config `registry.url` (which an unrelated flow could have set), and an explicit non-default host prints a stderr warning before the key leaves the machine. `approve` is the only path that mints a verified sensor (ingest weight 0.85), so `approve`/`reject` confirm before acting and **refuse** to run non-interactively without `--yes`; the sensor id is validated as a UUID locally before any call. HTTP failures map to actionable, key-safe messages (401/403 → scope/key hint, 404 → not-pending). Supports `--json` for CI and `--registry <url>` (default `https://api.oa2a.org`). `list-pending` output cites the exact `approve`/`reject` next-step commands (no dead ends). Proven end-to-end against prod: correct key → live inbox, wrong key → 401. New `__tests__/commands/admin.test.ts` (20 tests covering auth gating, UUID validation, confirmation refusal, error mapping, and the Bearer wire shape).
+
 ## 0.10.11
 
 ### Changed

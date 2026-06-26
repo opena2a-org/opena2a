@@ -57,7 +57,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'guard', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
     'scan-soul', 'harden-soul', 'harden-skill', 'detect', 'mcp', 'demo',
-    'trust', 'claim',
+    'trust', 'claim', 'admin',
   ];
 
   if (KNOWN_COMMANDS.includes(first)) {
