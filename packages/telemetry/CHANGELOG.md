@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`DEFAULT_ENDPOINT` now points at the canonical ingest path** —
+  `https://api.oa2a.org/api/v1/telemetry/v1/event` (was
+  `.../api/v1/registry/telemetry/v1/event`). Registry PR #283 (2026-06-26) moved
+  the ingest mount off the `/registry/`-prefixed path, which every published SDK
+  (0.1.2 + 0.3.0) still posted to — so first-party telemetry silently 404'd for
+  ~7 days until registry PR #299 added a back-compat alias mounting the old path
+  to the same handler. All **deployed** installs recover via that alias with no
+  client release; this fix ensures **future** installs post to the canonical path
+  directly and lets the alias eventually be retired. Ships whenever the package is
+  next published — no consumer action required (the alias covers the gap).
+
 ## 0.3.0 — 2026-05-24
 
 ### Added

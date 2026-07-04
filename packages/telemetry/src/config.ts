@@ -5,7 +5,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 
 export const POLICY_URL = "https://opena2a.org/telemetry";
-export const DEFAULT_ENDPOINT = "https://api.oa2a.org/api/v1/registry/telemetry/v1/event";
+export const DEFAULT_ENDPOINT = "https://api.oa2a.org/api/v1/telemetry/v1/event";
 const ENV_OPT_OUT = "OPENA2A_TELEMETRY";
 const ENV_ENDPOINT = "OPENA2A_TELEMETRY_URL";
 const ENV_DEBUG = "OPENA2A_TELEMETRY_DEBUG";

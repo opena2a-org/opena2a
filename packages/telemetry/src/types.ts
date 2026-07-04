@@ -1,5 +1,5 @@
 /**
- * Wire-format event sent to POST /api/v1/registry/telemetry/v1/event.
+ * Wire-format event sent to POST /api/v1/telemetry/v1/event.
  *
  * Field names match the Registry handler's JSON binding (snake_case for
  * install_id, node_major, duration_ms — locked by the spec).
