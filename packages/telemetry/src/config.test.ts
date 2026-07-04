@@ -90,14 +90,19 @@ describe("setEnabled", () => {
 });
 
 describe("endpointURL", () => {
-  it("defaults to api.oa2a.org Registry route", () => {
+  it("defaults to api.oa2a.org canonical ingest route", () => {
     expect(endpointURL()).toBe(DEFAULT_ENDPOINT);
-    expect(DEFAULT_ENDPOINT).toContain("/api/v1/registry/telemetry/v1/event");
+    expect(DEFAULT_ENDPOINT).toContain("/api/v1/telemetry/v1/event");
+    // Regression guard: the default MUST NOT carry the `/registry/` prefix.
+    // Registry #283 moved ingest off `/api/v1/registry/telemetry/v1/event`;
+    // shipping that path again silently 404s all first-party telemetry until
+    // the back-compat alias (#299) is retired.
+    expect(DEFAULT_ENDPOINT).not.toContain("/registry/");
   });
 
   it("env OPENA2A_TELEMETRY_URL overrides", () => {
-    process.env.OPENA2A_TELEMETRY_URL = "http://localhost:8088/api/v1/registry/telemetry/v1/event";
-    expect(endpointURL()).toBe("http://localhost:8088/api/v1/registry/telemetry/v1/event");
+    process.env.OPENA2A_TELEMETRY_URL = "http://localhost:8088/api/v1/telemetry/v1/event";
+    expect(endpointURL()).toBe("http://localhost:8088/api/v1/telemetry/v1/event");
   });
 });
 
