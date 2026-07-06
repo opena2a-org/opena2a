@@ -99,7 +99,7 @@ describe('firstDuplicateMember', () => {
       '{"a":"\\u12g4"}',
       '{"a":"unterminated}',
       '{"a\u0001b":1}',
-      '﻿{}',
+      '\uFEFF{}',
     ]) {
       expect(() => firstDuplicateMember(bad), JSON.stringify(bad)).toThrow(StrictParseError);
     }
@@ -204,7 +204,7 @@ describe('LocalAtxVerifier.verifyCredential', () => {
     const r = verifier.verifyCredential(bomJson);
     expect(r.valid).toBe(false);
     expect(r.rejectCategory).toBe('MALFORMED');
-    expect(verifier.verifyCredential('﻿{}')).toEqual(r);
+    expect(verifier.verifyCredential('\uFEFF{}')).toEqual(r);
   });
 
   it('accepts Uint8Array input equivalently to string input', () => {
