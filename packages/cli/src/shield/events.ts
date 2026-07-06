@@ -312,12 +312,11 @@ function parseSince(since: string): Date | null {
 }
 
 /**
- * Read events from the JSONL log file, applying optional filters.
- *
- * Returns events in newest-first order.  Corrupted JSON lines are
- * silently skipped.
+ * Read and parse every event line from the JSONL log file, in file
+ * (chronological, oldest-first) order.  Corrupted JSON lines are
+ * silently skipped.  Returns [] if the file is missing or unreadable.
  */
-export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
+function readAllEvents(): ShieldEvent[] {
   const eventsPath = getEventsPath();
 
   if (!existsSync(eventsPath)) return [];
@@ -337,15 +336,30 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
     if (trimmed.length === 0) continue;
 
     try {
-      const event = JSON.parse(trimmed) as ShieldEvent;
-      events.push(event);
+      const parsed: unknown = JSON.parse(trimmed);
+      // Valid JSON that is not an object (null, scalar, array) cannot be
+      // an event — treat it exactly like an unparseable corrupted line.
+      // A literal `null` line would otherwise flow into verifyEventChain
+      // and throw on property access, emptying the caller's event stream.
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        continue;
+      }
+      events.push(parsed as ShieldEvent);
     } catch {
       // Skip corrupted lines
       continue;
     }
   }
 
-  // Apply filters
+  return events;
+}
+
+/**
+ * Apply EventFilters to a chronological (oldest-first) event list and
+ * return the result in newest-first order, with the count limit applied
+ * after reversal.
+ */
+function applyEventFilters(events: ShieldEvent[], filters: EventFilters): ShieldEvent[] {
   let filtered = events;
 
   if (filters.source) {
@@ -379,8 +393,9 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
     }
   }
 
-  // Newest-first (reverse chronological order)
-  filtered.reverse();
+  // Newest-first (reverse chronological order).  Copy before reversing so
+  // the caller's chronological input array is not mutated.
+  filtered = [...filtered].reverse();
 
   // Apply count limit after reversing
   if (filters.count !== undefined && filters.count > 0) {
@@ -388,6 +403,71 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
   }
 
   return filtered;
+}
+
+/**
+ * Read events from the JSONL log file, applying optional filters.
+ *
+ * Returns events in newest-first order.  Corrupted JSON lines are
+ * silently skipped.
+ */
+export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
+  return applyEventFilters(readAllEvents(), filters);
+}
+
+/**
+ * Result of a chain-verified event read (see readVerifiedEvents).
+ */
+export interface VerifiedEventsResult {
+  /** Trusted events (before the first chain break), filtered, newest-first. */
+  events: ShieldEvent[];
+  /** True if the hash chain is broken anywhere in the log. */
+  chainBroken: boolean;
+  /** Chronological index of the first untrusted event, or null if intact. */
+  brokenAt: number | null;
+  /** Number of events at or after the break that were excluded. */
+  untrustedCount: number;
+  /** The event at the break point (untrusted; forensic evidence), or null. */
+  firstUntrusted: ShieldEvent | null;
+}
+
+/**
+ * Read events with hash-chain verification: verify the full chronological
+ * log with verifyEventChain and exclude every event at or after the first
+ * chain break BEFORE applying filters (issue #204, the "Option 2" of #111).
+ *
+ * The chain must be verified on the complete, unfiltered log — a time or
+ * source filter would detach the first surviving event from its genesis
+ * anchor and make verification meaningless.  Corrupted (unparseable or
+ * non-object) lines are skipped at parse time; a corrupted line BETWEEN
+ * genuine events surfaces as a break via the surviving neighbor's prevHash
+ * mismatch, while trailing junk is skipped without one.
+ *
+ * GUARANTEE BOUNDARY — the chain is a keyless SHA-256 chain (no HMAC, no
+ * secret; GENESIS_HASH is a public constant).  Verification therefore
+ * detects accidental corruption, truncation, interleaved concurrent
+ * writes, and naive appends that do not recompute the chain — which
+ * covers forged findings injected without re-hashing (e.g. a forged
+ * source:'shield' integrity critical, or a forged in-scope configguard
+ * tamper event).  It does NOT stop an attacker who can write events.jsonl
+ * and recomputes hashes with the public algorithm: such an attacker can
+ * forge a validly-chained tail or rebuild the entire log from genesis.
+ * Closing that requires a keyed MAC (with the key outside the log's
+ * trust boundary) or an external anchor — a follow-up beyond issue #204.
+ */
+export function readVerifiedEvents(filters: EventFilters = {}): VerifiedEventsResult {
+  const all = readAllEvents();
+  const { valid, brokenAt } = verifyEventChain(all);
+
+  const trusted = valid ? all : all.slice(0, brokenAt as number);
+
+  return {
+    events: applyEventFilters(trusted, filters),
+    chainBroken: !valid,
+    brokenAt,
+    untrustedCount: valid ? 0 : all.length - (brokenAt as number),
+    firstUntrusted: valid ? null : all[brokenAt as number] ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------

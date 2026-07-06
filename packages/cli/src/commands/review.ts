@@ -37,9 +37,10 @@ import { detectProject } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
-import { readEvents } from '../shield/events.js';
+import { readVerifiedEvents, uuidv7, type VerifiedEventsResult } from '../shield/events.js';
 import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
-import { getARPStats, type ARPStats } from '../shield/arp-bridge.js';
+import type { ShieldEvent } from '../shield/types.js';
+import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
@@ -736,20 +737,66 @@ function runGuardPhase(targetDir: string): GuardPhaseData {
   }
 }
 
-function runShieldPhase(targetDir: string): ShieldPhaseData {
-  let events: ReturnType<typeof readEvents>;
+export function runShieldPhase(targetDir: string): ShieldPhaseData {
+  // Chain-verified read (issue #204, "Option 2" of #111): events at or after
+  // the first hash-chain break are forged/tampered and must not classify
+  // into findings.  Verification happens on the full log before the 7d
+  // window is applied, so the genesis anchor stays intact.
+  let verified: VerifiedEventsResult;
   try {
-    events = readEvents({ since: '7d' });
+    verified = readVerifiedEvents({ since: '7d' });
   } catch {
-    events = [] as ReturnType<typeof readEvents>;
+    verified = {
+      events: [], chainBroken: false, brokenAt: null,
+      untrustedCount: 0, firstUntrusted: null,
+    };
   }
+  const events = verified.events;
 
   const scopedEvents = filterEventsToTarget(events, targetDir);
+
+  // Surface the break itself as the single SHIELD-INT-002 finding: one
+  // synthetic in-memory event (never written to the log) classified through
+  // the normal pipeline, so it dedupes, sorts, and scores like any other
+  // integrity critical.  The excluded events contribute nothing else.
+  if (verified.chainBroken) {
+    const chainBreakEvent: ShieldEvent = {
+      id: uuidv7(),
+      timestamp: new Date().toISOString(),
+      version: 1,
+      source: 'shield',
+      category: 'integrity',
+      severity: 'critical',
+      agent: null,
+      sessionId: null,
+      action: 'event-chain-break',
+      target: 'events.jsonl',
+      outcome: 'blocked',
+      detail: {
+        brokenAt: verified.brokenAt,
+        untrustedEventsExcluded: verified.untrustedCount,
+        reason: 'Event log hash chain break detected at review time; events at and after the break were excluded from classification.',
+      },
+      prevHash: '',
+      eventHash: '',
+      orgId: null,
+      managed: false,
+      agentId: null,
+    };
+    scopedEvents.push(chainBreakEvent);
+  }
+
   const classifiedFindings = classifyEvents(scopedEvents);
 
+  // Same trust boundary as classification: stats come from the verified
+  // 7d window (`events`), not a second unverified read of the raw log —
+  // otherwise forged ARP events past a break would still inflate the
+  // report's runtime-protection numbers.  Mirrors getARPStats('7d')
+  // semantics (source filter, newest-first count cap) minus the
+  // untrusted tail.
   let arpStats: ARPStats;
   try {
-    arpStats = getARPStats('7d');
+    arpStats = computeARPStats(events.filter(e => e.source === 'arp').slice(0, 10000));
   } catch {
     arpStats = {
       totalEvents: 0, anomalies: 0, violations: 0, threats: 0,
