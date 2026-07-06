@@ -200,7 +200,7 @@ export class LocalAtxVerifier implements AtxVerifier {
    */
   verifyCredential(credentialJson: string | Uint8Array): AtxVerificationResult {
     if (credentialJson === null || credentialJson === undefined) {
-      return reject('MALFORMED', 'credential is null');
+      return reject('MALFORMED', 'credential is null or undefined');
     }
     // Out-of-contract argument types stay MALFORMED rejections, never escaping
     // throws — including a Proxy whose getPrototypeOf trap throws inside the
@@ -261,12 +261,19 @@ export class LocalAtxVerifier implements AtxVerifier {
   }
 
   verify(atx: Atx): AtxVerificationResult {
+    // The type forbids it, but a plain-JS caller doing verify(JSON.parse(body))
+    // reaches here with null (or a scalar) when the wire body is degenerate —
+    // reject structurally rather than throw on the first property read.
+    if (atx === null || typeof atx !== 'object') {
+      return reject('MALFORMED', 'credential is not an object');
+    }
     const now = (this.anchors.now ?? (() => new Date()))();
 
     // Step 1: schema version. Dispatch on atcVersion: "1.0" verifies the legacy
-    // pipe form, "1.1" verifies JCS(TBS) (atx-spec §1.3a).
+    // pipe form, "1.1" verifies JCS(TBS) (atx-spec §1.3a). The reason names
+    // atcVersion — the schema field a consumer greps their credential for.
     if (atx.atcVersion !== SUPPORTED_ATX_VERSION && atx.atcVersion !== SUPPORTED_ATX_VERSION_V11) {
-      return reject('UNSUPPORTED_VERSION', `unsupported atxVersion ${String(atx.atcVersion)}`);
+      return reject('UNSUPPORTED_VERSION', `unsupported atcVersion ${String(atx.atcVersion)}`);
     }
     const isV11 = atx.atcVersion === SUPPORTED_ATX_VERSION_V11;
 
@@ -351,7 +358,11 @@ export class LocalAtxVerifier implements AtxVerifier {
     }
 
     if (!edVerified) {
-      return reject('SIGNATURE_INVALID', 'no Ed25519 signature verified');
+      // Keep mldsaPresent on this rejection: an ML-DSA-only credential fails
+      // here precisely because its PQC half is delegated, and the flag is how
+      // a caller distinguishes "delegated, bring your own ML-DSA verifier"
+      // from "carried no usable signature at all".
+      return { ...reject('SIGNATURE_INVALID', 'no Ed25519 signature verified'), mldsaPresent };
     }
 
     return {
