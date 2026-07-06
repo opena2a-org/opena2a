@@ -10,13 +10,24 @@ across Go == Python == TS is pinned by `atx-conformance/jcs-vectors`.
 
 ## What it does
 
-`LocalAtxVerifier.verify(atx)` runs the full local check with no network call:
+`LocalAtxVerifier.verifyCredential(json)` takes the raw credential (string or
+`Uint8Array`) and runs the full local check with no network call:
 
-1. schema version (`atcVersion` `1.0` or `1.1`)
-2. expiry
-3. revocation (the credential's `revoked` field + a cached/federated CRL)
-4. issuer trust (issuer DID against injected trust anchors)
-5. Ed25519 signature over the canonical payload
+1. **strict parse** — a duplicate object member at any depth, exact-name or
+   fold-colliding case variant, rejects as `MALFORMED` before any field is
+   interpreted (RFC 8259 §4 leaves duplicate handling parser-divergent; the
+   ATX credential is a signed body, so there is no layer with sanctioned
+   last-wins semantics)
+2. schema version (`atcVersion` `1.0` or `1.1`)
+3. expiry
+4. revocation (the credential's `revoked` field + a cached/federated CRL)
+5. issuer trust (issuer DID against injected trust anchors)
+6. Ed25519 signature over the canonical payload
+
+`verify(atx)` runs steps 2-6 on an already-parsed object. Prefer
+`verifyCredential` whenever you hold the wire form: `JSON.parse` is last-wins
+on duplicate members, so a parsed object cannot carry the evidence step 1
+rejects on.
 
 Trust anchors (trusted issuers, public keys, CRL, clock) are **injected** — the
 library does no I/O. A consumer wires the live anchors (and, in production, the
@@ -30,8 +41,12 @@ post-quantum half) via the `AtxVerifier` seam.
   `issuerChain`, or `publisher` — a holder can edit those without breaking the
   signature, so they MUST NOT be trusted for authorization.
 - **v1.1** (`canonicalPayloadV11`) signs `JCS(TBS)` (RFC 8785), which **does**
-  cover `capabilities`, `scanSummary`, `issuerChain`, `publisher`, and
-  `behavioralProfile`.
+  cover `capabilities`, `scanSummary`, `issuerChain`, `publisher`,
+  `behavioralProfile`, and — when present — `declaredPurpose` (atx-spec §1.5;
+  absent, `null`, and empty-object purposes are omitted from the TBS per
+  §1.3a.2 rule 5, so an appended purpose value carrying any data breaks the
+  signature instead of riding it — only the data-free `null`/`{}` forms
+  canonicalize away as absent).
 
 The verified context exposes `signedCapabilities` (true iff v1.1) so callers can
 gate capability-based authorization on whether those fields are signed.
@@ -63,7 +78,8 @@ const anchors: AtxTrustAnchors = {
   crl: { entries: [] },
 };
 
-const result = new LocalAtxVerifier(anchors).verify(atx);
+// Raw wire form (string | Uint8Array): strict-parses, then verifies.
+const result = new LocalAtxVerifier(anchors).verifyCredential(credentialJson);
 if (result.valid) {
   // result.context — backend-free; only authorize on capabilities when
   // result.context.signedCapabilities is true (v1.1).
@@ -89,10 +105,13 @@ than one issuer.
 
 ## Conformance
 
-`src/conformance.test.ts` runs the verifier against the OpenA2A ATX conformance
-fixtures (with their pinned signatures), and `src/atx.test.ts` pins the v1.1
-JCS baseline canonical bytes from `atx-conformance/jcs-vectors`. Any drift from
-the cross-language contract fails the package's own CI.
+`src/conformance.test.ts` replays the FULL OpenA2A ATX conformance suite (20
+fixtures, pinned signatures, vendored verbatim from `atx-conformance` at
+`f4d40a4`) through the raw `verifyCredential` entry point; CI byte-compares the
+vendored copies against the pinned suite so they cannot drift. `src/atx.test.ts`
+pins the v1.1 JCS baseline canonical bytes from `atx-conformance/jcs-vectors`.
+Where the reference verifiers report `PARSE_ERROR`, this SDK reports
+`MALFORMED` (the shared SDK `RejectCategory` union has no `PARSE_ERROR`).
 
 ## License
 
