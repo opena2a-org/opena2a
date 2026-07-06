@@ -93,6 +93,12 @@ describe('conformance fixtures (atx-conformance @ f4d40a4, pinned signatures)', 
         if (f.expected.rejectCategory) {
           expect(result.rejectCategory).toBe(expectedCategory(f.expected.rejectCategory));
         }
+        // For the strict-parse fixtures, pin that the rejection is BECAUSE of
+        // the duplicate member — not an incidental MALFORMED — so the gate
+        // stays structurally non-vacuous.
+        if (f.expected.rejectCategory === 'PARSE_ERROR') {
+          expect(result.reason).toContain('duplicate');
+        }
       }
     });
   }

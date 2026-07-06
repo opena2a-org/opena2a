@@ -216,7 +216,11 @@ export class LocalAtxVerifier implements AtxVerifier {
       text = credentialJson;
     } else if (isBytes) {
       try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(credentialJson);
+        // ignoreBOM keeps a leading U+FEFF in the decoded text so the strict
+        // parse rejects it — same verdict as the string entry form and the
+        // Go/Python reference verifiers. The default would silently strip it,
+        // giving identical wire bytes two different verdicts by entry form.
+        text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(credentialJson);
       } catch {
         return reject('MALFORMED', 'credential is not valid UTF-8');
       }

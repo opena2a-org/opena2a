@@ -196,6 +196,17 @@ describe('LocalAtxVerifier.verifyCredential', () => {
     expect(r.rejectCategory).toBe('MALFORMED');
   });
 
+  it('rejects BOM-prefixed bytes as MALFORMED, matching the string entry form', () => {
+    // Adversarial round 2: the default TextDecoder strips a leading BOM, which
+    // gave identical wire bytes two different verdicts by entry form (and
+    // diverged from the Go/Python reference verifiers, which reject a BOM).
+    const bomJson = new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d]); // BOM + "{}"
+    const r = verifier.verifyCredential(bomJson);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('MALFORMED');
+    expect(verifier.verifyCredential('﻿{}')).toEqual(r);
+  });
+
   it('accepts Uint8Array input equivalently to string input', () => {
     const json = '{"atcVersion":"0.9"}';
     const fromString = verifier.verifyCredential(json);

@@ -8,6 +8,8 @@ on:
       - 'package.json'
       - 'turbo.json'
       - 'tsconfig.base.json'
+      # A lone ATX_CONFORMANCE_REF bump must still run the fixture drift gate.
+      - '.github/workflows/ci.yml'
 
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
