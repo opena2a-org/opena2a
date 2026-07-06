@@ -44,8 +44,9 @@ post-quantum half) via the `AtxVerifier` seam.
   cover `capabilities`, `scanSummary`, `issuerChain`, `publisher`,
   `behavioralProfile`, and — when present — `declaredPurpose` (atx-spec §1.5;
   absent, `null`, and empty-object purposes are omitted from the TBS per
-  §1.3a.2 rule 5, so an attacker-appended purpose value breaks the signature
-  instead of riding it).
+  §1.3a.2 rule 5, so an appended purpose value carrying any data breaks the
+  signature instead of riding it — only the data-free `null`/`{}` forms
+  canonicalize away as absent).
 
 The verified context exposes `signedCapabilities` (true iff v1.1) so callers can
 gate capability-based authorization on whether those fields are signed.

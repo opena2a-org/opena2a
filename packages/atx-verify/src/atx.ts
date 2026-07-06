@@ -202,10 +202,19 @@ export class LocalAtxVerifier implements AtxVerifier {
     if (credentialJson === null || credentialJson === undefined) {
       return reject('MALFORMED', 'credential is null');
     }
+    // Out-of-contract argument types stay MALFORMED rejections, never escaping
+    // throws — including a Proxy whose getPrototypeOf trap throws inside the
+    // instanceof check.
+    let isBytes = false;
+    try {
+      isBytes = credentialJson instanceof Uint8Array;
+    } catch {
+      return reject('MALFORMED', 'credential must be a string or Uint8Array');
+    }
     let text: string;
     if (typeof credentialJson === 'string') {
       text = credentialJson;
-    } else if (credentialJson instanceof Uint8Array) {
+    } else if (isBytes) {
       try {
         text = new TextDecoder('utf-8', { fatal: true }).decode(credentialJson);
       } catch {

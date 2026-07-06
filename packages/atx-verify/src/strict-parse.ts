@@ -63,10 +63,12 @@ export class StrictParseError extends Error {
  * that fold onto ASCII (Kelvin sign U+212A -> k, long s U+017F -> s); any
  * other code point via its simple (1:1) lowercase mapping, matching Go's
  * `unicode.ToLower` in the reference verifier's `foldKey` and Java's
- * `Character.toLowerCase`. Two names with the same fold key are the same field
- * to such a parser, so treating them as a duplicate here catches the
- * case-variant collapse. Real ATX member names are ASCII, so the fold is exact
- * on every honest credential.
+ * `Character.toLowerCase`. (The Python reference's `str.lower()` diverges from
+ * all three on exotic code points like U+0130 — an acknowledged upstream
+ * outlier on names no honest credential produces.) Two names with the same
+ * fold key are the same field to such a parser, so treating them as a
+ * duplicate here catches the case-variant collapse. Real ATX member names are
+ * ASCII, so the fold is exact on every honest credential.
  */
 export function foldKey(name: string): string {
   let out = '';
@@ -122,8 +124,15 @@ interface ScanResult {
  * returns the first such name. Returns `null` when the credential has no
  * duplicate members.
  *
- * @throws StrictParseError if the text is not a single well-formed JSON value
- *     (or exceeds {@link MAX_SCAN_DEPTH}); the caller surfaces that as a
+ * A `null` return does NOT certify well-formedness: the scan is lax on scalar
+ * tokens (`{"a":truex}` scans clean), so callers using this directly must
+ * still `JSON.parse` — exactly what `verifyCredential` does. The laxness
+ * cannot hide a duplicate, because the scalar character set contains no
+ * structural characters.
+ *
+ * @throws StrictParseError if the text is structurally malformed (bad
+ *     strings/escapes, mismatched or misplaced punctuation, trailing content)
+ *     or exceeds {@link MAX_SCAN_DEPTH}; the caller surfaces that as a
  *     MALFORMED rejection.
  */
 export function firstDuplicateMember(credentialJson: string): string | null {

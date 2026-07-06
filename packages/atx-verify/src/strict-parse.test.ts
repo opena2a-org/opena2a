@@ -174,6 +174,22 @@ describe('LocalAtxVerifier.verifyCredential', () => {
     }
   });
 
+  it('rejects a Proxy with a throwing getPrototypeOf trap as MALFORMED (no escape)', () => {
+    // Adversarial round 1: `instanceof Uint8Array` invokes the trap; the throw
+    // must not escape verifyCredential.
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error('boom');
+        },
+      },
+    );
+    const r = verifier.verifyCredential(hostile as never);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('MALFORMED');
+  });
+
   it('rejects invalid UTF-8 bytes as MALFORMED', () => {
     const r = verifier.verifyCredential(new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]));
     expect(r.valid).toBe(false);
