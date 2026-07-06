@@ -20,4 +20,11 @@ export {
   type ResolutionContext,
   type RejectCategory,
 } from './atx.js';
-export { firstDuplicateMember, foldKey, StrictParseError, MAX_SCAN_DEPTH } from './strict-parse.js';
+export {
+  firstDuplicateMember,
+  foldKey,
+  topLevelMemberSpan,
+  StrictParseError,
+  MAX_SCAN_DEPTH,
+  type ValueSpan,
+} from './strict-parse.js';

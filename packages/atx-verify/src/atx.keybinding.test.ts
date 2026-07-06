@@ -126,3 +126,53 @@ describe('key-to-issuer binding', () => {
     expect(result.valid).toBe(true);
   });
 });
+
+describe('anchor-fault diagnostics (empty eligible key set names the configuration fault)', () => {
+  it('no Ed25519 anchors configured', () => {
+    const { privateKey } = keypair();
+    const atx = signWith(atxBase(), privateKey, `${ISSUER_A}#key-1`);
+    const result = new LocalAtxVerifier(anchors({ publicKeys: [] })).verify(atx);
+    expect(result.valid).toBe(false);
+    expect(result.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(result.reason).toContain('no Ed25519 trust anchors configured');
+  });
+
+  it('all configured keys excluded by key-to-issuer binding', () => {
+    const a = keypair();
+    // Key bound to ISSUER_B; credential issued by ISSUER_A. The crypto WOULD
+    // verify (same key signed it) — the reason must say binding, not bad bytes.
+    const atx = signWith(atxBase({ issuerDid: ISSUER_A, issuerChain: [ISSUER_A] }), a.privateKey, `${ISSUER_B}#key-1`);
+    const result = new LocalAtxVerifier(
+      anchors({ publicKeys: [{ algorithm: 'Ed25519', publicKeyHex: a.pubHex, keyId: `${ISSUER_B}#key-1` }] }),
+    ).verify(atx);
+    expect(result.valid).toBe(false);
+    expect(result.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(result.reason).toContain('key-to-issuer binding');
+    expect(result.reason).toContain(ISSUER_A);
+  });
+
+  it('eligible key material fails to parse (bad hex)', () => {
+    const { privateKey } = keypair();
+    const atx = signWith(atxBase(), privateKey, `${ISSUER_A}#key-1`);
+    const result = new LocalAtxVerifier(
+      anchors({ publicKeys: [{ algorithm: 'Ed25519', publicKeyHex: 'zz-not-hex', keyId: `${ISSUER_A}#key-1` }] }),
+    ).verify(atx);
+    expect(result.valid).toBe(false);
+    expect(result.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(result.reason).toContain('failed to parse');
+  });
+
+  it('a genuine bad-signature rejection has no dangling space when keyId is absent', () => {
+    const a = keypair();
+    const atx = signWith(atxBase(), a.privateKey, `${ISSUER_A}#key-1`);
+    // Wrong-key anchor (unbound, so eligible): reaches the did-not-verify path.
+    const other = keypair();
+    const unsigned: Atx = { ...atx, signatures: [{ algorithm: 'Ed25519', value: atx.signatures[0].value }] };
+    const result = new LocalAtxVerifier(
+      anchors({ publicKeys: [{ algorithm: 'Ed25519', publicKeyHex: other.pubHex }] }),
+    ).verify(unsigned);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('Ed25519 signature did not verify');
+    expect(result.reason).not.toContain('  ');
+  });
+});

@@ -58,6 +58,16 @@ Ed25519 is verified fully via Node's `crypto`. **ML-DSA-65** presence is recorde
 matching the Python reference verifier. Wire the PQC half via the `AtxVerifier`
 seam in production.
 
+## Runtime and packaging
+
+- **ESM-only** (`"type": "module"`). On Node >= 22, CommonJS consumers can
+  `require()` it natively; on Node 18/20 use `await import('@opena2a/atx-verify')`
+  (the pattern the secretless broker uses). The package exposes only the root
+  entry via its `exports` map.
+- **Node types**: the canonical-payload helpers return Node `Buffer`s, so a
+  TypeScript consumer compiling with `skipLibCheck: false` needs `@types/node`
+  (any recent version) in its own devDependencies.
+
 ## Usage
 
 ```ts
@@ -105,11 +115,12 @@ than one issuer.
 
 ## Conformance
 
-`src/conformance.test.ts` replays the FULL OpenA2A ATX conformance suite (20
+The package's test suite — in [the repository](https://github.com/opena2a-org/opena2a/tree/main/packages/atx-verify),
+not the published tarball — replays the FULL OpenA2A ATX conformance suite (20
 fixtures, pinned signatures, vendored verbatim from `atx-conformance` at
 `f4d40a4`) through the raw `verifyCredential` entry point; CI byte-compares the
-vendored copies against the pinned suite so they cannot drift. `src/atx.test.ts`
-pins the v1.1 JCS baseline canonical bytes from `atx-conformance/jcs-vectors`.
+vendored copies against the pinned suite so they cannot drift, and pins the
+v1.1 JCS baseline canonical bytes from `atx-conformance/jcs-vectors`.
 Where the reference verifiers report `PARSE_ERROR`, this SDK reports
 `MALFORMED` (the shared SDK `RejectCategory` union has no `PARSE_ERROR`).
 
