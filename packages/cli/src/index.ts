@@ -960,6 +960,43 @@ Examples:
       printFooter({ ci: globalOpts.ci, json: opts.json || globalOpts.format === 'json' });
     });
 
+  // Admin command (registry operator tooling; requires the internal admin key)
+  program
+    .command('admin [subcommand] [args...]')
+    .description('Registry operator tooling (sensors list-pending|approve|reject)')
+    .allowUnknownOption(true)
+    .helpOption(false)
+    .option('--api-key <key>', 'Registry internal admin key (else OPENA2A_INTERNAL_API_KEY / INTERNAL_API_KEY)')
+    .option('--registry <url>', 'Registry base URL (default: https://api.oa2a.org)')
+    .option('--yes', 'Skip the confirmation prompt for approve/reject')
+    .option('--json', 'Output as JSON (alias for --format json)')
+    .addHelpText('after', `
+Examples:
+  $ opena2a admin sensors list-pending          Inbox of enrollments awaiting approval
+  $ opena2a admin sensors approve <sensorId>     Promote a pending enrollment to verified
+  $ opena2a admin sensors reject <sensorId>      Reject (revoke) a pending enrollment
+
+Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed).`)
+    .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
+      const { admin } = await import('./commands/admin.js');
+      const globalOpts = program.opts();
+      process.exitCode = await admin({
+        subcommand,
+        args: args ?? [],
+        apiKey: opts.apiKey,
+        registryUrl: opts.registry,
+        yes: opts.yes,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        json: opts.json,
+        verbose: globalOpts.verbose,
+      });
+    });
+
   // Baselines command
   program
     .command('baselines')
