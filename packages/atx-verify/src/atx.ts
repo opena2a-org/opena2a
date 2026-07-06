@@ -24,8 +24,16 @@
  *    can edit those without invalidating the signature, so they MUST NOT be
  *    trusted for authorization.
  *  - v1.1 (canonicalPayloadV11): the signature covers JCS(TBS), which includes
- *    `capabilities`, `scanSummary`, `issuerChain`, and `publisher`. Those fields
- *    are integrity-protected and safe to authorize on.
+ *    `capabilities`, `scanSummary`, `issuerChain`, `publisher`, and (when
+ *    present) `declaredPurpose`. Those fields are integrity-protected and safe
+ *    to authorize on.
+ *
+ * SECURITY — parse before trust: `verify(atx)` takes an already-parsed object,
+ * and `JSON.parse` is last-wins on duplicate members, so a duplicate-member
+ * smuggle is collapsed before that overload can see it. Wire consumers holding
+ * credential text/bytes should call {@link LocalAtxVerifier.verifyCredential},
+ * which strict-parses first (fold-aware duplicate rejection at any depth, see
+ * `strict-parse.ts`) and then delegates.
  *
  * The verified context exposes `signedCapabilities` (true iff v1.1) so callers
  * can tell the two apart and gate capability-based authorization accordingly.
@@ -33,6 +41,7 @@
 
 import * as crypto from 'node:crypto';
 import { createRequire } from 'node:module';
+import { firstDuplicateMember } from './strict-parse.js';
 
 // `canonicalize` (RFC 8785) is a CommonJS module whose .d.ts declares an ESM
 // default export; under Node16 ESM resolution that default is not callable at
@@ -81,6 +90,12 @@ export interface Atx {
   issuedAt: string;
   expiresAt: string;
   capabilities?: string[];
+  /**
+   * Declared purpose (atx-spec §1.5); absent/null when not declared. Kept
+   * untyped: the v1.1 TBS passes a present, non-empty value through verbatim
+   * for JCS to re-canonicalize (§1.3a.2 rule 5).
+   */
+  declaredPurpose?: unknown;
   /** Observed-behavior summary. Covered by the v1.1 signature. */
   behavioralProfile?: { checksum?: string; generatedAt?: string; observationDays?: number } | null;
   scanSummary?: { oasbLevel?: string; [k: string]: unknown };
@@ -169,6 +184,68 @@ export interface AtxVerifier {
  */
 export class LocalAtxVerifier implements AtxVerifier {
   constructor(private readonly anchors: AtxTrustAnchors) {}
+
+  /**
+   * Verifies a credential from its raw JSON text or bytes, applying the strict
+   * parse (reject a duplicate object member at any depth, folded — see
+   * `strict-parse.ts`) before interpreting any field, then delegating to
+   * {@link verify}. This is the entry point wire consumers should use: the
+   * object-taking {@link verify} cannot see duplicate members `JSON.parse`'s
+   * last-wins semantics have already collapsed. A duplicate or otherwise
+   * unparseable credential rejects as MALFORMED (the SDK's structural-parse
+   * category; the reference verifiers call it PARSE_ERROR), with a reason
+   * naming the duplicate member. Degenerate inputs (JSON `null`, scalars, a
+   * top-level array, empty/invalid text, non-UTF-8 bytes) reject MALFORMED —
+   * this method never throws on bad input.
+   */
+  verifyCredential(credentialJson: string | Uint8Array): AtxVerificationResult {
+    if (credentialJson === null || credentialJson === undefined) {
+      return reject('MALFORMED', 'credential is null');
+    }
+    let text: string;
+    if (typeof credentialJson === 'string') {
+      text = credentialJson;
+    } else if (credentialJson instanceof Uint8Array) {
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(credentialJson);
+      } catch {
+        return reject('MALFORMED', 'credential is not valid UTF-8');
+      }
+    } else {
+      return reject('MALFORMED', 'credential must be a string or Uint8Array');
+    }
+
+    let dup: string | null;
+    try {
+      dup = firstDuplicateMember(text);
+    } catch (err) {
+      return reject('MALFORMED', `credential is not valid ATX JSON: ${(err as Error).message}`);
+    }
+    if (dup !== null) {
+      return reject(
+        'MALFORMED',
+        `credential contains duplicate member "${dup}" (strict parse: the ATX credential is a ` +
+          'signed body; RFC 8259 §4 duplicate names are parser-divergent)',
+      );
+    }
+
+    // The scan above already vouches for well-formedness and bounds nesting,
+    // but stay defensive: catch everything (including a hypothetical engine
+    // RangeError on deep input) rather than let a throw escape.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      return reject('MALFORMED', `credential is not valid ATX JSON: ${(err as Error).message}`);
+    }
+    // A bare JSON `null`, scalar, or array is not a credential — reject rather
+    // than misread it as an Atx (the Java SDK's adversarial round caught an
+    // NPE-on-JSON-null here; this is the equivalent guard).
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return reject('MALFORMED', 'credential is not a JSON object');
+    }
+    return this.verify(parsed as Atx);
+  }
 
   verify(atx: Atx): AtxVerificationResult {
     const now = (this.anchors.now ?? (() => new Date()))();
@@ -332,7 +409,7 @@ export function canonicalPayload(atx: Atx): Buffer {
 /**
  * Project an ATX into the v1.1 TBS and return JCS(TBS) (RFC 8785). Unlike
  * canonicalPayload, this covers capabilities, scanSummary, issuerChain,
- * publisher, and behavioralProfile. The projection (canonical empties,
+ * publisher, declaredPurpose, and behavioralProfile. The projection (canonical empties,
  * always-full scanSummary, %.6f string trustScore, root-first issuerChain) and
  * the canonicalizer match opena2a-registry/pkg/atcverify and the conformance
  * verifiers exactly; byte agreement is pinned by atx-conformance/jcs-vectors.
@@ -350,6 +427,7 @@ export function canonicalPayloadV11(atx: Atx): Buffer {
     buildAttestation: atx.buildAttestation ?? '',
     capabilities: atx.capabilities ?? [],
     behavioralProfile: projectBehavioralProfile(atx.behavioralProfile),
+    ...declaredPurposeTbsMember(atx.declaredPurpose),
     scanSummary: {
       hma: asString(scan.hma),
       criticalFindings: asInt(scan.criticalFindings),
@@ -371,6 +449,26 @@ export function canonicalPayloadV11(atx: Atx): Buffer {
     throw new Error('canonicalize returned non-string');
   }
   return Buffer.from(canonical, 'utf-8');
+}
+
+/**
+ * Presence-based rule for the optional declaredPurpose member (atx-spec
+ * §1.3a.2 rule 5): an absent purpose — missing, JSON null, or an empty object
+ * (emptiness is a parse-level property, so `{ }` counts) — is OMITTED from the
+ * TBS, keeping a no-purpose credential byte-identical to one issued before the
+ * field existed. Any other present value (a populated object, or a non-object
+ * an attacker appends) passes through verbatim for JCS to re-canonicalize, so
+ * unsigned purpose content breaks the signature instead of riding it. Matches
+ * the Go/Python reference verifiers and the Java SDK's projectDeclaredPurpose.
+ */
+function declaredPurposeTbsMember(dp: unknown): { declaredPurpose?: unknown } {
+  if (dp === null || dp === undefined) {
+    return {};
+  }
+  if (typeof dp === 'object' && !Array.isArray(dp) && Object.keys(dp).length === 0) {
+    return {};
+  }
+  return { declaredPurpose: dp };
 }
 
 /** behavioralProfile -> null when absent, else the canonical three-field object. */

@@ -52,3 +52,51 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+
+  atx-fixture-drift:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned atx-conformance suite ref. Bump deliberately when the suite
+      # grows; the vendored copies under packages/atx-verify/src/__fixtures__
+      # must be refreshed in the same PR or the byte-compare below fails.
+      # Same gate pattern as agent-identity-management's Java SDK fixtures.
+      ATX_CONFORMANCE_REF: f4d40a4e33ac15946e90683ad1f1c59122559407
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone pinned atx-conformance suite
+        run: |
+          git clone --no-checkout https://github.com/opena2a-standards/atx-conformance.git /tmp/atx-conformance
+          git -C /tmp/atx-conformance checkout "$ATX_CONFORMANCE_REF"
+
+      - name: MANIFEST.sha256 integrity
+        working-directory: /tmp/atx-conformance
+        run: |
+          rc=0
+          while read -r sha file; do
+            [ -z "$sha" ] && continue
+            got=$(sha256sum "$file" | awk '{print $1}')
+            if [ "$got" != "$sha" ]; then
+              echo "::error::MANIFEST mismatch: $file"; rc=1
+            fi
+          done < MANIFEST.sha256
+          exit $rc
+
+      - name: Vendored fixtures byte-match the pinned suite
+        run: |
+          fail=0
+          for f in /tmp/atx-conformance/fixtures/*.json; do
+            b=$(basename "$f")
+            if ! cmp -s "$f" "packages/atx-verify/src/__fixtures__/$b"; then
+              echo "::error::vendored fixture $b is missing or drifted from the pinned suite"
+              fail=1
+            fi
+          done
+          for f in packages/atx-verify/src/__fixtures__/*.json; do
+            b=$(basename "$f")
+            if [ ! -f "/tmp/atx-conformance/fixtures/$b" ]; then
+              echo "::error::vendored fixture $b does not exist in the pinned suite"
+              fail=1
+            fi
+          done
+          exit $fail
