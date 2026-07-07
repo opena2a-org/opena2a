@@ -1,7 +1,7 @@
 parity=green
-score.opena2a=90
-score.hma=90
-severities.opena2a={"high":1,"medium":1}
-severities.hma={"high":1,"medium":1}
+score.opena2a=98
+score.hma=98
+severities.opena2a={"low":1,"medium":1}
+severities.hma={"low":1,"medium":1}
 checkIds.opena2a=DEP-001,GIT-002
 checkIds.hma=DEP-001,GIT-002
