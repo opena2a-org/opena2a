@@ -280,7 +280,12 @@ export class LocalAtxVerifier implements AtxVerifier {
     // pipe form, "1.1" verifies JCS(TBS) (atx-spec §1.3a). The reason names
     // atcVersion — the schema field a consumer greps their credential for.
     if (atx.atcVersion !== SUPPORTED_ATX_VERSION && atx.atcVersion !== SUPPORTED_ATX_VERSION_V11) {
-      return reject('UNSUPPORTED_VERSION', `unsupported atcVersion ${String(atx.atcVersion)}`);
+      return reject(
+        'UNSUPPORTED_VERSION',
+        atx.atcVersion === undefined || atx.atcVersion === null
+          ? 'atcVersion is missing (supported: "1.0", "1.1")'
+          : `unsupported atcVersion ${String(atx.atcVersion)}`,
+      );
     }
     const isV11 = atx.atcVersion === SUPPORTED_ATX_VERSION_V11;
 
