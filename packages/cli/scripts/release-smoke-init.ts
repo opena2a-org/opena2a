@@ -22,6 +22,15 @@
  *                            ceiling of 30 — actively-malicious
  *                            scoring will tighten in follow-up waves)
  *
+ *   #227 calibration: the buggy tier (`repo/buggy/leaky-env-example`) used to
+ *   score 93 == benign because `init` could not see the credential-shaped
+ *   values in the committed `.env.example` (the migration scanner skips
+ *   template env files by design). `init` now runs `scanTemplateEnvLeaks` and
+ *   emits an `ENV-EXAMPLE-LEAK` critical (one critical-equivalent, -20),
+ *   landing the tier at 73 — squarely inside the existing [50,80] band. The
+ *   band was NOT widened; the gap was closed at the detector, matching HMA
+ *   `secure` (CONFIG-004) and the corpus manifest's ratified `critical`.
+ *
  *   Failures are release-blockers. The init scoring algorithm cannot drift
  *   past these bounds without an audit-doc decision and a band update.
  *
