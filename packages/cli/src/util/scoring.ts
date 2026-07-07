@@ -29,10 +29,25 @@ export interface ScoreBreakdown {
 
 // --- Score calculation ---
 
+export interface ScoreExtras {
+  /**
+   * True when a template env file (`.env.example`, …) carries a value shaped
+   * like a real credential. It is NOT a migration target (so it never appears
+   * in `credsBySeverity`, which drives `opena2a protect`), but it IS a real
+   * posture exposure — onboarding that says "rename to .env" activates it and
+   * anyone with repo access can read it. Scored as one critical-equivalent in
+   * the credentials category, mirroring HMA's CONFIG-004 severity and the
+   * shared corpus manifest. Kept out of `credsBySeverity` so the protect-facing
+   * contextual tip and finding counts stay honest.
+   */
+  templateEnvLeak?: boolean;
+}
+
 export function calculateSecurityScore(
   credsBySeverity: Record<string, number>,
   checks: HygieneCheck[],
   hmaBySeverity?: Record<string, number>,
+  extras?: ScoreExtras,
 ): { score: number; grade: string; breakdown: ScoreBreakdown } {
   // --- Credentials category (cap at -60) ---
   let credDeduction = 0;
@@ -53,9 +68,18 @@ export function calculateSecurityScore(
   credDeduction += Math.min(medCount * 4, 20); // medium, cap at 20
   credDeduction += Math.min(lowCount * 2, 8); // low, cap at 8
 
+  // Template env leak: one critical-equivalent, added before the category cap.
+  // A single flag regardless of how many patterns/files matched, so the score
+  // is stable against minor fixture-value churn.
+  if (extras?.templateEnvLeak) credDeduction += 20;
+
   credDeduction = Math.min(credDeduction, 60); // category cap
 
-  const credDetail = formatCredCount(critCount, highCount, medCount, lowCount);
+  const credDetailParts: string[] = [];
+  const credCountDetail = formatCredCount(critCount, highCount, medCount, lowCount);
+  if (credCountDetail !== 'none') credDetailParts.push(credCountDetail);
+  if (extras?.templateEnvLeak) credDetailParts.push('credential-shaped values in template env file');
+  const credDetail = credDetailParts.length > 0 ? credDetailParts.join('; ') : 'none';
 
   // --- Environment category (cap at -30, was -25 pre-#116) ---
   // Bumped 5 points so the high-impact surfaces (LLM exposed + multi-MCP
@@ -156,6 +180,7 @@ export function calculateSecurityScore(
     critCount > 0 ||
     highCount > 0 ||
     medCount > 0 ||
+    !!extras?.templateEnvLeak ||
     mcpServerCount > 0 ||
     !!skillCheck ||
     !!soulCheck ||

@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
-import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
+import { quickCredentialScan, scanTemplateEnvLeaks, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
 import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
@@ -159,6 +159,15 @@ export async function init(options: InitOptions): Promise<number> {
     credsBySeverity[m.severity] = (credsBySeverity[m.severity] || 0) + 1;
   }
 
+  // Template env leak (posture only): credential-shaped values committed inside
+  // `.env.example`-class files. The migration scanner skips these on purpose
+  // (they are not `protect` targets), which used to blind the posture score to
+  // a real exposure that `secure` (HMA CONFIG-004) flags — the `init` buggy
+  // corpus tier scored identically to benign. Kept out of `credentialMatches`
+  // so protect actions / shield credential events stay migration-only.
+  const templateEnvLeaks = scanTemplateEnvLeaks(targetDir);
+  const hasTemplateEnvLeak = templateEnvLeaks.length > 0;
+
   // 3. Security hygiene checks
   if (isTTY) spinner.update('Checking environment...');
   const checks = await runHygieneChecks(targetDir, project, credentialMatches.length);
@@ -191,7 +200,7 @@ export async function init(options: InitOptions): Promise<number> {
   }
 
   // 6. Group findings
-  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings, targetDir);
+  const groupedFindings = groupFindings(credentialMatches, checks, hmaFindings, targetDir, templateEnvLeaks);
 
   // 7. Calculate unified security score
   if (isTTY) spinner.update('Assessing security posture...');
@@ -199,10 +208,10 @@ export async function init(options: InitOptions): Promise<number> {
   for (const f of hmaFindings) {
     hmaBySeverity[f.severity] = (hmaBySeverity[f.severity] || 0) + 1;
   }
-  const { score, grade, breakdown } = calculateSecurityScore(credsBySeverity, checks, hmaBySeverity);
+  const { score, grade, breakdown } = calculateSecurityScore(credsBySeverity, checks, hmaBySeverity, { templateEnvLeak: hasTemplateEnvLeak });
 
   // 8. Generate actions
-  const actions = generateActions(credentialMatches, credsBySeverity, checks, groupedFindings);
+  const actions = generateActions(credentialMatches, credsBySeverity, checks, groupedFindings, templateEnvLeaks, targetDir);
 
   // 9. Generate legacy next steps (backward compat)
   const nextSteps = generateNextSteps(credentialMatches.length, credsBySeverity, checks, project.type);
@@ -540,8 +549,29 @@ function groupFindings(
   checks: HygieneCheck[],
   hmaFindings: { severity: string; checkId: string; message: string; attackClass?: string }[],
   targetDir: string,
+  templateLeaks: TemplateEnvLeak[] = [],
 ): GroupedFinding[] {
   const groups = new Map<string, GroupedFinding>();
+
+  // Template env leak: one grouped finding, all leaked locations attached. A
+  // committed `.env.example` carrying real-credential-shaped values is a real
+  // exposure (onboarding "rename to .env" activates it), so it renders CRITICAL
+  // to match HMA's CONFIG-004 and the shared corpus manifest. It is deliberately
+  // NOT a `protect` target — the fix is to sanitize the template + rotate, not
+  // migrate — so it carries its own finding id (no CRED-/DRIFT- protect coupling).
+  if (templateLeaks.length > 0) {
+    const kinds = Array.from(new Set(templateLeaks.map(l => l.title)));
+    const files = Array.from(new Set(templateLeaks.map(l => path.basename(l.filePath))));
+    groups.set('ENV-EXAMPLE-LEAK', {
+      findingId: 'ENV-EXAMPLE-LEAK',
+      title: `Credential-shaped values in ${files.join(', ')}`,
+      severity: 'critical',
+      count: templateLeaks.length,
+      explanation: `${files.join(', ')} contains values shaped like real credentials (${kinds.join(', ')}). Template env files are committed to the repo and onboarding often says to rename them to a live .env, so anyone with repo access can read and use whatever is here. Templates should carry placeholders like NAME=your-key-here, never real-shaped values.`,
+      businessImpact: 'Replace each value with an obvious placeholder. If any value was ever a live key, rotate it at the issuer and treat the committed history as leaked.',
+      locations: templateLeaks.map(l => ({ file: l.filePath, line: l.line })),
+    });
+  }
 
   // Group credential findings by findingId
   for (const cred of creds) {
@@ -710,8 +740,25 @@ function generateActions(
   credsBySeverity: Record<string, number>,
   checks: HygieneCheck[],
   findings: GroupedFinding[],
+  templateLeaks: TemplateEnvLeak[] = [],
+  targetDir?: string,
 ): ActionItem[] {
   const actions: ActionItem[] = [];
+
+  // Template env leak first — it is critical and, unlike source credentials,
+  // has no `opena2a protect` migration path (protect must not rewrite a
+  // template). The command reveals every offending line so the user can
+  // sanitize it; no dead end at `protect` (which reports "nothing to migrate").
+  if (templateLeaks.length > 0) {
+    const files = Array.from(new Set(templateLeaks.map(l =>
+      targetDir ? path.relative(targetDir, l.filePath) : path.basename(l.filePath))));
+    const quoted = files.map(f => `'${f.replace(/'/g, `'\\''`)}'`).join(' ');
+    actions.push({
+      description: `Sanitize ${files.join(', ')} — replace credential-shaped values with placeholders`,
+      command: `grep -nE 'AKIA|gh[ps]_|AIza|sk-ant-api|sk-proj-|sk-[A-Za-z0-9]{40}|sk_live_' ${quoted}`,
+      why: 'Template env files are committed to the repo and onboarding often says to rename them to a live .env, so anyone with repo access can read whatever is here. Replace each value with a placeholder like NAME=your-key-here. If any value was ever a live key, rotate it at the issuer and treat the commit history as leaked — opena2a protect does not migrate template files by design.',
+    });
+  }
 
   // Split key/cert files from text-pattern credentials. `opena2a protect`
   // can migrate text patterns to a vault but cannot rotate or untrack
@@ -913,6 +960,16 @@ export function getVerificationCommand(
       return `head -1 ${rel}`;
     }
     return `sed -n '${loc.line}p' ${rel}`;
+  }
+
+  // Template env leak -- reveal the offending line so the user can sanitize it.
+  // No `opena2a protect` Fix (getToolRecommendation returns null): protect does
+  // not migrate template files, so pointing there would be a dead end. The
+  // remediation (placeholder + rotate) lives in the finding + the action.
+  if (finding.findingId === 'ENV-EXAMPLE-LEAK' && finding.locations.length > 0) {
+    const loc = finding.locations[0];
+    const rel = path.relative(reportDir, loc.file);
+    return `sed -n '${loc.line}p' '${rel.replace(/'/g, `'\\''`)}'`;
   }
 
   // HMA findings -- title contains "~/.zshrc:132 contains ..." pattern
