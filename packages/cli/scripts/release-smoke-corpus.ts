@@ -12,12 +12,34 @@
  * IDs + same severity histogram. Timestamps and "fix" command strings
  * differ legitimately (different binary names) and are normalized out.
  *
+ * The parity assertion is only meaningful when BOTH sides run the SAME
+ * hackmyagent build: it isolates the opena2a WRAPPER's behavior, holding the
+ * HMA scanner constant. Historically the reference was hardcoded to a sibling
+ * working-tree build (`../../../../hackmyagent/dist/cli.js`), while `opena2a
+ * scan` delegates (via the import adapter's `resolveWorkspaceBin`) to the
+ * hackmyagent opena2a-cli PINS. The moment the sibling dev tree advanced past
+ * the published pin (a routine event during HMA development — e.g. unreleased
+ * content-aware GIT-002/GIT-003), the harness reported false "wrapper drift".
+ *
+ * Fixed 2026-07-07 [CHIEF-CA]: the reference is now resolved from opena2a-cli's
+ * OWN pinned dependency (`require.resolve('hackmyagent')` → its `cli.js`). That
+ * is the same `node_modules/hackmyagent` the wrapper's `resolveWorkspaceBin`
+ * hits, so both sides run the identical pinned build BY CONSTRUCTION — no PATH
+ * manipulation or version comparison is involved (and none would be reliable:
+ * the sibling dev build shares the published semver, so a version-string check
+ * cannot see that skew anyway). `HMA_CLI_PATH` overrides the reference for
+ * explicit cross-version testing, in which case any divergence surfaces as
+ * ordinary drift. Same-version dev-tree divergence is out of scope: rebuild /
+ * reinstall so the pin is current, or bump the pin (a deliberate, documented
+ * golden re-bake), rather than pointing the reference at a dev tree.
+ *
  * Per [CHIEF-CDS-028] OPENA2A_CORPUS_DETERMINISTIC=1 is set.
  *
  * Exit code 0 = green, 1 = drift, 2 = setup error.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, statSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +47,7 @@ import yaml from 'js-yaml';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const require_ = createRequire(import.meta.url);
 
 interface FixtureManifest {
   fixture: string;
@@ -48,9 +71,32 @@ interface CorpusManifest {
 const CORPUS_ROOT =
   process.env.OPENA2A_CORPUS_PATH ?? join(homedir(), '.opena2a', 'corpus');
 const OPENA2A_CLI = resolve(__dirname, '..', 'dist', 'index.js');
-const HMA_CLI =
-  process.env.HMA_CLI_PATH ??
-  resolve(__dirname, '..', '..', '..', '..', 'hackmyagent', 'dist', 'cli.js');
+
+/**
+ * Resolve the hackmyagent CLI that opena2a-cli ACTUALLY delegates to — its own
+ * pinned dependency, the same `node_modules/hackmyagent` the wrapper reaches
+ * via `resolveWorkspaceBin`. Resolving it here (instead of a hardcoded sibling
+ * working-tree build) is the whole fix: both sides then run the identical
+ * pinned build by construction. `HMA_CLI_PATH` overrides for explicit
+ * cross-version testing. If the pin cannot be resolved, that is a setup error
+ * (`npm ci` not run / partial checkout) — fail loudly rather than silently
+ * falling back to a sibling dev build, which would reintroduce the version-skew
+ * false positive this harness exists to avoid.
+ */
+function resolvePinnedHmaCli(): string {
+  if (process.env.HMA_CLI_PATH) return process.env.HMA_CLI_PATH;
+  try {
+    const main = require_.resolve('hackmyagent'); // dist/index.js
+    return join(dirname(main), 'cli.js');
+  } catch {
+    fail(
+      `cannot resolve opena2a-cli's pinned hackmyagent. run \`npm ci\` so the ` +
+        `dependency resolves, or set HMA_CLI_PATH explicitly.`,
+    );
+  }
+}
+
+const HMA_CLI = resolvePinnedHmaCli();
 const CONSUMER_NAME = 'opena2a-cli';
 const UPDATE_GOLDEN = process.env.OPENA2A_CORPUS_UPDATE_GOLDEN === '1';
 const GOLDEN_ROOT = resolve(__dirname, '..', 'golden', 'opena2a-cli');
@@ -218,8 +264,9 @@ function main(): void {
   }
   if (!existsSync(HMA_CLI)) {
     fail(
-      `hackmyagent dist/cli.js not built at ${HMA_CLI}.\n` +
-        `set HMA_CLI_PATH or build hackmyagent first.`,
+      `hackmyagent CLI not found at ${HMA_CLI}.\n` +
+        `install deps (\`npm ci\`) so opena2a-cli's pinned hackmyagent resolves, ` +
+        `or set HMA_CLI_PATH.`,
     );
   }
   const corpus = loadCorpusManifest();
@@ -228,7 +275,8 @@ function main(): void {
     `release-smoke-corpus: ${corpus.corpusName} ${corpus.corpusVersion}\n` +
       `consumer: ${CONSUMER_NAME}, surfaces: ${surfaces.join(',')}\n` +
       `corpus path: ${CORPUS_ROOT}\n` +
-      `hma cli: ${HMA_CLI}\n\n`,
+      `hma cli: ${HMA_CLI}` +
+      `${process.env.HMA_CLI_PATH ? ' (HMA_CLI_PATH override — cross-version test)' : ' (opena2a-cli pinned dependency)'}\n\n`,
   );
 
   let pass = 0;
