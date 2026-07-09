@@ -2,6 +2,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+// ---------------------------------------------------------------------------
+// Hermetic homedir for the review-command tests.
+//
+// `review` reads (and, since #204, chain-verifies) the global Shield event
+// log at ~/.opena2a/shield/events.jsonl. Without this mock the command
+// tests below depend on whatever log the developer's machine has
+// accumulated — and other test files' writeEvent calls race each other on
+// that shared log, forking its hash chain mid-run. When `mockHome.dir` is
+// set (only inside the `review` describe block), homedir() points at a
+// fresh temp dir; everywhere else the real homedir is used.
+// ---------------------------------------------------------------------------
+
+const mockHome = vi.hoisted(() => ({ dir: '' }));
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    homedir: () => mockHome.dir || actual.homedir(),
+  };
+});
+
 import {
   review,
   aggregateFindings,
@@ -39,13 +62,18 @@ function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; o
 
 describe('review', () => {
   let tempDir: string;
+  let tempHome: string;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-test-'));
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-test-home-'));
+    mockHome.dir = tempHome;
   });
 
   afterEach(() => {
+    mockHome.dir = '';
     fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
   it('clean project returns score >= 80', async () => {

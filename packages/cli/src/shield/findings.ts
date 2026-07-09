@@ -295,11 +295,15 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
  * forging events under a non-configguard `source` (e.g. `source:'shield'`
  * + `category:'integrity'` + `severity:'critical'` => SHIELD-INT-002), or
  * a configguard event whose absolute target is the scanned dir itself.
- * Defending against arbitrary forged events requires verifying the event
- * hash chain (`verifyEventChain`) at review time and excluding events past
- * a break — the deeper "Option 2" of issue #111, tracked as issue #204.
- * The fail-closed rule below closes only the relative/non-absolute
- * configguard manufacture vector (#111 Option 1).
+ * That deeper defense — the "Option 2" of issue #111, issue #204 — lives
+ * upstream of this filter: review reads events through
+ * `readVerifiedEvents` (events.ts), which verifies the hash chain and
+ * excludes every event at or after the first break before any event
+ * reaches this filter or classification. Note the chain is keyless, so
+ * that upstream defense covers naive appends and corruption, not an
+ * attacker who recomputes hashes (see the GUARANTEE BOUNDARY note on
+ * readVerifiedEvents). The fail-closed rule below closes only the
+ * relative/non-absolute configguard manufacture vector (#111 Option 1).
  *
  * Scope of this filter (intentionally narrow):
  * - Only `event.source === 'configguard'` events with an absolute-path
