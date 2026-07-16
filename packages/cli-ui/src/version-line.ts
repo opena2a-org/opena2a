@@ -9,6 +9,16 @@ import chalk from "chalk";
 export interface TelemetryStatusLike {
   enabled: boolean;
   policyURL: string;
+  /**
+   * Set by @opena2a/telemetry when telemetry is off for a reason the
+   * ordinary `<tool> telemetry on` toggle cannot undo — the environment
+   * (CI / DO_NOT_TRACK) or an `OPENA2A_TELEMETRY=off` override. Absent for
+   * a persisted `telemetry off`, where the toggle does work.
+   *
+   * Optional, and structurally typed rather than imported, so this stays
+   * compatible with older SDK versions that never set it.
+   */
+  suppressedBy?: "ci" | "do-not-track" | "env-opt-out";
 }
 
 export interface VersionLineInput {

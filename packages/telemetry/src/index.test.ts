@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { scrubSuppressionEnv, restoreSuppressionEnv, type SavedEnv } from "./test-support.js";
 
 let tmpHome: string;
 let fetchMock: ReturnType<typeof vi.fn>;
+let savedEnv: SavedEnv;
 
 async function freshSdk() {
   vi.resetModules();
@@ -12,6 +14,9 @@ async function freshSdk() {
 }
 
 beforeEach(() => {
+  // These suites assert telemetry actually fires; CI suppression would
+  // silence every event and fail them on a runner. See test-support.ts.
+  savedEnv = scrubSuppressionEnv();
   tmpHome = mkdtempSync(join(tmpdir(), "opena2a-telem-sdk-"));
   process.env.XDG_CONFIG_HOME = tmpHome;
   process.env.OPENA2A_TELEMETRY_URL = "http://test.local/event";
@@ -22,10 +27,139 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  restoreSuppressionEnv(savedEnv);
   rmSync(tmpHome, { recursive: true, force: true });
   vi.unstubAllGlobals();
   delete process.env.XDG_CONFIG_HOME;
   delete process.env.OPENA2A_TELEMETRY_URL;
+});
+
+describe("CI suppression (end to end)", () => {
+  // The bug this guards: CI runners are provisioned fresh per job, so each
+  // job derived a new install_id and was counted as a new install / active
+  // user. Adoption metrics tracked our own build frequency, not usage.
+  it("emits nothing at all when running in CI", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    tele.start();
+    await tele.track("scan", { success: true, durationMs: 10 });
+    tele.error("scan", "BOOM");
+    await tele.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing when DO_NOT_TRACK is set", async () => {
+    process.env.DO_NOT_TRACK = "1";
+    const tele = await freshSdk();
+    await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+    tele.start();
+    await tele.track("scan", { success: true });
+    await tele.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing under DO_NOT_TRACK even with an explicit opt-in", async () => {
+    // The opt-in escape hatch exists for CI only. It must not defeat a
+    // user's deliberate privacy signal.
+    process.env.DO_NOT_TRACK = "1";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const tele = await freshSdk();
+    await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+    tele.start();
+    await tele.track("scan", { success: true });
+    await tele.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still emits in CI when explicitly opted in", async () => {
+    process.env.CI = "true";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    await tele.track("scan", { success: true });
+    await tele.flush();
+    expect(fetchMock).toHaveBeenCalled();
+  });
+});
+
+describe("status reports why telemetry is off", () => {
+  it("reports suppressedBy=ci in CI", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.status();
+    expect(s.enabled).toBe(false);
+    expect(s.suppressedBy).toBe("ci");
+  });
+
+  it("reports suppressedBy=do-not-track under DO_NOT_TRACK", async () => {
+    process.env.DO_NOT_TRACK = "1";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    expect(tele.status().suppressedBy).toBe("do-not-track");
+  });
+
+  it("omits suppressedBy entirely when nothing suppressed", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.status();
+    expect(s.enabled).toBe(true);
+    expect(s.suppressedBy).toBeUndefined();
+    expect("suppressedBy" in s).toBe(false);
+  });
+
+  it("does not blame CI when the user opted out via the env var", async () => {
+    process.env.CI = "true";
+    process.env.OPENA2A_TELEMETRY = "off";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.status();
+    expect(s.enabled).toBe(false);
+    // The user's own opt-out is the reason, and it outranks CI. Blaming CI
+    // here would tell them something untrue about their own choice.
+    expect(s.suppressedBy).toBe("env-opt-out");
+    expect(s.suppressedBy).not.toBe("ci");
+  });
+
+  it("does not blame CI when the user opted out persistently", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    tele.setOptOut(false);
+    process.env.CI = "true";
+    const s = tele.status();
+    expect(s.enabled).toBe(false);
+    // A persisted opt-out gets no reason code at all — `telemetry on` is a
+    // working remedy there, so the plain toggle hint is the right affordance.
+    expect(s.suppressedBy).toBeUndefined();
+  });
+
+  it("status() before init() also reports the reason", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    expect(tele.status().suppressedBy).toBe("ci");
+  });
+
+  it("setOptOut(true) in CI reports the effective state, not the written flag", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.setOptOut(true);
+    // Regression guard: returning `enabled: true` here would print "on"
+    // and the next `telemetry status` would print "off", with nothing
+    // explaining the flip.
+    expect(s.enabled).toBe(false);
+    expect(s.suppressedBy).toBe("ci");
+    expect(tele.status().enabled).toBe(false);
+  });
+
+  it("setOptOut(true) outside CI still enables", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.setOptOut(true);
+    expect(s.enabled).toBe(true);
+    expect(s.suppressedBy).toBeUndefined();
+  });
 });
 
 describe("init + start", () => {

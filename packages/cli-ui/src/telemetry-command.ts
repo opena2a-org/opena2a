@@ -75,29 +75,95 @@ function renderStatus(
 ): string {
   const status = input.getStatus();
   const stateWord = status.enabled ? chalk.green("on") : chalk.dim("off");
+  // `telemetry on` under automatic suppression persists the preference but
+  // does not change the effective state. Claiming "enabled" above a
+  // `state: off` line is a straight contradiction — report what the write
+  // actually achieved.
   const header =
     framing === "enabled"
-      ? chalk.green(`Telemetry enabled for ${input.tool}.`)
+      ? status.enabled
+        ? chalk.green(`Telemetry enabled for ${input.tool}.`)
+        : chalk.dim(`Preference saved, but telemetry stays off for ${input.tool} here.`)
       : framing === "disabled"
         ? chalk.dim(`Telemetry disabled for ${input.tool}.`)
         : chalk.bold(`${input.tool} telemetry`);
   const lines = [
     header,
-    `  state:       ${stateWord}`,
+    `  state:       ${stateWord}${suppressionNote(status.suppressedBy)}`,
     `  install_id:  ${chalk.dim(status.installId)}`,
     `  config:      ${chalk.dim(status.configPath)}`,
     `  policy:      ${chalk.cyan(status.policyURL)}`,
   ];
-  if (framing === "current") {
-    // Suggest the OPPOSITE of the current state — telling someone whose
-    // telemetry is already off how to "turn it off" is useless. The
-    // env-var hint mirrors the same flip.
-    const nextAction = status.enabled ? "off" : "on";
-    const envOverride = status.enabled ? "OPENA2A_TELEMETRY=off" : "OPENA2A_TELEMETRY=on";
+  if (status.suppressedBy) {
+    // Suppression re-applies on every load, so `telemetry on` would write
+    // enabled=true and change nothing observable. Say what is actually
+    // happening and give the remedy that does work, rather than sending
+    // someone round a loop that always lands back on "off".
     lines.push(
       "",
-      chalk.dim(`  toggle: '${input.tool} telemetry ${nextAction}'  or  ${envOverride}`),
+      chalk.dim(`  ${suppressionExplanation(status.suppressedBy)}`),
+      chalk.dim(`  ${suppressionRemedy(status.suppressedBy, input.tool)}`),
     );
+  } else if (framing === "current") {
+    // Suggest the OPPOSITE of the current state — telling someone whose
+    // telemetry is already off how to "turn it off" is useless.
+    //
+    // The env-var hint does NOT mirror that flip, because the two
+    // directions are not symmetric. OPENA2A_TELEMETRY=off disables from
+    // any state, so it is a valid partner to `telemetry off`. But
+    // OPENA2A_TELEMETRY=on cannot re-enable a persisted opt-out —
+    // precedence rule 2 says the config file wins — and this hint only
+    // ever prints for an off-state that came from that file. Offering it
+    // sent the user round a loop landing on an identical, unexplained
+    // "off". `telemetry on` alone is the remedy that works here.
+    if (status.enabled) {
+      lines.push(
+        "",
+        chalk.dim(`  toggle: '${input.tool} telemetry off'  or  OPENA2A_TELEMETRY=off`),
+      );
+    } else {
+      lines.push("", chalk.dim(`  toggle: '${input.tool} telemetry on'`));
+    }
   }
   return lines.join("\n");
+}
+
+type SuppressionReason = NonNullable<TelemetryStatusLike["suppressedBy"]>;
+
+const SUPPRESSION_LABEL: Record<SuppressionReason, string> = {
+  ci: "CI environment detected",
+  "do-not-track": "DO_NOT_TRACK is set",
+  "env-opt-out": "OPENA2A_TELEMETRY=off is set",
+};
+
+// CI is an environmental fact the user did not choose, so say so. The other
+// two ARE the user's own doing — telling them "you did not turn it off"
+// would be wrong.
+const SUPPRESSION_EXPLANATION: Record<SuppressionReason, string> = {
+  ci: "Telemetry is suppressed automatically in CI — you did not turn it off.",
+  "do-not-track": "DO_NOT_TRACK is set in this environment, so telemetry stays off.",
+  "env-opt-out": "OPENA2A_TELEMETRY=off is set in this environment, which overrides the saved preference.",
+};
+
+// Each remedy must actually work for its reason. OPENA2A_TELEMETRY=on does
+// not override DO_NOT_TRACK, and no `telemetry on` survives an env opt-out —
+// offering either in the wrong place is how the dead ends got here.
+function suppressionRemedy(reason: SuppressionReason, tool: string): string {
+  switch (reason) {
+    case "ci":
+      return `override: OPENA2A_TELEMETRY=on ${tool} <cmd>`;
+    case "do-not-track":
+      return "to re-enable: unset DO_NOT_TRACK";
+    case "env-opt-out":
+      return "to re-enable: unset OPENA2A_TELEMETRY (or set it to 'on')";
+  }
+}
+
+function suppressionNote(reason: SuppressionReason | undefined): string {
+  if (!reason) return "";
+  return chalk.dim(` (${SUPPRESSION_LABEL[reason]})`);
+}
+
+function suppressionExplanation(reason: SuppressionReason): string {
+  return SUPPRESSION_EXPLANATION[reason];
 }
