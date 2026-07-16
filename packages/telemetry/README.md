@@ -21,7 +21,7 @@ await tele.track("scan", { success: true, durationMs: 312 });
 tele.error("scan", "HMA_TIMEOUT");
 ```
 
-- `init()` loads opt-out config from `~/.config/opena2a/telemetry.json` and `OPENA2A_TELEMETRY` env var. **No first-run banner is emitted** (deliberate — see disclosure surfaces below).
+- `init()` loads opt-out config from `~/.config/opena2a/telemetry.json` and `OPENA2A_TELEMETRY` env var, and suppresses telemetry entirely in CI or under `DO_NOT_TRACK` (see [automatic suppression](#automatic-suppression)). **No first-run banner is emitted** (deliberate — see disclosure surfaces below).
 - `start()` fires a `start` event.
 - `track(name, fields?)` fires a `command` event with the command name and optional `success` / `durationMs`.
 - `error(name, code)` fires an `error` event with the failure code.
@@ -65,6 +65,30 @@ Three ways to disable, in precedence order:
 1. **Per-invocation** — `OPENA2A_TELEMETRY=off` (also `0`, `false`, `no`).
 2. **Persistent** — `<tool> telemetry off` (writes to `~/.config/opena2a/telemetry.json`).
 3. **Direct edit** — `~/.config/opena2a/telemetry.json` → `{"enabled": false}`.
+
+## Automatic suppression
+
+Telemetry is **off by default** in two cases, with no configuration:
+
+- **CI / build environments** — detected via `CI`, `CONTINUOUS_INTEGRATION`, or a
+  vendor marker (`GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`,
+  `TF_BUILD`, `VERCEL`, `NETLIFY`, and others). `CI=false` / `CI=0` is honored as
+  "not CI".
+- **`DO_NOT_TRACK`** — the [cross-vendor convention](https://consoledonottrack.com/).
+  Any value other than `0` / `false` / `no` opts out.
+
+Why: `install_id` is derived from the OS machine-id, falling back to a hash of the
+hostname when that probe fails. CI runners are ephemeral — no machine-id, fresh
+hostname per job — so **every CI run minted a new `install_id` and was counted as a
+distinct install and active user**. Left unsuppressed, adoption metrics grow with
+build frequency rather than with real usage. Bots are not users.
+
+Suppression here is computed per-invocation and is **never written to the config
+file**: the file records what the user chose, not where the process happened to run.
+
+To exercise the real ingest path from your own CI, set an explicit
+`OPENA2A_TELEMETRY=on` (also `1`, `true`, `yes`). That overrides the automatic
+suppressions only — it can **not** re-enable a deliberate `telemetry off`.
 
 ## Audit
 

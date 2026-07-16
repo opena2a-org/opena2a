@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { scrubSuppressionEnv, restoreSuppressionEnv, type SavedEnv } from "./test-support.js";
 
 let tmpHome: string;
 let fetchMock: ReturnType<typeof vi.fn>;
+let savedEnv: SavedEnv;
 
 async function freshSdk() {
   vi.resetModules();
@@ -12,6 +14,9 @@ async function freshSdk() {
 }
 
 beforeEach(() => {
+  // These suites assert telemetry actually fires; CI suppression would
+  // silence every event and fail them on a runner. See test-support.ts.
+  savedEnv = scrubSuppressionEnv();
   tmpHome = mkdtempSync(join(tmpdir(), "opena2a-telem-sdk-"));
   process.env.XDG_CONFIG_HOME = tmpHome;
   process.env.OPENA2A_TELEMETRY_URL = "http://test.local/event";
@@ -22,10 +27,47 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  restoreSuppressionEnv(savedEnv);
   rmSync(tmpHome, { recursive: true, force: true });
   vi.unstubAllGlobals();
   delete process.env.XDG_CONFIG_HOME;
   delete process.env.OPENA2A_TELEMETRY_URL;
+});
+
+describe("CI suppression (end to end)", () => {
+  // The bug this guards: CI runners are ephemeral, so each job derived a
+  // fresh install_id and was counted as a new install / active user.
+  // Adoption metrics tracked our own build frequency instead of usage.
+  it("emits nothing at all when running in CI", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    tele.start();
+    await tele.track("scan", { success: true, durationMs: 10 });
+    tele.error("scan", "BOOM");
+    await tele.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing when DO_NOT_TRACK is set", async () => {
+    process.env.DO_NOT_TRACK = "1";
+    const tele = await freshSdk();
+    await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+    tele.start();
+    await tele.track("scan", { success: true });
+    await tele.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still emits in CI when explicitly opted in", async () => {
+    process.env.CI = "true";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    await tele.track("scan", { success: true });
+    await tele.flush();
+    expect(fetchMock).toHaveBeenCalled();
+  });
 });
 
 describe("init + start", () => {

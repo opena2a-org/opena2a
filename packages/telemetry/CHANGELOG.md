@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Added
+
+- **Telemetry is now suppressed automatically in CI and under `DO_NOT_TRACK`.**
+  New `isCI()` and `doNotTrack()` helpers; `loadConfig()` returns
+  `enabled: false` when either fires. An explicit `OPENA2A_TELEMETRY=on`
+  overrides the automatic suppressions (so our own e2e can exercise the real
+  ingest path), but never overrides a deliberate `telemetry off` in the config
+  file. Suppression is computed per-invocation and is never persisted — the
+  config file records the user's choice, not where the process ran.
+
+  **Why this is a data-integrity fix, not a privacy nicety.** `install_id` is
+  derived from the OS machine-id and falls back to a hash of the hostname when
+  that probe fails. CI runners are ephemeral containers: no machine-id, fresh
+  random hostname per job. Every CI run therefore minted a brand-new
+  `install_id` and was counted as a distinct install and a distinct active
+  user. Adoption metrics tracked our own build frequency rather than real
+  usage, and the error compounded with every added workflow. This is a
+  prerequisite for reporting a truthful install count at all — see the
+  Registry-side note below.
+
+  Registry context: per-tool installs are counted as
+  `COUNT(DISTINCT install_id) FILTER (WHERE event = 'install')`, and no
+  `install` event has ever been emitted by this SDK (`buildEvent` is only
+  called with `start`, `command`, `error`), so the dashboard's Installs column
+  reads a permanent 0. Simply dropping that filter would have counted CI
+  runners and ephemeral containers as installs — replacing a visible zero with
+  a plausible, wrong number. Landing CI suppression first is what makes the
+  Registry-side fix safe.
+
 ### Fixed
 
 - **`DEFAULT_ENDPOINT` now points at the canonical ingest path** —

@@ -9,6 +9,33 @@ export const DEFAULT_ENDPOINT = "https://api.oa2a.org/api/v1/telemetry/v1/event"
 const ENV_OPT_OUT = "OPENA2A_TELEMETRY";
 const ENV_ENDPOINT = "OPENA2A_TELEMETRY_URL";
 const ENV_DEBUG = "OPENA2A_TELEMETRY_DEBUG";
+const ENV_DO_NOT_TRACK = "DO_NOT_TRACK";
+
+/**
+ * Vendor markers that indicate a CI/build environment by their mere
+ * presence. `CI` and `CONTINUOUS_INTEGRATION` are handled separately
+ * because they carry a meaningful value (some runners export `CI=false`).
+ */
+const CI_VENDOR_ENV_VARS = [
+  "GITHUB_ACTIONS",
+  "GITLAB_CI",
+  "CIRCLECI",
+  "TRAVIS",
+  "JENKINS_URL",
+  "BUILDKITE",
+  "DRONE",
+  "TEAMCITY_VERSION",
+  "TF_BUILD",
+  "CODEBUILD_BUILD_ID",
+  "APPVEYOR",
+  "BITBUCKET_BUILD_NUMBER",
+  "HEROKU_TEST_RUN_ID",
+  "SEMAPHORE",
+  "WOODPECKER_CI",
+  "NETLIFY",
+  "VERCEL",
+  "CF_PAGES",
+] as const;
 
 export interface TelemetryConfig {
   enabled: boolean;
@@ -163,15 +190,77 @@ function envOptOut(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
+ * True when the variable is set to something other than an explicit
+ * "no" value. Unset, empty, "0", "false" and "no" all read as false.
+ */
+function envTruthy(v: string | undefined): boolean {
+  if (v === undefined) return false;
+  const lower = v.trim().toLowerCase();
+  if (lower === "") return false;
+  return lower !== "0" && lower !== "false" && lower !== "no";
+}
+
+/**
+ * Explicit opt-IN. Only overrides the automatic suppressions below
+ * (CI / DO_NOT_TRACK) — never a deliberate opt-out held in the config
+ * file. Lets us exercise the real ingest path from our own CI without
+ * reopening the door to every other runner on the internet.
+ */
+function envOptIn(env: NodeJS.ProcessEnv): boolean {
+  const v = env[ENV_OPT_OUT];
+  if (v === undefined) return false;
+  const lower = v.toLowerCase();
+  return lower === "on" || lower === "1" || lower === "true" || lower === "yes";
+}
+
+/**
+ * Detect a CI / build environment.
+ *
+ * Why this exists: install_id is derived from the OS machine-id, and
+ * falls back to a hash of the hostname when that probe fails (see
+ * `deriveInstallId`). CI runners are ephemeral containers — no
+ * machine-id, and a fresh random hostname per job. Every CI run
+ * therefore minted a brand-new install_id and was counted as a distinct
+ * install/active user. With no suppression, adoption metrics measure
+ * our own pipelines more than our users, and the error grows with build
+ * frequency rather than with real usage.
+ *
+ * Bots are not users. Suppressing here (rather than filtering
+ * server-side) means the event is never sent at all — cheaper, and it
+ * keeps the Registry from having to guess which IDs were real.
+ */
+export function isCI(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (envTruthy(env.CI)) return true;
+  if (envTruthy(env.CONTINUOUS_INTEGRATION)) return true;
+  return CI_VENDOR_ENV_VARS.some((key) => envTruthy(env[key]));
+}
+
+/**
+ * Honor the cross-vendor `DO_NOT_TRACK` convention
+ * (https://consoledonottrack.com/). Any value except an explicit
+ * "no" value opts the user out.
+ */
+export function doNotTrack(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envTruthy(env[ENV_DO_NOT_TRACK]);
+}
+
+/**
  * Load (and lazily create) the telemetry config.
  *
  * Precedence for `enabled`:
- *   1. OPENA2A_TELEMETRY env var (always wins, per-invocation)
- *   2. config file `enabled` field
- *   3. default ON (matches spec)
+ *   1. OPENA2A_TELEMETRY set to an off value — always wins.
+ *   2. config file `enabled: false` — a deliberate opt-out; nothing
+ *      re-enables it, including OPENA2A_TELEMETRY=on.
+ *   3. CI environment or DO_NOT_TRACK — suppressed, unless
+ *      OPENA2A_TELEMETRY is set to an explicit on value.
+ *   4. default ON (matches spec).
  *
  * The install_id is always persisted on first call so subsequent runs
  * (and subsequent tools on the same machine) report the same ID.
+ *
+ * Note that CI/DO_NOT_TRACK suppression is computed per-invocation and
+ * deliberately NOT written to the config file: the file records what the
+ * user chose, not where the process happened to run.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
   config: TelemetryConfig;
@@ -182,7 +271,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
   const installId = file?.installId ?? deriveInstallId();
   const fileEnabled = file?.enabled ?? true;
   const envDisabled = envOptOut(env);
-  const enabled = !envDisabled && fileEnabled;
+  const autoSuppressed = isCI(env) || doNotTrack(env);
+  const enabled =
+    !envDisabled && fileEnabled && (envOptIn(env) || !autoSuppressed);
 
   if (!file || !file.installId || file.enabled === undefined) {
     try {
