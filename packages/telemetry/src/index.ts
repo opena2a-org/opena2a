@@ -189,4 +189,10 @@ export function successFromExitCode(
 }
 
 export { POLICY_URL } from "./config.js";
-export type { InitOptions, Status, TrackFields, UsageEvent } from "./types.js";
+export type {
+  InitOptions,
+  Status,
+  SuppressionReason,
+  TrackFields,
+  UsageEvent,
+} from "./types.js";

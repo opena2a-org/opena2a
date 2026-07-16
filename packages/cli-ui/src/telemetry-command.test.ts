@@ -70,6 +70,39 @@ describe("automatic suppression rendering", () => {
     expect(out).not.toContain("CI environment detected");
     expect(out).not.toContain("did not turn it off");
   });
+
+  it("explains OPENA2A_TELEMETRY=off instead of suggesting a toggle it overrides", () => {
+    // `telemetry on` cannot survive an env opt-out — env-off always wins —
+    // so the old hint sent the user round a loop that always landed on off.
+    const out = runTelemetryCommand(
+      "status",
+      makeInput({ enabled: false, suppressedBy: "env-opt-out" }),
+    );
+    expect(out).toContain("OPENA2A_TELEMETRY=off is set");
+    expect(out).toContain("overrides the saved preference");
+    expect(out).toContain("unset OPENA2A_TELEMETRY");
+    expect(out).not.toContain("dvaa telemetry on'");
+    expect(out).not.toContain("you did not turn it off");
+  });
+
+  it("'on' under an env opt-out explains why it did not take effect", () => {
+    // Regression guard: this path printed "Preference saved, but telemetry
+    // stays off for dvaa here." with no reason and no remedy — the word
+    // "here" promising an explanation that never came.
+    const out = runTelemetryCommand("on", makeInput({ enabled: false, suppressedBy: "env-opt-out" }));
+    expect(out).toContain("Preference saved");
+    expect(out).toContain("OPENA2A_TELEMETRY=off is set");
+    expect(out).toContain("unset OPENA2A_TELEMETRY");
+  });
+
+  it("every suppression reason renders a remedy", () => {
+    // Fails by construction if a reason is added without a remedy.
+    for (const reason of ["ci", "do-not-track", "env-opt-out"] as const) {
+      const out = runTelemetryCommand("status", makeInput({ enabled: false, suppressedBy: reason }));
+      expect(out, `reason=${reason}`).toMatch(/override:|to re-enable:/);
+      expect(out, `reason=${reason}`).not.toContain("dvaa telemetry on'");
+    }
+  });
 });
 
 describe("runTelemetryCommand", () => {

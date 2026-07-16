@@ -29,10 +29,17 @@ export interface TrackFields {
 }
 
 /**
- * Why telemetry is off despite the user never having opted out.
- * See `autoSuppressionReason` in config.ts.
+ * Why telemetry is off, when the reason lives in the *environment* rather
+ * than in the config file.
+ *
+ * A persisted `<tool> telemetry off` deliberately has NO reason code: for
+ * that state the ordinary `<tool> telemetry on` toggle works, so a plain
+ * hint is the right affordance. These three are the cases where that toggle
+ * would not work, and so must be explained instead.
+ *
+ * See `autoSuppressionReason` and `loadConfig` in config.ts.
  */
-export type SuppressionReason = "ci" | "do-not-track";
+export type SuppressionReason = "ci" | "do-not-track" | "env-opt-out";
 
 export interface Status {
   enabled: boolean;

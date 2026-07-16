@@ -35,9 +35,9 @@ afterEach(() => {
 });
 
 describe("CI suppression (end to end)", () => {
-  // The bug this guards: CI runners are ephemeral, so each job derived a
-  // fresh install_id and was counted as a new install / active user.
-  // Adoption metrics tracked our own build frequency instead of usage.
+  // The bug this guards: CI runners are provisioned fresh per job, so each
+  // job derived a new install_id and was counted as a new install / active
+  // user. Adoption metrics tracked our own build frequency, not usage.
   it("emits nothing at all when running in CI", async () => {
     process.env.CI = "true";
     const tele = await freshSdk();
@@ -109,14 +109,28 @@ describe("status reports why telemetry is off", () => {
     expect("suppressedBy" in s).toBe(false);
   });
 
-  it("does not blame CI when the user opted out themselves", async () => {
+  it("does not blame CI when the user opted out via the env var", async () => {
     process.env.CI = "true";
     process.env.OPENA2A_TELEMETRY = "off";
     const tele = await freshSdk();
     await tele.init({ tool: "dvaa", version: "0.9.3" });
     const s = tele.status();
     expect(s.enabled).toBe(false);
-    // The user's own opt-out is the reason; attributing it to CI would be wrong.
+    // The user's own opt-out is the reason, and it outranks CI. Blaming CI
+    // here would tell them something untrue about their own choice.
+    expect(s.suppressedBy).toBe("env-opt-out");
+    expect(s.suppressedBy).not.toBe("ci");
+  });
+
+  it("does not blame CI when the user opted out persistently", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    tele.setOptOut(false);
+    process.env.CI = "true";
+    const s = tele.status();
+    expect(s.enabled).toBe(false);
+    // A persisted opt-out gets no reason code at all — `telemetry on` is a
+    // working remedy there, so the plain toggle hint is the right affordance.
     expect(s.suppressedBy).toBeUndefined();
   });
 

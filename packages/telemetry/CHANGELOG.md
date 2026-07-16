@@ -38,10 +38,16 @@
   CI-labeled population — the bulk of it, not the whole class.
 
 - **`status()` now reports *why* telemetry is off.** New optional
-  `suppressedBy: "ci" | "do-not-track"` on `Status`, set only when the
-  environment (not the user) is the cause — a user who ran `telemetry off`
-  is never told CI did it. The field is omitted entirely when nothing
-  suppressed, so existing consumers are unaffected.
+  `suppressedBy: "ci" | "do-not-track" | "env-opt-out"` on `Status` (and the
+  `SuppressionReason` type is exported from the package root), set whenever
+  the reason is one the ordinary `<tool> telemetry on` toggle cannot undo.
+
+  A persisted `telemetry off` deliberately carries **no** reason code: there
+  the toggle works, so a plain hint is the better affordance, and attributing
+  it to the environment would tell the user something untrue about their own
+  choice. Attribution is precedence-ordered, so an `OPENA2A_TELEMETRY=off`
+  inside CI reports `env-opt-out`, never `ci`. The field is omitted entirely
+  when nothing suppressed, so existing consumers are unaffected.
 
   `setOptOut()` now returns the **effective** state rather than the flag it
   just wrote. Previously `telemetry on` inside CI persisted `enabled: true`,

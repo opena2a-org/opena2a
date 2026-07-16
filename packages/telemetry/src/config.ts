@@ -222,12 +222,20 @@ function envOptIn(env: NodeJS.ProcessEnv): boolean {
  *
  * Why this exists: install_id is derived from the OS machine-id, and
  * falls back to a hash of the hostname when that probe fails (see
- * `deriveInstallId`). CI runners are ephemeral containers — no
- * machine-id, and a fresh random hostname per job. Every CI run
- * therefore minted a brand-new install_id and was counted as a distinct
- * install/active user. With no suppression, adoption metrics measure
- * our own pipelines more than our users, and the error grows with build
- * frequency rather than with real usage.
+ * `deriveInstallId`). CI runners are provisioned fresh for each job, so
+ * the machine-id (or the hostname fallback) differs on every run — a CI
+ * run typically minted a brand-new install_id and was counted as a
+ * distinct install/active user. With no suppression, adoption metrics
+ * measure our own pipelines more than our users, and the error grows
+ * with build frequency rather than with real usage.
+ *
+ * Two limits worth knowing, since this reads like a complete fix and is
+ * not one. Self-hosted or reused runners have a stable machine-id, so
+ * they collapse onto a single persistent identity instead of inflating —
+ * a different distortion. And `CI` is a proxy for ephemerality, not a
+ * synonym: a throwaway `docker run`, a devcontainer rebuild or a
+ * sandboxed `npx` hits the same fallback path while setting none of
+ * these variables. This covers the CI-labeled share, not the whole class.
  *
  * Bots are not users. Suppressing here (rather than filtering
  * server-side) means the event is never sent at all — cheaper, and it
@@ -306,8 +314,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
   const installId = file?.installId ?? deriveInstallId();
   const fileEnabled = file?.enabled ?? true;
   const envDisabled = envOptOut(env);
-  const suppressedBy = autoSuppressionReason(env);
-  const enabled = !envDisabled && fileEnabled && suppressedBy === null;
+  const autoReason = autoSuppressionReason(env);
+  const enabled = !envDisabled && fileEnabled && autoReason === null;
 
   if (!file || !file.installId || file.enabled === undefined) {
     try {
@@ -317,16 +325,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
     }
   }
 
-  // Only attribute the off-state to the environment when the user has NOT
-  // opted out themselves. Someone who ran `telemetry off` should not be
-  // told CI is the reason.
-  const userOptedOut = envDisabled || !fileEnabled;
+  // Attribute the off-state to the reason a consumer must actually explain,
+  // in precedence order:
+  //
+  //   - OPENA2A_TELEMETRY=off wins outright, so report it. Without a code
+  //     here a CLI can only say a bare "off" and suggest `telemetry on` —
+  //     which cannot work, because rule 1 says env-off always wins.
+  //   - A persisted `telemetry off` gets NO code: the ordinary toggle works,
+  //     so a plain hint is the better affordance, and attributing it to the
+  //     environment would tell the user something untrue about their own
+  //     choice.
+  //   - Otherwise the environment is the cause (DO_NOT_TRACK / CI).
+  const suppressedBy: SuppressionReason | null = envDisabled
+    ? "env-opt-out"
+    : !fileEnabled
+      ? null
+      : autoReason;
 
-  return {
-    config: { enabled, installId },
-    paths,
-    suppressedBy: userOptedOut ? null : suppressedBy,
-  };
+  return { config: { enabled, installId }, paths, suppressedBy };
 }
 
 export function setEnabled(enabled: boolean): TelemetryConfig {

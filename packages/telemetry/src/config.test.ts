@@ -135,9 +135,10 @@ describe("doNotTrack", () => {
 
 describe("loadConfig automatic suppression", () => {
   // Regression guard for the metric bug this suppression exists to fix:
-  // CI runners are ephemeral (no machine-id, fresh hostname per job), so
-  // every run minted a new install_id and inflated distinct-install and
-  // active-user counts with our own pipelines.
+  // CI runners are provisioned fresh per job, so the machine-id (or the
+  // hostname fallback) differs every run — a CI run typically minted a new
+  // install_id and inflated distinct-install and active-user counts with
+  // our own pipelines.
   it("CI suppresses telemetry despite default-on", () => {
     process.env.CI = "true";
     expect(loadConfig().config.enabled).toBe(false);
@@ -190,6 +191,28 @@ describe("loadConfig automatic suppression", () => {
   it("DO_NOT_TRACK with surrounding whitespace still opts out", () => {
     process.env.DO_NOT_TRACK = " 1 ";
     expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("attributes an env opt-out so a CLI can explain it", () => {
+    // Without a reason code a CLI can only print a bare "off" and suggest
+    // `telemetry on` — which cannot work, since env-off wins outright.
+    process.env.OPENA2A_TELEMETRY = "off";
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBe("env-opt-out");
+  });
+
+  it("env opt-out outranks CI in attribution", () => {
+    process.env.OPENA2A_TELEMETRY = "off";
+    process.env.CI = "true";
+    expect(loadConfig().suppressedBy).toBe("env-opt-out");
+  });
+
+  it("a persisted opt-out gets NO reason code (the plain toggle works there)", () => {
+    setEnabled(false);
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBeNull();
   });
 
   it("a deliberate file opt-out still wins over env=on in CI", () => {

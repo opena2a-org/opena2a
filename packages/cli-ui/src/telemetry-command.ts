@@ -118,25 +118,42 @@ function renderStatus(
   return lines.join("\n");
 }
 
-function suppressionNote(reason: "ci" | "do-not-track" | undefined): string {
+type SuppressionReason = NonNullable<TelemetryStatusLike["suppressedBy"]>;
+
+const SUPPRESSION_LABEL: Record<SuppressionReason, string> = {
+  ci: "CI environment detected",
+  "do-not-track": "DO_NOT_TRACK is set",
+  "env-opt-out": "OPENA2A_TELEMETRY=off is set",
+};
+
+// CI is an environmental fact the user did not choose, so say so. The other
+// two ARE the user's own doing — telling them "you did not turn it off"
+// would be wrong.
+const SUPPRESSION_EXPLANATION: Record<SuppressionReason, string> = {
+  ci: "Telemetry is suppressed automatically in CI — you did not turn it off.",
+  "do-not-track": "DO_NOT_TRACK is set in this environment, so telemetry stays off.",
+  "env-opt-out": "OPENA2A_TELEMETRY=off is set in this environment, which overrides the saved preference.",
+};
+
+// Each remedy must actually work for its reason. OPENA2A_TELEMETRY=on does
+// not override DO_NOT_TRACK, and no `telemetry on` survives an env opt-out —
+// offering either in the wrong place is how the dead ends got here.
+function suppressionRemedy(reason: SuppressionReason, tool: string): string {
+  switch (reason) {
+    case "ci":
+      return `override: OPENA2A_TELEMETRY=on ${tool} <cmd>`;
+    case "do-not-track":
+      return "to re-enable: unset DO_NOT_TRACK";
+    case "env-opt-out":
+      return "to re-enable: unset OPENA2A_TELEMETRY (or set it to 'on')";
+  }
+}
+
+function suppressionNote(reason: SuppressionReason | undefined): string {
   if (!reason) return "";
-  const label = reason === "ci" ? "CI environment detected" : "DO_NOT_TRACK is set";
-  return chalk.dim(` (${label})`);
+  return chalk.dim(` (${SUPPRESSION_LABEL[reason]})`);
 }
 
-function suppressionExplanation(reason: "ci" | "do-not-track"): string {
-  // CI is an environmental fact the user did not choose, so say so.
-  // DO_NOT_TRACK *is* the user's own choice — telling them "you did not
-  // turn it off" would be wrong.
-  return reason === "ci"
-    ? "Telemetry is suppressed automatically in CI — you did not turn it off."
-    : "DO_NOT_TRACK is set in this environment, so telemetry stays off.";
-}
-
-function suppressionRemedy(reason: "ci" | "do-not-track", tool: string): string {
-  // OPENA2A_TELEMETRY=on deliberately does NOT override DO_NOT_TRACK, so
-  // offering it here would be another dead end.
-  return reason === "ci"
-    ? `override: OPENA2A_TELEMETRY=on ${tool} <cmd>`
-    : "to re-enable: unset DO_NOT_TRACK";
+function suppressionExplanation(reason: SuppressionReason): string {
+  return SUPPRESSION_EXPLANATION[reason];
 }
