@@ -106,14 +106,24 @@ function renderStatus(
     );
   } else if (framing === "current") {
     // Suggest the OPPOSITE of the current state — telling someone whose
-    // telemetry is already off how to "turn it off" is useless. The
-    // env-var hint mirrors the same flip.
-    const nextAction = status.enabled ? "off" : "on";
-    const envOverride = status.enabled ? "OPENA2A_TELEMETRY=off" : "OPENA2A_TELEMETRY=on";
-    lines.push(
-      "",
-      chalk.dim(`  toggle: '${input.tool} telemetry ${nextAction}'  or  ${envOverride}`),
-    );
+    // telemetry is already off how to "turn it off" is useless.
+    //
+    // The env-var hint does NOT mirror that flip, because the two
+    // directions are not symmetric. OPENA2A_TELEMETRY=off disables from
+    // any state, so it is a valid partner to `telemetry off`. But
+    // OPENA2A_TELEMETRY=on cannot re-enable a persisted opt-out —
+    // precedence rule 2 says the config file wins — and this hint only
+    // ever prints for an off-state that came from that file. Offering it
+    // sent the user round a loop landing on an identical, unexplained
+    // "off". `telemetry on` alone is the remedy that works here.
+    if (status.enabled) {
+      lines.push(
+        "",
+        chalk.dim(`  toggle: '${input.tool} telemetry off'  or  OPENA2A_TELEMETRY=off`),
+      );
+    } else {
+      lines.push("", chalk.dim(`  toggle: '${input.tool} telemetry on'`));
+    }
   }
   return lines.join("\n");
 }

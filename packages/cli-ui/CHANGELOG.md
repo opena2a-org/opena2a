@@ -23,6 +23,15 @@
   reports that the preference was saved but telemetry stays off here.
 - `TelemetryStatusLike.suppressedBy` is optional, so this stays structurally
   compatible with older `@opena2a/telemetry` versions that never set it.
+- The off-state toggle hint no longer offers `OPENA2A_TELEMETRY=on`. The two
+  directions are not symmetric: `OPENA2A_TELEMETRY=off` disables from any
+  state, but `OPENA2A_TELEMETRY=on` cannot re-enable a persisted opt-out
+  (precedence rule 2 — the config file wins), and this hint only ever prints
+  for an off-state that came from that file. Following it produced an
+  identical, unexplained "off". `<tool> telemetry on` alone is the remedy that
+  works there, and the on-state hint keeps `OPENA2A_TELEMETRY=off` unchanged.
+  The 0.5.1 papercut guard (#170, hint *direction*) is preserved; only the
+  incidental env-var assertion changed.
 
 ## 0.5.2
 
