@@ -11,29 +11,22 @@
  * claim to, on a laptop and on a runner alike.
  */
 
-/** Every env var that suppresses telemetry. Keep in sync with config.ts. */
+import { CI_VENDOR_ENV_VARS } from "./config.js";
+
+/**
+ * Every env var that suppresses telemetry.
+ *
+ * Derived from the real vendor list rather than hand-copied, so adding a
+ * vendor to config.ts cannot silently desync this. A duplicated list would
+ * fail only on a contributor's machine that happens to set the new var —
+ * never on our own runners, which set CI/GITHUB_ACTIONS and are already
+ * scrubbed — surfacing later as an unrelated-looking test failure.
+ */
 export const SUPPRESSION_ENV_VARS = [
+  ...CI_VENDOR_ENV_VARS,
   "CI",
   "CONTINUOUS_INTEGRATION",
   "DO_NOT_TRACK",
-  "GITHUB_ACTIONS",
-  "GITLAB_CI",
-  "CIRCLECI",
-  "TRAVIS",
-  "JENKINS_URL",
-  "BUILDKITE",
-  "DRONE",
-  "TEAMCITY_VERSION",
-  "TF_BUILD",
-  "CODEBUILD_BUILD_ID",
-  "APPVEYOR",
-  "BITBUCKET_BUILD_NUMBER",
-  "HEROKU_TEST_RUN_ID",
-  "SEMAPHORE",
-  "WOODPECKER_CI",
-  "NETLIFY",
-  "VERCEL",
-  "CF_PAGES",
 ] as const;
 
 export type SavedEnv = Record<string, string | undefined>;

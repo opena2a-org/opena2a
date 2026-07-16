@@ -157,10 +157,39 @@ describe("loadConfig automatic suppression", () => {
     },
   );
 
-  it("OPENA2A_TELEMETRY=on re-enables under DO_NOT_TRACK", () => {
+  it("OPENA2A_TELEMETRY=on does NOT override DO_NOT_TRACK", () => {
+    // DO_NOT_TRACK is a deliberate user intent, not an environmental fact.
+    // A wrapper script, Makefile, Dockerfile ENV or org-wide CI config that
+    // exports OPENA2A_TELEMETRY=on must never silently re-enable tracking
+    // for a user who set DO_NOT_TRACK in their shell profile and never
+    // touched OPENA2A_TELEMETRY at all.
     process.env.DO_NOT_TRACK = "1";
     process.env.OPENA2A_TELEMETRY = "on";
-    expect(loadConfig().config.enabled).toBe(true);
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("DO_NOT_TRACK still wins when CI is also present and opt-in is set", () => {
+    process.env.CI = "true";
+    process.env.DO_NOT_TRACK = "1";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBe("do-not-track");
+  });
+
+  it.each([["off "], [" off"], ["off\n"], ["\toff\t"]])(
+    "OPENA2A_TELEMETRY=%j (untrimmed) still disables",
+    (val) => {
+      // Trailing whitespace/newlines are routine in .env files, compose
+      // YAML and $(cmd) substitution. A privacy control must fail closed.
+      process.env.OPENA2A_TELEMETRY = val;
+      expect(loadConfig().config.enabled).toBe(false);
+    },
+  );
+
+  it("DO_NOT_TRACK with surrounding whitespace still opts out", () => {
+    process.env.DO_NOT_TRACK = " 1 ";
+    expect(loadConfig().config.enabled).toBe(false);
   });
 
   it("a deliberate file opt-out still wins over env=on in CI", () => {

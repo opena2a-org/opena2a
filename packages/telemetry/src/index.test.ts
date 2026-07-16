@@ -59,6 +59,19 @@ describe("CI suppression (end to end)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("emits nothing under DO_NOT_TRACK even with an explicit opt-in", async () => {
+    // The opt-in escape hatch exists for CI only. It must not defeat a
+    // user's deliberate privacy signal.
+    process.env.DO_NOT_TRACK = "1";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const tele = await freshSdk();
+    await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+    tele.start();
+    await tele.track("scan", { success: true });
+    await tele.flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("still emits in CI when explicitly opted in", async () => {
     process.env.CI = "true";
     process.env.OPENA2A_TELEMETRY = "on";

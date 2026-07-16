@@ -5,22 +5,37 @@
 ### Added
 
 - **Telemetry is now suppressed automatically in CI and under `DO_NOT_TRACK`.**
-  New `isCI()` and `doNotTrack()` helpers; `loadConfig()` returns
-  `enabled: false` when either fires. An explicit `OPENA2A_TELEMETRY=on`
-  overrides the automatic suppressions (so our own e2e can exercise the real
-  ingest path), but never overrides a deliberate `telemetry off` in the config
-  file. Suppression is computed per-invocation and is never persisted — the
-  config file records the user's choice, not where the process ran.
+  New `isCI()`, `doNotTrack()` and `autoSuppressionReason()` helpers;
+  `loadConfig()` returns `enabled: false` when either fires. Suppression is
+  computed per-invocation and is never persisted — the config file records the
+  user's choice, not where the process ran.
+
+  The two reasons are deliberately **not peers**. `DO_NOT_TRACK` is a
+  deliberate user intent and sits in the same tier as `telemetry off`:
+  **nothing overrides it**. CI-ness is a fact about the machine rather than a
+  choice, so an explicit `OPENA2A_TELEMETRY=on` overrides *CI detection only*
+  — letting our own e2e exercise the real ingest path without allowing a
+  Makefile, Dockerfile `ENV`, or org-wide CI config to silently defeat a
+  privacy signal a user set once in their shell profile.
+
+  `OPENA2A_TELEMETRY` opt-out values are now trimmed before comparison, so
+  `OPENA2A_TELEMETRY="off "` (routine in `.env` files, compose YAML and `$(cmd)`
+  substitution) disables rather than silently failing open.
 
   **Why this is a data-integrity fix, not a privacy nicety.** `install_id` is
   derived from the OS machine-id and falls back to a hash of the hostname when
-  that probe fails. CI runners are ephemeral containers: no machine-id, fresh
-  random hostname per job. Every CI run therefore minted a brand-new
-  `install_id` and was counted as a distinct install and a distinct active
-  user. Adoption metrics tracked our own build frequency rather than real
-  usage, and the error compounded with every added workflow. This is a
-  prerequisite for reporting a truthful install count at all — see the
-  Registry-side note below.
+  that probe fails. CI runners are provisioned fresh per job, so the machine-id
+  (or hostname fallback) differs on every run — a CI run typically minted a
+  brand-new `install_id` and was counted as a distinct install and a distinct
+  active user. Adoption metrics tracked our own build frequency rather than
+  real usage, and the error compounded with every added workflow.
+
+  Scope, stated honestly: `CI` is a proxy for ephemerality, not a synonym. A
+  throwaway `docker run`, a devcontainer rebuild or a sandboxed `npx` hits the
+  same fallback path while setting none of the detected variables, and
+  self-hosted/reused runners have a stable machine-id so they collapse onto one
+  identity instead (a different distortion, not inflation). This covers the
+  CI-labeled population — the bulk of it, not the whole class.
 
 - **`status()` now reports *why* telemetry is off.** New optional
   `suppressedBy: "ci" | "do-not-track"` on `Status`, set only when the
@@ -40,8 +55,10 @@
   called with `start`, `command`, `error`), so the dashboard's Installs column
   reads a permanent 0. Simply dropping that filter would have counted CI
   runners and ephemeral containers as installs — replacing a visible zero with
-  a plausible, wrong number. Landing CI suppression first is what makes the
-  Registry-side fix safe.
+  a plausible, wrong number. This change removes the CI-labeled share of that
+  inflation; the non-CI ephemeral-container share (see Scope above) remains and
+  must be addressed before a per-tool install count can be published as
+  measured.
 
 ### Fixed
 

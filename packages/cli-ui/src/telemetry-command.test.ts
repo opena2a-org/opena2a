@@ -40,13 +40,19 @@ describe("automatic suppression rendering", () => {
     expect(out).not.toContain("dvaa telemetry on'");
   });
 
-  it("explains DO_NOT_TRACK suppression", () => {
+  it("explains DO_NOT_TRACK suppression and offers a remedy that works", () => {
     const out = runTelemetryCommand(
       "status",
       makeInput({ enabled: false, suppressedBy: "do-not-track" }),
     );
     expect(out).toContain("DO_NOT_TRACK is set");
+    expect(out).toContain("unset DO_NOT_TRACK");
     expect(out).not.toContain("dvaa telemetry on'");
+    // OPENA2A_TELEMETRY=on does not override DO_NOT_TRACK, so suggesting it
+    // here would be a second dead end.
+    expect(out).not.toContain("OPENA2A_TELEMETRY=on");
+    // DO_NOT_TRACK is the user's own choice — don't tell them they didn't.
+    expect(out).not.toContain("you did not turn it off");
   });
 
   it("does not contradict itself when 'on' is run under suppression", () => {

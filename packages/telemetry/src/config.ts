@@ -17,7 +17,7 @@ const ENV_DO_NOT_TRACK = "DO_NOT_TRACK";
  * presence. `CI` and `CONTINUOUS_INTEGRATION` are handled separately
  * because they carry a meaningful value (some runners export `CI=false`).
  */
-const CI_VENDOR_ENV_VARS = [
+export const CI_VENDOR_ENV_VARS = [
   "GITHUB_ACTIONS",
   "GITLAB_CI",
   "CIRCLECI",
@@ -186,7 +186,10 @@ function deriveInstallId(): string {
 function envOptOut(env: NodeJS.ProcessEnv): boolean {
   const v = env[ENV_OPT_OUT];
   if (v === undefined) return false;
-  const lower = v.toLowerCase();
+  // Trim: trailing whitespace and newlines are routine in .env files,
+  // docker-compose YAML, Dockerfile ENV, and $(cmd) substitution. An
+  // opt-out must never fail open because the value had a stray space.
+  const lower = v.trim().toLowerCase();
   return lower === "off" || lower === "0" || lower === "false" || lower === "no";
 }
 
@@ -202,15 +205,15 @@ function envTruthy(v: string | undefined): boolean {
 }
 
 /**
- * Explicit opt-IN. Only overrides the automatic suppressions below
- * (CI / DO_NOT_TRACK) — never a deliberate opt-out held in the config
- * file. Lets us exercise the real ingest path from our own CI without
- * reopening the door to every other runner on the internet.
+ * Explicit opt-IN. Overrides *CI detection only* — never a deliberate
+ * opt-out, whether that lives in the config file or in DO_NOT_TRACK. Lets
+ * us exercise the real ingest path from our own CI without reopening the
+ * door to every other runner on the internet.
  */
 function envOptIn(env: NodeJS.ProcessEnv): boolean {
   const v = env[ENV_OPT_OUT];
   if (v === undefined) return false;
-  const lower = v.toLowerCase();
+  const lower = v.trim().toLowerCase();
   return lower === "on" || lower === "1" || lower === "true" || lower === "yes";
 }
 
@@ -246,19 +249,29 @@ export function doNotTrack(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
- * Which automatic suppression (if any) is currently in force.
+ * Which environmental suppression (if any) is currently in force.
  *
- * Returns null when an explicit OPENA2A_TELEMETRY=on overrides them, or
- * when neither applies. Exposed so `status()` can explain *why* telemetry
- * is off — a bare "off" reads as "you turned this off", and sends users
- * chasing a config flip that automatic suppression will just re-apply.
+ * Exposed so `status()` can explain *why* telemetry is off — a bare "off"
+ * reads as "you turned this off", and sends users chasing a config flip
+ * that suppression will just re-apply.
+ *
+ * Order matters, and the two reasons are NOT peers:
+ *
+ *   - `DO_NOT_TRACK` is a deliberate user *intent*. A user exports it once
+ *     in their shell profile and expects every tool to honor it. It sits in
+ *     the same tier as `telemetry off` and is checked FIRST, so that
+ *     `OPENA2A_TELEMETRY=on` — which we tell people to put in CI configs,
+ *     Dockerfiles and Makefiles — can never silently override a privacy
+ *     signal the user never touched.
+ *   - CI-ness is an environmental *fact*, not a choice, so an explicit
+ *     opt-in may override it. That is the only thing the opt-in overrides.
  */
 export function autoSuppressionReason(
   env: NodeJS.ProcessEnv = process.env,
 ): SuppressionReason | null {
+  if (doNotTrack(env)) return "do-not-track";
   if (envOptIn(env)) return null;
   if (isCI(env)) return "ci";
-  if (doNotTrack(env)) return "do-not-track";
   return null;
 }
 
@@ -269,9 +282,12 @@ export function autoSuppressionReason(
  *   1. OPENA2A_TELEMETRY set to an off value — always wins.
  *   2. config file `enabled: false` — a deliberate opt-out; nothing
  *      re-enables it, including OPENA2A_TELEMETRY=on.
- *   3. CI environment or DO_NOT_TRACK — suppressed, unless
- *      OPENA2A_TELEMETRY is set to an explicit on value.
- *   4. default ON (matches spec).
+ *   3. DO_NOT_TRACK — also a deliberate opt-out; likewise nothing
+ *      re-enables it. Same tier as (2), not an environmental default.
+ *   4. CI environment — suppressed, unless OPENA2A_TELEMETRY is set to an
+ *      explicit on value. CI-ness is a fact about the machine, not a
+ *      choice by the user, so an explicit opt-in may override it.
+ *   5. default ON (matches spec).
  *
  * The install_id is always persisted on first call so subsequent runs
  * (and subsequent tools on the same machine) report the same ID.

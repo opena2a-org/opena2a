@@ -95,14 +95,14 @@ function renderStatus(
     `  policy:      ${chalk.cyan(status.policyURL)}`,
   ];
   if (status.suppressedBy) {
-    // Automatic suppression re-applies on every load, so `telemetry on`
-    // would write enabled=true and change nothing observable. Say what is
-    // actually happening and give the override that does work, rather than
-    // sending someone round a loop that always lands back on "off".
+    // Suppression re-applies on every load, so `telemetry on` would write
+    // enabled=true and change nothing observable. Say what is actually
+    // happening and give the remedy that does work, rather than sending
+    // someone round a loop that always lands back on "off".
     lines.push(
       "",
       chalk.dim(`  ${suppressionExplanation(status.suppressedBy)}`),
-      chalk.dim(`  override: OPENA2A_TELEMETRY=on ${input.tool} <cmd>`),
+      chalk.dim(`  ${suppressionRemedy(status.suppressedBy, input.tool)}`),
     );
   } else if (framing === "current") {
     // Suggest the OPPOSITE of the current state — telling someone whose
@@ -125,7 +125,18 @@ function suppressionNote(reason: "ci" | "do-not-track" | undefined): string {
 }
 
 function suppressionExplanation(reason: "ci" | "do-not-track"): string {
+  // CI is an environmental fact the user did not choose, so say so.
+  // DO_NOT_TRACK *is* the user's own choice — telling them "you did not
+  // turn it off" would be wrong.
   return reason === "ci"
     ? "Telemetry is suppressed automatically in CI — you did not turn it off."
-    : "Telemetry is suppressed automatically because DO_NOT_TRACK is set.";
+    : "DO_NOT_TRACK is set in this environment, so telemetry stays off.";
+}
+
+function suppressionRemedy(reason: "ci" | "do-not-track", tool: string): string {
+  // OPENA2A_TELEMETRY=on deliberately does NOT override DO_NOT_TRACK, so
+  // offering it here would be another dead end.
+  return reason === "ci"
+    ? `override: OPENA2A_TELEMETRY=on ${tool} <cmd>`
+    : "to re-enable: unset DO_NOT_TRACK";
 }
