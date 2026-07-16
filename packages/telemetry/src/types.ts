@@ -28,9 +28,23 @@ export interface TrackFields {
   durationMs?: number;
 }
 
+/**
+ * Why telemetry is off despite the user never having opted out.
+ * See `autoSuppressionReason` in config.ts.
+ */
+export type SuppressionReason = "ci" | "do-not-track";
+
 export interface Status {
   enabled: boolean;
   configPath: string;
   policyURL: string;
   installId: string;
+  /**
+   * Present only when telemetry is off because of the *environment*
+   * (CI / DO_NOT_TRACK) rather than a user choice. Consumers should say so
+   * rather than implying the user turned it off — and must not suggest
+   * `<tool> telemetry on` as the remedy, because a config-file flip does
+   * not survive automatic suppression.
+   */
+  suppressedBy?: SuppressionReason;
 }

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import { execSync } from "node:child_process";
+import type { SuppressionReason } from "./types.js";
 
 export const POLICY_URL = "https://opena2a.org/telemetry";
 export const DEFAULT_ENDPOINT = "https://api.oa2a.org/api/v1/telemetry/v1/event";
@@ -245,6 +246,23 @@ export function doNotTrack(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
+ * Which automatic suppression (if any) is currently in force.
+ *
+ * Returns null when an explicit OPENA2A_TELEMETRY=on overrides them, or
+ * when neither applies. Exposed so `status()` can explain *why* telemetry
+ * is off — a bare "off" reads as "you turned this off", and sends users
+ * chasing a config flip that automatic suppression will just re-apply.
+ */
+export function autoSuppressionReason(
+  env: NodeJS.ProcessEnv = process.env,
+): SuppressionReason | null {
+  if (envOptIn(env)) return null;
+  if (isCI(env)) return "ci";
+  if (doNotTrack(env)) return "do-not-track";
+  return null;
+}
+
+/**
  * Load (and lazily create) the telemetry config.
  *
  * Precedence for `enabled`:
@@ -265,15 +283,15 @@ export function doNotTrack(env: NodeJS.ProcessEnv = process.env): boolean {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
   config: TelemetryConfig;
   paths: ConfigPaths;
+  suppressedBy: SuppressionReason | null;
 } {
   const paths = configPaths();
   const file = readConfigFile(paths.file);
   const installId = file?.installId ?? deriveInstallId();
   const fileEnabled = file?.enabled ?? true;
   const envDisabled = envOptOut(env);
-  const autoSuppressed = isCI(env) || doNotTrack(env);
-  const enabled =
-    !envDisabled && fileEnabled && (envOptIn(env) || !autoSuppressed);
+  const suppressedBy = autoSuppressionReason(env);
+  const enabled = !envDisabled && fileEnabled && suppressedBy === null;
 
   if (!file || !file.installId || file.enabled === undefined) {
     try {
@@ -283,7 +301,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
     }
   }
 
-  return { config: { enabled, installId }, paths };
+  // Only attribute the off-state to the environment when the user has NOT
+  // opted out themselves. Someone who ran `telemetry off` should not be
+  // told CI is the reason.
+  const userOptedOut = envDisabled || !fileEnabled;
+
+  return {
+    config: { enabled, installId },
+    paths,
+    suppressedBy: userOptedOut ? null : suppressedBy,
+  };
 }
 
 export function setEnabled(enabled: boolean): TelemetryConfig {

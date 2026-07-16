@@ -70,6 +70,71 @@ describe("CI suppression (end to end)", () => {
   });
 });
 
+describe("status reports why telemetry is off", () => {
+  it("reports suppressedBy=ci in CI", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.status();
+    expect(s.enabled).toBe(false);
+    expect(s.suppressedBy).toBe("ci");
+  });
+
+  it("reports suppressedBy=do-not-track under DO_NOT_TRACK", async () => {
+    process.env.DO_NOT_TRACK = "1";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    expect(tele.status().suppressedBy).toBe("do-not-track");
+  });
+
+  it("omits suppressedBy entirely when nothing suppressed", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.status();
+    expect(s.enabled).toBe(true);
+    expect(s.suppressedBy).toBeUndefined();
+    expect("suppressedBy" in s).toBe(false);
+  });
+
+  it("does not blame CI when the user opted out themselves", async () => {
+    process.env.CI = "true";
+    process.env.OPENA2A_TELEMETRY = "off";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.status();
+    expect(s.enabled).toBe(false);
+    // The user's own opt-out is the reason; attributing it to CI would be wrong.
+    expect(s.suppressedBy).toBeUndefined();
+  });
+
+  it("status() before init() also reports the reason", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    expect(tele.status().suppressedBy).toBe("ci");
+  });
+
+  it("setOptOut(true) in CI reports the effective state, not the written flag", async () => {
+    process.env.CI = "true";
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.setOptOut(true);
+    // Regression guard: returning `enabled: true` here would print "on"
+    // and the next `telemetry status` would print "off", with nothing
+    // explaining the flip.
+    expect(s.enabled).toBe(false);
+    expect(s.suppressedBy).toBe("ci");
+    expect(tele.status().enabled).toBe(false);
+  });
+
+  it("setOptOut(true) outside CI still enables", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "dvaa", version: "0.9.3" });
+    const s = tele.setOptOut(true);
+    expect(s.enabled).toBe(true);
+    expect(s.suppressedBy).toBeUndefined();
+  });
+});
+
 describe("init + start", () => {
   it("init() does not emit a banner to stderr", async () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);

@@ -1,5 +1,22 @@
 # Changelog — @opena2a/cli-ui
 
+## Unreleased
+
+### Fixed
+- `runTelemetryCommand` no longer prints a toggle hint that cannot work. When
+  `@opena2a/telemetry` reports the new optional
+  `TelemetryStatusLike.suppressedBy` (`"ci"` / `"do-not-track"`), the status
+  block names the cause (`state: off (CI environment detected)`), states
+  plainly that the user did not turn it off, and offers the override that does
+  work (`OPENA2A_TELEMETRY=on <tool> <cmd>`). Previously it suggested
+  `<tool> telemetry on`, which persists `enabled: true`, changes nothing
+  observable, and leaves the next `status` still reporting off.
+- `<tool> telemetry on` under automatic suppression no longer prints
+  "Telemetry enabled for <tool>." directly above a `state: off` line. It now
+  reports that the preference was saved but telemetry stays off here.
+- `TelemetryStatusLike.suppressedBy` is optional, so this stays structurally
+  compatible with older `@opena2a/telemetry` versions that never set it.
+
 ## 0.5.2
 
 ### Added

@@ -6,21 +6,65 @@ beforeEach(() => {
   chalk.level = 0;
 });
 
-function makeInput(overrides: { enabled?: boolean } = {}) {
+function makeInput(
+  overrides: { enabled?: boolean; suppressedBy?: "ci" | "do-not-track" } = {},
+) {
   let enabled = overrides.enabled ?? true;
   return {
     tool: "dvaa",
     setOptOut: vi.fn((v: boolean) => {
-      enabled = v;
+      // Mirrors the real SDK: under automatic suppression the preference is
+      // persisted but the effective state stays off.
+      enabled = overrides.suppressedBy ? false : v;
     }),
     getStatus: () => ({
       enabled,
       policyURL: "https://opena2a.org/telemetry",
       configPath: "/home/user/.config/opena2a/telemetry.json",
       installId: "abc-123",
+      ...(overrides.suppressedBy ? { suppressedBy: overrides.suppressedBy } : {}),
     }),
   };
 }
+
+describe("automatic suppression rendering", () => {
+  // The dead end this guards: under CI suppression the old renderer printed
+  // `state: off` with a `dvaa telemetry on` hint. That hint writes
+  // enabled=true, changes nothing, and the next status still says off.
+  it("explains CI suppression instead of suggesting a toggle that cannot work", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: false, suppressedBy: "ci" }));
+    expect(out).toContain("CI environment detected");
+    expect(out).toContain("you did not turn it off");
+    expect(out).toContain("OPENA2A_TELEMETRY=on dvaa <cmd>");
+    // The broken hint must not appear.
+    expect(out).not.toContain("dvaa telemetry on'");
+  });
+
+  it("explains DO_NOT_TRACK suppression", () => {
+    const out = runTelemetryCommand(
+      "status",
+      makeInput({ enabled: false, suppressedBy: "do-not-track" }),
+    );
+    expect(out).toContain("DO_NOT_TRACK is set");
+    expect(out).not.toContain("dvaa telemetry on'");
+  });
+
+  it("does not contradict itself when 'on' is run under suppression", () => {
+    const out = runTelemetryCommand("on", makeInput({ enabled: false, suppressedBy: "ci" }));
+    expect(out).toContain("Preference saved");
+    expect(out).toContain("stays off");
+    expect(out).toContain("state:       off");
+    // The old header claimed "Telemetry enabled" directly above `state: off`.
+    expect(out).not.toContain("Telemetry enabled for dvaa.");
+  });
+
+  it("a plain off state (user's own choice) keeps the normal toggle hint", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: false }));
+    expect(out).toContain("dvaa telemetry on");
+    expect(out).not.toContain("CI environment detected");
+    expect(out).not.toContain("did not turn it off");
+  });
+});
 
 describe("runTelemetryCommand", () => {
   it("status (no action) prints current state and toggle hint", () => {

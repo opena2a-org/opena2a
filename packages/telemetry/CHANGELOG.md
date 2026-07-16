@@ -22,6 +22,18 @@
   prerequisite for reporting a truthful install count at all — see the
   Registry-side note below.
 
+- **`status()` now reports *why* telemetry is off.** New optional
+  `suppressedBy: "ci" | "do-not-track"` on `Status`, set only when the
+  environment (not the user) is the cause — a user who ran `telemetry off`
+  is never told CI did it. The field is omitted entirely when nothing
+  suppressed, so existing consumers are unaffected.
+
+  `setOptOut()` now returns the **effective** state rather than the flag it
+  just wrote. Previously `telemetry on` inside CI persisted `enabled: true`,
+  printed "Telemetry enabled", and then the very next `telemetry status`
+  printed "off" — a dead end with nothing explaining the flip, since
+  automatic suppression re-applies on every load.
+
   Registry context: per-tool installs are counted as
   `COUNT(DISTINCT install_id) FILTER (WHERE event = 'install')`, and no
   `install` event has ever been emitted by this SDK (`buildEvent` is only

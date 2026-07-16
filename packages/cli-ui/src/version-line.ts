@@ -9,6 +9,12 @@ import chalk from "chalk";
 export interface TelemetryStatusLike {
   enabled: boolean;
   policyURL: string;
+  /**
+   * Set by @opena2a/telemetry when telemetry is off because of the
+   * environment (CI / DO_NOT_TRACK) rather than a user choice. Optional so
+   * this stays structurally compatible with older SDK versions.
+   */
+  suppressedBy?: "ci" | "do-not-track";
 }
 
 export interface VersionLineInput {

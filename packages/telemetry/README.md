@@ -90,6 +90,22 @@ To exercise the real ingest path from your own CI, set an explicit
 `OPENA2A_TELEMETRY=on` (also `1`, `true`, `yes`). That overrides the automatic
 suppressions only — it can **not** re-enable a deliberate `telemetry off`.
 
+`status()` reports which suppression is in force via the optional
+`suppressedBy: "ci" | "do-not-track"` field, so a CLI can explain the state
+rather than implying the user turned telemetry off:
+
+```
+  state:       off (CI environment detected)
+  ...
+  Telemetry is suppressed automatically in CI — you did not turn it off.
+  override: OPENA2A_TELEMETRY=on opena2a <cmd>
+```
+
+The field is absent when nothing suppressed, and is never set when the user
+opted out themselves. Note that `setOptOut(true)` under suppression returns
+`enabled: false` — it reports the effective state, not the flag it wrote,
+because a config flip does not survive automatic suppression.
+
 ## Audit
 
 Runtime audit of every payload:

@@ -75,20 +75,36 @@ function renderStatus(
 ): string {
   const status = input.getStatus();
   const stateWord = status.enabled ? chalk.green("on") : chalk.dim("off");
+  // `telemetry on` under automatic suppression persists the preference but
+  // does not change the effective state. Claiming "enabled" above a
+  // `state: off` line is a straight contradiction — report what the write
+  // actually achieved.
   const header =
     framing === "enabled"
-      ? chalk.green(`Telemetry enabled for ${input.tool}.`)
+      ? status.enabled
+        ? chalk.green(`Telemetry enabled for ${input.tool}.`)
+        : chalk.dim(`Preference saved, but telemetry stays off for ${input.tool} here.`)
       : framing === "disabled"
         ? chalk.dim(`Telemetry disabled for ${input.tool}.`)
         : chalk.bold(`${input.tool} telemetry`);
   const lines = [
     header,
-    `  state:       ${stateWord}`,
+    `  state:       ${stateWord}${suppressionNote(status.suppressedBy)}`,
     `  install_id:  ${chalk.dim(status.installId)}`,
     `  config:      ${chalk.dim(status.configPath)}`,
     `  policy:      ${chalk.cyan(status.policyURL)}`,
   ];
-  if (framing === "current") {
+  if (status.suppressedBy) {
+    // Automatic suppression re-applies on every load, so `telemetry on`
+    // would write enabled=true and change nothing observable. Say what is
+    // actually happening and give the override that does work, rather than
+    // sending someone round a loop that always lands back on "off".
+    lines.push(
+      "",
+      chalk.dim(`  ${suppressionExplanation(status.suppressedBy)}`),
+      chalk.dim(`  override: OPENA2A_TELEMETRY=on ${input.tool} <cmd>`),
+    );
+  } else if (framing === "current") {
     // Suggest the OPPOSITE of the current state — telling someone whose
     // telemetry is already off how to "turn it off" is useless. The
     // env-var hint mirrors the same flip.
@@ -100,4 +116,16 @@ function renderStatus(
     );
   }
   return lines.join("\n");
+}
+
+function suppressionNote(reason: "ci" | "do-not-track" | undefined): string {
+  if (!reason) return "";
+  const label = reason === "ci" ? "CI environment detected" : "DO_NOT_TRACK is set";
+  return chalk.dim(` (${label})`);
+}
+
+function suppressionExplanation(reason: "ci" | "do-not-track"): string {
+  return reason === "ci"
+    ? "Telemetry is suppressed automatically in CI — you did not turn it off."
+    : "Telemetry is suppressed automatically because DO_NOT_TRACK is set.";
 }
