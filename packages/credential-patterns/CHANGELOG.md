@@ -21,12 +21,48 @@ All notable changes to `@opena2a/credential-patterns` will be documented in this
 ### Database connection-string precision
 
 - **`mongodb`, `postgres`, `mysql`, and `redis` now flag only URIs that embed a
-  secret** — a userinfo password (`user:pass@`, `:pass@`) or a `password=` query
-  param. Previously any URI ≥ 10 chars matched, so the canonical credential-free
-  MCP server layout (`"args": ["postgresql://localhost:5432/mydb"]`) produced a
-  CRITICAL "PostgreSQL Connection String" finding with nothing secret in it.
-  Deliberate narrowing note: username-only URIs (`rediss://user@host`) no longer
-  match — a username without a password is topology, not a credential.
+  secret.** Previously any URI ≥ 10 chars matched, so the canonical
+  credential-free MCP server layout (`"args":
+  ["postgresql://localhost:5432/mydb"]`) produced a CRITICAL "PostgreSQL
+  Connection String" finding with nothing secret in it. A URI now matches when
+  it carries a userinfo password (`user:pass@`, `:pass@`), a
+  `password=`/`pwd=`/`sslpassword=` query param (case-insensitive), or — redis
+  only — any single userinfo token (`redis://your-password@host`): pre-ACL Redis has
+  no usernames, so a lone token there is a password, not topology. For
+  `postgres`/`mysql`/`mongodb`, username-only URIs (`postgres://user@host`) are
+  a deliberate non-match: no password, no secret.
+- **Plain `mongodb://` URIs are now covered** — the old pattern only matched
+  `mongodb+srv://`, so `mongodb://root:pass@host/admin` was never detected.
+- **Matches cannot cross JSON string boundaries** — the character classes
+  exclude quotes and commas, so minified content like
+  `{"cache":"redis://localhost:6379","owner":"ops@corp.io"}` neither
+  false-positives nor gets destructively over-masked by `replace()`-based
+  redaction consumers.
+- **Env-var-interpolated passwords are not secrets** — the user/password
+  classes exclude `$ { } | ;`, so `postgres://app:${POSTGRES_PASSWORD}@db`
+  (the recommended secure shape), `$VAR` forms, markdown-table cells, and
+  compound `;`-joined env lines no longer read as literal credentials. Hosts
+  deliberately keep `$ { }`: a real password next to an interpolated host
+  (`redis://:realpass@${REDIS_HOST}:6379`) still flags. The redis single-token
+  rule carves out the literal `default@` (the standard Redis 6+ ACL username);
+  other username-only redis URIs still flag on the safe side, since a lone
+  userinfo token is indistinguishable from a pre-ACL password.
+- **`CREDENTIAL_PREFIX_QUICK_CHECK` derives `redis` from `rediss?`, not
+  `rediss`** — the prefix extractor kept the char an optional quantifier
+  applies to, so consumers' `${VAR}`-line skip dropped plain `redis://` lines
+  before the pattern ever ran: `redis://:realpass@${REDIS_HOST}:6379` was a
+  silent miss. The extractor now trims a trailing `X?` char, with a regression
+  test pinning `redis://` recognition.
+- **Every run is length-bounded** (user ≤ 64, password ≤ 256, host/query ≤ 512
+  chars), keeping scan time linear on scheme-stuffed one-line files
+  (adversarially measured: 220 KB of repeated `postgres://` dropped from
+  multi-second quadratic scans to ~30 ms); the ReDoS perf suite gains
+  scheme-literal-prefixed inputs, which the previous inputs never exercised.
+  Known edges, accepted: a password containing a raw unencoded `&`, `,`,
+  quote, `$`, `{`, `}`, `|`, or `;` is missed or masked only partially
+  (percent-encoded forms are caught), format-string templates
+  (`postgres://%s:%s@%s`) still match, and secrets placed beyond ~512 chars
+  into a single URI's query string are not matched.
 
 ## 0.1.2 — 2026-06-08
 
