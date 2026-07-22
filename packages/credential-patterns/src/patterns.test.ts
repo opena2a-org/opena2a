@@ -211,22 +211,32 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     invalid: ['sq0csp-short', 'sq0CSP-' + 'a'.repeat(22)],
   },
 
-  // Database
+  // Database — connection strings flag only when a secret is embedded
+  // (userinfo password or password= query param). Credential-free and
+  // username-only URIs are topology, not exposures.
   'mongodb': {
     valid: ['mongodb+srv://user:pass@cluster.mongodb.net/db'],
-    invalid: ['mongodb://lo', 'mongo+srv://x'],
+    invalid: ['mongodb://lo', 'mongo+srv://x', 'mongodb+srv://cluster.mongodb.net/db'],
   },
   'postgres': {
-    valid: ['postgres://user:pass@localhost:5432/mydb'],
-    invalid: ['postgres://s', 'pg://user:pass@host/db'],
+    valid: [
+      'postgres://user:pass@localhost:5432/mydb',
+      'postgresql://localhost:5432/mydb?password=hunter2',
+    ],
+    invalid: [
+      'postgres://s',
+      'pg://user:pass@host/db',
+      'postgres://localhost:5432/mydb',
+      'postgresql://localhost:5432/mydb',
+    ],
   },
   'mysql': {
     valid: ['mysql://user:pass@localhost:3306/mydb'],
-    invalid: ['mysql://sh', 'msql://user:pass@host/db'],
+    invalid: ['mysql://sh', 'msql://user:pass@host/db', 'mysql://localhost:3306/mydb'],
   },
   'redis': {
-    valid: ['redis://user:pass@localhost:6379/0', 'rediss://secure@host:6379'],
-    invalid: ['redis://sh', 'rds://host:6379'],
+    valid: ['redis://user:pass@localhost:6379/0', 'rediss://:secure@host:6379'],
+    invalid: ['redis://sh', 'rds://host:6379', 'redis://localhost:6379', 'rediss://secure@host:6379'],
   },
 
   // Auth & Crypto
@@ -399,6 +409,12 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
 describe('CONFIG_FILES — MCP config coverage', () => {
   it('covers Claude Code project-scope .mcp.json (committed to repos)', () => {
     expect(CONFIG_FILES).toContain('.mcp.json');
+  });
+
+  it('covers the other org-known MCP/agent config locations', () => {
+    expect(CONFIG_FILES).toContain('.mcp/config.json');
+    expect(CONFIG_FILES).toContain('.claude/settings.local.json');
+    expect(CONFIG_FILES).toContain('.windsurf/mcp.json');
   });
 
   it('covers .cursor/mcp.json under its real directory name (".curse" typo regression)', () => {

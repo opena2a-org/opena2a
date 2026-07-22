@@ -86,10 +86,13 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'square', name: 'Square API Key', regex: /sq0[a-z]{3}-[a-zA-Z0-9_-]{22,}/, envPrefix: 'SQUARE_ACCESS_TOKEN', category: 'payment' },
 
   // ── Database (category: database) ─────────────────────────────────────
-  { id: 'mongodb', name: 'MongoDB Connection String', regex: /mongodb\+srv:\/\/[^\s]{10,}/, envPrefix: 'MONGODB_URI', category: 'database' },
-  { id: 'postgres', name: 'PostgreSQL Connection String', regex: /postgres(?:ql)?:\/\/[^\s]{10,}/, envPrefix: 'DATABASE_URL', category: 'database' },
-  { id: 'mysql', name: 'MySQL Connection String', regex: /mysql:\/\/[^\s]{10,}/, envPrefix: 'DATABASE_URL', category: 'database' },
-  { id: 'redis', name: 'Redis Connection String', regex: /rediss?:\/\/[^\s]{10,}/, envPrefix: 'REDIS_URL', category: 'database' },
+  // Connection strings flag only when they embed a secret (userinfo password or
+  // a password= query param). A credential-free URI (postgresql://localhost/db —
+  // the canonical MCP server layout) is topology, not a credential exposure.
+  { id: 'mongodb', name: 'MongoDB Connection String', regex: /mongodb\+srv:\/\/(?:[^\s:@\/]*:[^\s@]+@[^\s]+|[^\s]*[?&]password=[^\s&"']+)/, envPrefix: 'MONGODB_URI', category: 'database' },
+  { id: 'postgres', name: 'PostgreSQL Connection String', regex: /postgres(?:ql)?:\/\/(?:[^\s:@\/]*:[^\s@]+@[^\s]+|[^\s]*[?&]password=[^\s&"']+)/, envPrefix: 'DATABASE_URL', category: 'database' },
+  { id: 'mysql', name: 'MySQL Connection String', regex: /mysql:\/\/(?:[^\s:@\/]*:[^\s@]+@[^\s]+|[^\s]*[?&]password=[^\s&"']+)/, envPrefix: 'DATABASE_URL', category: 'database' },
+  { id: 'redis', name: 'Redis Connection String', regex: /rediss?:\/\/(?:[^\s:@\/]*:[^\s@]+@[^\s]+|[^\s]*[?&]password=[^\s&"']+)/, envPrefix: 'REDIS_URL', category: 'database' },
 
   // ── Auth & Crypto (category: auth) ────────────────────────────────────
   { id: 'google', name: 'Google API Key', regex: /AIza[0-9A-Za-z_-]{35}/, envPrefix: 'GOOGLE_API_KEY', category: 'auth' },
@@ -182,12 +185,12 @@ export const SECRET_FILE_PATTERNS: string[] = [
 export const CONFIG_FILES = [
   'config.json', 'config.yaml', 'config.yml',
   '.env', '.env.local',
-  'package.json', 'mcp.json', '.mcp.json',
+  'package.json', 'mcp.json', '.mcp.json', '.mcp/config.json',
   'CLAUDE.md',
   '.openclaw/config.json', '.moltbot/config.json',
   'openclaw.json', 'moltbot.json',
-  '.cursor/mcp.json', '.vscode/mcp.json',
-  '.claude/settings.json',
+  '.cursor/mcp.json', '.vscode/mcp.json', '.windsurf/mcp.json',
+  '.claude/settings.json', '.claude/settings.local.json',
   '.cursor/settings.json',
   '.github/copilot-instructions.md',
   // Nanobot variants

@@ -13,6 +13,20 @@ All notable changes to `@opena2a/credential-patterns` will be documented in this
   `status`, and a PASS from `verify`).
 - **Fixed the `.curse/mcp.json` typo to `.cursor/mcp.json`** — Cursor's project MCP
   config was unreachable since the entry was introduced; `.curse/` matches nothing.
+- **Added `.mcp/config.json`, `.claude/settings.local.json`, and
+  `.windsurf/mcp.json`** — MCP/agent config locations the org's tools already
+  enumerate elsewhere (opena2a-cli `ai-config`/`detect`, secretless MCP discovery)
+  but the shared scan list lacked.
+
+### Database connection-string precision
+
+- **`mongodb`, `postgres`, `mysql`, and `redis` now flag only URIs that embed a
+  secret** — a userinfo password (`user:pass@`, `:pass@`) or a `password=` query
+  param. Previously any URI ≥ 10 chars matched, so the canonical credential-free
+  MCP server layout (`"args": ["postgresql://localhost:5432/mydb"]`) produced a
+  CRITICAL "PostgreSQL Connection String" finding with nothing secret in it.
+  Deliberate narrowing note: username-only URIs (`rediss://user@host`) no longer
+  match — a username without a password is topology, not a credential.
 
 ## 0.1.2 — 2026-06-08
 
