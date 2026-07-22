@@ -182,11 +182,11 @@ export const SECRET_FILE_PATTERNS: string[] = [
 export const CONFIG_FILES = [
   'config.json', 'config.yaml', 'config.yml',
   '.env', '.env.local',
-  'package.json', 'mcp.json',
+  'package.json', 'mcp.json', '.mcp.json',
   'CLAUDE.md',
   '.openclaw/config.json', '.moltbot/config.json',
   'openclaw.json', 'moltbot.json',
-  '.curse/mcp.json', '.vscode/mcp.json',
+  '.cursor/mcp.json', '.vscode/mcp.json',
   '.claude/settings.json',
   '.cursor/settings.json',
   '.github/copilot-instructions.md',

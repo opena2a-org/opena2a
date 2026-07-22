@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from './patterns.js';
+import { CONFIG_FILES, CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from './patterns.js';
 
 /**
  * Test data for each pattern: valid strings that MUST match, invalid strings that MUST NOT.
@@ -393,5 +393,16 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
   it('does not match random text', () => {
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('hello world')).toBe(false);
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('just some normal text')).toBe(false);
+  });
+});
+
+describe('CONFIG_FILES — MCP config coverage', () => {
+  it('covers Claude Code project-scope .mcp.json (committed to repos)', () => {
+    expect(CONFIG_FILES).toContain('.mcp.json');
+  });
+
+  it('covers .cursor/mcp.json under its real directory name (".curse" typo regression)', () => {
+    expect(CONFIG_FILES).toContain('.cursor/mcp.json');
+    expect(CONFIG_FILES.some(f => f.includes('.curse/'))).toBe(false);
   });
 });

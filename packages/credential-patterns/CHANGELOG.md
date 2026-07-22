@@ -2,6 +2,18 @@
 
 All notable changes to `@opena2a/credential-patterns` will be documented in this file.
 
+## 0.1.3 — 2026-07-22
+
+### `CONFIG_FILES`
+
+- **Added `.mcp.json`** — the Claude Code project-scope MCP config. It sits at the
+  project root and is committed to repos, making it a high-risk home for plaintext
+  `env` credentials, yet no consumer scanned it (found by the secretless-ai 0.20.0
+  release test: a planted Anthropic key in `.mcp.json` survived `scan`, `mcp-status`,
+  `status`, and a PASS from `verify`).
+- **Fixed the `.curse/mcp.json` typo to `.cursor/mcp.json`** — Cursor's project MCP
+  config was unreachable since the entry was introduced; `.curse/` matches nothing.
+
 ## 0.1.2 — 2026-06-08
 
 Name-gated AWS secret-access-key detection (ports hackmyagent's scanner rule to the shared catalog).
