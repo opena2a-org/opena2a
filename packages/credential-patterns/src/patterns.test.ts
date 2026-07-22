@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from './patterns.js';
+import { CONFIG_FILES, CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from './patterns.js';
 
 /**
  * Test data for each pattern: valid strings that MUST match, invalid strings that MUST NOT.
@@ -211,22 +211,63 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     invalid: ['sq0csp-short', 'sq0CSP-' + 'a'.repeat(22)],
   },
 
-  // Database
+  // Database — connection strings flag only when a secret is embedded:
+  // a userinfo password (or, for redis, any single userinfo token — pre-ACL
+  // Redis has no usernames) or a password=/pwd=/sslpassword= query param.
+  // Credential-free URIs are topology, not exposures, and matches must not
+  // cross JSON string boundaries on minified content.
   'mongodb': {
-    valid: ['mongodb+srv://user:pass@cluster.mongodb.net/db'],
-    invalid: ['mongodb://lo', 'mongo+srv://x'],
+    valid: [
+      'mongodb+srv://user:pass@cluster.mongodb.net/db',
+      'mongodb://admin:hunter2@mongo1:27017,mongo2:27017/db',
+    ],
+    invalid: ['mongodb://lo', 'mongo+srv://x', 'mongodb+srv://cluster.mongodb.net/db'],
   },
   'postgres': {
-    valid: ['postgres://user:pass@localhost:5432/mydb'],
-    invalid: ['postgres://s', 'pg://user:pass@host/db'],
+    valid: [
+      'postgres://user:pass@localhost:5432/mydb',
+      'postgresql://localhost:5432/mydb?password=hunter2',
+      'postgresql://localhost:5432/mydb?Password=hunter2',
+      'postgresql://host:5432/db?sslmode=verify-full&sslpassword=keypass',
+      'postgres://user:p%40ssw0rd@host/db',
+      'postgres://u:p@[::1]:5432/db',
+      'postgres://u:p@h1:5432,h2:5432/db',
+      'postgresql:///db?host=/cloudsql/proj:region:inst&password=y',
+    ],
+    invalid: [
+      'postgres://s',
+      'pg://user:pass@host/db',
+      'postgres://localhost:5432/mydb',
+      'postgresql://localhost:5432/mydb',
+      '{"conn":"postgres://localhost:5432/db","email":"a@b.com"}',
+      '{"x":"postgres://","y":"a:b@c"}',
+      '{"a":"postgres://localhost/db","note":"?password=hunter2"}',
+      'DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@db:5432/app',
+      'db_url: postgres://app:$DB_PASSWORD@db:5432/app',
+      'notes: postgres://reporting:5432/warehouse|oncall@corp.io',
+      'DATABASE_URL=postgres://localhost:5432/db;EMAIL=admin@example.com',
+      'postgresql://h/db?password=${DB_PASS}',
+    ],
   },
   'mysql': {
     valid: ['mysql://user:pass@localhost:3306/mydb'],
-    invalid: ['mysql://sh', 'msql://user:pass@host/db'],
+    invalid: ['mysql://sh', 'msql://user:pass@host/db', 'mysql://localhost:3306/mydb'],
   },
   'redis': {
-    valid: ['redis://user:pass@localhost:6379/0', 'rediss://secure@host:6379'],
-    invalid: ['redis://sh', 'rds://host:6379'],
+    valid: [
+      'redis://user:pass@localhost:6379/0',
+      'rediss://:secure@host:6379',
+      'rediss://secure@host:6379',
+      'redis://mysecretpassword@redis-host:6379',
+      'redis://:s3cretRedisPw99Xy@${REDIS_HOST}:6379/0',
+    ],
+    invalid: [
+      'redis://sh',
+      'rds://host:6379',
+      'redis://localhost:6379',
+      '{"cache":"redis://localhost:6379","owner":"ops@corp.io"}',
+      'redis://default@cache.prod.internal:6379',
+    ],
   },
 
   // Auth & Crypto
@@ -360,15 +401,30 @@ describe('CREDENTIAL_PATTERNS', () => {
     { name: '10k after ghp_', value: 'ghp_' + 'a'.repeat(10000) },
     { name: '10k newlines', value: '\n'.repeat(10000) },
     { name: 'mixed long', value: ('aB1_-/.' as string).repeat(2000) },
+    // Scheme-literal stuffing: every failed match attempt at each scheme
+    // occurrence must stay bounded, not rescan to end-of-line (the quadratic
+    // blowup an unbounded userinfo/query run produces on a one-line file).
+    { name: '20k repeated postgres://', value: 'postgres://'.repeat(2000) },
+    { name: '20k repeated redis://', value: 'redis://'.repeat(2500) },
+    { name: '20k repeated mongodb://', value: 'mongodb://'.repeat(2000) },
+    { name: 'postgres:// with long @-free tail', value: 'postgres://' + 'a:b/'.repeat(5000) },
+    { name: 'minified no-space db inventory', value: ('{"u":"postgres://h' + 'x'.repeat(60) + '/db"},').repeat(250) },
   ];
 
   for (const input of REDOS_INPUTS) {
     it(`no regex causes ReDoS on adversarial input "${input.name}" (every pattern <50ms)`, () => {
       for (const pattern of CREDENTIAL_PATTERNS) {
-        const start = performance.now();
-        pattern.regex.test(input.value);
-        const elapsed = performance.now() - start;
-        expect(elapsed, `Pattern ${pattern.id} took ${elapsed}ms on "${input.name}"`).toBeLessThan(50);
+        // Best of 3: the first .test() pays regex-compile/JIT cost, and under
+        // a parallel test run CPU contention can multiply one sample past the
+        // budget. A real quadratic blowup is orders of magnitude over budget
+        // on every sample, so the minimum still catches it.
+        let elapsed = Infinity;
+        for (let run = 0; run < 3; run++) {
+          const start = performance.now();
+          pattern.regex.test(input.value);
+          elapsed = Math.min(elapsed, performance.now() - start);
+        }
+        expect(elapsed, `Pattern ${pattern.id} took ${elapsed}ms (best of 3) on "${input.name}"`).toBeLessThan(50);
       }
     });
   }
@@ -393,5 +449,28 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
   it('does not match random text', () => {
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('hello world')).toBe(false);
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('just some normal text')).toBe(false);
+  });
+
+  it('derives "redis" from the rediss? pattern, not "rediss" (optional-quantifier trim)', () => {
+    // A 'rediss' prefix would make consumers' ${VAR}-skip drop plain
+    // redis:// lines before the real pattern runs — a silent miss.
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('redis://x')).toBe(true);
+  });
+});
+
+describe('CONFIG_FILES — MCP config coverage', () => {
+  it('covers Claude Code project-scope .mcp.json (committed to repos)', () => {
+    expect(CONFIG_FILES).toContain('.mcp.json');
+  });
+
+  it('covers the other org-known MCP/agent config locations', () => {
+    expect(CONFIG_FILES).toContain('.mcp/config.json');
+    expect(CONFIG_FILES).toContain('.claude/settings.local.json');
+    expect(CONFIG_FILES).toContain('.windsurf/mcp.json');
+  });
+
+  it('covers .cursor/mcp.json under its real directory name (".curse" typo regression)', () => {
+    expect(CONFIG_FILES).toContain('.cursor/mcp.json');
+    expect(CONFIG_FILES.some(f => f.includes('.curse/'))).toBe(false);
   });
 });
