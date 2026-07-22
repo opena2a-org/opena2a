@@ -388,7 +388,7 @@ describe('CREDENTIAL_PATTERNS', () => {
 
   // Issue #127 item 2: a single adversarial shape per pattern is a thin gate.
   // Every regex edit should clear these worst-case inputs within budget.
-  const REDOS_INPUTS: Array<{ name: string; value: string }> = [
+  const REDOS_INPUTS: Array<{ name: string; value: string; budgetMs?: number }> = [
     { name: 'empty string', value: '' },
     { name: 'single char', value: 'a' },
     { name: '1k repeated a', value: 'a'.repeat(1000) },
@@ -404,15 +404,20 @@ describe('CREDENTIAL_PATTERNS', () => {
     // Scheme-literal stuffing: every failed match attempt at each scheme
     // occurrence must stay bounded, not rescan to end-of-line (the quadratic
     // blowup an unbounded userinfo/query run produces on a one-line file).
-    { name: '20k repeated postgres://', value: 'postgres://'.repeat(2000) },
-    { name: '20k repeated redis://', value: 'redis://'.repeat(2500) },
-    { name: '20k repeated mongodb://', value: 'mongodb://'.repeat(2000) },
-    { name: 'postgres:// with long @-free tail', value: 'postgres://' + 'a:b/'.repeat(5000) },
-    { name: 'minified no-space db inventory', value: ('{"u":"postgres://h' + 'x'.repeat(60) + '/db"},').repeat(250) },
+    // These carry a 500ms budget instead of 50ms: linear scanning of 20KB+
+    // costs ~80-110ms best-of-3 on a 2-core CI runner, while the quadratic
+    // regression this guards against measures 3,000-30,000ms there — the
+    // budget still discriminates by 10-60x without flaking on slow hardware.
+    { name: '20k repeated postgres://', value: 'postgres://'.repeat(2000), budgetMs: 500 },
+    { name: '20k repeated redis://', value: 'redis://'.repeat(2500), budgetMs: 500 },
+    { name: '20k repeated mongodb://', value: 'mongodb://'.repeat(2000), budgetMs: 500 },
+    { name: 'postgres:// with long @-free tail', value: 'postgres://' + 'a:b/'.repeat(5000), budgetMs: 500 },
+    { name: 'minified no-space db inventory', value: ('{"u":"postgres://h' + 'x'.repeat(60) + '/db"},').repeat(250), budgetMs: 500 },
   ];
 
   for (const input of REDOS_INPUTS) {
-    it(`no regex causes ReDoS on adversarial input "${input.name}" (every pattern <50ms)`, () => {
+    const budget = input.budgetMs ?? 50;
+    it(`no regex causes ReDoS on adversarial input "${input.name}" (every pattern <${budget}ms)`, () => {
       for (const pattern of CREDENTIAL_PATTERNS) {
         // Best of 3: the first .test() pays regex-compile/JIT cost, and under
         // a parallel test run CPU contention can multiply one sample past the
@@ -424,7 +429,7 @@ describe('CREDENTIAL_PATTERNS', () => {
           pattern.regex.test(input.value);
           elapsed = Math.min(elapsed, performance.now() - start);
         }
-        expect(elapsed, `Pattern ${pattern.id} took ${elapsed}ms (best of 3) on "${input.name}"`).toBeLessThan(50);
+        expect(elapsed, `Pattern ${pattern.id} took ${elapsed}ms (best of 3) on "${input.name}"`).toBeLessThan(budget);
       }
     });
   }
