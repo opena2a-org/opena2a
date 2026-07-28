@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { EventSeverity } from '../shield/types.js';
+import type { EventSeverity, IntegrityState } from '../shield/types.js';
 import { bold, dim, gray, green, yellow, red, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
 
@@ -343,13 +343,34 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       : process.env.SHELL?.includes('bash') ? 'bash' as const
       : undefined;
 
-    exitLockdown();
-    const state = runIntegrityChecks({ shell });
+    // Verify BEFORE recovering, which is what --verify promises (#228).
+    // `ignoreLockdown` lets the checks run with the marker still in place, so
+    // a compromised machine is never briefly unlocked and an interrupted
+    // verification cannot strand it out of lockdown.
+    //
+    // A check that throws must stay locked AND stay actionable: `shield
+    // status` cites this command as the single way out of lockdown, so an
+    // unhandled stack trace here would leave the user with no cited path.
+    let state: IntegrityState;
+    try {
+      state = runIntegrityChecks({ shell, ignoreLockdown: true });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          status: 'verification_error', detail, stillInLockdown: true,
+        }, null, 2) + '\n');
+      } else {
+        process.stderr.write(red(`Verification could not complete: ${detail}\n`));
+        process.stderr.write('System remains in lockdown.\n');
+        process.stderr.write(dim('  Inspect:  opena2a shield selfcheck\n'));
+        process.stderr.write(dim('  Unlock without verifying:  opena2a shield recover\n'));
+      }
+      return 1;
+    }
 
     if (state.status === 'compromised') {
-      const { enterLockdown } = await import('../shield/integrity.js');
-      enterLockdown(reason ?? 'Verification failed');
-
+      // Still locked — nothing to re-enter, and the original reason survives.
       if (isJson) {
         process.stdout.write(JSON.stringify({ status: 'verification_failed', state }, null, 2) + '\n');
       } else {
@@ -363,8 +384,29 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       return 1;
     }
 
+    // No failing check — safe to lift the marker. `degraded` (warn-level
+    // checks) still unlocks, as it always has: a missing shell rc file must
+    // not strand someone in lockdown. But it is NOT "successful
+    // verification", and saying so would paper over a warn on the
+    // tamper-evidence log itself, so the warnings are named.
+    exitLockdown();
+
+    const warnings = state.checks.filter(c => c.status === 'warn');
+
     if (isJson) {
-      process.stdout.write(JSON.stringify({ status: 'recovered', verified: true }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({
+        status: 'recovered',
+        verified: true,
+        integrityStatus: state.status,
+        warnings: warnings.map(c => ({ name: c.name, detail: c.detail })),
+      }, null, 2) + '\n');
+    } else if (warnings.length > 0) {
+      process.stdout.write(yellow(
+        `Lockdown lifted. Verification passed with ${warnings.length} warning(s):\n`,
+      ));
+      for (const c of warnings) {
+        process.stdout.write(`  ${yellow('WARN')}  ${c.name}: ${c.detail}\n`);
+      }
     } else {
       process.stdout.write(green('Lockdown lifted after successful verification.\n'));
     }
