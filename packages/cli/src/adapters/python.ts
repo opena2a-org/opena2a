@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { createLineRebrander } from '../util/rebrand.js';
+import { buildChildEnv, PYTHON_ENV } from '../util/child-env.js';
 
 export class PythonAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -26,7 +27,9 @@ export class PythonAdapter implements Adapter {
       const child = spawn(bin, args, {
         cwd: options.cwd ?? process.cwd(),
         stdio: ['inherit', 'pipe', 'pipe'],
-        env: { ...process.env },
+        // Least privilege (#228): interpreter/virtualenv configuration and the
+        // opena2a family vars, not the operator's cloud and registry secrets.
+        env: buildChildEnv(PYTHON_ENV),
       });
 
       let stdout = '';

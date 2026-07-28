@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
+import { buildChildEnv, DOCKER_ENV } from '../util/child-env.js';
 
 export class DockerAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -32,7 +33,9 @@ export class DockerAdapter implements Adapter {
       const child = spawn('docker', dockerArgs, {
         cwd: options.cwd ?? process.cwd(),
         stdio: ['inherit', 'pipe', 'pipe'],
-        env: { ...process.env },
+        // Least privilege (#228): the docker client needs its own DOCKER_*
+        // configuration, not the operator's cloud keys and registry tokens.
+        env: buildChildEnv(DOCKER_ENV),
       });
 
       let stdout = '';

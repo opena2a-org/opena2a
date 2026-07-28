@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { createLineRebrander } from '../util/rebrand.js';
+import { buildChildEnv, NODE_TOOL_ENV } from '../util/child-env.js';
 
 export class SpawnAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -25,7 +26,10 @@ export class SpawnAdapter implements Adapter {
       const child = spawn(bin, spawnArgs, {
         cwd: options.cwd ?? process.cwd(),
         stdio: ['inherit', 'pipe', 'pipe'],
-        env: { ...process.env },
+        // Least privilege (#228): the delegated tool gets the node/npx
+        // toolchain configuration and the opena2a family vars it reads
+        // (registry URL, telemetry mode, *_CLI_PREFIX), nothing else.
+        env: buildChildEnv(NODE_TOOL_ENV),
       });
 
       let stdout = '';

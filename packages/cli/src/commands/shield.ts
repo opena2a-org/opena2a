@@ -343,13 +343,14 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       : process.env.SHELL?.includes('bash') ? 'bash' as const
       : undefined;
 
-    exitLockdown();
-    const state = runIntegrityChecks({ shell });
+    // Verify BEFORE recovering, which is what --verify promises (#228).
+    // `ignoreLockdown` lets the checks run with the marker still in place, so
+    // a compromised machine is never briefly unlocked and an interrupted
+    // verification cannot strand it out of lockdown.
+    const state = runIntegrityChecks({ shell, ignoreLockdown: true });
 
     if (state.status === 'compromised') {
-      const { enterLockdown } = await import('../shield/integrity.js');
-      enterLockdown(reason ?? 'Verification failed');
-
+      // Still locked — nothing to re-enter, and the original reason survives.
       if (isJson) {
         process.stdout.write(JSON.stringify({ status: 'verification_failed', state }, null, 2) + '\n');
       } else {
@@ -362,6 +363,9 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       }
       return 1;
     }
+
+    // Checks passed — only now is it safe to lift the marker.
+    exitLockdown();
 
     if (isJson) {
       process.stdout.write(JSON.stringify({ status: 'recovered', verified: true }, null, 2) + '\n');

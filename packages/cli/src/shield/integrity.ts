@@ -429,11 +429,23 @@ export function getLockdownReason(): string | null {
  */
 export function runIntegrityChecks(options: {
   shell?: 'zsh' | 'bash';
+  /**
+   * Run the full check battery even while the lockdown marker is present,
+   * instead of short-circuiting to `lockdown` status.
+   *
+   * Only `shield recover --verify` sets this. It has to decide whether it is
+   * safe to leave lockdown, and it must make that decision WITHOUT leaving
+   * lockdown first (issue #228) — otherwise a compromised machine is briefly
+   * unlocked, and anything that ends the process during the window leaves it
+   * unlocked for good. Every other caller wants the short-circuit: while the
+   * marker is present, "in lockdown" is the answer.
+   */
+  ignoreLockdown?: boolean;
 }): IntegrityState {
   const now = new Date().toISOString();
 
   // If already in lockdown, short-circuit with lockdown status.
-  if (isLockdown()) {
+  if (!options.ignoreLockdown && isLockdown()) {
     const reason = getLockdownReason() ?? 'Unknown reason';
     return {
       status: 'lockdown',
