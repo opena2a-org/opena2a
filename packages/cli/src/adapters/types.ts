@@ -49,6 +49,15 @@ export interface AdapterConfig {
   envAllow?: readonly string[];
   /** Environment contract: name prefixes this tool reads. Guard applies. */
   envAllowPrefixes?: readonly string[];
+  /**
+   * Opt out of the allowlist: pass the full parent environment.
+   *
+   * Only for tools whose input IS the environment, where an allowlist cannot
+   * express the contract because the tool reads variable names it discovers
+   * at runtime. Requires a written justification at the declaration site —
+   * this is a deliberate exemption, not a default.
+   */
+  envInherit?: boolean;
 }
 
 export interface RunOptions {

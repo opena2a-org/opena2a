@@ -97,7 +97,14 @@ const UNIVERSALLY_FORBIDDEN = [
   'YARN_NPM_AUTH_IDENT', 'DOCKER_AUTH_CONFIG', 'DOCKER_PAT',
 ];
 
-const ADAPTERS = ['scan', 'secrets', 'registry', 'train', 'crypto', 'broker'] as const;
+/**
+ * Derived from the registry, not hand-listed: a hardcoded array structurally
+ * cannot cover the next tool someone adds, which is the case that matters.
+ */
+const ADAPTERS = Object.keys(ADAPTER_REGISTRY);
+/** Entries that opt out of the allowlist entirely (see envInherit). */
+const INHERIT_ADAPTERS = ADAPTERS.filter(n => ADAPTER_REGISTRY[n].envInherit);
+const ALLOWLISTED_ADAPTERS = ADAPTERS.filter(n => !ADAPTER_REGISTRY[n].envInherit);
 
 describe('credential-name guard', () => {
   it('catches every credential shape the adversarial pass found', () => {
@@ -111,6 +118,11 @@ describe('credential-name guard', () => {
       'YARN_NPM_AUTH_IDENT', 'DOCKER_AUTH_CONFIG', 'DOCKER_PAT',
       'GITHUB_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'ANTHROPIC_API_KEY',
       'STRIPE_SK_LIVE', 'CLIENT_SECRET', 'MY_ID_RSA',
+      // Jenkins `credentials()` emits the NAME_USR / NAME_PSW pair, and
+      // Jenkins is one of the CI vendors we deliberately forward.
+      'DOCKER_HUB_PSW', 'DOCKER_HUB_USR', 'DOCKER_REGISTRY_PW', 'DOCKER_CREDS',
+      'OPENA2A_KEYS', 'OPENA2A_WALLET_SEED', 'OPENA2A_SIGNING_PEM',
+      'OPENA2A_MNEMONIC', 'OPENA2A_SALT', 'OPENA2A_HMAC', 'OPENA2A_KEYFILE',
     ]) {
       expect(looksLikeCredentialName(name), `${name} should be flagged`).toBe(true);
     }
@@ -150,7 +162,7 @@ describe('every adapter environment', () => {
     }
   });
 
-  for (const name of ADAPTERS) {
+  for (const name of ALLOWLISTED_ADAPTERS) {
     it(`${name}: passes no credential outside its declared contract`, () => {
       const env = buildChildEnv(specFor(name), SOURCE);
       for (const forbidden of UNIVERSALLY_FORBIDDEN) {
@@ -197,16 +209,17 @@ describe('declared tool contracts are honoured', () => {
     expect(env.GITHUB_TOKEN).toBeUndefined();
   });
 
-  it('secrets/broker (secretless-ai) keep the vault and cloud inputs they broker', () => {
+  it('secrets/broker are declared exempt rather than given a wrong allowlist', () => {
+    // An earlier revision listed nine names here. secretless-ai reads
+    // credential names it DISCOVERS at runtime — verify.js:78 walks all 45
+    // entries of CREDENTIAL_PATTERNS, broker/resolver.js:41 indexes by
+    // credential name, and `secrets run -- <cmd>` spawns the user's own
+    // command. A nine-name list made `opena2a secrets verify` report a
+    // different machine than `secretless-ai verify`, both exiting 0 — the
+    // cross-surface divergence this work exists to prevent.
     for (const name of ['secrets', 'broker'] as const) {
-      const env = buildChildEnv(specFor(name), SOURCE);
-      expect(env.VAULT_ADDR, `${name} lost VAULT_ADDR`).toBe('https://vault.corp:8200');
-      expect(env.VAULT_TOKEN, `${name} lost VAULT_TOKEN`).toBe('REDACTED');
-      expect(env.AWS_SECRET_ACCESS_KEY).toBe('REDACTED');
-      expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/home/dev/gcp.json');
-      expect(env.AIM_API_KEY).toBe('REDACTED');
-      // Not the scanner's credentials.
-      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(ADAPTER_REGISTRY[name].envInherit, `${name} should be exempt`).toBe(true);
+      expect(ADAPTER_REGISTRY[name].envAllow).toBeUndefined();
     }
   });
 
@@ -219,6 +232,17 @@ describe('declared tool contracts are honoured', () => {
     expect(python.PYTHONPATH).toBe('/home/dev/lib');
   });
 
+  it('keeps the whole npm client-certificate trio', () => {
+    // cert and cafile clear the guard; key does not, so it needs an exact
+    // entry. Forwarding two of three fails the handshake on an mTLS registry.
+    const env = buildChildEnv(specFor('scan'), {
+      PATH: '/bin', npm_config_cert: 'c', npm_config_cafile: 'f', npm_config_key: 'k',
+    });
+    expect(env.npm_config_cert).toBe('c');
+    expect(env.npm_config_cafile).toBe('f');
+    expect(env.npm_config_key).toBe('k');
+  });
+
   it('contracts do not leak between adapters', () => {
     expect(buildChildEnv(specFor('crypto'), SOURCE).DOCKER_HOST).toBeUndefined();
     expect(buildChildEnv(specFor('train'), SOURCE).VIRTUAL_ENV).toBeUndefined();
@@ -226,14 +250,42 @@ describe('declared tool contracts are honoured', () => {
     expect(buildChildEnv(specFor('registry'), SOURCE).ANTHROPIC_API_KEY).toBeUndefined();
   });
 
-  it('every adapter that spawns declares a contract', () => {
+  it('EVERY registry entry declares a contract or an explicit exemption', () => {
+    // Iterating the registry means a newly added tool with no contract fails
+    // here by construction, instead of silently running on the base list.
     for (const name of ADAPTERS) {
       const c = ADAPTER_REGISTRY[name];
+      const declared = (c.envAllow?.length ?? 0) + (c.envAllowPrefixes?.length ?? 0);
       expect(
-        (c.envAllow?.length ?? 0) + (c.envAllowPrefixes?.length ?? 0),
-        `${name} declares no environment contract`,
-      ).toBeGreaterThan(0);
+        declared > 0 || c.envInherit === true,
+        `${name} declares neither an environment contract nor envInherit`,
+      ).toBe(true);
     }
+  });
+
+  it('the scan entry keeps BOTH its tool prefixes and the node toolchain', () => {
+    // Regression: these are composed by spreading a shared const, and getting
+    // the spread order wrong silently drops one whole group.
+    const prefixes = ADAPTER_REGISTRY.scan.envAllowPrefixes ?? [];
+    expect(prefixes).toContain('HMA_');
+    expect(prefixes).toContain('npm_config_');
+    expect(prefixes).toContain('NODE_');
+  });
+
+  it('hackmyagent gets the narrative publish token it reads', () => {
+    // publish-narrative.js:32. Blocked by the guard on "token", so it needs an
+    // exact entry; without it the POST 401s and the publish still exits 0.
+    const env = buildChildEnv(specFor('scan'), { ...SOURCE, OPENA2A_REGISTRY_TOKEN: 'tok' });
+    expect(env.OPENA2A_REGISTRY_TOKEN).toBe('tok');
+    expect(buildChildEnv(specFor('registry'), { ...SOURCE, OPENA2A_REGISTRY_TOKEN: 'tok' })
+      .OPENA2A_REGISTRY_TOKEN).toBeUndefined();
+  });
+
+  it('secretless-ai is exempt, with the reason recorded in the registry', () => {
+    // It reads credential names it discovers at runtime (verify.js:78,
+    // broker/resolver.js:41), so no static list can express the contract.
+    // The exemption is the honest answer; a quietly wrong allowlist is not.
+    expect(INHERIT_ADAPTERS.sort()).toEqual(['broker', 'secrets']);
   });
 });
 
@@ -262,12 +314,37 @@ describe('CI detection', () => {
 
 describe('probeEnv', () => {
   it('carries discovery basics but none of the tool credentials', () => {
-    const env = probeEnv(SOURCE);
+    const env = probeEnv([], SOURCE);
     expect(env.PATH).toBe('/usr/bin:/bin');
     expect(env.PYTHONPATH).toBe('/home/dev/lib');
     for (const name of [...UNIVERSALLY_FORBIDDEN, 'ANTHROPIC_API_KEY', 'VAULT_TOKEN']) {
       expect(env[name], `probe leaked ${name}`).toBeUndefined();
     }
+  });
+
+  it('gets the adapter prefixes it needs to discover the tool at all', () => {
+    // `docker info` without DOCKER_HOST reports rootless / colima / remote
+    // engines as "not installed" and prints an install command that will not
+    // help — a wrong diagnosis plus a wrong fix.
+    const env = probeEnv(ADAPTER_REGISTRY.train.envAllowPrefixes, {
+      PATH: '/bin',
+      DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+      DOCKER_CONTEXT: 'colima',
+      ANTHROPIC_API_KEY: 'REDACTED',
+    });
+    expect(env.DOCKER_HOST).toBe('unix:///run/user/1000/docker.sock');
+    expect(env.DOCKER_CONTEXT).toBe('colima');
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it('does NOT honour the escape hatch', () => {
+    // The narrowest environment must not be the one an operator can widen,
+    // and `python -c "import <module>"` executes third-party __init__ code.
+    const env = probeEnv([], {
+      PATH: '/bin', GITHUB_TOKEN: 'REDACTED',
+      OPENA2A_CHILD_ENV_ALLOW: 'GITHUB_TOKEN',
+    });
+    expect(env.GITHUB_TOKEN).toBeUndefined();
   });
 });
 
@@ -337,6 +414,38 @@ describe('OPENA2A_CHILD_ENV_ALLOW escape hatch', () => {
     expect(notices.join('\n')).toContain('ignored');
     // Names only — a notice must never echo a value.
     expect(notices.join('\n')).not.toContain('REDACTED');
+  });
+
+  it('sanitizes the notice — the pattern is untrusted input', () => {
+    // Unsanitized, \r + \u001b[2K lets the value erase the line and forge our
+    // own success output on every delegated spawn.
+    const notices: string[] = [];
+    buildChildEnv(
+      specFor('registry'),
+      { PATH: '/bin', OPENA2A_CHILD_ENV_ALLOW: 'AAA\u001b[2K\rFORGED' },
+      m => notices.push(m),
+    );
+    const joined = notices.join('\n');
+    expect(joined).not.toContain('\u001b');
+    expect(joined).not.toContain('\r');
+  });
+
+  it('caps the length of an echoed pattern', () => {
+    const notices: string[] = [];
+    buildChildEnv(
+      specFor('registry'),
+      { PATH: '/bin', OPENA2A_CHILD_ENV_ALLOW: 'A'.repeat(5000) },
+      m => notices.push(m),
+    );
+    expect(notices.join('').length).toBeLessThan(400);
+  });
+
+  it('set cannot reinstate the hatch variable', () => {
+    const env = buildChildEnv(
+      { set: { OPENA2A_CHILD_ENV_ALLOW: 'sneaky' } },
+      { PATH: '/bin' },
+    );
+    expect(env.OPENA2A_CHILD_ENV_ALLOW).toBeUndefined();
   });
 
   it('an exact override passes a variable the base allowlist omits', () => {

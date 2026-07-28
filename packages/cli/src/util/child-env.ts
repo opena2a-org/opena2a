@@ -92,6 +92,10 @@ const SECRET_NAME_SUBSTRINGS = [
   'signature', 'bearer', 'cookie', 'auth',
   'kubeconfig', 'id_rsa', 'id_ed25519', 'id_ecdsa',
   'session_key', 'session_id', 'sessionid', 'totp',
+  // Jenkins `credentials()` emits NAME_USR / NAME_PSW pairs, and Jenkins is
+  // one of the CI vendors this module deliberately forwards.
+  'mnemonic', 'keyfile', 'keystore', 'keyring',
+  '.pem', '_pem', 'partykey', 'signingkey',
   // Connection strings carry embedded credentials. These are substrings, not
   // whole names: OPENA2A_DATABASE_URL must be caught, and an equality test
   // against `database_url` can never fire on a prefix match (every shipped
@@ -107,7 +111,11 @@ const SECRET_NAME_SUBSTRINGS = [
  * appears in `PATH`, `key` in `MONKEYPATCH`. Matched only as a whole
  * underscore-delimited token.
  */
-const SECRET_NAME_TOKENS = ['pat', 'pwd', 'psk', 'jwt', 'dsn', 'sig', 'key', 'otp', 'pass'];
+const SECRET_NAME_TOKENS = [
+  'pat', 'pwd', 'pw', 'psw', 'psk', 'jwt', 'dsn', 'sig', 'otp',
+  'key', 'keys', 'creds', 'seed', 'salt', 'hmac', 'cipher', 'pem', 'private',
+  'pass', 'usr',
+];
 
 const SECRET_TOKEN_RE = new RegExp(`(^|_)(${SECRET_NAME_TOKENS.join('|')})(_|$)`, 'i');
 
@@ -173,6 +181,26 @@ export interface ChildEnvSpec {
   allowPrefixes?: readonly string[];
   /** Values to set on the child. `undefined` removes an inherited name. */
   set?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Ignore `OPENA2A_CHILD_ENV_ALLOW` for this call. Set by probeEnv: the
+   * narrowest environment must not be the one an operator can widen, and a
+   * probe never needs a variable we did not anticipate.
+   */
+  ignoreOverride?: boolean;
+}
+
+/**
+ * Render an operator-supplied pattern for a terminal notice.
+ *
+ * The hatch's own string is untrusted input (anything that can set an
+ * environment variable for this process can set it), and it is echoed back.
+ * Unsanitized, `\r` + `\u001b[2K` lets it erase the line and forge our own
+ * success output on every delegated spawn.
+ */
+function renderPattern(raw: string): string {
+  // eslint-disable-next-line no-control-regex
+  const stripped = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?');
+  return stripped.length > 64 ? `${stripped.slice(0, 64)}...` : stripped;
 }
 
 /** True if a name looks like it carries a credential. */
@@ -247,7 +275,9 @@ export function buildChildEnv(
   source: NodeJS.ProcessEnv = process.env,
   onNotice?: (message: string) => void,
 ): NodeJS.ProcessEnv {
-  const override = parseEnvAllowOverride(source.OPENA2A_CHILD_ENV_ALLOW);
+  const override = spec.ignoreOverride
+    ? { allow: [], allowPrefixes: [], rejected: [] }
+    : parseEnvAllowOverride(source.OPENA2A_CHILD_ENV_ALLOW);
 
   const exact = new Set(
     [...BASE_ALLOW, ...(spec.allow ?? []), ...override.allow].map(n => n.toLowerCase()),
@@ -273,13 +303,9 @@ export function buildChildEnv(
     }
   }
 
-  // Never propagate the hatch itself — a widened child must not silently
-  // widen its own children.
-  for (const name of Object.keys(out)) {
-    if (name.toLowerCase() === 'opena2a_child_env_allow') delete out[name];
-  }
-
-  // `set` is applied last and is authoritative, including over the guard:
+  // `set` is applied before the hatch strip below, so that `set` cannot
+  // reinstate the hatch variable and defeat the non-propagation guarantee.
+  // It remains authoritative over the guard:
   // it is how a caller deliberately hands one credential to one child.
   for (const [name, value] of Object.entries(spec.set ?? {})) {
     if (value === undefined) {
@@ -292,16 +318,26 @@ export function buildChildEnv(
     }
   }
 
+  // Never propagate the hatch itself — a widened child must not silently
+  // widen its own children. Applied last so nothing can put it back.
+  for (const name of Object.keys(out)) {
+    if (name.toLowerCase() === 'opena2a_child_env_allow') delete out[name];
+  }
+
   if (onNotice) {
     if (override.allow.length > 0 || override.allowPrefixes.length > 0) {
-      const widened = [...override.allow, ...override.allowPrefixes.map(p => `${p}*`)];
+      const widened = [
+        ...override.allow.map(renderPattern),
+        ...override.allowPrefixes.map(p => `${renderPattern(p)}*`),
+      ];
       onNotice(`OPENA2A_CHILD_ENV_ALLOW widened the child environment: ${widened.join(', ')}`);
     }
     if (override.rejected.length > 0) {
       onNotice(
         `OPENA2A_CHILD_ENV_ALLOW ignored ${override.rejected.length} entry/entries ` +
         `(a bare "*", a prefix shorter than ${MIN_OVERRIDE_PREFIX_LENGTH} characters, ` +
-        `or beyond the ${MAX_OVERRIDE_ENTRIES}-entry limit): ${override.rejected.join(', ')}`,
+        `or beyond the ${MAX_OVERRIDE_ENTRIES}-entry limit): ` +
+        override.rejected.map(renderPattern).join(', '),
       );
     }
   }
@@ -312,12 +348,31 @@ export function buildChildEnv(
 /**
  * Environment for a short-lived availability probe (`which x`, `x --version`,
  * `python -c "import m"`). These run on the hot path before nearly every
- * delegated command and need nothing but discovery basics — notably NOT the
- * tool's credential contract, since a probe never authenticates.
+ * delegated command.
  *
- * `python -c "import <module>"` executes a third-party package's `__init__`,
- * so this is not a formality.
+ * A probe gets the adapter's declared PREFIXES — which carry the discovery
+ * configuration it genuinely needs, and stay subject to the credential guard
+ * — but never its `envAllow` exact entries, which are precisely the
+ * credentials a tool declared for its real work. `docker info` must see
+ * `DOCKER_HOST` or rootless/colima/remote engines are misreported as "not
+ * installed"; it must not see `ANTHROPIC_API_KEY`.
+ *
+ * The escape hatch is ignored here: the narrowest environment must not be the
+ * one an operator can silently widen, and `python -c "import <module>"`
+ * executes a third-party package's `__init__`.
  */
-export function probeEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return buildChildEnv({ allowPrefixes: ['PYTHON', 'PYENV_', 'CONDA_', 'NVM_', 'VOLTA_', 'FNM_'] }, source);
+export function probeEnv(
+  allowPrefixes: readonly string[] = [],
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return buildChildEnv(
+    {
+      allowPrefixes: [
+        ...allowPrefixes,
+        'PYTHON', 'PYENV_', 'CONDA_', 'NVM_', 'VOLTA_', 'FNM_',
+      ],
+      ignoreOverride: true,
+    },
+    source,
+  );
 }

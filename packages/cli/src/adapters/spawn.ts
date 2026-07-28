@@ -3,6 +3,22 @@ import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { createLineRebrander } from '../util/rebrand.js';
 import { buildChildEnv, probeEnv } from '../util/child-env.js';
 
+/**
+ * Build the child environment for a delegated tool from its registry entry.
+ *
+ * `envInherit` tools get the parent environment in full — see the
+ * justification at their ADAPTER_REGISTRY declaration. Everything else gets
+ * the allowlist.
+ */
+function toolEnv(config: AdapterConfig): NodeJS.ProcessEnv {
+  if (config.envInherit) return { ...process.env };
+  return buildChildEnv(
+    { allow: config.envAllow, allowPrefixes: config.envAllowPrefixes },
+    process.env,
+    msg => process.stderr.write(`${msg}\n`),
+  );
+}
+
 export class SpawnAdapter implements Adapter {
   readonly config: AdapterConfig;
 
@@ -31,11 +47,7 @@ export class SpawnAdapter implements Adapter {
         // hackmyagent and secretless-ai reach this adapter via the import
         // fallback (adapters/import.ts) and a silent capability loss in either
         // is worse than the leak.
-        env: buildChildEnv(
-          { allow: this.config.envAllow, allowPrefixes: this.config.envAllowPrefixes },
-          process.env,
-          msg => process.stderr.write(`${msg}\n`),
-        ),
+        env: toolEnv(this.config),
       });
 
       let stdout = '';
@@ -74,7 +86,7 @@ export class SpawnAdapter implements Adapter {
 
   private async commandExists(cmd: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn('which', [cmd], { stdio: 'ignore', env: probeEnv() });
+      const child = spawn('which', [cmd], { stdio: 'ignore', env: probeEnv(this.config.envAllowPrefixes) });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
     });

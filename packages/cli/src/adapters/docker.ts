@@ -2,6 +2,22 @@ import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { buildChildEnv, probeEnv } from '../util/child-env.js';
 
+/**
+ * Build the child environment for a delegated tool from its registry entry.
+ *
+ * `envInherit` tools get the parent environment in full — see the
+ * justification at their ADAPTER_REGISTRY declaration. Everything else gets
+ * the allowlist.
+ */
+function toolEnv(config: AdapterConfig): NodeJS.ProcessEnv {
+  if (config.envInherit) return { ...process.env };
+  return buildChildEnv(
+    { allow: config.envAllow, allowPrefixes: config.envAllowPrefixes },
+    process.env,
+    msg => process.stderr.write(`${msg}\n`),
+  );
+}
+
 export class DockerAdapter implements Adapter {
   readonly config: AdapterConfig;
 
@@ -35,11 +51,7 @@ export class DockerAdapter implements Adapter {
         stdio: ['inherit', 'pipe', 'pipe'],
         // Least privilege (#228): the docker client gets the environment its
         // registry entry declares, not the operator's cloud keys and tokens.
-        env: buildChildEnv(
-          { allow: this.config.envAllow, allowPrefixes: this.config.envAllowPrefixes },
-          process.env,
-          msg => process.stderr.write(`${msg}\n`),
-        ),
+        env: toolEnv(this.config),
       });
 
       let stdout = '';
@@ -69,7 +81,7 @@ export class DockerAdapter implements Adapter {
 
   async isAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn('docker', ['info'], { stdio: 'ignore', env: probeEnv() });
+      const child = spawn('docker', ['info'], { stdio: 'ignore', env: probeEnv(this.config.envAllowPrefixes) });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
     });

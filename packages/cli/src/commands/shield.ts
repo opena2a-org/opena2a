@@ -384,11 +384,29 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       return 1;
     }
 
-    // Checks passed — only now is it safe to lift the marker.
+    // No failing check — safe to lift the marker. `degraded` (warn-level
+    // checks) still unlocks, as it always has: a missing shell rc file must
+    // not strand someone in lockdown. But it is NOT "successful
+    // verification", and saying so would paper over a warn on the
+    // tamper-evidence log itself, so the warnings are named.
     exitLockdown();
 
+    const warnings = state.checks.filter(c => c.status === 'warn');
+
     if (isJson) {
-      process.stdout.write(JSON.stringify({ status: 'recovered', verified: true }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({
+        status: 'recovered',
+        verified: true,
+        integrityStatus: state.status,
+        warnings: warnings.map(c => ({ name: c.name, detail: c.detail })),
+      }, null, 2) + '\n');
+    } else if (warnings.length > 0) {
+      process.stdout.write(yellow(
+        `Lockdown lifted. Verification passed with ${warnings.length} warning(s):\n`,
+      ));
+      for (const c of warnings) {
+        process.stdout.write(`  ${yellow('WARN')}  ${c.name}: ${c.detail}\n`);
+      }
     } else {
       process.stdout.write(green('Lockdown lifted after successful verification.\n'));
     }
