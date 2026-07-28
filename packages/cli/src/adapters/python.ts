@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { createLineRebrander } from '../util/rebrand.js';
-import { buildChildEnv, PYTHON_ENV } from '../util/child-env.js';
+import { buildChildEnv, probeEnv } from '../util/child-env.js';
 
 export class PythonAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -27,9 +27,13 @@ export class PythonAdapter implements Adapter {
       const child = spawn(bin, args, {
         cwd: options.cwd ?? process.cwd(),
         stdio: ['inherit', 'pipe', 'pipe'],
-        // Least privilege (#228): interpreter/virtualenv configuration and the
-        // opena2a family vars, not the operator's cloud and registry secrets.
-        env: buildChildEnv(PYTHON_ENV),
+        // Least privilege (#228): the environment this tool's registry entry
+        // declares, not the operator's cloud and registry secrets.
+        env: buildChildEnv(
+          { allow: this.config.envAllow, allowPrefixes: this.config.envAllowPrefixes },
+          process.env,
+          msg => process.stderr.write(`${msg}\n`),
+        ),
       });
 
       let stdout = '';
@@ -72,7 +76,9 @@ export class PythonAdapter implements Adapter {
     if (!python) return false;
 
     return new Promise<boolean>((resolve) => {
-      const child = spawn(python, ['-c', `import ${module}`], { stdio: 'ignore' });
+      // `import <module>` executes a third-party package's __init__, so the
+      // availability probe gets a probe environment, not the operator's (#228).
+      const child = spawn(python, ['-c', `import ${module}`], { stdio: 'ignore', env: probeEnv() });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
     });
@@ -81,7 +87,7 @@ export class PythonAdapter implements Adapter {
   private async findPython(): Promise<string | null> {
     for (const bin of ['python3', 'python']) {
       const exists = await new Promise<boolean>((resolve) => {
-        const child = spawn(bin, ['--version'], { stdio: 'ignore' });
+        const child = spawn(bin, ['--version'], { stdio: 'ignore', env: probeEnv() });
         child.on('close', (code) => resolve(code === 0));
         child.on('error', () => resolve(false));
       });

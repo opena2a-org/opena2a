@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { createLineRebrander } from '../util/rebrand.js';
-import { buildChildEnv, NODE_TOOL_ENV } from '../util/child-env.js';
+import { buildChildEnv, probeEnv } from '../util/child-env.js';
 
 export class SpawnAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -26,10 +26,16 @@ export class SpawnAdapter implements Adapter {
       const child = spawn(bin, spawnArgs, {
         cwd: options.cwd ?? process.cwd(),
         stdio: ['inherit', 'pipe', 'pipe'],
-        // Least privilege (#228): the delegated tool gets the node/npx
-        // toolchain configuration and the opena2a family vars it reads
-        // (registry URL, telemetry mode, *_CLI_PREFIX), nothing else.
-        env: buildChildEnv(NODE_TOOL_ENV),
+        // Least privilege (#228): the environment this tool's registry entry
+        // declares — including credentials it genuinely uses, since both
+        // hackmyagent and secretless-ai reach this adapter via the import
+        // fallback (adapters/import.ts) and a silent capability loss in either
+        // is worse than the leak.
+        env: buildChildEnv(
+          { allow: this.config.envAllow, allowPrefixes: this.config.envAllowPrefixes },
+          process.env,
+          msg => process.stderr.write(`${msg}\n`),
+        ),
       });
 
       let stdout = '';
@@ -68,7 +74,7 @@ export class SpawnAdapter implements Adapter {
 
   private async commandExists(cmd: string): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn('which', [cmd], { stdio: 'ignore' });
+      const child = spawn('which', [cmd], { stdio: 'ignore', env: probeEnv() });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
     });

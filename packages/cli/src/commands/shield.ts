@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { EventSeverity } from '../shield/types.js';
+import type { EventSeverity, IntegrityState } from '../shield/types.js';
 import { bold, dim, gray, green, yellow, red, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
 
@@ -347,7 +347,27 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
     // `ignoreLockdown` lets the checks run with the marker still in place, so
     // a compromised machine is never briefly unlocked and an interrupted
     // verification cannot strand it out of lockdown.
-    const state = runIntegrityChecks({ shell, ignoreLockdown: true });
+    //
+    // A check that throws must stay locked AND stay actionable: `shield
+    // status` cites this command as the single way out of lockdown, so an
+    // unhandled stack trace here would leave the user with no cited path.
+    let state: IntegrityState;
+    try {
+      state = runIntegrityChecks({ shell, ignoreLockdown: true });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          status: 'verification_error', detail, stillInLockdown: true,
+        }, null, 2) + '\n');
+      } else {
+        process.stderr.write(red(`Verification could not complete: ${detail}\n`));
+        process.stderr.write('System remains in lockdown.\n');
+        process.stderr.write(dim('  Inspect:  opena2a shield selfcheck\n'));
+        process.stderr.write(dim('  Unlock without verifying:  opena2a shield recover\n'));
+      }
+      return 1;
+    }
 
     if (state.status === 'compromised') {
       // Still locked — nothing to re-enter, and the original reason survives.

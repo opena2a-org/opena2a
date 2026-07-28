@@ -44,7 +44,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildChildEnv, NODE_TOOL_ENV } from '../src/util/child-env.js';
+import { buildChildEnv } from '../src/util/child-env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -79,7 +79,7 @@ function runInit(targetDir: string): { score: number; raw: string } | null {
     [OPENA2A_CLI, 'init', '--json', '--ci', '--no-contribute', targetDir],
     {
       // Allowlisted environment (#228) — same reasoning as the comply smoke.
-      env: buildChildEnv(NODE_TOOL_ENV, { ...process.env, OPENA2A_CORPUS_DETERMINISTIC: '1' }),
+      env: buildChildEnv({ allowPrefixes: ['npm_config_', 'NPM_CONFIG_', 'NODE_', 'NVM_', 'COREPACK_', 'YARN_', 'PNPM_'] }, { ...process.env, OPENA2A_CORPUS_DETERMINISTIC: '1' }),
       encoding: 'utf-8',
     },
   );

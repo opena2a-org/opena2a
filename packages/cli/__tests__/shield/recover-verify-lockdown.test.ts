@@ -62,8 +62,10 @@ describe('shield recover --verify', () => {
 
     expect(code).toBe(1);
     expect(integrity.isLockdown()).toBe(true);
-    // The original lockdown reason survives — it was never cleared and
-    // rewritten with 'Verification failed'.
+    // The reason survives here, but note it survived pre-fix too: the old code
+    // read it before unlocking and passed it back to enterLockdown. This
+    // assertion is therefore NOT what distinguishes the fix — the ordering
+    // test below is. Kept because the end state still has to be right.
     expect(integrity.getLockdownReason()).toBe('tamper detected');
   });
 
@@ -101,7 +103,7 @@ describe('shield recover --verify', () => {
     expect(lockedDuringCheck).toBe(true);
   });
 
-  it('stays in lockdown when a check throws mid-verification', async () => {
+  it('reports a throwing check without crashing, and stays in lockdown', async () => {
     // The sharp edge: with exit-then-verify, an exception (or a SIGINT, or a
     // kill) between the two steps leaves the machine unlocked for good.
     integrity.enterLockdown('tamper detected');
@@ -111,11 +113,13 @@ describe('shield recover --verify', () => {
     });
 
     const io = captureStdout();
-    await expect(
-      shield({ subcommand: 'recover', verify: true, format: 'json' }),
-    ).rejects.toThrow('artifact store unreadable');
+    // `shield status` tells a locked-out user exactly one thing: run
+    // `opena2a shield recover --verify`. If that command answers with a raw
+    // stack trace, the only cited way out is a dead end.
+    const code = await shield({ subcommand: 'recover', verify: true, format: 'json' });
     io.restore();
 
+    expect(code).toBe(1);
     expect(integrity.isLockdown()).toBe(true);
   });
 

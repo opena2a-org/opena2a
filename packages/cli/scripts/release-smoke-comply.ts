@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildChildEnv, NODE_TOOL_ENV } from '../src/util/child-env.js';
+import { buildChildEnv } from '../src/util/child-env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -69,7 +69,7 @@ function runComply(args: string[], input: string): Run {
     // Deny the daemon so the smoke is deterministic and offline. Allowlisted
     // environment (#228) — the harness runs on developer and CI machines that
     // hold real credentials, and nothing under test needs them.
-    env: buildChildEnv(NODE_TOOL_ENV, { ...process.env, OPENA2A_TELEMETRY: 'off' }),
+    env: buildChildEnv({ allowPrefixes: ['npm_config_', 'NPM_CONFIG_', 'NODE_', 'NVM_', 'COREPACK_', 'YARN_', 'PNPM_'] }, { ...process.env, OPENA2A_TELEMETRY: 'off' }),
   });
   return { status: r.status ?? -1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }

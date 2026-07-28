@@ -33,6 +33,22 @@ export interface AdapterConfig {
    * (e.g. sarif). Takes precedence over `acceptsFormatFlag` for json output.
    */
   jsonOutputFlag?: string;
+  /**
+   * Environment contract: the exact variable names this tool reads (#228).
+   *
+   * Children get an allowlisted environment, not the operator's whole one.
+   * The base allowlist in `util/child-env.ts` covers what any process needs;
+   * this is where a tool declares what IT needs on top — including
+   * credentials it legitimately uses, which is why these are exact names and
+   * bypass the credential-name guard.
+   *
+   * Getting this wrong does not crash. It silently removes capability: a
+   * scanner that loses `NANOMIND_URL` returns different findings and still
+   * exits 0. Derive the list from the tool, do not guess it.
+   */
+  envAllow?: readonly string[];
+  /** Environment contract: name prefixes this tool reads. Guard applies. */
+  envAllowPrefixes?: readonly string[];
 }
 
 export interface RunOptions {

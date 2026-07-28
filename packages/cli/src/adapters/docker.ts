@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
-import { buildChildEnv, DOCKER_ENV } from '../util/child-env.js';
+import { buildChildEnv, probeEnv } from '../util/child-env.js';
 
 export class DockerAdapter implements Adapter {
   readonly config: AdapterConfig;
@@ -33,9 +33,13 @@ export class DockerAdapter implements Adapter {
       const child = spawn('docker', dockerArgs, {
         cwd: options.cwd ?? process.cwd(),
         stdio: ['inherit', 'pipe', 'pipe'],
-        // Least privilege (#228): the docker client needs its own DOCKER_*
-        // configuration, not the operator's cloud keys and registry tokens.
-        env: buildChildEnv(DOCKER_ENV),
+        // Least privilege (#228): the docker client gets the environment its
+        // registry entry declares, not the operator's cloud keys and tokens.
+        env: buildChildEnv(
+          { allow: this.config.envAllow, allowPrefixes: this.config.envAllowPrefixes },
+          process.env,
+          msg => process.stderr.write(`${msg}\n`),
+        ),
       });
 
       let stdout = '';
@@ -65,7 +69,7 @@ export class DockerAdapter implements Adapter {
 
   async isAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
-      const child = spawn('docker', ['info'], { stdio: 'ignore' });
+      const child = spawn('docker', ['info'], { stdio: 'ignore', env: probeEnv() });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
     });
