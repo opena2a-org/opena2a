@@ -13,8 +13,18 @@
  * direction: a directory with a critical hardcoded credential must not read as
  * healthy on any surface that evaluates credentials at all.
  *
- * This test covers the surfaces backed by opena2a's own credential scanner.
- * `scan` is deliberately excluded and tracked — see the note on the last case.
+ * This file unit-tests the scoring predicates. The END-TO-END agreement — real
+ * `benchmark()` against a real directory with the real credential scanner — is
+ * in `benchmark-credential-mapping.test.ts`, which is what actually catches a
+ * credential shape being dropped; hand-built assessments here re-state the
+ * code's own constants and cannot disagree with them.
+ *
+ * `scan` is excluded from direction assertions on purpose. It delegates to
+ * `hackmyagent secure`, which reports CRED-002 as PASSING on this fixture shape
+ * and scores it 96/100 — verified against the HMA binary with a high-entropy
+ * key, so it is not a placeholder filter (hackmyagent#316). Asserting HMA's
+ * current behaviour here would either fail this suite for another repo's defect
+ * or freeze the bug in place.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
@@ -71,18 +81,29 @@ describe('cross-command direction agreement (#252)', () => {
     expect(score.compliance).not.toBe(100);
   });
 
-  it('benchmark does not certify the dirty fixture, nor anything partially evaluated', async () => {
+  it('partial coverage with nothing failing tops out at Partial', async () => {
+    const assessment = {
+      evaluated: new Set(['CRED-002', 'CRED-003', 'CRED-004']),
+      failing: new Set<string>(),
+    };
+    const levelIds = ['CRED-002', 'CRED-003', 'CRED-004', 'PERM-001', 'PROMPT-001'];
+    const { rating } = gateRating(scoreCheckIds(levelIds, assessment), 'Certified');
+    expect(rating).toBe('Partial');
+  });
+
+  it('an EARNED negative rating survives coverage gating', async () => {
+    // Gating removes unearned affirmative ratings. Masking `Not Passing` as
+    // `Partial` because coverage is incomplete is the same overclaim inverted,
+    // and it made `Partial` the only value the field could take.
     const matches = await quickCredentialScan(dirty);
     const assessment = {
       evaluated: new Set(['CRED-002', 'CRED-003', 'CRED-004']),
       failing: new Set(matches.map(m => m.findingId)),
     };
-    // A real level has far more controls than the three we can evaluate.
     const levelIds = ['CRED-002', 'CRED-003', 'CRED-004', 'PERM-001', 'PROMPT-001'];
-    const score = scoreCheckIds(levelIds, assessment);
-    const { rating } = gateRating(score, 'Certified');
-    expect(rating).toBe('Partial');
-    expect(rating).not.toBe('Certified');
+    const { rating } = gateRating(scoreCheckIds(levelIds, assessment), 'Not Passing');
+    expect(rating).toBe('Not Passing');
+    expect(rating).not.toBe('Partial');
   });
 
   it('an unevaluated control is never scored as compliant', () => {
@@ -106,16 +127,4 @@ describe('cross-command direction agreement (#252)', () => {
     expect(gateRating(score, 'Certified').rating).toBe('Certified');
   });
 
-  it('KNOWN GAP: the delegated scanner disagrees, and it is tracked', () => {
-    // `opena2a scan` delegates to `hackmyagent secure`, which reports CRED-002
-    // as PASSING on this exact fixture shape and scores it 96/100 — verified
-    // against the HMA binary directly with a high-entropy key, so it is not a
-    // placeholder filter. Filed as hackmyagent#316.
-    //
-    // This case is documentation, not an assertion against HMA: pinning HMA's
-    // behaviour here would either fail this suite for a defect in another repo
-    // or, worse, freeze the bug in place. When #316 lands, extend the direction
-    // assertions above to cover `scan` and delete this note.
-    expect(true).toBe(true);
-  });
 });

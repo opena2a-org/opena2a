@@ -77,6 +77,25 @@ interface LevelScore {
   notEvaluated: string[];
 }
 
+/**
+ * OASB L1 controls the bundled credential scan evaluates.
+ *
+ * Verified against `getCheckIdsForLevel('L1')`; a test asserts the two stay in
+ * step, because a silent divergence here under-reports coverage.
+ */
+const OASB_CREDENTIAL_CONTROLS = ['CRED-002', 'CRED-003', 'CRED-004'] as const;
+
+/**
+ * Where a hardcoded-secret finding lands when its own pattern id is not an
+ * OASB control.
+ *
+ * `CREDENTIAL_PATTERNS` emits CRED-001/002/003/004/005 and DRIFT-001/002;
+ * OASB L1 defines only CRED-002/003/004. An Anthropic key (CRED-001) or an AWS
+ * secret (CRED-005) is still a hardcoded credential in source, which is exactly
+ * what CRED-002 covers, so it fails that control rather than vanishing.
+ */
+const CREDENTIAL_CONTROL_FOR_HARDCODED_SECRET = 'CRED-002';
+
 async function getHMA(): Promise<any> {
   try {
     const hma: any = await import('hackmyagent');
@@ -122,6 +141,18 @@ export function gateRating(
     return {
       rating: 'Not assessable',
       reason: 'no control in this level was evaluated by the checks this command runs',
+    };
+  }
+  // Coverage gating removes UNEARNED affirmative ratings. It must not remove an
+  // EARNED negative one: masking `Not Passing` as `Partial` because coverage is
+  // incomplete is the same overclaim pointed the other way, and it made the
+  // rating field constant in practice (every real target returned `Partial`).
+  if (score.failing.length > 0) {
+    return {
+      rating: baseRating,
+      reason: score.notEvaluated.length > 0
+        ? `${score.failing.length} evaluated control(s) failing; ${score.notEvaluated.length} of ${score.evaluated.length + score.notEvaluated.length} not evaluated`
+        : null,
     };
   }
   if (score.notEvaluated.length > 0) {
@@ -183,20 +214,31 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
     // running it evaluates those controls whether or not anything matches.
     // Without this, a hardcoded key scored Credential Protection 10/10 while
     // two other commands called the same file CRITICAL.
+    let unmappedCredentialFindings: Array<{ id: string; severity: string }> = [];
     try {
-      const credentialVocabulary = ['CRED-002', 'CRED-003', 'CRED-004'];
-      for (const id of credentialVocabulary) assessment.evaluated.add(id);
+      for (const id of OASB_CREDENTIAL_CONTROLS) assessment.evaluated.add(id);
       const matches = await quickCredentialScan(targetDir);
       for (const m of matches) {
-        if (m.findingId && credentialVocabulary.includes(m.findingId)) {
+        if (!m.findingId) continue;
+        if ((OASB_CREDENTIAL_CONTROLS as readonly string[]).includes(m.findingId)) {
           assessment.failing.add(m.findingId);
+          continue;
         }
+        // A hardcoded credential whose pattern id has no OASB control still
+        // fails the thing those controls are ABOUT. Discarding it is how the
+        // original defect survived a rewrite: `protect` reported
+        // "CRITICAL CRED-001 Anthropic API Key" while this command printed
+        // "Credential Protection: 100% [PASS]" for the same directory,
+        // byte-identical to an empty one.
+        assessment.failing.add(CREDENTIAL_CONTROL_FOR_HARDCODED_SECRET);
+        unmappedCredentialFindings.push({ id: m.findingId, severity: m.severity });
       }
       sources.push('credential scan');
     } catch {
       // A credential scan that cannot run leaves those controls unevaluated,
       // which is the correct fail-closed outcome — not a silent pass.
-      for (const id of ['CRED-002', 'CRED-003', 'CRED-004']) assessment.evaluated.delete(id);
+      for (const id of OASB_CREDENTIAL_CONTROLS) assessment.evaluated.delete(id);
+      unmappedCredentialFindings = [];
     }
 
     // --- Score ----------------------------------------------------------
@@ -258,6 +300,8 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
       summary: {
         failingControls: score.failing.length,
         passingControls: score.passing.length,
+        /** Credential findings with no OASB control of their own, folded into CRED-002. */
+        unmappedCredentialFindings,
       },
       categories,
     };
@@ -293,7 +337,13 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
             process.stdout.write(`    ${cat.id}. ${cat.name}: not evaluated (0 of ${cat.totalChecks} controls assessed)\n`);
             continue;
           }
-          const bar = cat.compliance === 100 ? '[PASS]' : cat.compliance >= 70 ? '[PARTIAL]' : '[NEEDS WORK]';
+          // The badge is qualified by coverage for the same reason the headline
+          // rating is: `[PASS]` over 3 of 10 assessed controls is an absolute
+          // label on a partial assessment.
+          const fullyAssessed = cat.evaluated === cat.totalChecks;
+          const bar = cat.compliance === 100
+            ? (fullyAssessed ? '[PASS]' : '[PASS, PARTIAL COVERAGE]')
+            : cat.compliance >= 70 ? '[PARTIAL]' : '[NEEDS WORK]';
           process.stdout.write(
             `    ${cat.id}. ${cat.name}: ${cat.compliance}% ${bar} (${cat.evaluated} of ${cat.totalChecks} assessed)\n`,
           );
@@ -313,6 +363,10 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
           process.stdout.write(`    - ${cat.name}: ${cat.failing.join(', ')}\n`);
         }
         process.stdout.write(`\n  Fix credentials:  opena2a protect ${targetDir}\n`);
+      }
+      if (unmappedCredentialFindings.length > 0) {
+        const ids = unmappedCredentialFindings.map(f => `${f.id} (${f.severity})`).join(', ');
+        process.stdout.write(`  Counted under CRED-002 (no OASB control of their own): ${ids}\n`);
       }
       if (score.notEvaluated.length > 0) {
         process.stdout.write(`  Deeper analysis (evaluates more controls):  opena2a scan ${targetDir} --deep\n`);
