@@ -1,6 +1,6 @@
 parity=green
-score.opena2a=76
-score.hma=76
+score.opena2a=69
+score.hma=69
 severities.opena2a={"high":2,"low":1,"medium":2}
 severities.hma={"high":2,"low":1,"medium":2}
 checkIds.opena2a=AGENT-CRED-001,DEP-001,GIT-001,SOUL-COMPLETENESS,SOUL-CONSENT
