@@ -1250,7 +1250,13 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
 
   const breakdown = report.scoreBreakdown;
 
-  process.stdout.write(`  ${bold('Security Score:')} ${scoreColor(`${report.securityScore}`)} ${dim('/ 100')}\n`);
+  // Scope label (#252). `init`, `scan`, `review` and `benchmark` legitimately
+  // measure different things, and four bare numbers for one directory read as a
+  // contradiction rather than as four scopes. Each score says what it covers.
+  process.stdout.write(
+    `  ${bold('Security Score:')} ${scoreColor(`${report.securityScore}`)} ${dim('/ 100')}` +
+    `  ${dim('(project posture: credentials, config, environment)')}\n`,
+  );
   process.stdout.write('\n');
 
   // Breakdown as factual deductions
