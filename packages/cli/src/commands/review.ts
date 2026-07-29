@@ -520,8 +520,22 @@ export async function review(options: ReviewOptions): Promise<number> {
   const recoveryHint = recoverySummary.totalRecoverable > 0
     ? ` -- path to ${recoverySummary.potentialScore} available (${topRecovery})`
     : '';
+  // Scope label (#252). The composite is NOT an average — applyDominantAnalyzerFloor
+  // caps it at the worst participating dimension once that dimension is in the
+  // critical band, so a single critical credential legitimately drags the whole
+  // review down while `scan` (static code checks only) stays high. Saying so
+  // turns an apparent contradiction between commands into two stated scopes.
+  // The floor is driven by risk-only dimension views, not by the phase scores
+  // shown above, so the capping dimension cannot be named from `phases`. What
+  // IS observable and worth saying: the composite sits below every phase, which
+  // is the signal that a critical dimension capped it rather than an average
+  // producing it.
+  const lowestPhase = phases.length > 0 ? Math.min(...phases.map(ph => ph.score)) : 0;
+  const scopeNote = compositeScore < lowestPhase
+    ? `  (composite across ${phases.length} dimensions; capped by a critical dimension)`
+    : `  (composite across ${phases.length} dimensions)`;
   process.stdout.write(
-    `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}` +
+    `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}${dim(scopeNote)}` +
     `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)\n`,
   );
 
