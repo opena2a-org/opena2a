@@ -16,7 +16,8 @@
     "dev": "tsc --watch",
     "release-smoke:corpus": "tsx scripts/release-smoke-corpus.ts",
     "release-smoke:init": "tsx scripts/release-smoke-init.ts",
-    "release-smoke:comply": "tsx scripts/release-smoke-comply.ts"
+    "release-smoke:comply": "tsx scripts/release-smoke-comply.ts",
+    "release-smoke:benchmark": "tsx scripts/release-smoke-benchmark.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",

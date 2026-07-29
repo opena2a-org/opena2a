@@ -1,9 +1,40 @@
 /**
  * benchmark command.
- * Uses hackmyagent's OASB benchmark API and ExternalScanner programmatically.
- * Runs a security scan against the target directory, then maps findings
- * to OASB-1 controls to produce a compliance rating.
+ *
+ * Maps security findings to OASB-1 controls to produce a compliance rating.
+ *
+ * SCORING CONTRACT (issue #250) — a control is scored only if a source that can
+ * evaluate it actually ran. Controls nothing assessed are reported as NOT
+ * EVALUATED and never counted as passing.
+ *
+ * The original model marked a control passing whenever no finding mentioned its
+ * check ID. That is a fail-open, and it was total: the only source consulted
+ * (`HardeningScanner`) emits GIT-* ids and evaluates none of the 39 OASB L1
+ * check IDs, so every L1 control "passed" by never being assessed. An empty
+ * directory came back `Certified`, and so did a project with a hardcoded API
+ * key that `init` and `protect` both call CRITICAL.
+ *
+ * A compliance rating is evidence a user hands to a third party. Asserting that
+ * a control passed without evaluating it is fabrication, so:
+ *
+ *   - `evaluated`  a source with that check in its vocabulary ran
+ *   - `failing`    evaluated AND found non-compliant
+ *   - `passing`    evaluated AND not failing
+ *   - anything else is NOT EVALUATED and is excluded from the numerator AND
+ *     the denominator, with the count disclosed on the score line
+ *
+ * `Certified` and `Passing` additionally require COMPLETE coverage of the
+ * level. A partially-assessed target can be `Partial` at best, because a
+ * rating over unknown controls is not a rating.
+ *
+ * Coverage today is genuinely thin — `quickCredentialScan` supplies CRED-002/
+ * 003/004 and `HardeningScanner` supplies whatever it emits. The remaining
+ * OASB controls (SEM-*, PERM-*, PROMPT-*, IO-*, NET-*, …) need HMA's semantic
+ * pass wired in, tracked separately. Reporting that honestly is the point: a
+ * thin-but-true number beats a complete-looking false one.
  */
+
+import { quickCredentialScan } from '../util/credential-patterns.js';
 
 export interface BenchmarkOptions {
   targetDir?: string;
@@ -30,6 +61,22 @@ interface OASBControl {
   checkIds: string[];
 }
 
+/** What a set of sources actually assessed, and what they found wanting. */
+interface Assessment {
+  evaluated: Set<string>;
+  failing: Set<string>;
+}
+
+/** Compliance over the evaluated subset of a check-id list. */
+interface LevelScore {
+  /** null when nothing in the list was evaluated — NOT zero, and NOT 100. */
+  compliance: number | null;
+  evaluated: string[];
+  passing: string[];
+  failing: string[];
+  notEvaluated: string[];
+}
+
 async function getHMA(): Promise<any> {
   try {
     const hma: any = await import('hackmyagent');
@@ -41,6 +88,51 @@ async function getHMA(): Promise<any> {
   }
 }
 
+/**
+ * Score a list of check IDs against an assessment.
+ *
+ * Unevaluated ids leave both the numerator and the denominator — they are not
+ * failures (we did not find a problem) and not passes (we did not look).
+ */
+export function scoreCheckIds(checkIds: string[], assessment: Assessment): LevelScore {
+  const unique = [...new Set(checkIds)];
+  const evaluated = unique.filter(id => assessment.evaluated.has(id));
+  const failing = evaluated.filter(id => assessment.failing.has(id));
+  const passing = evaluated.filter(id => !assessment.failing.has(id));
+  return {
+    compliance: evaluated.length > 0 ? Math.round((passing.length / evaluated.length) * 100) : null,
+    evaluated,
+    passing,
+    failing,
+    notEvaluated: unique.filter(id => !assessment.evaluated.has(id)),
+  };
+}
+
+/**
+ * Gate the rating on coverage.
+ *
+ * A rating asserted over controls nobody assessed is not a rating, so the two
+ * affirmative ratings require the level to be fully evaluated.
+ */
+export function gateRating(
+  score: LevelScore,
+  baseRating: string,
+): { rating: string; reason: string | null } {
+  if (score.evaluated.length === 0) {
+    return {
+      rating: 'Not assessable',
+      reason: 'no control in this level was evaluated by the checks this command runs',
+    };
+  }
+  if (score.notEvaluated.length > 0) {
+    return {
+      rating: 'Partial',
+      reason: `${score.notEvaluated.length} of ${score.evaluated.length + score.notEvaluated.length} controls were not evaluated`,
+    };
+  }
+  return { rating: baseRating, reason: null };
+}
+
 export async function benchmark(options: BenchmarkOptions): Promise<number> {
   const hma = await getHMA();
   if (!hma) return 1;
@@ -49,13 +141,12 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
     OASB_1_CATEGORIES,
     OASB_1_VERSION,
     OASB_1_NAME,
-    getControlsForLevel,
     getCheckIdsForLevel,
     calculateRating,
     HardeningScanner,
   } = hma;
 
-  if (!OASB_1_CATEGORIES || !getControlsForLevel || !HardeningScanner) {
+  if (!OASB_1_CATEGORIES || !getCheckIdsForLevel || !HardeningScanner) {
     process.stderr.write('hackmyagent does not export OASB benchmark API or HardeningScanner. Update hackmyagent.\n');
     return 1;
   }
@@ -69,64 +160,79 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
   }
 
   try {
-    // Run HMA HardeningScanner to get findings with check IDs
+    const assessment: Assessment = { evaluated: new Set(), failing: new Set() };
+    const sources: string[] = [];
+
+    // --- Source 1: HardeningScanner ------------------------------------
+    // Every id it reports on was assessed, whether it passed or failed. Ids it
+    // never mentions were NOT assessed, which is the whole point of #250.
     const scanner = new HardeningScanner();
     const scanResult = await scanner.scan({ targetDir });
-    // Only count failing checks (passed === false)
-    const findings = (scanResult?.findings ?? []).filter((f: any) => !f.passed);
+    const hardeningFindings: any[] = scanResult?.findings ?? [];
+    for (const f of hardeningFindings) {
+      const id = f.checkId ?? f.ruleId ?? f.id;
+      if (!id) continue;
+      assessment.evaluated.add(id);
+      if (f.passed === false) assessment.failing.add(id);
+    }
+    if (hardeningFindings.length > 0) sources.push('hardening scanner');
 
-    // Get check IDs covered by findings
-    const foundCheckIds = new Set<string>();
-    for (const finding of findings) {
-      if (finding.checkId) {
-        foundCheckIds.add(finding.checkId);
+    // --- Source 2: credential scan -------------------------------------
+    // The same scan `init` and `protect` run. Its vocabulary is enumerable and
+    // CRED-002/003/004 are OASB L1 controls, so this is affirmative coverage:
+    // running it evaluates those controls whether or not anything matches.
+    // Without this, a hardcoded key scored Credential Protection 10/10 while
+    // two other commands called the same file CRITICAL.
+    try {
+      const credentialVocabulary = ['CRED-002', 'CRED-003', 'CRED-004'];
+      for (const id of credentialVocabulary) assessment.evaluated.add(id);
+      const matches = await quickCredentialScan(targetDir);
+      for (const m of matches) {
+        if (m.findingId && credentialVocabulary.includes(m.findingId)) {
+          assessment.failing.add(m.findingId);
+        }
       }
-      // Some findings use ruleId or id
-      if (finding.ruleId) {
-        foundCheckIds.add(finding.ruleId);
-      }
+      sources.push('credential scan');
+    } catch {
+      // A credential scan that cannot run leaves those controls unevaluated,
+      // which is the correct fail-closed outcome — not a silent pass.
+      for (const id of ['CRED-002', 'CRED-003', 'CRED-004']) assessment.evaluated.delete(id);
     }
 
-    // Calculate compliance per level
-    const l1Controls = getControlsForLevel('L1') as OASBControl[];
-    const l2Controls = getControlsForLevel('L2') as OASBControl[];
-    const l3Controls = getControlsForLevel('L3') as OASBControl[];
+    // --- Score ----------------------------------------------------------
+    const levelIds = getCheckIdsForLevel(level) as string[];
+    const score = scoreCheckIds(levelIds, assessment);
 
-    const l1CheckIds = getCheckIdsForLevel('L1') as string[];
-    const l2CheckIds = getCheckIdsForLevel('L2') as string[];
-    const l3CheckIds = getCheckIdsForLevel('L3') as string[];
+    const baseRating = score.compliance !== null
+      ? calculateRating(score.compliance, 0, 0, level)
+      : 'Not Passing';
+    const { rating, reason } = gateRating(score, baseRating);
 
-    // A check "passes" if it was NOT flagged as a finding (no vulnerability found)
-    // For OASB, findings represent issues, so a check passes when no finding exists
-    const l1Passing = l1CheckIds.filter((id: string) => !foundCheckIds.has(id));
-    const l2Only = l2CheckIds.filter((id: string) => !l1CheckIds.includes(id));
-    const l2Passing = l2Only.filter((id: string) => !foundCheckIds.has(id));
-    const l3Only = l3CheckIds.filter((id: string) => !l2CheckIds.includes(id));
-    const l3Passing = l3Only.filter((id: string) => !foundCheckIds.has(id));
-
-    const l1Compliance = l1CheckIds.length > 0 ? Math.round((l1Passing.length / l1CheckIds.length) * 100) : 0;
-    const l2Compliance = l2Only.length > 0 ? Math.round((l2Passing.length / l2Only.length) * 100) : 0;
-    const l3Compliance = l3Only.length > 0 ? Math.round((l3Passing.length / l3Only.length) * 100) : 0;
-
-    const rating = calculateRating(l1Compliance, l2Compliance, l3Compliance, level);
-
-    // Build per-category breakdown
+    // --- Per-category breakdown ----------------------------------------
     const categories = (OASB_1_CATEGORIES as OASBCategory[]).map((cat: OASBCategory) => {
       const catControls = cat.controls.filter((c: OASBControl) => {
         if (level === 'L1') return c.level === 'L1';
         if (level === 'L2') return c.level === 'L1' || c.level === 'L2';
         return true;
       });
-      const totalChecks = catControls.reduce((sum: number, c: OASBControl) => sum + c.checkIds.length, 0);
-      const passingChecks = catControls.reduce((sum: number, c: OASBControl) => {
-        return sum + c.checkIds.filter((id: string) => !foundCheckIds.has(id)).length;
-      }, 0);
+      const catIds = [...new Set(catControls.flatMap((c: OASBControl) => c.checkIds))];
+      // A category with no controls at this level is NOT APPLICABLE. Rendering
+      // it as 0% put "NEEDS WORK" next to a 100% headline.
+      if (catIds.length === 0) {
+        return {
+          id: cat.id, name: cat.name, applicable: false,
+          compliance: null, evaluated: 0, totalChecks: 0, failing: [] as string[],
+        };
+      }
+      const catScore = scoreCheckIds(catIds, assessment);
       return {
         id: cat.id,
         name: cat.name,
-        totalChecks,
-        passingChecks,
-        compliance: totalChecks > 0 ? Math.round((passingChecks / totalChecks) * 100) : 0,
+        applicable: true,
+        compliance: catScore.compliance,
+        evaluated: catScore.evaluated.length,
+        totalChecks: catIds.length,
+        failing: catScore.failing,
       };
     });
 
@@ -137,14 +243,21 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
       target: targetDir,
       timestamp: new Date().toISOString(),
       rating,
+      ratingReason: reason,
       compliance: {
-        l1: l1Compliance,
-        l2: l2Compliance,
-        l3: l3Compliance,
+        l1: level === 'L1' ? score.compliance : null,
+        scoredOver: 'evaluated controls only',
+      },
+      coverage: {
+        evaluated: score.evaluated.length,
+        notEvaluated: score.notEvaluated.length,
+        total: score.evaluated.length + score.notEvaluated.length,
+        notEvaluatedIds: score.notEvaluated,
+        sources,
       },
       summary: {
-        totalFindings: findings.length,
-        totalChecks: l1CheckIds.length + l2Only.length + l3Only.length,
+        failingControls: score.failing.length,
+        passingControls: score.passing.length,
       },
       categories,
     };
@@ -152,43 +265,60 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
     if (options.format === 'json') {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } else {
+      const total = score.evaluated.length + score.notEvaluated.length;
       process.stdout.write(`\n  OASB-1 Security Benchmark\n`);
       process.stdout.write(`  ${'-'.repeat(40)}\n`);
       process.stdout.write(`  Target:     ${targetDir}\n`);
       process.stdout.write(`  Level:      ${level}\n`);
       process.stdout.write(`  Rating:     ${rating}\n`);
-      process.stdout.write(`  L1:         ${l1Compliance}% (${l1Passing.length}/${l1CheckIds.length} checks)\n`);
-      if (level !== 'L1') {
-        process.stdout.write(`  L2:         ${l2Compliance}% (${l2Passing.length}/${l2Only.length} checks)\n`);
+      if (reason) process.stdout.write(`              ${reason}\n`);
+      const scoreText = score.compliance === null ? 'not assessable' : `${score.compliance}%`;
+      process.stdout.write(
+        `  ${level}:         ${scoreText} (${score.evaluated.length} of ${total} controls evaluated)\n`,
+      );
+      if (score.notEvaluated.length > 0) {
+        process.stdout.write(`  Not evaluated: ${score.notEvaluated.length} control(s) — these are NOT counted as passing\n`);
       }
-      if (level === 'L3') {
-        process.stdout.write(`  L3:         ${l3Compliance}% (${l3Passing.length}/${l3Only.length} checks)\n`);
-      }
-      process.stdout.write(`  Findings:   ${findings.length}\n`);
+      process.stdout.write(`  Failing:    ${score.failing.length}\n`);
       process.stdout.write(`\n`);
 
       if (options.verbose) {
         process.stdout.write(`  Category Breakdown:\n`);
         for (const cat of categories) {
+          if (!cat.applicable) {
+            process.stdout.write(`    ${cat.id}. ${cat.name}: n/a (no ${level} controls)\n`);
+            continue;
+          }
+          if (cat.compliance === null) {
+            process.stdout.write(`    ${cat.id}. ${cat.name}: not evaluated (0 of ${cat.totalChecks} controls assessed)\n`);
+            continue;
+          }
           const bar = cat.compliance === 100 ? '[PASS]' : cat.compliance >= 70 ? '[PARTIAL]' : '[NEEDS WORK]';
-          process.stdout.write(`    ${cat.id}. ${cat.name}: ${cat.compliance}% ${bar}\n`);
+          process.stdout.write(
+            `    ${cat.id}. ${cat.name}: ${cat.compliance}% ${bar} (${cat.evaluated} of ${cat.totalChecks} assessed)\n`,
+          );
         }
         process.stdout.write('\n');
+        if (score.notEvaluated.length > 0) {
+          process.stdout.write(`  Controls not evaluated by this command:\n`);
+          process.stdout.write(`    ${score.notEvaluated.join(', ')}\n\n`);
+        }
       }
 
-      // Actionable guidance
-      if (rating === 'Certified' || rating === 'Passing') {
-        process.stdout.write(`  Status: ${level} compliance is on track.\n`);
-      } else {
-        const failingCats = categories.filter(c => c.compliance < 70);
-        if (failingCats.length > 0) {
-          process.stdout.write(`  Focus areas for improvement:\n`);
-          for (const cat of failingCats.slice(0, 3)) {
-            process.stdout.write(`    - ${cat.name} (${cat.compliance}%)\n`);
-          }
+      // Path forward, recovery-framed and honest about what is missing.
+      const failingCats = categories.filter(c => c.applicable && c.compliance !== null && c.compliance < 100);
+      if (failingCats.length > 0) {
+        process.stdout.write(`  Failing controls to address:\n`);
+        for (const cat of failingCats.slice(0, 3)) {
+          process.stdout.write(`    - ${cat.name}: ${cat.failing.join(', ')}\n`);
         }
-        process.stdout.write(`\n  Run \`opena2a scan --deep\` for detailed findings.\n`);
-        process.stdout.write(`  Run \`opena2a benchmark --verbose\` for per-category breakdown.\n`);
+        process.stdout.write(`\n  Fix credentials:  opena2a protect ${targetDir}\n`);
+      }
+      if (score.notEvaluated.length > 0) {
+        process.stdout.write(`  Deeper analysis (evaluates more controls):  opena2a scan ${targetDir} --deep\n`);
+      }
+      if (!options.verbose) {
+        process.stdout.write(`  Per-category breakdown:  opena2a benchmark ${targetDir} --verbose\n`);
       }
       process.stdout.write('\n');
     }
