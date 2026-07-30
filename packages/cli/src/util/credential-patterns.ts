@@ -194,6 +194,62 @@ export function isPlaceholderSecretValue(value: string): boolean {
   return false;
 }
 
+/** Signature of the package's exact-match known-example key set. */
+type KnownExampleKeys = ReadonlySet<string>;
+
+let _knownExampleKeys: Promise<KnownExampleKeys> | null = null;
+
+/**
+ * Lazily import the canonical KNOWN_EXAMPLE_KEYS set -- published credential
+ * values from vendor documentation (AWS's `AKIAIOSFODNN7EXAMPLE` and its
+ * paired secret, OpenAI's `sk-proj-abc123`), each source-verified in the
+ * package. Falls back to an empty set, which suppresses nothing.
+ */
+export function loadKnownExampleKeys(): Promise<KnownExampleKeys> {
+  if (!_knownExampleKeys) {
+    _knownExampleKeys = import('@opena2a/credential-patterns')
+      .then(m => (m.KNOWN_EXAMPLE_KEYS as KnownExampleKeys) ?? new Set<string>())
+      .catch(() => new Set<string>());
+  }
+  return _knownExampleKeys;
+}
+
+/**
+ * The single suppression rule for the migration scanner, applied to every
+ * pattern -- but with the evidence each pattern class actually justifies.
+ *
+ * The defect (#258) was that the AWS documentation pair was split across two
+ * rules: the secret half is name-gated and was suppressed, the id half is not
+ * and was reported, so the pair produced exactly one finding -- the harmless
+ * identifier -- and a user acting on it migrated the wrong half.
+ *
+ * `nameGated` patterns match a prefix-less value purely because a credential
+ * NAME sits next to it, so the value alone carries no evidence and the broad
+ * placeholder + entropy guard is warranted.
+ *
+ * Prefix-bearing patterns (`AKIA…`, `sk-ant-api03-…`, `ghp_…`) get EXACT
+ * membership in the canonical known-example set and nothing more. A substring
+ * test here would be a credential-laundering bypass: every one of those
+ * patterns admits `_`/`-` in its body, so `<live key>-SAMPLE` would match the
+ * pattern greedily, contain a placeholder word, and be dropped -- while
+ * `.replace('-SAMPLE','')` restores the key at runtime. It would also blind
+ * the scanner to the project's own malicious corpus, whose fixture credentials
+ * are deliberately marked `FAKE` (`ghp_FAKEexfil…`, `AKIAFAKE0EXFIL000000`),
+ * and put this scanner in direct disagreement with `hackmyagent`, which still
+ * reports them and prints `opena2a protect .` as the remediation.
+ *
+ * Exact match cannot be laundered: a value that equals a published example IS
+ * that example.
+ */
+export function isSuppressedCredentialValue(
+  value: string,
+  pattern: { nameGated?: boolean },
+  knownExampleKeys?: KnownExampleKeys,
+): boolean {
+  if (pattern.nameGated) return isPlaceholderSecretValue(value);
+  return knownExampleKeys?.has(value) ?? false;
+}
+
 /**
  * Curated, high-precision credential patterns for the template-env-leak POSTURE
  * scan (`scanTemplateEnvLeaks`), separate from the migration `CREDENTIAL_PATTERNS`
@@ -658,6 +714,7 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
   // detection stay synchronous inside the walkFiles callback.
   const catalog = await loadCanonicalPatterns();
   const isKnownExample = await loadCanonicalAllowlist();
+  const knownExampleKeys = await loadKnownExampleKeys();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -676,10 +733,11 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
         let match: RegExpExecArray | null;
         while ((match = re.exec(line)) !== null) {
           const value = match[1] ?? match[0];
-          // Name-gated patterns match a prefix-less value purely by name, so a
-          // placeholder / low-entropy value (AWS docs `wJalr…EXAMPLEKEY`,
-          // `xxxx…`, `0000…`) must be dropped — it's not a real exposure.
-          if (pattern.nameGated && isPlaceholderSecretValue(value)) continue;
+          // One placeholder rule for every pattern: a value that announces
+          // itself as an example is not an exposure, whatever matched it.
+          // Name-gated patterns also get the entropy floor (see
+          // isSuppressedCredentialValue).
+          if (isSuppressedCredentialValue(value, pattern, knownExampleKeys)) continue;
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;

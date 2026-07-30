@@ -101,8 +101,12 @@ describe('generateSkillMd', () => {
     expect(md).toContain('version: 1.0.0');
     expect(md).toContain('capabilities: []');
     expect(md).toContain('permissions: {}');
-    expect(md).toContain('heartbeat:');
-    expect(md).toContain('  interval: 7d');
+    // No `heartbeat:` / `interval:` in SKILL.md any more (#259). SKILL-003 is a
+    // per-line regex over SKILL.md, so declaring the schedule here cost a HIGH
+    // finding on a freshly generated skill. The interval lives in HEARTBEAT.md,
+    // which is where the generated skill.test.ts and the CI workflow read it.
+    expect(md).not.toContain('heartbeat:');
+    expect(md).not.toContain('interval: 7d');
   });
 
   it('generates capabilities list', () => {
@@ -382,7 +386,14 @@ describe('createSkill (CI mode)', () => {
     expect(frontmatter).toContain('permissions:');
     expect(frontmatter).toContain('dependencies:');
     expect(frontmatter).toContain('tools:');
-    expect(frontmatter).toContain('heartbeat:');
+    // See the generateSkillMd test above: the schedule moved to HEARTBEAT.md
+    // so SKILL-003 stops firing on generated output (#259).
+    expect(frontmatter).not.toContain('heartbeat:');
+
+    // The schedule must still exist somewhere -- assert it landed in
+    // HEARTBEAT.md rather than being dropped.
+    const heartbeat = fs.readFileSync(path.join(outputDir, 'HEARTBEAT.md'), 'utf-8');
+    expect(heartbeat).toContain('Interval: 7d');
   });
 
   it('signs skill files by default', async () => {
