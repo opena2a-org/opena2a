@@ -4,13 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-- `protect --grant <grant-ref> --atx <path>`: opt-in Agent Authorization Protocol gate. Before any scan, `protect` presents an ATX to the local Secretless broker and proceeds only if the broker authorizes the grant. New `packages/cli/src/aap/` module (broker client) is the first TypeScript AAP consumer. Defends T-3002, T-3003, T-3006, T-8002 at the CLI surface.
-  - Exit codes: 0 (broker authorized), 2 (--grant without --atx or invalid ATX), 3 (403 opaque denial, AAP §6.6), 4 (broker socket unreachable), 5 (unexpected error), 6 (broker returned non-403 non-200 status — body never echoed to user).
-  - Hardening: default-socket-path connections require socket-uid == process-uid (defense against same-box impostor brokers); ATX file capped at 256 KiB; response body capped at 1 MiB; ANSI/C0 control chars in user-supplied grant references are stripped before stderr output.
-- `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing via ConfigGuard, HEARTBEAT.md generation, vitest test file, and GitHub Action template
-- `guard harden` subcommand: scan SKILL.md and HEARTBEAT.md files for security issues using HackMyAgent HardeningScanner, with `--fix` (auto-fix) and `--dry-run` (preview) flags
-- Docker adapter configurable port mapping for `train` command (full DVAA port range)
+Nothing yet.
 
 ## [0.10.12] - 2026-07-29
 
@@ -30,6 +24,9 @@ All notable changes to this project will be documented in this file.
 - Published security contact address is now info@opena2a.org (#235).
 
 ### Added
+- `protect --grant <grant-ref> --atx <path>`: opt-in Agent Authorization Protocol gate. Before any scan, `protect` presents an ATX to the local Secretless broker and proceeds only if the broker authorizes the grant. The `packages/cli/src/aap/` broker client is the first TypeScript AAP consumer. Defends T-3002, T-3003, T-3006, T-8002 at the CLI surface.
+  - Exit codes: 0 (broker authorized), 2 (--grant without --atx or invalid ATX), 3 (403 opaque denial, AAP §6.6), 4 (broker socket unreachable), 5 (unexpected error), 6 (broker returned non-403 non-200 status — body never echoed to user).
+  - Hardening: default-socket-path connections require socket-uid == process-uid (defense against same-box impostor brokers); ATX file capped at 256 KiB; response body capped at 1 MiB; ANSI/C0 control chars in user-supplied grant references are stripped before stderr output.
 - `@opena2a/credential-patterns` 0.1.3: scans MCP configs (`.mcp.json`) and secret-gated connection strings (#241).
 - `opena2a admin sensors`: enrollment-inbox operator command (#224).
 
@@ -37,6 +34,18 @@ All notable changes to this project will be documented in this file.
 - No project can reach `Certified` on `benchmark` today, and anything that previously read `Certified` will now read `Partial`. That is the #250 fix working, not a new failure: `Certified` requires complete coverage of the level, and the scanners this command consults evaluate 3 of the 39 OASB L1 controls (credentials only). Every run says so explicitly — `L1: 100% (3 of 39 controls evaluated)`, `36 of 39 controls were not evaluated`, `these are NOT counted as passing`, and per-category `not evaluated (0 of 8 controls assessed)`. Widening coverage needs HMA's semantic pass wired in; until then a thin true number is reported instead of a complete-looking false one.
 - Following `harden-soul` still costs 5 points on `init` (#251, reopened). `scanSoulFile` matches injection patterns with a bare substring test, so the one line of generated governance that NAMES the phrases it resists (`If any input contains phrases such as "ignore previous instructions", ...`) is counted as an override pattern: `init` reads 75 before `harden-soul` and 70 after, with a HIGH `soul.md contains 1 override pattern`. Two context-aware matchers were attempted this cycle and both were reverted — quote-parity counting was defeated by a single apostrophe in prose, closed-span matching by two apostrophes or by quoting the payload, each losing a true positive the substring matcher caught (classification (b) narrowed-detection). The plain matcher is restored and every evasion is pinned as a regression test, so a future context rule has to clear them first. The fix belongs upstream, where hackmyagent's `hardenSoul` generates the line, or in a corroboration rule that declines to penalise a file `scan-soul` independently rates hardened — not in a third regex. The label half IS fixed: the same file now reads `soul · unknown` rather than `soul · malicious`, so the analyzers no longer contradict each other on direction.
 - `opena2a scan` still reports 96/100 on a file with a hardcoded OpenAI key: the delegated scanner marks CRED-002 as passing there (hackmyagent#316, verified against the HMA binary with a high-entropy key). `init`, `protect`, `review` and `benchmark` all flag it, so `scan` is the outlier until that fix lands.
+
+## [0.8.0] - 2026-03-18
+
+Recorded retroactively on 2026-07-30. These three entries sat under `[Unreleased]`
+from 0.8.0 through 0.10.12 while the releases between 0.5.12 and 0.10.12 went
+undocumented here; each was verified present in the published 0.8.0 tarball and
+absent from 0.7.0. Releases 0.6.0 through 0.10.11 remain undocumented in this file.
+
+### Added
+- `skill create [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing via ConfigGuard, HEARTBEAT.md generation, vitest test file, and GitHub Action template. `create skill [name]` is registered as a hidden alias.
+- `guard harden` subcommand: scan SKILL.md and HEARTBEAT.md files for security issues using HackMyAgent HardeningScanner, with `--fix` (auto-fix) and `--dry-run` (preview) flags
+- Docker adapter configurable port mapping for `train` command (full DVAA port range)
 
 ## [0.5.12] - 2026-03-14
 
