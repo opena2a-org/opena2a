@@ -144,6 +144,9 @@ opena2a protect "$DIR" --ci
 # the migration did not run and the rest of the scenario is meaningless.
 sha256sum -c "$DIR/before.sha" && echo "S8 FAIL: protect changed nothing" || echo "S8 ok: file was rewritten"
 grep -q 'process.env.ANTHROPIC_API_KEY' "$DIR/app.js" && echo "S8 ok: env reference written"
+# The security property, asserted directly: the literal must be GONE, not
+# merely accompanied by an env reference.
+grep -q 'sk-ant-api03' "$DIR/app.js" && echo "S8 FAIL: original key still in source" || echo "S8 ok: original key removed"
 
 # GATE 2 — the offered rollback must restore the original byte-for-byte.
 git -C "$DIR" checkout -- app.js

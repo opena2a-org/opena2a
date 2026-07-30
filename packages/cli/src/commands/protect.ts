@@ -1435,6 +1435,16 @@ function printReport(report: ProtectReport): void {
  * where `.git` is a file rather than a directory.
  */
 function isInsideGitWorkTree(dir: string): 'yes' | 'no' | 'unknown' {
+  // Resolve and confirm the target is a real directory before handing it to
+  // git as a cwd. Without this, a symlink pointing outside the scanned tree
+  // would have git answer about a DIFFERENT repository, and the rollback
+  // advice would describe somewhere the user never touched.
+  try {
+    if (!fs.statSync(dir).isDirectory()) return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+
   let out: string;
   try {
     out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
