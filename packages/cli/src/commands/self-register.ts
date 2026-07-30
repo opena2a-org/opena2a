@@ -33,6 +33,8 @@ export interface SelfRegisterOptions {
   skipScan?: boolean;
   only?: string[];
   dryRun?: boolean;
+  /** Skip the interactive confirmation. Required to write from a non-interactive shell. */
+  yes?: boolean;
   ci?: boolean;
   format?: 'text' | 'json';
   verbose?: boolean;
@@ -184,6 +186,70 @@ export const TOOL_MANIFEST: ToolManifest[] = [
   },
 ];
 
+// --- Confirmation ---
+
+/**
+ * Gate the destructive default path. Returns true only when the operator has
+ * actually agreed to a public write.
+ *
+ * Non-interactive callers (--ci, or any pipe/CI runner where stdin is not a
+ * TTY) cannot be prompted, so they must pass --yes. Refusing there rather than
+ * assuming consent is the whole point: a release-test harness running the bare
+ * command previously published to the production registry with nothing asked.
+ * The refusal exits non-zero so an automated caller that relied on the old
+ * behavior fails visibly instead of silently writing nothing.
+ */
+async function confirmPublicWrite(
+  registryUrl: string,
+  toolCount: number,
+  isCi: boolean,
+  isJson: boolean,
+): Promise<boolean> {
+  const target = registryUrl || '(no registry configured)';
+  const interactive = !isCi && !isJson && process.stdin.isTTY === true;
+
+  if (!interactive) {
+    const message =
+      `Refusing to publish without confirmation.\n` +
+      `  ${toolCount} tool record(s) would be submitted to ${target}.\n` +
+      `  This writes to a public registry and cannot be undone from the CLI.\n` +
+      `  Re-run with --yes to proceed, or --dry-run to preview.\n`;
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        error: 'confirmation required',
+        code: 'CONFIRMATION_REQUIRED',
+        registryUrl: target,
+        toolCount,
+        hint: 'Re-run with --yes to proceed, or --dry-run to preview.',
+        tools: [],
+      }) + '\n');
+    } else {
+      process.stdout.write(yellow(message));
+    }
+    return false;
+  }
+
+  process.stdout.write(
+    yellow(`About to submit ${toolCount} tool record(s) to ${cyan(target)}.\n`) +
+    dim('  This writes to a public registry and cannot be undone from the CLI.\n\n'),
+  );
+
+  try {
+    const { confirm } = await import('@inquirer/prompts');
+    return await confirm({ message: 'Publish these records?', default: false });
+  } catch (err) {
+    // Always refuse on error -- this path must fail closed. But say why:
+    // silently returning false makes a cancelled prompt and a broken prompt
+    // look identical, and the user is left guessing which happened.
+    const cancelled = err instanceof Error && err.name === 'ExitPromptError';
+    process.stderr.write(cancelled
+      ? dim('Cancelled. Nothing was published.\n')
+      : yellow(`Could not show the confirmation prompt (${err instanceof Error ? err.message : String(err)}).\n`) +
+        dim('  Nothing was published. Use --yes to publish non-interactively, or --dry-run to preview.\n'));
+    return false;
+  }
+}
+
 // --- Core ---
 
 export async function selfRegister(options: SelfRegisterOptions): Promise<number> {
@@ -208,6 +274,17 @@ export async function selfRegister(options: SelfRegisterOptions): Promise<number
 
   if (options.dryRun && !isJson) {
     process.stdout.write(yellow('[DRY RUN] No HTTP requests will be made.\n\n'));
+  }
+
+  // This command writes to a PUBLIC registry, so it asks before it does.
+  // The gate sits ahead of the per-tool loop on purpose: placing it inside
+  // would still fire existence checks and HMA scans for every tool before
+  // refusing. A dry run is already read-only and needs no confirmation.
+  if (!options.dryRun && !options.yes) {
+    const confirmed = await confirmPublicWrite(registryUrl, tools.length, isCi, isJson);
+    if (!confirmed) {
+      return 2;
+    }
   }
 
   const results: ToolResult[] = [];

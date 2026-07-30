@@ -863,6 +863,7 @@ analysis runs and results can be shared with the community.
     .option('--skip-scan', 'Skip HMA scanning, register metadata only')
     .option('--only <tools>', 'Comma-separated tool names')
     .option('--dry-run', 'Show what would happen without making changes')
+    .option('-y, --yes', 'Skip the confirmation prompt (required non-interactively)')
     .action(async (opts) => {
       const { selfRegister } = await import('./commands/self-register.js');
       const globalOpts = program.opts();
@@ -871,6 +872,7 @@ analysis runs and results can be shared with the community.
         skipScan: opts.skipScan,
         only: opts.only?.split(','),
         dryRun: opts.dryRun,
+        yes: opts.yes,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
