@@ -4,7 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+- `self-register` no longer writes to the public registry without consent. The command submits community scan-result records to `api.oa2a.org`; `--dry-run` existed but the destructive path was the default and nothing was asked before it ran. A release-test harness invoking the bare command published records from a developer laptop — a sandboxed `HOME` did not prevent it, and `OPENA2A_TELEMETRY_URL` does not apply because `self-register` talks to the registry directly. It now confirms interactively, and a non-interactive shell (`--ci`, or any pipe where stdin is not a TTY) must pass `--yes`. The refusal exits 2 and names both `--yes` and `--dry-run`, in text and in JSON (`code: CONFIRMATION_REQUIRED`), so an automated caller relying on the old behavior fails visibly rather than silently doing nothing. The gate sits ahead of the per-tool loop, so a refused run performs no existence checks and no HMA scans — previously a bare invocation made 33 requests before finishing.
 
 ## [0.10.12] - 2026-07-29
 

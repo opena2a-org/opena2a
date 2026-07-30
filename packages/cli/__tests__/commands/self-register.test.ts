@@ -181,6 +181,9 @@ describe('selfRegister', () => {
     const options: SelfRegisterOptions = {
       skipScan: true,
       ci: true,
+      // Non-interactive writes require explicit consent; see
+      // self-register-confirmation.test.ts for the gate itself.
+      yes: true,
       format: 'json',
       only: ['hackmyagent'],
     };
@@ -214,6 +217,7 @@ describe('selfRegister', () => {
     const options: SelfRegisterOptions = {
       skipScan: true,
       ci: true,
+      yes: true, // non-interactive write requires explicit consent
       format: 'json',
       only: ['hackmyagent', 'dvaa'],
     };
