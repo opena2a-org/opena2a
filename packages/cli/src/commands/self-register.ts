@@ -237,8 +237,15 @@ async function confirmPublicWrite(
   try {
     const { confirm } = await import('@inquirer/prompts');
     return await confirm({ message: 'Publish these records?', default: false });
-  } catch {
-    // Prompt unavailable or cancelled (e.g. Ctrl-C) -- treat as refusal.
+  } catch (err) {
+    // Always refuse on error -- this path must fail closed. But say why:
+    // silently returning false makes a cancelled prompt and a broken prompt
+    // look identical, and the user is left guessing which happened.
+    const cancelled = err instanceof Error && err.name === 'ExitPromptError';
+    process.stderr.write(cancelled
+      ? dim('Cancelled. Nothing was published.\n')
+      : yellow(`Could not show the confirmation prompt (${err instanceof Error ? err.message : String(err)}).\n`) +
+        dim('  Nothing was published. Use --yes to publish non-interactively, or --dry-run to preview.\n'));
     return false;
   }
 }
