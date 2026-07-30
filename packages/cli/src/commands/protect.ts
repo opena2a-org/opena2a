@@ -14,6 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { bold, green, yellow, red, cyan, dim, gray, white } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { severityLabel, formatDuration, table } from '../util/format.js';
@@ -139,7 +140,8 @@ import {
   SKIP_DIRS,
   SKIP_EXTENSIONS,
   walkFiles,
-  isPlaceholderSecretValue,
+  isSuppressedCredentialValue,
+  loadKnownExampleKeys,
   refineCredentialLabel,
   loadCanonicalPatterns,
   loadCanonicalAllowlist,
@@ -439,6 +441,36 @@ export async function protect(options: ProtectOptions): Promise<number> {
     return 0;
   }
 
+  // Consent gate. Deliberately ABOVE the isJson branch: `--format json` is an
+  // output-format flag and must not double as a consent bypass. Before this,
+  // `opena2a --format json protect` with stdin closed rewrote source files,
+  // moved secrets into a vault, edited .gitignore and signed configs without
+  // ever asking, while text mode asked. `--ci` declares that intent; a format
+  // flag does not. Mirrors the `self-register` --yes gate.
+  //
+  // A pipeline with stdin closed cannot answer the prompt. Returning 0 here
+  // told CI "credentials migrated" when nothing had run (#256) -- exit 0 is
+  // an affirmative claim, and this is the one place protect skips its stated
+  // work without the user deciding to.
+  if (!options.ci && !process.stdin.isTTY) {
+    if (isJson) {
+      process.stdout.write(JSON.stringify({
+        error: 'Confirmation required',
+        code: 'CONFIRMATION_REQUIRED',
+        detail: 'stdin is not a terminal; no credentials were migrated.',
+        remediation: ['opena2a protect --ci', 'opena2a protect --dry-run'],
+        migrated: 0,
+      }, null, 2) + '\n');
+    } else {
+      process.stderr.write(
+        '\n' + yellow('Cannot prompt: stdin is not a terminal, and no credentials were migrated.') + '\n' +
+        dim('  Migrate without prompting:  ') + cyan('opena2a protect --ci') + '\n' +
+        dim('  Preview without changes:    ') + cyan('opena2a protect --dry-run') + '\n\n'
+      );
+    }
+    return 2;
+  }
+
   // Confirm before making any changes (interactive mode only)
   if (!isJson && !options.ci) {
     let confirmed = false;
@@ -449,11 +481,17 @@ export async function protect(options: ProtectOptions): Promise<number> {
         default: true,
       });
     } catch {
-      // Ctrl+C or non-interactive — treat as no
+      // The prompt could not complete (Ctrl+C, or stdin closed under us). No
+      // decision was made and the work was skipped, so this is not a success.
       process.stdout.write('\n');
-      return 0;
+      process.stderr.write(
+        dim('Aborted before any changes. Non-interactive? Use ') + cyan('opena2a protect --ci') + dim('.') + '\n'
+      );
+      return 2;
     }
     if (!confirmed) {
+      // A deliberate decline IS a successful outcome -- the user was asked and
+      // said no. Exit 0 is correct here, unlike the two paths above.
       process.stdout.write(dim('No changes made. Run with --dry-run to preview.\n'));
       return 0;
     }
@@ -726,6 +764,7 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
   // detection stay synchronous inside the walkFiles callback.
   const catalog = await loadCanonicalPatterns();
   const isKnownExample = await loadCanonicalAllowlist();
+  const knownExampleKeys = await loadKnownExampleKeys();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -750,10 +789,10 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
         while ((match = re.exec(line)) !== null) {
           // For capture group patterns, use group 1; otherwise full match
           const value = match[1] ?? match[0];
-          // Name-gated patterns (e.g. AWS secret key) match a prefix-less value
-          // by name only, so drop placeholder / low-entropy values (the AWS docs
-          // `wJalr…EXAMPLEKEY`, `xxxx…`) — not real exposures.
-          if (pattern.nameGated && isPlaceholderSecretValue(value)) continue;
+          // Same single placeholder rule the quickCredentialScan path uses --
+          // the two loops must not drift, or protect and init disagree about
+          // what counts as a credential.
+          if (isSuppressedCredentialValue(value, pattern, knownExampleKeys)) continue;
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;
@@ -1379,19 +1418,114 @@ function printReport(report: ProtectReport): void {
     process.stdout.write('  2. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
     process.stdout.write('  3. Re-assess posture: ' + dim('opena2a init') + '\n');
     process.stdout.write('\n' + dim('Rollback:') + '\n');
-    if (report.migrated > 0) {
-      process.stdout.write(dim('  git checkout -- <files>    Restore original files (credentials re-appear in source)') + '\n');
-    }
-    if (af?.configsSigned) {
-      process.stdout.write(dim('  rm .opena2a/guard/signatures.json   Remove config signatures') + '\n');
-    }
-    if (af?.gitignoreFixed) {
-      process.stdout.write(dim('  git checkout -- .gitignore          Restore original .gitignore') + '\n');
+    for (const line of renderRollbackLines(report.targetDir, report, af)) {
+      process.stdout.write(line + '\n');
     }
     process.stdout.write('\n' + dim('Continue hardening:') + '\n');
     process.stdout.write(dim('  opena2a runtime start     Enable runtime monitoring') + '\n');
   }
 }
+
+/**
+ * True when `dir` sits inside a git work tree.
+ *
+ * Asks git rather than testing for a `.git` entry: protect is routinely
+ * pointed at a SUBDIRECTORY of a repository, where `git checkout` still works
+ * but `.git` is several levels up. Also handles worktrees and submodules,
+ * where `.git` is a file rather than a directory.
+ */
+function isInsideGitWorkTree(dir: string): 'yes' | 'no' | 'unknown' {
+  let out: string;
+  try {
+    out = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: dir,
+      // stderr is CAPTURED, not discarded: it is the only way to tell git's
+      // "not a git repository" (a real no) from every other failure.
+      stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+  } catch (err) {
+    // Tri-state, not a boolean. git answers "no" by exiting 128 with
+    // "not a git repository" -- but it ALSO exits non-zero when it is not
+    // installed, when the directory is unreadable (EACCES), when spawn fails
+    // (EMFILE/ENOMEM), and on "detected dubious ownership" (routine in
+    // containers, CI runners and shared checkouts). Collapsing all of those
+    // to `false` made protect tell a user inside a perfectly good repo that
+    // their source edit was unrecoverable, when `git checkout` would have
+    // worked. Withholding the git advice is safe; asserting its absence is not.
+    const e = err as { stderr?: string | Buffer; message?: string };
+    const stderr = e.stderr ? String(e.stderr) : (e.message ?? '');
+    return /not a git repository/i.test(stderr) ? 'no' : 'unknown';
+  }
+  return out.trim() === 'true' ? 'yes' : 'no';
+}
+
+/**
+ * Build the Rollback block.
+ *
+ * protect rewrites source files in place. Its only advertised undo used to be
+ * `git checkout -- <files>`, printed unconditionally -- including in the
+ * `mktemp -d` case where there is no repository and the command cannot run
+ * (#257). A recovery instruction that fails where it is printed is the dead
+ * end CISO Rule 11 exists to prevent.
+ *
+ * Deliberately NOT solved by writing a backup of the original file: that file
+ * still contains the plaintext credential, so a rollback manifest on disk
+ * would re-create the exposure protect just removed. Outside a repo the honest
+ * answer is that the edit is not reversible from disk, plus the vault command
+ * that reads the value back so the user can restore it by hand.
+ */
+function renderRollbackLines(
+  targetDir: string,
+  report: { migrated: number },
+  af?: { configsSigned?: number; gitignoreFixed?: boolean } | null,
+): string[] {
+  const lines: string[] = [];
+  const gitState = isInsideGitWorkTree(targetDir);
+
+  if (report.migrated > 0) {
+    if (gitState === 'yes') {
+      lines.push(dim('  git checkout -- <files>    Restore original files (credentials re-appear in source)'));
+    } else if (gitState === 'no') {
+      lines.push(dim('  Source edits are not reversible from disk here: this is not a git'));
+      lines.push(dim('  repository, and no plaintext backup is kept by design.'));
+      lines.push(dim('  The value is in the vault. Read it back and restore it by hand:'));
+      lines.push(dim('    ') + cyan('npx secretless-ai secret list'));
+      lines.push(dim('    ') + cyan('npx secretless-ai secret get <NAME>'));
+    } else {
+      // Could not determine. Offer BOTH rather than assert either -- claiming
+      // "not reversible" to someone who is in a repo is the worse error.
+      lines.push(dim('  Could not determine whether this directory is a git repository.'));
+      lines.push(dim('  If it is:  ') + cyan('git checkout -- <files>'));
+      lines.push(dim('  If it is not, the value is in the vault:'));
+      lines.push(dim('    ') + cyan('npx secretless-ai secret list'));
+      lines.push(dim('    ') + cyan('npx secretless-ai secret get <NAME>'));
+    }
+  }
+  if (af?.configsSigned) {
+    lines.push(dim('  rm .opena2a/guard/signatures.json   Remove config signatures'));
+  }
+  if (af?.gitignoreFixed) {
+    // protect edits .gitignore with no repo check, so this must be reported
+    // whatever the git state. Previously it was printed only inside a repo,
+    // which meant a file protect had just modified went unmentioned.
+    if (gitState === 'yes') {
+      lines.push(dim('  git checkout -- .gitignore          Restore original .gitignore'));
+    } else {
+      lines.push(dim('  .gitignore was modified (credential-file exclusions appended).'));
+      lines.push(dim('  Remove those lines by hand to restore it.'));
+    }
+  }
+
+  return lines;
+}
+
+/** Test-only surface. Not part of the public API. */
+export const _protectInternals = {
+  renderRollbackLines,
+  isInsideGitWorkTree,
+};
 
 // --- Utilities ---
 

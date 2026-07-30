@@ -271,6 +271,10 @@ Learn more: https://opena2a.org/docs`);
     .command('protect [directory]')
     .description('Detect and migrate credentials to encrypted vault')
     .option('--dry-run', 'Show what would change without modifying files')
+    // Also a global option, but protect is the command where its absence is
+    // actively harmful: without it a non-interactive run cannot migrate, so it
+    // must be discoverable from `protect --help` (#256).
+    .option('--ci', 'Migrate without prompting (required when stdin is not a terminal)')
     .option('--report <path>', 'Write interactive HTML report')
     .option('--skip-verify', 'Skip verification re-scan')
     .option('--skip-liveness', 'Skip drift liveness verification (offline/CI)')
@@ -289,7 +293,9 @@ Learn more: https://opena2a.org/docs`);
         targetDir: opts.dir ?? directory ?? process.cwd(),
         dryRun: opts.dryRun,
         verbose: globalOpts.verbose,
-        ci: globalOpts.ci,
+        // Accept both placements: `opena2a --ci protect` (global) and
+        // `opena2a protect --ci` (subcommand, the form users actually type).
+        ci: opts.ci ?? globalOpts.ci,
         format: globalOpts.format as 'text' | 'json',
         skipVerify: opts.skipVerify,
         skipLiveness: opts.skipLiveness,
@@ -692,6 +698,12 @@ analysis runs and results can be shared with the community.
     .option('--severity <level>', 'Severity filter')
     .option('--source <source>', 'Source filter')
     .option('--category <cat>', 'Category filter')
+    // `shield evaluate --action X --target Y` is printed as remediation by
+    // src/shield/findings.ts. Both flags were unregistered, and
+    // .allowUnknownOption(true) swallowed them into args, so the evaluated
+    // target was always '' and the run printed nothing (#255).
+    .option('--action <action>', 'Action to evaluate (e.g. process.spawn, network.connect)')
+    .option('--target <target>', 'Target of the action (binary, host, path)')
     .option('--verify', 'Verify before recovering')
     .option('--reset', 'Force exit lockdown')
     .option('--forensic', 'Forensic mode')

@@ -8,7 +8,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { bold, green, yellow, red, dim } from '../../util/colors.js';
+import { bold, green, yellow, red, dim, cyan } from '../../util/colors.js';
 import {
   CAPABILITY_CHOICES,
   TEMPLATE_NAMES,
@@ -17,6 +17,7 @@ import {
   generateHeartbeatMd,
   generateTestFile,
   generateGitHubAction,
+  generateGitignore,
   validatePermissionBoundaries,
 } from './templates.js';
 
@@ -189,13 +190,20 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
   fs.writeFileSync(path.join(ghDir, 'skill-verify.yml'), actionContent, 'utf-8');
   createdFiles.push('.github/workflows/skill-verify.yml');
 
-  // 6. Permission boundary validation
+  // 6. Generate .gitignore. The scaffold ships a CI workflow, so it is a git
+  // project by construction, and GIT-001 flags a missing .gitignore -- a
+  // finding on freshly generated output. Entries are the credential-bearing
+  // paths `protect` and `scan` care about, not a generic node template.
+  fs.writeFileSync(path.join(outputDir, '.gitignore'), generateGitignore(), 'utf-8');
+  createdFiles.push('.gitignore');
+
+  // 7. Permission boundary validation
   const dangerMatches = validatePermissionBoundaries(skillMdContent);
   for (const dm of dangerMatches) {
     warnings.push(`[${dm.severity.toUpperCase()}] ${dm.id}: ${dm.message}`);
   }
 
-  // 7. Sign skill files (unless --no-sign)
+  // 8. Sign skill files (unless --no-sign)
   let signed = false;
   if (!opts.noSign) {
     try {
@@ -229,7 +237,24 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
     }
 
     if (signed) {
-      process.stdout.write(`\n  ${green('Signed')} SKILL.md and HEARTBEAT.md\n`);
+      // Name WHICH signature this is. `scan` reports `Unsigned Skill` /
+      // `Unsigned Heartbeat` on these same files because it checks for an
+      // AIM/Ed25519 signature, while what was written here is an
+      // opena2a-guard pinned hash. Claiming a bare "Signed" left the user
+      // with two contradictory statements and no way to reconcile them
+      // (#259).
+      process.stdout.write(
+        `\n  ${green('Hash-pinned')} SKILL.md and HEARTBEAT.md ${dim('(opena2a-guard, tamper detection)')}\n`
+      );
+      // `hackmyagent fix-all --with-aim` is the real Ed25519/AIM signing path
+      // (its step 3). `opena2a fix-all` does NOT exist -- the natural-language
+      // router silently fuzzy-matches it to `opena2a identity`, which would
+      // make this line a dead end. Cited the same way guard.ts and
+      // mcp-audit.ts already cite it.
+      process.stdout.write(
+        `  ${dim('Not an AIM signature -- `scan` reports these as unsigned until you run:')}\n` +
+        `    ${cyan('hackmyagent fix-all --with-aim')}\n`
+      );
     } else if (opts.noSign) {
       process.stdout.write(`\n  ${dim('Signing skipped (--no-sign)')}\n`);
     }

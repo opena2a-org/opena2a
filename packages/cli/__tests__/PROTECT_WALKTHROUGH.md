@@ -120,7 +120,40 @@ opena2a protect "$DIR"
 
 Expected: 0 findings (`node_modules` is in `SKIP_DIRS`).
 
-### S8 — Rollback round-trip
+### S8 — Rollback round-trip (git work tree)
+
+The migration MUST be proven to have happened before the restore is checked.
+The previous version of this scenario ran `opena2a protect "$DIR"` with no
+`--ci`, so protect skipped the migration entirely, and `sha256sum -c` then
+reported `OK` because the file had never changed — a gate that passed because
+nothing happened (#256). It also invoked `opena2a protect --undo`, which is not
+a registered option (`error: unknown option '--undo'`).
+
+```bash
+DIR=$(mktemp -d) && git -C "$DIR" init -q && cat > "$DIR/app.js" <<'EOF'
+const client = new Anthropic({
+  apiKey: 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+});
+EOF
+git -C "$DIR" add app.js && git -C "$DIR" -c user.email=t@t -c user.name=t commit -qm base
+sha256sum "$DIR/app.js" > "$DIR/before.sha"
+
+opena2a protect "$DIR" --ci
+
+# GATE 1 — protect must actually have rewritten the file. If this reports OK,
+# the migration did not run and the rest of the scenario is meaningless.
+sha256sum -c "$DIR/before.sha" && echo "S8 FAIL: protect changed nothing" || echo "S8 ok: file was rewritten"
+grep -q 'process.env.ANTHROPIC_API_KEY' "$DIR/app.js" && echo "S8 ok: env reference written"
+
+# GATE 2 — the offered rollback must restore the original byte-for-byte.
+git -C "$DIR" checkout -- app.js
+sha256sum -c "$DIR/before.sha"
+```
+
+Expected: gate 1 prints `S8 ok:` twice (file rewritten, env reference present);
+gate 2 prints `OK` from sha256sum.
+
+### S8b — Rollback guidance outside a git repo (#257)
 
 ```bash
 DIR=$(mktemp -d) && cat > "$DIR/app.js" <<'EOF'
@@ -128,25 +161,75 @@ const client = new Anthropic({
   apiKey: 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
 });
 EOF
-sha256sum "$DIR/app.js" > "$DIR/before.sha"
-opena2a protect "$DIR"
-opena2a protect "$DIR" --undo
-sha256sum -c "$DIR/before.sha"
+opena2a protect "$DIR" --ci | sed -n '/Rollback:/,/Continue hardening/p'
 ```
 
-Expected: `OK` from sha256sum. Rollback manifest is removed after a clean undo (regression: stale manifest was a prior ship-blocker).
+Expected: no `git checkout` line (there is no repository, so it could not run).
+The block states the source edit is not reversible from disk and names
+`npx secretless-ai secret get <NAME>`, which is a real subcommand of the vault
+protect stores into.
+
+### S8c — Non-interactive run must not claim success (#256)
+
+```bash
+DIR=$(mktemp -d) && cat > "$DIR/app.js" <<'EOF'
+const client = new Anthropic({
+  apiKey: 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+});
+EOF
+opena2a protect "$DIR" < /dev/null ; echo "exit=$?"
+grep -c 'sk-ant-api03' "$DIR/app.js"
+```
+
+Expected: `exit=2` (not 0 — exit 0 would tell CI the credentials were migrated),
+stderr names `--ci` and `--dry-run`, and the grep still reports `1` because the
+refusal is a genuine no-op.
 
 ### S9 — AWS Access Key + Secret pair (CRED-005)
+
+Two fixtures, because one cannot tell placeholder suppression from a pattern
+miss. Both halves must be judged by the SAME rule (#258): before the fix,
+DRIFT-002 fired on the documentation id while CRED-005 suppressed the
+documentation secret, so the pair reported exactly one finding — the harmless
+identifier — and a user acting on it migrated the wrong half.
+
+**S9a — AWS's published documentation pair. Neither half is a secret.**
 
 ```bash
 DIR=$(mktemp -d) && cat > "$DIR/aws.js" <<'EOF'
 const accessKeyId = 'AKIAIOSFODNN7EXAMPLE';
 const secretAccessKey = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
 EOF
-opena2a protect "$DIR"
+opena2a protect "$DIR" --dry-run
 ```
 
-Expected: 2 findings (DRIFT-002 + CRED-005). DRIFT-002 high · CRED-005 critical. Both suggest distinct env-var names.
+Expected: 0 findings. Both values are in the canonical `KNOWN_EXAMPLE_KEYS`
+(source-verified against the AWS IAM User Guide). The zero-finding state must
+still print an observation line, not an empty screen.
+
+**S9b — non-example, high-entropy pair. Both halves are real exposures.**
+
+Both values are assembled at runtime. A literal 20-char `AKIA…` id or a 40-char
+secret in an `aws_secret_access_key` context is exactly what GitHub push
+protection rejects, so this file must never contain one.
+
+```bash
+DIR=$(mktemp -d)
+ID="AKIA""2X7QNVBTKLMZ4RCD"
+SECRET="Kp7QzR2mNvT4""bXwL9sYc1JhG""sixdFa8UeZ0i""OnPr"
+printf "const accessKeyId = '%s';\nconst secretAccessKey = '%s';\n" "$ID" "$SECRET" > "$DIR/aws.js"
+[ ${#SECRET} -eq 40 ] || echo "S9b FAIL: secret must be exactly 40 chars, got ${#SECRET}"
+opena2a protect "$DIR" --dry-run
+```
+
+The secret must be exactly 40 base64 characters — CRED-005 requires it. A
+39- or 41-char fixture reports only DRIFT-002 and reads as a pattern miss,
+which is why the length is asserted inline rather than trusted.
+
+Expected: 2 findings (DRIFT-002 high + CRED-005 critical), distinct env-var
+names (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). If S9b reports fewer than
+2, the pattern is genuinely broken — that is the case S9a alone could not
+distinguish.
 
 ### S10 — Empty file / empty dir (no dead end)
 
