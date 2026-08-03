@@ -244,15 +244,61 @@ export async function isContributeEnabled(): Promise<boolean> {
   }
 }
 
+/**
+ * The registry every command should talk to.
+ *
+ * Canonical host, defined once. Each command used to carry its own
+ * `DEFAULT_REGISTRY_URL` constant, which is how the CLI ended up advertising
+ * `https://api.oa2a.org` in `scan --help` while `config show` reported
+ * `https://registry.opena2a.org` — a host that deliberately has no DNS,
+ * because it names the unreleased Registry FRONTEND, not the API. Do not
+ * "fix" a failure against that host by creating the record.
+ */
+export const CANONICAL_REGISTRY_URL = 'https://api.oa2a.org';
+
+/**
+ * Hosts a config may still be pinned to from an older install. Superset of the
+ * list in `@opena2a/shared`, so a CLI running against an older pinned shared
+ * package still resolves them — the miss this closes was exactly that: the CLI
+ * pinned `@opena2a/shared@0.1.0`, whose DEFAULT_CONFIG shipped
+ * `registry.opena2a.org` and which had no migration at all, so every fresh
+ * install failed `opena2a trust <pkg>` with "fetch failed" until the user ran
+ * some other command that happened to rewrite the config.
+ */
+const STALE_REGISTRY_HOSTS = [
+  'https://registry.opena2a.org',
+  'http://registry.opena2a.org',
+  'https://api.opena2a.org',
+  'http://api.opena2a.org',
+];
+
+function isStaleRegistryUrl(url: string): boolean {
+  const normalized = url.trim().replace(/\/+$/, '').toLowerCase();
+  if (!normalized) return false;
+  return STALE_REGISTRY_HOSTS.some(
+    host => normalized === host || normalized.startsWith(host + '/'),
+  );
+}
+
+/**
+ * Resolve the registry URL a command should use.
+ *
+ * Always returns a usable URL. Unset and known-stale both resolve to the
+ * canonical host, so no caller needs its own `|| 'https://...'` fallback — and
+ * a caller that forgets one cannot silently inherit a dead hostname.
+ */
 export async function getRegistryUrl(): Promise<string> {
   try {
     const mod = await loadShared();
     const config = mod.loadUserConfig();
-    const url = config.registry?.url ?? '';
-    if (url) validateRegistryUrl(url);
+    const url = (config.registry?.url ?? '').trim();
+    if (!url || isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
+    validateRegistryUrl(url);
     return url;
   } catch {
-    return ''; // registry not yet available
+    // A broken or unreadable config must not strand the user on no registry at
+    // all; the canonical host is the same answer a fresh install gets.
+    return CANONICAL_REGISTRY_URL;
   }
 }
 

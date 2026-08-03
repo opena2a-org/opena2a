@@ -1179,7 +1179,15 @@ Valid actions:
         }
       } else if (action === 'show' || action === 'get') {
         const config = loadUserConfig();
-        process.stdout.write(JSON.stringify(config, null, 2) + '\n');
+        // Report the registry URL commands will ACTUALLY use, not the raw
+        // stored value. `config show` used to print whatever the config file
+        // (or the pinned shared package's default) held, which on a fresh
+        // install was `https://registry.opena2a.org` — a host with no DNS, so
+        // the one command a user runs to find out where the CLI points told
+        // them somewhere it never talks to.
+        const { getRegistryUrl } = await import('./util/report-submission.js');
+        const effective = { ...config, registry: { ...config.registry, url: await getRegistryUrl() } };
+        process.stdout.write(JSON.stringify(effective, null, 2) + '\n');
       } else {
         process.stderr.write(`Unknown config action: ${action}\n`);
         process.stderr.write('Usage: opena2a config contribute on|off|--enable|--disable\n');

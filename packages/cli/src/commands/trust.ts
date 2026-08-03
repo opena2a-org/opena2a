@@ -29,7 +29,6 @@ export interface TrustOptions {
 
 // --- Constants ---
 
-const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
 
 // --- Testable internals ---
 
@@ -508,15 +507,16 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
     return url;
   }
 
-  try {
-    const shared = await import('@opena2a/shared') as any;
-    const mod = 'default' in shared ? shared.default : shared;
-    const config = mod.loadUserConfig();
-    if (config.registry.url) {
-      validateRegistryUrl(config.registry.url);
-      return config.registry.url;
-    }
-  } catch { /* not available */ }
-
-  return DEFAULT_REGISTRY_URL;
+  // Config, via the shared resolver rather than a direct read.
+  //
+  // This used to read `config.registry.url` and return it whenever it was
+  // truthy. The CLI pins `@opena2a/shared`, and the pinned build's
+  // DEFAULT_CONFIG shipped `https://registry.opena2a.org` — a host with no DNS,
+  // because it names the unreleased Registry FRONTEND. So the value was ALWAYS
+  // truthy and ALWAYS dead, and `opena2a trust <pkg>` failed with "fetch
+  // failed" on every fresh install. The resolver maps stale hosts and the empty
+  // string alike onto the canonical API host, so this cannot recur when the pin
+  // moves again.
+  const { getRegistryUrl } = await import('../util/report-submission.js');
+  return getRegistryUrl();
 }

@@ -32,7 +32,6 @@ export interface ClaimOptions {
 
 // --- Constants ---
 
-const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
 
 // --- Testable internals ---
 
@@ -496,15 +495,12 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
     return url;
   }
 
-  try {
-    const shared = await import('@opena2a/shared') as any;
-    const mod = 'default' in shared ? shared.default : shared;
-    const config = mod.loadUserConfig();
-    if (config.registry.url) {
-      validateRegistryUrl(config.registry.url);
-      return config.registry.url;
-    }
-  } catch { /* not available */ }
-
-  return DEFAULT_REGISTRY_URL;
+  // Config, via the shared resolver. Same defect as `trust`: reading
+  // `config.registry.url` directly returned the pinned shared package's
+  // DEFAULT_CONFIG value, `https://registry.opena2a.org`, which has no DNS.
+  // The resolver maps stale hosts and the empty string onto the canonical API
+  // host. (`admin` deliberately does NOT follow config — it carries the
+  // internal admin key; see the note on its own resolveRegistryUrl.)
+  const { getRegistryUrl } = await import('../util/report-submission.js');
+  return getRegistryUrl();
 }
