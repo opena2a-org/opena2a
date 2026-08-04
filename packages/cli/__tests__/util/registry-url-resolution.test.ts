@@ -97,6 +97,22 @@ describe('registry URL resolution', () => {
     );
   });
 
+  it('concurrent callers all get the same answer', async () => {
+    // The resolver does `await import('@opena2a/shared')` and the shared
+    // `loadUserConfig()` REWRITES config.json when it migrates a stale host, so
+    // several commands resolving at once are concurrent readers of a file one
+    // of them may be writing. The contract callers depend on is that they all
+    // agree — a run where one command talks to a different registry than
+    // another is the defect this whole change exists to remove.
+    vi.resetModules();
+    mockSharedConfig(DEAD_FRONTEND);
+    const { getRegistryUrl } = await import('../../src/util/report-submission.js');
+
+    const answers = await Promise.all(Array.from({ length: 12 }, () => getRegistryUrl()));
+    expect(new Set(answers).size, `divergent answers: ${[...new Set(answers)].join(', ')}`).toBe(1);
+    expect(answers[0]).toBe(CANONICAL);
+  });
+
   it('no command carries its own registry fallback constant', async () => {
     // The two conflicting defaults existed because each command declared its
     // own. `admin` is the documented exception: it transmits the internal admin
