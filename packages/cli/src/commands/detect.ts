@@ -1242,7 +1242,10 @@ export async function detect(options: DetectOptions): Promise<number> {
       const { enrichFromRegistry } = await import('../util/registry-enrichment.js');
       const { getRegistryUrl } = await import('../util/report-submission.js');
 
-      const registryUrl = (await getRegistryUrl()) || 'https://api.oa2a.org';
+      // getRegistryUrl always returns a usable host now, so the old
+      // `|| 'https://api.oa2a.org'` fallback here was a second copy of the
+      // canonical constant with nothing keeping it in sync.
+      const registryUrl = await getRegistryUrl();
       const assets = mcpServers.map((s) => ({ name: s.name, type: 'mcp_server' }));
       registryEnrichments = await enrichFromRegistry(assets, registryUrl);
 
