@@ -51,20 +51,67 @@ describe('score provenance', () => {
    * distinct under this normalization, which is the case that matters.
    */
   const quantity = (expr: string) =>
-    expr.replace(/\|\|\s*0\s*$/, '').trim().split('.').pop()!.trim();
+    expr
+      // Strip only the ACCESSOR noise, never the object path: `data.`/`bs.`/
+      // `sevCounts.` are three routes to one severity count, but `init.` and
+      // `shield.` are what distinguish two different postures. An earlier
+      // version took `.pop()` on the whole dotted path, which deleted the only
+      // discriminator — `init.postureScore` and `shield.postureScore` both
+      // normalized to `postureScore`, so the guard could not fail on the exact
+      // defect it was written for. Red-proofed against main.
+      .replace(/\|\|\s*0\s*$/, '')
+      .replace(/\?.*$/, '')
+      // Drop known ACCESSOR segments wherever they appear, so the three routes
+      // to one severity count (`data.bySeverity.high`, `bs.high`,
+      // `sevCounts.high`) agree — while `init.` and `shield.` survive, because
+      // those name which posture is being measured.
+      .split('.')
+      .filter(seg => !['data', 'bs', 'sevCounts', 'bySeverity', 'd'].includes(seg.trim()))
+      .join('.')
+      .trim();
 
-  const tiles = () =>
-    [...htmlSrc().matchAll(/statCard\(([^,]+),\s*'([^']+)'/g)].map(m => ({
-      value: m[1].trim(),
-      label: m[2],
-    }));
+  /**
+   * Tiles, parsed with a BALANCED first argument.
+   *
+   * `([^,]+)` stopped at the first comma, so `statCard(Math.max(a,0),'Findings')`
+   * matched nothing at all and the tile became invisible to the guard — a
+   * collision could be hidden by wrapping one side in any two-argument call.
+   */
+  const tiles = () => {
+    const src = htmlSrc();
+    const out: Array<{ value: string; label: string }> = [];
+    for (const m of src.matchAll(/statCard\(/g)) {
+      let i = m.index! + m[0].length;
+      let depth = 0;
+      const start = i;
+      while (i < src.length && !(depth === 0 && src[i] === ',')) {
+        if ('([{'.includes(src[i])) depth++;
+        else if (')]}'.includes(src[i])) depth--;
+        i++;
+      }
+      const value = src.slice(start, i).trim();
+      const label = src.slice(i + 1).match(/^\s*['"`]([^'"`]+)['"`]/);
+      if (label) out.push({ value, label: label[1] });
+    }
+    return out;
+  };
 
   it('the normalization still separates the two postures', () => {
     // Guards the guard. A normalization that collapsed these would make the
-    // collision test below unable to fail on the very defect it exists for.
+    // collision test below unable to fail on the very defect it exists for —
+    // which is exactly what an earlier `.split('.').pop()` version did.
     expect(quantity('init.postureScore')).not.toBe(quantity('shield.shieldPostureScore'));
+    expect(quantity('init.postureScore')).not.toBe(quantity('shield.postureScore'));
     // ...while still collapsing the accessor variants it is meant to collapse.
     expect(quantity('data.bySeverity.high||0')).toBe(quantity('bs.high||0'));
+  });
+
+  it('the tile parser survives a wrapped first argument', () => {
+    // Non-vacuity for the parser itself: a comma inside the value expression
+    // must not make the tile invisible.
+    const parsed = tiles();
+    expect(parsed.length).toBeGreaterThan(2);
+    expect(parsed.every(t => t.label.length > 0)).toBe(true);
   });
 
   it('no two report tiles claim the same label for different quantities', () => {

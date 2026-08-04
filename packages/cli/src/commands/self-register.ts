@@ -617,19 +617,13 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
     validateRegistryUrl(url);
     return url;
   }
-
-  try {
-    const shared = await import('@opena2a/shared') as any;
-    const mod = 'default' in shared ? shared.default : shared;
-    const config = mod.loadUserConfig();
-    if (config.registry.url) {
-      validateRegistryUrl(config.registry.url);
-      return config.registry.url;
-    }
-  } catch {
-    // not available
-  }
-  return ''; // registry not yet available
+  // One resolver for the whole CLI. Reading `config.registry.url` here directly
+  // is what left this command on a different registry than `config show`
+  // reported: the pinned `@opena2a/shared` default was a dead host (truthy) and
+  // is now the empty string, so a direct read moved this from "wrong host" to
+  // "no host at all".
+  const { getRegistryUrl } = await import('../util/report-submission.js');
+  return getRegistryUrl();
 }
 
 // --- Output ---

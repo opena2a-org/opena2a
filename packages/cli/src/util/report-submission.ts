@@ -272,12 +272,28 @@ const STALE_REGISTRY_HOSTS = [
   'http://api.opena2a.org',
 ];
 
-function isStaleRegistryUrl(url: string): boolean {
-  const normalized = url.trim().replace(/\/+$/, '').toLowerCase();
-  if (!normalized) return false;
-  return STALE_REGISTRY_HOSTS.some(
-    host => normalized === host || normalized.startsWith(host + '/'),
-  );
+/** Hostnames — not URL prefixes — that no longer resolve. */
+const STALE_REGISTRY_HOSTNAMES = new Set([
+  'registry.opena2a.org',
+  'api.opena2a.org',
+]);
+
+export function isStaleRegistryUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  // Compare the parsed HOSTNAME, not a string prefix. Prefix matching missed
+  // every DNS-equivalent spelling — `:443`, a `user@` prefix, a trailing dot,
+  // `?query` and `#fragment` all reached the dead host unchanged — while a
+  // parsed hostname is exactly the thing DNS resolves. A trailing dot is the
+  // fully-qualified form of the same name, so it is stripped before comparison.
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase().replace(/\.$/, '');
+    return STALE_REGISTRY_HOSTNAMES.has(host);
+  } catch {
+    // Unparseable: not something we can claim is stale. It is handled by the
+    // validator in `getRegistryUrl`, which fails rather than redirecting.
+    return false;
+  }
 }
 
 /**
@@ -288,18 +304,30 @@ function isStaleRegistryUrl(url: string): boolean {
  * a caller that forgets one cannot silently inherit a dead hostname.
  */
 export async function getRegistryUrl(): Promise<string> {
+  let url: string;
   try {
     const mod = await loadShared();
-    const config = mod.loadUserConfig();
-    const url = (config.registry?.url ?? '').trim();
-    if (!url || isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
-    validateRegistryUrl(url);
-    return url;
+    url = ((mod.loadUserConfig().registry?.url ?? '') as string).trim();
   } catch {
-    // A broken or unreadable config must not strand the user on no registry at
-    // all; the canonical host is the same answer a fresh install gets.
+    // The config could not be read at all. There is no configured destination
+    // to honour, so this is the same situation as a fresh install.
     return CANONICAL_REGISTRY_URL;
   }
+
+  // Unset, or a host we know is dead: the canonical API is the intended answer.
+  if (!url || isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
+
+  // A URL IS configured. From here the only safe outcomes are "use it" or
+  // "fail" — never "silently use ours instead".
+  //
+  // Wrapping this in a catch that fell back to the canonical host made the
+  // resolver fail-OPEN on the egress destination: a user who deliberately set
+  // `http://registry.internal.corp` (rejected — the validator requires https)
+  // or whose config held a typo would have had scan reports, finding titles and
+  // verdicts POSTed to api.oa2a.org instead of nowhere. Consent covers whether
+  // to share, not with whom.
+  validateRegistryUrl(url);
+  return url;
 }
 
 /**

@@ -493,8 +493,14 @@ function formatPackageType(packageType?: string): string | undefined {
 }
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
+  const { isStaleRegistryUrl, CANONICAL_REGISTRY_URL, getRegistryUrl } =
+    await import('../util/report-submission.js');
   if (override) {
     const url = override.replace(/\/$/, '');
+    // Highest-precedence input, and it bypassed the stale mapping entirely:
+    // `--registry-url https://registry.opena2a.org` reproduced the original
+    // "fetch failed" on the one input a user is most explicit about.
+    if (isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
     validateRegistryUrl(url);
     return url;
   }
@@ -503,6 +509,9 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
   const envUrl = process.env.OPENA2A_REGISTRY_URL;
   if (envUrl) {
     const url = envUrl.replace(/\/$/, '');
+    // Same bypass as the flag above. This value is in circulation — child-env
+    // forwards it to spawned tools — so a stale export propagates.
+    if (isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
     validateRegistryUrl(url);
     return url;
   }
@@ -517,6 +526,5 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
   // failed" on every fresh install. The resolver maps stale hosts and the empty
   // string alike onto the canonical API host, so this cannot recur when the pin
   // moves again.
-  const { getRegistryUrl } = await import('../util/report-submission.js');
   return getRegistryUrl();
 }
