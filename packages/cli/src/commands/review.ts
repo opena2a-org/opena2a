@@ -842,8 +842,16 @@ export function runShieldPhase(targetDir: string): ShieldPhaseData {
   try {
     verified = readVerifiedEvents({ since: '7d' });
   } catch {
+    // A log we could not read is UNKNOWN, and unknown is not intact. This
+    // previously reported `chainBroken: false` with zero events, which renders
+    // an unreadable log as a clean one -- the same fail-open shape this phase
+    // exists to close, one layer up. `readAllEvents` currently swallows its own
+    // I/O errors and `verifyEventChain` is total over JSON-derived input, so
+    // this block is unreachable today; it is corrected now because it goes live
+    // the moment either of those properties changes, and because an unreachable
+    // branch is exactly where a wrong default survives unnoticed.
     verified = {
-      events: [], untrusted: [], chainBroken: false, brokenAt: null,
+      events: [], untrusted: [], chainBroken: true, brokenAt: 0,
       untrustedCount: 0, firstUntrusted: null,
     };
   }
