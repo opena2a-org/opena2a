@@ -105,6 +105,18 @@ cd packages/cli && npx vitest
 - Include the command you ran and the full output
 - Include your Node.js version (`node --version`)
 
+## Pull requests from forks
+
+Some checks on this repository need credentials that GitHub does not provide
+to workflows triggered from a fork. Those checks will not report a result on
+your pull request, and that is not a problem with your change.
+
+When that happens, a maintainer runs the build, the type check and the full
+test suite against the merged tree before merging, and records the result on
+the pull request. You do not need to do anything differently. Running
+`npx turbo build` and `npx turbo test` locally before you open the pull
+request is the fastest way to keep that step short.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under
