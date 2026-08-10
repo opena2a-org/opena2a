@@ -40,8 +40,8 @@ export interface ShieldOptions {
   /** `--target /usr/bin/curl` — the subject of that action (evaluate only). */
   target?: string;
   verify?: boolean;
-  reset?: boolean;
-  forensic?: boolean;
+  /** `--archive-log` — retire a broken event log and start a fresh chain. */
+  archiveLog?: boolean;
   analyze?: boolean;
   ci?: boolean;
   format?: string;
@@ -393,9 +393,116 @@ function writeEvaluateVerdict(
   process.stdout.write('\n');
 }
 
+/**
+ * `shield recover --archive-log` -- retire a broken event log.
+ *
+ * SHIELD-INT-002 (broken hash chain) had no path to green: `selfcheck`
+ * reports the config intact, `recover` reports "not in lockdown", and
+ * `review` keeps raising the finding, so the only exit was deleting
+ * `events.jsonl` by hand -- in a tamper-evidence system.
+ *
+ * The broken log is ARCHIVED, never deleted: it is the evidence of whatever
+ * broke it. Its sha256 is recorded in the first event of the fresh chain, so
+ * the new log carries a verifiable pointer back to the old one and the break
+ * cannot be laundered by rotating it away.
+ */
+async function handleArchiveLog(options: ShieldOptions): Promise<number> {
+  const { createHash } = await import('node:crypto');
+  const {
+    getEventsPath,
+    readVerifiedEvents,
+    rotatedEventsPath,
+    writeEvent,
+  } = await import('../shield/events.js');
+
+  const isJson = options.format === 'json';
+  const eventsPath = getEventsPath();
+
+  const refuse = (status: string, message: string): number => {
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ status, eventsPath }, null, 2) + '\n');
+    } else {
+      process.stderr.write(red(message + '\n'));
+    }
+    return 1;
+  };
+
+  if (!fs.existsSync(eventsPath)) {
+    return refuse('no_event_log', `No event log at ${eventsPath}. Nothing to archive.`);
+  }
+
+  const { chainBroken, brokenAt, untrustedCount } = readVerifiedEvents();
+
+  // Archiving an intact log would discard trustworthy history for nothing,
+  // and would be a way to drop events on demand.
+  if (!chainBroken) {
+    return refuse(
+      'chain_intact',
+      'Event log hash chain is intact. Nothing to archive.\n' +
+      `  Inspect:  opena2a shield log\n  Log:      ${eventsPath}`,
+    );
+  }
+
+  const archivedBytes = fs.readFileSync(eventsPath);
+  const archivedSha256 = createHash('sha256').update(archivedBytes).digest('hex');
+  const archivedPath = rotatedEventsPath(eventsPath);
+
+  fs.renameSync(eventsPath, archivedPath);
+
+  // The fresh log is empty, so this event anchors to genesis and becomes the
+  // first link of the new chain.
+  const anchor = writeEvent({
+    source: 'shield',
+    // Deliberately not category 'integrity' + severity 'critical': that pair
+    // classifies as SHIELD-INT-002, which would re-raise on the fresh chain
+    // the very finding this command clears.
+    category: 'log-archive',
+    severity: 'high',
+    agent: null,
+    sessionId: null,
+    action: 'shield.log-archived',
+    target: archivedPath,
+    outcome: 'monitored',
+    detail: { archivedPath, archivedSha256, brokenAt, untrustedCount },
+    orgId: null,
+    managed: false,
+    agentId: null,
+  });
+
+  if (isJson) {
+    process.stdout.write(JSON.stringify({
+      status: 'archived',
+      archivedPath,
+      archivedSha256,
+      brokenAt,
+      untrustedCount,
+      eventsPath,
+      anchorEventId: anchor.id,
+    }, null, 2) + '\n');
+    return 0;
+  }
+
+  process.stdout.write(green('Broken event log archived.\n'));
+  process.stdout.write(`  ${dim('Archive:')} ${archivedPath}\n`);
+  process.stdout.write(`  ${dim('sha256:')}  ${archivedSha256}\n`);
+  process.stdout.write(
+    `  ${dim('Excluded:')} ${untrustedCount} event(s) from index ${brokenAt}\n`,
+  );
+  process.stdout.write(`  ${dim('New log:')} ${eventsPath} ${dim('(fresh chain)')}\n`);
+  process.stdout.write(dim('  Verify:  opena2a shield selfcheck\n'));
+  return 0;
+}
+
 async function handleRecover(options: ShieldOptions): Promise<number> {
   const { isLockdown, exitLockdown, getLockdownReason } = await import('../shield/integrity.js');
   const isJson = options.format === 'json';
+
+  // Before the lockdown gate on purpose: a broken hash chain does not put the
+  // system into lockdown, so behind the gate this would be unreachable in the
+  // exact situation it exists for.
+  if (options.archiveLog) {
+    return handleArchiveLog(options);
+  }
 
   if (!isLockdown()) {
     if (isJson) {

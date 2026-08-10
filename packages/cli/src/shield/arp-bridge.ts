@@ -206,8 +206,16 @@ export interface ARPStats {
  * Used by shield report to populate runtimeProtection section.
  */
 export function getARPStats(since?: string): ARPStats {
-  const events = readEvents({ source: 'arp', since, count: 10000 });
+  return computeARPStats(readEvents({ source: 'arp', since, count: 10000 }));
+}
 
+/**
+ * Aggregate ARP stats from an already-loaded event list.  Pure — no I/O.
+ * Lets callers that read events through a different path (e.g. review's
+ * chain-verified read, issue #204) compute stats over the same trusted
+ * event set they classify, instead of re-reading the raw log.
+ */
+export function computeARPStats(events: ShieldEvent[]): ARPStats {
   const stats: ARPStats = {
     totalEvents: events.length,
     anomalies: 0,

@@ -111,8 +111,14 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'pol',
     owaspAgentic: 'ASI03',
     mitreAtlas: 'AML.T0040',
-    remediation: 'opena2a shield policy --enforce',
-    description: 'The security policy is in monitor-only mode. Violations are logged but not blocked. Consider enabling enforcement.',
+    // `--enforce` is a `guard` flag, not a `shield` one. On `shield` it was
+    // swallowed by allowUnknownOption() and did nothing, so the remediation
+    // was a no-op -- the same defect class as `recover --forensic` (#231).
+    // No CLI path switches the policy mode today, so this points at the
+    // command that shows the mode; adding a real enforcement switch is a
+    // separate change.
+    remediation: 'opena2a shield policy',
+    description: 'The security policy is in monitor-only mode. Violations are logged but not blocked. Enforcement is set by the "mode" field of the policy file that this command prints.',
   },
   'SHIELD-PROC-001': {
     id: 'SHIELD-PROC-001',
@@ -151,7 +157,7 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'int',
     owaspAgentic: 'ASI10',
     mitreAtlas: 'AML.T0006',
-    remediation: 'opena2a shield selfcheck && opena2a shield recover --forensic',
+    remediation: 'opena2a shield selfcheck && opena2a shield recover --archive-log',
     description: 'The tamper-evident event log hash chain has been broken. This indicates log tampering or corruption.',
   },
   'SHIELD-INT-003': {
@@ -295,11 +301,15 @@ export function classifyEvent(event: ShieldEvent): FindingDefinition | null {
  * forging events under a non-configguard `source` (e.g. `source:'shield'`
  * + `category:'integrity'` + `severity:'critical'` => SHIELD-INT-002), or
  * a configguard event whose absolute target is the scanned dir itself.
- * Defending against arbitrary forged events requires verifying the event
- * hash chain (`verifyEventChain`) at review time and excluding events past
- * a break — the deeper "Option 2" of issue #111, tracked as issue #204.
- * The fail-closed rule below closes only the relative/non-absolute
- * configguard manufacture vector (#111 Option 1).
+ * That deeper defense — the "Option 2" of issue #111, issue #204 — lives
+ * upstream of this filter: review reads events through
+ * `readVerifiedEvents` (events.ts), which verifies the hash chain and
+ * excludes every event at or after the first break before any event
+ * reaches this filter or classification. Note the chain is keyless, so
+ * that upstream defense covers naive appends and corruption, not an
+ * attacker who recomputes hashes (see the GUARANTEE BOUNDARY note on
+ * readVerifiedEvents). The fail-closed rule below closes only the
+ * relative/non-absolute configguard manufacture vector (#111 Option 1).
  *
  * Scope of this filter (intentionally narrow):
  * - Only `event.source === 'configguard'` events with an absolute-path

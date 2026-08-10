@@ -20,6 +20,7 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { getEventLockPath, withEventLock } from './lock.js';
 import type { ShieldEvent } from './types.js';
 import { MAX_EVENTS_FILE_SIZE, SHIELD_EVENTS_FILE } from './types.js';
 
@@ -169,9 +170,24 @@ function getPrevHash(eventsPath: string): string {
 }
 
 /**
+ * Timestamped sibling path for a retired events file:
+ * `events.jsonl` -> `events-2026-08-10T12-00-00-000Z.jsonl`.
+ *
+ * Shared by size-based rotation and by `shield recover --archive-log`, so a
+ * retired log has one recognisable shape however it was retired.
+ */
+export function rotatedEventsPath(eventsPath: string, at: Date = new Date()): string {
+  const timestamp = at.toISOString().replace(/[:.]/g, '-');
+  return eventsPath.replace(/\.jsonl$/, `-${timestamp}.jsonl`);
+}
+
+/**
  * Rotate the events file if it exceeds MAX_EVENTS_FILE_SIZE.
  * The current file is renamed with a timestamp suffix, and a fresh
  * file is started.
+ *
+ * Callers must hold the event lock: rotation racing an append would rename
+ * the file out from under a writer that has already read its prevHash.
  */
 function rotateIfNeeded(eventsPath: string): void {
   if (!existsSync(eventsPath)) return;
@@ -185,9 +201,7 @@ function rotateIfNeeded(eventsPath: string): void {
 
   if (size <= MAX_EVENTS_FILE_SIZE) return;
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const rotatedPath = eventsPath.replace(/\.jsonl$/, `-${timestamp}.jsonl`);
-  renameSync(eventsPath, rotatedPath);
+  renameSync(eventsPath, rotatedEventsPath(eventsPath));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +217,13 @@ type GeneratedFields = 'id' | 'timestamp' | 'version' | 'prevHash' | 'eventHash'
  * The caller provides all event fields except id, timestamp, version,
  * prevHash, and eventHash -- those are generated automatically.
  *
+ * Read-prevHash and append are one critical section, held under the event
+ * lock (see ./lock.ts).  Two unlocked writers read the same prevHash and
+ * append two events claiming the same predecessor, which forks the chain
+ * permanently -- and a forked chain now costs every later event its trust.
+ * Rotation is inside the same section so a rename cannot land between a
+ * writer's prevHash read and its append.
+ *
  * @param partial     Event fields (minus auto-generated ones).
  * @param projectDir  Optional project root to write events to a
  *                    project-local `.opena2a/shield/` instead of global.
@@ -213,42 +234,44 @@ export function writeEvent(
 ): ShieldEvent {
   const eventsPath = getEventsPath(projectDir);
 
-  // Rotate before writing if the file is oversized
-  rotateIfNeeded(eventsPath);
+  return withEventLock(getEventLockPath(eventsPath), () => {
+    // Rotate before writing if the file is oversized
+    rotateIfNeeded(eventsPath);
 
-  const prevHash = getPrevHash(eventsPath);
+    const prevHash = getPrevHash(eventsPath);
 
-  // Build the event without the final eventHash
-  const event: Omit<ShieldEvent, 'eventHash'> & { eventHash?: string } = {
-    id: uuidv7(),
-    timestamp: new Date().toISOString(),
-    version: 1,
-    ...partial,
-    prevHash,
-  };
+    // Build the event without the final eventHash
+    const event: Omit<ShieldEvent, 'eventHash'> & { eventHash?: string } = {
+      id: uuidv7(),
+      timestamp: new Date().toISOString(),
+      version: 1,
+      ...partial,
+      prevHash,
+    };
 
-  // Compute the hash over the event (without the eventHash field itself)
-  const hashInput = JSON.stringify(event);
-  const eventHash = sha256(hashInput);
+    // Compute the hash over the event (without the eventHash field itself)
+    const hashInput = JSON.stringify(event);
+    const eventHash = sha256(hashInput);
 
-  const fullEvent: ShieldEvent = {
-    ...(event as Omit<ShieldEvent, 'eventHash'>),
-    eventHash,
-  };
+    const fullEvent: ShieldEvent = {
+      ...(event as Omit<ShieldEvent, 'eventHash'>),
+      eventHash,
+    };
 
-  const line = JSON.stringify(fullEvent) + '\n';
+    const line = JSON.stringify(fullEvent) + '\n';
 
-  // Ensure the shield directory exists (getEventsPath already calls getShieldDir)
-  appendFileSync(eventsPath, line, { encoding: 'utf-8', mode: 0o600 });
+    // Ensure the shield directory exists (getEventsPath already calls getShieldDir)
+    appendFileSync(eventsPath, line, { encoding: 'utf-8', mode: 0o600 });
 
-  // Ensure restrictive permissions on the events file
-  try {
-    chmodSync(eventsPath, 0o600);
-  } catch {
-    // Best-effort; appendFileSync already set mode on creation
-  }
+    // Ensure restrictive permissions on the events file
+    try {
+      chmodSync(eventsPath, 0o600);
+    } catch {
+      // Best-effort; appendFileSync already set mode on creation
+    }
 
-  return fullEvent;
+    return fullEvent;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -312,12 +335,11 @@ function parseSince(since: string): Date | null {
 }
 
 /**
- * Read events from the JSONL log file, applying optional filters.
- *
- * Returns events in newest-first order.  Corrupted JSON lines are
- * silently skipped.
+ * Read and parse every event line from the JSONL log file, in file
+ * (chronological, oldest-first) order.  Corrupted JSON lines are
+ * silently skipped.  Returns [] if the file is missing or unreadable.
  */
-export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
+function readAllEvents(): ShieldEvent[] {
   const eventsPath = getEventsPath();
 
   if (!existsSync(eventsPath)) return [];
@@ -337,15 +359,30 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
     if (trimmed.length === 0) continue;
 
     try {
-      const event = JSON.parse(trimmed) as ShieldEvent;
-      events.push(event);
+      const parsed: unknown = JSON.parse(trimmed);
+      // Valid JSON that is not an object (null, scalar, array) cannot be
+      // an event — treat it exactly like an unparseable corrupted line.
+      // A literal `null` line would otherwise flow into verifyEventChain
+      // and throw on property access, emptying the caller's event stream.
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        continue;
+      }
+      events.push(parsed as ShieldEvent);
     } catch {
       // Skip corrupted lines
       continue;
     }
   }
 
-  // Apply filters
+  return events;
+}
+
+/**
+ * Apply EventFilters to a chronological (oldest-first) event list and
+ * return the result in newest-first order, with the count limit applied
+ * after reversal.
+ */
+function applyEventFilters(events: ShieldEvent[], filters: EventFilters): ShieldEvent[] {
   let filtered = events;
 
   if (filters.source) {
@@ -379,8 +416,9 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
     }
   }
 
-  // Newest-first (reverse chronological order)
-  filtered.reverse();
+  // Newest-first (reverse chronological order).  Copy before reversing so
+  // the caller's chronological input array is not mutated.
+  filtered = [...filtered].reverse();
 
   // Apply count limit after reversing
   if (filters.count !== undefined && filters.count > 0) {
@@ -388,6 +426,85 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
   }
 
   return filtered;
+}
+
+/**
+ * Read events from the JSONL log file, applying optional filters.
+ *
+ * Returns events in newest-first order.  Corrupted JSON lines are
+ * silently skipped.
+ */
+export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
+  return applyEventFilters(readAllEvents(), filters);
+}
+
+/**
+ * Result of a chain-verified event read (see readVerifiedEvents).
+ */
+export interface VerifiedEventsResult {
+  /** Trusted events (before the first chain break), filtered, newest-first. */
+  events: ShieldEvent[];
+  /**
+   * Events at or after the first chain break, filtered, newest-first.
+   * Empty when the chain is intact.
+   *
+   * UNTRUSTED — forged, tampered, or corrupted.  Never classify these into
+   * reported findings; doing so readmits the manufacture vectors the
+   * exclusion exists to close.  They are exposed for one purpose only: a
+   * caller can classify them for COUNTS, to learn what the same log would
+   * have scored with an intact chain, and floor its score at that value.
+   * Without that floor, corrupting one line scores BETTER than leaving the
+   * log alone — blinding the sensor would beat forging into it.
+   */
+  untrusted: ShieldEvent[];
+  /** True if the hash chain is broken anywhere in the log. */
+  chainBroken: boolean;
+  /** Chronological index of the first untrusted event, or null if intact. */
+  brokenAt: number | null;
+  /** Number of events at or after the break that were excluded. */
+  untrustedCount: number;
+  /** The event at the break point (untrusted; forensic evidence), or null. */
+  firstUntrusted: ShieldEvent | null;
+}
+
+/**
+ * Read events with hash-chain verification: verify the full chronological
+ * log with verifyEventChain and exclude every event at or after the first
+ * chain break BEFORE applying filters (issue #204, the "Option 2" of #111).
+ *
+ * The chain must be verified on the complete, unfiltered log — a time or
+ * source filter would detach the first surviving event from its genesis
+ * anchor and make verification meaningless.  Corrupted (unparseable or
+ * non-object) lines are skipped at parse time; a corrupted line BETWEEN
+ * genuine events surfaces as a break via the surviving neighbor's prevHash
+ * mismatch, while trailing junk is skipped without one.
+ *
+ * GUARANTEE BOUNDARY — the chain is a keyless SHA-256 chain (no HMAC, no
+ * secret; GENESIS_HASH is a public constant).  Verification therefore
+ * detects accidental corruption, truncation, interleaved concurrent
+ * writes, and naive appends that do not recompute the chain — which
+ * covers forged findings injected without re-hashing (e.g. a forged
+ * source:'shield' integrity critical, or a forged in-scope configguard
+ * tamper event).  It does NOT stop an attacker who can write events.jsonl
+ * and recomputes hashes with the public algorithm: such an attacker can
+ * forge a validly-chained tail or rebuild the entire log from genesis.
+ * Closing that requires a keyed MAC (with the key outside the log's
+ * trust boundary) or an external anchor — a follow-up beyond issue #204.
+ */
+export function readVerifiedEvents(filters: EventFilters = {}): VerifiedEventsResult {
+  const all = readAllEvents();
+  const { valid, brokenAt } = verifyEventChain(all);
+
+  const trusted = valid ? all : all.slice(0, brokenAt as number);
+
+  return {
+    events: applyEventFilters(trusted, filters),
+    untrusted: valid ? [] : applyEventFilters(all.slice(brokenAt as number), filters),
+    chainBroken: !valid,
+    brokenAt,
+    untrustedCount: valid ? 0 : all.length - (brokenAt as number),
+    firstUntrusted: valid ? null : all[brokenAt as number] ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -206,13 +206,15 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a shield evaluate'],
   },
   recover: {
-    summary: 'Recover from Shield lockdown (after a tamper event).',
+    summary: 'Recover from Shield lockdown, or retire a broken event log.',
     options: [
-      { flag: '--verify', description: 'Verify before recovering' },
-      { flag: '--reset', description: 'Force exit lockdown without verification' },
-      { flag: '--forensic', description: 'Forensic mode (read-only, no changes)' },
+      { flag: '--verify', description: 'Run integrity checks before lifting lockdown' },
+      {
+        flag: '--archive-log',
+        description: 'Archive a broken event log and start a fresh chain (works outside lockdown)',
+      },
     ],
-    examples: ['opena2a shield recover --verify'],
+    examples: ['opena2a shield recover --verify', 'opena2a shield recover --archive-log'],
   },
   report: {
     summary: 'Write an HTML security posture report.',

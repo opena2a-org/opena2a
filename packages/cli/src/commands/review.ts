@@ -37,9 +37,10 @@ import { detectProject } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
-import { readEvents } from '../shield/events.js';
+import { readVerifiedEvents, uuidv7, type VerifiedEventsResult } from '../shield/events.js';
 import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
-import { getARPStats, type ARPStats } from '../shield/arp-bridge.js';
+import type { ShieldEvent } from '../shield/types.js';
+import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
@@ -63,6 +64,12 @@ export interface PhaseResult {
   score: number;
   durationMs: number;
   detail: string;
+  /** True when this phase could not see everything it normally scores, so its
+   *  score is "not fully measured", not "clean". Mirrors the report-level
+   *  `provisional` flag at phase granularity. */
+  provisional?: boolean;
+  /** Why the phase is provisional, in one sentence. Present iff `provisional`. */
+  provisionalReason?: string;
 }
 
 interface HygieneCheck {
@@ -142,10 +149,37 @@ export interface GuardPhaseData {
   signatureStatus: 'valid' | 'tampered' | 'unsigned';
 }
 
+/** Classified-finding counts by severity, deduplicated the same way
+ *  `classifyEvents` deduplicates (one entry per finding id, not per event). */
+export interface ShieldFindingCounts {
+  critical: number;
+  high: number;
+  medium: number;
+}
+
 export interface ShieldPhaseData {
   eventCount: number;
   classifiedFindings: ClassifiedFinding[];
   arpStats: ARPStats;
+  /** True when the event log's hash chain is broken (see readVerifiedEvents). */
+  chainBroken: boolean;
+  /** Events at or after the break that were excluded from classification. */
+  untrustedEventsExcluded: number;
+  /** Chronological index of the first untrusted event, or null if intact. */
+  brokenAt: number | null;
+  /**
+   * Finding counts over trusted + untrusted events — what the same log would
+   * have classified had its chain been intact. Present only when the chain is
+   * broken.
+   *
+   * Used ONLY to floor the shield scores (shieldPostureScore here,
+   * shieldCompositeScore and shieldRiskFloorScore downstream). The findings it
+   * counts are never added to `classifiedFindings`, never reach
+   * `report.findings`, and never render — trusting their content would readmit
+   * the forgery vectors the chain exclusion closes. They exist to lower a
+   * number, nothing else.
+   */
+  preExclusionCounts?: ShieldFindingCounts;
   /**
    * Runtime posture of the Shield layer: active tools, policy, shell
    * integration, penalized by classified findings.
@@ -362,12 +396,27 @@ export async function review(options: ReviewOptions): Promise<number> {
   const phase4Ms = Date.now() - phase4Start;
   const phase4Status = shieldData.shieldPostureScore >= 70 ? 'pass'
     : shieldData.shieldPostureScore >= 40 ? 'warn' : 'fail';
+  // A chain break makes this phase partially blind: the events at and after
+  // the break were excluded, so the counts below describe what SURVIVED
+  // verification, not what the log contains. Say so in the detail line and
+  // flag the phase provisional — otherwise the terminal shows a small, clean
+  // "N events, M findings" and nothing indicates the exclusion happened.
   phases.push({
     name: 'Shield Analysis',
     status: phase4Status,
     score: shieldData.shieldPostureScore,
     durationMs: phase4Ms,
-    detail: `${shieldData.eventCount} events, ${shieldData.classifiedFindings.length} findings`,
+    detail: shieldData.chainBroken
+      ? `${shieldData.eventCount} events, ${shieldData.classifiedFindings.length} findings`
+        + ` (${shieldData.untrustedEventsExcluded} excluded, chain broken at ${shieldData.brokenAt})`
+      : `${shieldData.eventCount} events, ${shieldData.classifiedFindings.length} findings`,
+    ...(shieldData.chainBroken
+      ? {
+        provisional: true,
+        provisionalReason: `Event log hash chain broken at index ${shieldData.brokenAt};`
+          + ` ${shieldData.untrustedEventsExcluded} untrusted events were excluded from classification.`,
+      }
+      : {}),
   });
   progressDone(4, 'Analyzing shield events...   ', formatMs(phase4Ms));
 
@@ -516,6 +565,21 @@ export async function review(options: ReviewOptions): Promise<number> {
     );
   }
 
+  // Chain-break notice (#204 / C6). The exclusion is the whole point of chain
+  // verification, but a SILENT exclusion reads as a clean phase: the only
+  // machine-readable trace was buried in
+  // shieldData.classifiedFindings[0].examples[0].detail, and the human saw a
+  // small event count and nothing else. Same stderr placement and rationale as
+  // the HMA notice above — emitted before the `--json` branch so it reaches
+  // both output paths without polluting stdout.
+  if (shieldData.chainBroken) {
+    process.stderr.write(
+      yellow('  Shield events partially excluded — event log hash chain broken.\n') +
+      dim(`  ${shieldData.untrustedEventsExcluded} untrusted events at/after index ${shieldData.brokenAt}`
+        + ' were not classified; the Shield phase is provisional. Inspect: opena2a shield selfcheck.\n\n'),
+    );
+  }
+
   if (options.format === 'json') {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     return compositeScore < 50 ? 1 : 0;
@@ -546,9 +610,16 @@ export async function review(options: ReviewOptions): Promise<number> {
   const scopeNote = compositeScore < lowestPhase
     ? `  (composite across ${phases.length} dimensions; capped by a critical dimension)`
     : `  (composite across ${phases.length} dimensions)`;
+  // The finding count above is what survived chain verification. When events
+  // were excluded, the summary must say so on the same screen as the count it
+  // qualifies, not only on stderr.
+  const chainNote = shieldData.chainBroken
+    ? `\n  ${shieldData.untrustedEventsExcluded} shield events excluded — event log chain broken at index ${shieldData.brokenAt}`
+    : '';
   process.stdout.write(
     `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}${dim(scopeNote)}` +
-    `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)\n`,
+    `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)` +
+    `${yellow(chainNote)}\n`,
   );
 
   // ── Observations + Verdict ──────────────────────────────────────────
@@ -762,20 +833,87 @@ function runGuardPhase(targetDir: string): GuardPhaseData {
   }
 }
 
-function runShieldPhase(targetDir: string): ShieldPhaseData {
-  let events: ReturnType<typeof readEvents>;
+export function runShieldPhase(targetDir: string): ShieldPhaseData {
+  // Chain-verified read (issue #204, "Option 2" of #111): events at or after
+  // the first hash-chain break are forged/tampered and must not classify
+  // into findings.  Verification happens on the full log before the 7d
+  // window is applied, so the genesis anchor stays intact.
+  let verified: VerifiedEventsResult;
   try {
-    events = readEvents({ since: '7d' });
+    verified = readVerifiedEvents({ since: '7d' });
   } catch {
-    events = [] as ReturnType<typeof readEvents>;
+    verified = {
+      events: [], untrusted: [], chainBroken: false, brokenAt: null,
+      untrustedCount: 0, firstUntrusted: null,
+    };
   }
+  const events = verified.events;
 
   const scopedEvents = filterEventsToTarget(events, targetDir);
+
+  // Surface the break itself as the single SHIELD-INT-002 finding: one
+  // synthetic in-memory event (never written to the log) classified through
+  // the normal pipeline, so it dedupes, sorts, and scores like any other
+  // integrity critical.  The excluded events contribute nothing else.
+  if (verified.chainBroken) {
+    const chainBreakEvent: ShieldEvent = {
+      id: uuidv7(),
+      timestamp: new Date().toISOString(),
+      version: 1,
+      source: 'shield',
+      category: 'integrity',
+      severity: 'critical',
+      agent: null,
+      sessionId: null,
+      action: 'event-chain-break',
+      target: 'events.jsonl',
+      outcome: 'blocked',
+      detail: {
+        brokenAt: verified.brokenAt,
+        untrustedEventsExcluded: verified.untrustedCount,
+        reason: 'Event log hash chain break detected at review time; events at and after the break were excluded from classification.',
+      },
+      prevHash: '',
+      eventHash: '',
+      orgId: null,
+      managed: false,
+      agentId: null,
+    };
+    scopedEvents.push(chainBreakEvent);
+  }
+
   const classifiedFindings = classifyEvents(scopedEvents);
 
+  // Counterfactual counts for the score FLOOR: what this same log would have
+  // classified had its chain been intact (trusted + untrusted, minus the
+  // synthetic break finding, which only exists because the chain broke).
+  //
+  // Without it, an append-only adversary who corrupts a single line blinds the
+  // phase into a BETTER score than leaving the log alone — every genuine
+  // finding written after the corruption is excluded and only the one
+  // chain-break critical remains. That makes blinding the sensor cheaper than
+  // forging into it, which inverts the point of the exclusion. Flooring is the
+  // right shape rather than a fixed penalty: a genuine tail with no critical
+  // already scores WORSE when broken, and a fixed penalty would double-count.
+  //
+  // COUNTS ONLY. These findings never enter `classifiedFindings`, so they
+  // never reach `report.findings` and never render. Untrusted content is
+  // permitted to lower a number and nothing else.
+  const preExclusionCounts = verified.chainBroken
+    ? shieldFindingCounts(
+      classifyEvents(filterEventsToTarget([...events, ...verified.untrusted], targetDir)),
+    )
+    : undefined;
+
+  // Same trust boundary as classification: stats come from the verified
+  // 7d window (`events`), not a second unverified read of the raw log —
+  // otherwise forged ARP events past a break would still inflate the
+  // report's runtime-protection numbers.  Mirrors getARPStats('7d')
+  // semantics (source filter, newest-first count cap) minus the
+  // untrusted tail.
   let arpStats: ARPStats;
   try {
-    arpStats = getARPStats('7d');
+    arpStats = computeARPStats(events.filter(e => e.source === 'arp').slice(0, 10000));
   } catch {
     arpStats = {
       totalEvents: 0, anomalies: 0, violations: 0, threats: 0,
@@ -787,27 +925,48 @@ function runShieldPhase(targetDir: string): ShieldPhaseData {
   const shieldStatus = getShieldStatus(targetDir);
   const activeTools = shieldStatus.tools.filter(p => p.active).length;
 
-  // Compute shield posture score (baseline 25 for CLI users)
-  let shieldPostureScore = 25;
-  shieldPostureScore += Math.min(activeTools * 10, 50);
-  if (shieldStatus.policyLoaded) shieldPostureScore += 10;
-  if (shieldStatus.shellIntegration) shieldPostureScore += 5;
-  // Penalize for findings
-  const critCount = classifiedFindings.filter(f => f.finding.severity === 'critical').length;
-  const highCount = classifiedFindings.filter(f => f.finding.severity === 'high').length;
-  shieldPostureScore -= critCount * 15;
-  shieldPostureScore -= highCount * 8;
-  shieldPostureScore = Math.max(0, Math.min(100, shieldPostureScore));
+  // Adoption baseline (25 for CLI users), before finding penalties.
+  let baseline = 25;
+  baseline += Math.min(activeTools * 10, 50);
+  if (shieldStatus.policyLoaded) baseline += 10;
+  if (shieldStatus.shellIntegration) baseline += 5;
+
+  // Penalize for findings, then floor at the intact-chain counterfactual so a
+  // break can never score better than the same log unbroken.
+  let shieldPostureScore = shieldPostureFromCounts(
+    baseline, shieldFindingCounts(classifiedFindings),
+  );
+  if (preExclusionCounts) {
+    shieldPostureScore = Math.min(
+      shieldPostureScore, shieldPostureFromCounts(baseline, preExclusionCounts),
+    );
+  }
 
   return {
     eventCount: events.length,
     classifiedFindings,
     arpStats,
+    chainBroken: verified.chainBroken,
+    untrustedEventsExcluded: verified.untrustedCount,
+    brokenAt: verified.brokenAt,
+    preExclusionCounts,
     shieldPostureScore,
     policyLoaded: shieldStatus.policyLoaded,
     policyMode: shieldStatus.policyMode,
     integrityStatus: shieldStatus.integrityStatus,
   };
+}
+
+/**
+ * Shield posture arithmetic: an adoption baseline reduced by classified
+ * findings. Extracted from runShieldPhase so the identical formula can be
+ * applied to a second, counts-only view of the log (see preExclusionCounts).
+ */
+function shieldPostureFromCounts(
+  baseline: number,
+  counts: { critical: number; high: number },
+): number {
+  return Math.max(0, Math.min(100, baseline - counts.critical * 15 - counts.high * 8));
 }
 
 /**
@@ -1126,8 +1285,23 @@ function shieldFindingCounts(classifiedFindings: { finding: { severity: string }
  */
 export function shieldCompositeScore(shield: {
   classifiedFindings: { finding: { severity: string } }[];
+  preExclusionCounts?: ShieldFindingCounts;
 }): number {
-  const { critical, high, medium } = shieldFindingCounts(shield.classifiedFindings);
+  const reported = shieldCompositeFromCounts(shieldFindingCounts(shield.classifiedFindings));
+  // Chain-break floor: excluding the untrusted tail removed genuine findings
+  // from `classifiedFindings` too, so score at the harsher of "what survived"
+  // and "what an intact chain would have classified". Fixing this on the phase
+  // posture alone would leave a LARGER reward here: on a one-junk-line fixture
+  // this input rose while the final composite did not move at all, because the
+  // synthetic break critical happened to pin the risk floor. That masking is
+  // incidental to the fixture, not a defence, so the floor is applied at both
+  // layers.
+  if (!shield.preExclusionCounts) return reported;
+  return Math.min(reported, shieldCompositeFromCounts(shield.preExclusionCounts));
+}
+
+function shieldCompositeFromCounts(counts: ShieldFindingCounts): number {
+  const { critical, high, medium } = counts;
   return Math.max(0, Math.min(100, 90 - critical * 30 - high * 15 - medium * 6));
 }
 
@@ -1144,10 +1318,27 @@ export function shieldCompositeScore(shield: {
  */
 export function shieldRiskFloorScore(shield: {
   classifiedFindings: { finding: { severity: string } }[];
+  preExclusionCounts?: ShieldFindingCounts;
 }): { score: number; ran: boolean } {
-  const { critical, high } = shieldFindingCounts(shield.classifiedFindings);
-  if (critical > 0) return { score: CRITICAL_BAND - 10, ran: true };
-  if (high > 0) return { score: CRITICAL_BAND - 5, ran: true };
+  const reported = shieldRiskFloorFromCounts(shieldFindingCounts(shield.classifiedFindings));
+  // Same chain-break floor as shieldCompositeScore: the excluded tail may have
+  // carried the only critical/high runtime signal on the target, and losing it
+  // must not relax the floor. Inert today — runShieldPhase always injects a
+  // critical chain-break finding, so `reported` is already at the harshest band
+  // whenever preExclusionCounts exists — and kept as defence-in-depth so the
+  // invariant survives a change to that synthetic finding's severity.
+  if (!shield.preExclusionCounts) return reported;
+  const preExclusion = shieldRiskFloorFromCounts(shield.preExclusionCounts);
+  if (!preExclusion.ran) return reported;
+  if (!reported.ran) return preExclusion;
+  return preExclusion.score < reported.score ? preExclusion : reported;
+}
+
+function shieldRiskFloorFromCounts(
+  counts: { critical: number; high: number },
+): { score: number; ran: boolean } {
+  if (counts.critical > 0) return { score: CRITICAL_BAND - 10, ran: true };
+  if (counts.high > 0) return { score: CRITICAL_BAND - 5, ran: true };
   return { score: 100, ran: false };
 }
 
