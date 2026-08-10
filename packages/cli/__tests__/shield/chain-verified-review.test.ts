@@ -41,7 +41,8 @@ const { writeEvent, readEvents, readVerifiedEvents, getShieldDir, getEventsPath 
   await import('../../src/shield/events.js');
 const { classifyEvents, filterEventsToTarget } =
   await import('../../src/shield/findings.js');
-const { runShieldPhase } = await import('../../src/commands/review.js');
+const { runShieldPhase, shieldCompositeScore, shieldRiskFloorScore } =
+  await import('../../src/commands/review.js');
 
 // ---------------------------------------------------------------------------
 // Temp directory setup
@@ -122,6 +123,7 @@ describe('readVerifiedEvents', () => {
     expect(result.brokenAt).toBeNull();
     expect(result.untrustedCount).toBe(0);
     expect(result.firstUntrusted).toBeNull();
+    expect(result.untrusted).toEqual([]);
     expect(result.events).toEqual(readEvents());
   });
 
@@ -144,6 +146,9 @@ describe('readVerifiedEvents', () => {
     expect(result.untrustedCount).toBe(2);
     expect(result.firstUntrusted?.action).toBe('forged-1');
     expect(result.events.map(e => e.action)).toEqual(['genuine-2', 'genuine-1']);
+    // The untrusted tail is returned separately (newest-first) so a caller can
+    // count it for scoring — never so it can be classified into findings.
+    expect(result.untrusted.map(e => e.action)).toEqual(['forged-2', 'forged-1']);
   });
 
   it('excludes everything at and after a tampered middle event', () => {
@@ -333,6 +338,176 @@ describe('runShieldPhase chain verification (issue #204)', () => {
     }
 
     const brokenPhase = runShieldPhase(targetDir);
-    expect(brokenPhase.postureScore).toBe(Math.max(0, cleanPhase.postureScore - 15));
+    expect(brokenPhase.shieldPostureScore).toBe(Math.max(0, cleanPhase.shieldPostureScore - 15));
+  });
+});
+
+// ===========================================================================
+// C1 — a chain break must never score better than the same log unbroken
+//
+// The exclusion is the right defense against forging INTO the log, but on its
+// own it hands an append-only adversary a cheaper attack: corrupt one line and
+// every genuine finding written after it disappears from classification, so
+// the phase score IMPROVES. Blinding the sensor must not beat forging into it.
+//
+// Each case builds the SAME event content under two temp HOMEs — one intact,
+// one with a single unparseable line inserted after the first event — and
+// compares. Two HOMEs against one targetDir means any ambient baseline
+// (active tools, policy, shell integration) is identical on both sides and
+// cancels out of the comparison.
+// ===========================================================================
+
+describe('chain-break score floor (C1)', () => {
+  type Partial_ = Record<string, unknown>;
+
+  /** Benign prefix event: classifies to nothing, keeps the trusted slice non-empty. */
+  const PREFIX: Partial_ = { action: 'baseline', category: 'posture-assessment' };
+
+  /**
+   * A genuine tail whose findings include a critical:
+   * SHIELD-INT-001 (critical) + SHIELD-PROC-001 (high) + SHIELD-PROC-002
+   * (medium) + SHIELD-BAS-001 (medium).
+   */
+  function criticalTail(dir: string): Partial_[] {
+    return [
+      {
+        source: 'configguard', outcome: 'blocked', action: 'tamper-detected',
+        target: path.join(dir, 'mcp.json'),
+      },
+      { source: 'arp', category: 'process.spawn', action: 'spawn', target: '/usr/bin/curl' },
+      { source: 'arp', category: 'network.connect', action: 'connect', target: '203.0.113.7' },
+      { source: 'arp', category: 'anomaly', action: 'anomaly', target: 'agent-x' },
+    ];
+  }
+
+  /** A genuine tail whose findings are high at worst: SHIELD-PROC-001 only. */
+  function highOnlyTail(): Partial_[] {
+    return [
+      { source: 'arp', category: 'process.spawn', action: 'spawn', target: '/usr/bin/curl' },
+    ];
+  }
+
+  /**
+   * Write `tail` into a fresh HOME, optionally breaking the chain first.
+   *
+   * The break vector is one unparseable line, which is what an append-only
+   * adversary can produce without knowing the chain hashes: writeEvent reads
+   * the last line to derive prevHash, fails to parse the junk, and falls back
+   * to the genesis hash — so every event after it fails verification.
+   */
+  function buildLog(home: string, tail: Partial_[], breakChain: boolean): void {
+    _mockHomeDir = home;
+    getShieldDir();
+    writeEvent(makePartial(PREFIX));
+    if (breakChain) fs.appendFileSync(getEventsPath(), 'not json at all\n', 'utf-8');
+    for (const t of tail) writeEvent(makePartial(t));
+  }
+
+  let intactHome: string;
+  let brokenHome: string;
+  let emptyHome: string;
+
+  beforeEach(() => {
+    intactHome = fs.mkdtempSync(path.join(tmpdir(), 'shield-chain-floor-intact-'));
+    brokenHome = fs.mkdtempSync(path.join(tmpdir(), 'shield-chain-floor-broken-'));
+    emptyHome = fs.mkdtempSync(path.join(tmpdir(), 'shield-chain-floor-empty-'));
+  });
+
+  afterEach(() => {
+    for (const d of [intactHome, brokenHome, emptyHome]) {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  /** Run the phase against `home` with the shared targetDir. */
+  function phaseFor(home: string) {
+    _mockHomeDir = home;
+    return runShieldPhase(targetDir);
+  }
+
+  it('(i) a break in front of a critical tail scores no better than the intact chain', () => {
+    const tail = criticalTail(targetDir);
+    buildLog(intactHome, tail, false);
+    buildLog(brokenHome, tail, true);
+
+    const intact = phaseFor(intactHome);
+    const broken = phaseFor(brokenHome);
+
+    // Non-vacuity: the fixture really does break, really does exclude the
+    // whole genuine tail, and the intact side really does carry the findings
+    // the break would otherwise hide.
+    expect(intact.chainBroken).toBe(false);
+    expect(broken.chainBroken).toBe(true);
+    expect(broken.untrustedEventsExcluded).toBe(tail.length);
+    expect(findingIds(intact.classifiedFindings)).toEqual(
+      expect.arrayContaining(['SHIELD-INT-001', 'SHIELD-PROC-001', 'SHIELD-PROC-002', 'SHIELD-BAS-001']),
+    );
+
+    // Both scoring layers. The phase posture is what a terminal user reads;
+    // shieldCompositeScore is the composite INPUT, where the reward was larger
+    // and was masked in the final composite only because the synthetic break
+    // critical happens to pin the risk floor. Masking is incidental to the
+    // fixture, so both layers are pinned rather than just the visible one.
+    expect(broken.shieldPostureScore).toBeLessThanOrEqual(intact.shieldPostureScore);
+    expect(shieldCompositeScore(broken)).toBeLessThanOrEqual(shieldCompositeScore(intact));
+    expect(shieldRiskFloorScore(broken).score).toBeLessThanOrEqual(shieldRiskFloorScore(intact).score);
+  });
+
+  it('(i) the excluded tail lowers the score without ever being reported', () => {
+    // The floor is computed from untrusted events, which must stay out of
+    // every reported surface. Trusting their content would readmit the exact
+    // forgery vectors the exclusion exists to close.
+    const tail = criticalTail(targetDir);
+    buildLog(brokenHome, tail, true);
+
+    const broken = phaseFor(brokenHome);
+    const ids = findingIds(broken.classifiedFindings);
+
+    expect(ids).toEqual(['SHIELD-INT-002']);
+    expect(broken.classifiedFindings[0].count).toBe(1);
+    for (const hidden of ['SHIELD-INT-001', 'SHIELD-PROC-001', 'SHIELD-PROC-002', 'SHIELD-BAS-001']) {
+      expect(ids).not.toContain(hidden);
+    }
+    // ...yet the counterfactual counts saw them, which is what floors the score.
+    expect(broken.preExclusionCounts).toEqual({ critical: 1, high: 1, medium: 2 });
+  });
+
+  it('(ii) a break in front of a highs-only tail is still no better, and is not over-penalized', () => {
+    // Regression guard against "fixing" C1 with a fixed penalty. Here the
+    // break already scored WORSE than the intact chain before any fix (one
+    // critical costs more than one high), so a penalty stacked on top would
+    // be invisible to the inequality alone. Pinning the exact value catches it.
+    const tail = highOnlyTail();
+    buildLog(intactHome, tail, false);
+    buildLog(brokenHome, tail, true);
+
+    const intact = phaseFor(intactHome);
+    const broken = phaseFor(brokenHome);
+    // Ambient baseline with no events at all: the posture before any penalty.
+    const baseline = phaseFor(emptyHome).shieldPostureScore;
+
+    expect(broken.chainBroken).toBe(true);
+    expect(findingIds(intact.classifiedFindings)).toEqual(['SHIELD-PROC-001']);
+
+    expect(broken.shieldPostureScore).toBeLessThanOrEqual(intact.shieldPostureScore);
+    expect(shieldCompositeScore(broken)).toBeLessThanOrEqual(shieldCompositeScore(intact));
+
+    // Exactly one critical's worth of penalty — the chain-break finding — and
+    // no more. The floor took the harsher of the two views; it did not add them.
+    expect(broken.shieldPostureScore).toBe(Math.max(0, baseline - 15));
+    expect(shieldCompositeScore(broken)).toBe(90 - 30);
+  });
+
+  it('an intact chain carries no counterfactual counts and is scored unchanged', () => {
+    // The floor must be inert when there is nothing to floor: no
+    // preExclusionCounts, and the composite is the plain finding arithmetic.
+    buildLog(intactHome, criticalTail(targetDir), false);
+    const intact = phaseFor(intactHome);
+
+    expect(intact.preExclusionCounts).toBeUndefined();
+    expect(intact.untrustedEventsExcluded).toBe(0);
+    expect(intact.brokenAt).toBeNull();
+    // 90 - 30(critical) - 15(high) - 6*2(medium)
+    expect(shieldCompositeScore(intact)).toBe(33);
   });
 });

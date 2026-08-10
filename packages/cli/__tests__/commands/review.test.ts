@@ -60,6 +60,58 @@ function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; o
   });
 }
 
+/**
+ * Render one tab of a generated review report and return its HTML.
+ *
+ * The report's page renderers are client-side JS embedded in the document, so
+ * asserting on the raw file only proves the template contains a string — a
+ * renderer can be present and still never run. This executes the real script
+ * against a minimal DOM stub, clicks the requested nav tab, and returns what
+ * that tab's renderer produced. Everything the script touches at load time is
+ * stubbed: the JSON payload element, the nav listener, and the page divs.
+ */
+function renderReportPage(html: string, page: string): string {
+  const script = html.slice(
+    html.lastIndexOf('<script>') + '<script>'.length,
+    html.lastIndexOf('</script>'),
+  );
+  const payload = html.slice(
+    html.indexOf('>', html.indexOf('<script id="report-data"')) + 1,
+    html.indexOf('</script>'),
+  );
+
+  const nodes = new Map<string, any>();
+  const handlers = new Map<string, (e: any) => void>();
+  const node = (id: string) => {
+    if (!nodes.has(id)) {
+      nodes.set(id, {
+        id,
+        innerHTML: '',
+        classList: { toggle: () => {}, add: () => {}, remove: () => {} },
+        addEventListener: (type: string, fn: (e: any) => void) => handlers.set(`${id}:${type}`, fn),
+      });
+    }
+    return nodes.get(id);
+  };
+  const documentStub = {
+    getElementById: (id: string) => (id === 'report-data' ? { textContent: payload } : node(id)),
+    querySelectorAll: () => [] as any[],
+    querySelector: () => null,
+    createElement: () => ({ style: {}, setAttribute: () => {}, appendChild: () => {} }),
+    body: { appendChild: () => {}, removeChild: () => {} },
+    execCommand: () => {},
+  };
+
+  // eslint-disable-next-line no-new-func
+  new Function('document', 'window', script)(documentStub, {});
+
+  const onNavClick = handlers.get('main-nav:click');
+  if (!onNavClick) throw new Error('report script did not register the nav listener');
+  onNavClick({ target: { closest: () => ({ getAttribute: () => page }) } });
+
+  return node(`page-${page}`).innerHTML;
+}
+
 describe('review', () => {
   let tempDir: string;
   let tempHome: string;
@@ -126,6 +178,148 @@ describe('review', () => {
     expect(stderr).toMatch(/Provisional verdict/);
     expect(stderr).toMatch(/did not run/);
     expect(output).not.toMatch(/Provisional verdict/); // stdout JSON stays clean
+  });
+
+  it('C6: a broken event chain marks the Shield phase provisional and says so on stderr', async () => {
+    // Before this, the only trace of the exclusion in ANY output was nested
+    // inside shieldData.classifiedFindings[0].examples[0].detail in the JSON.
+    // A terminal user saw a small "N events, M findings" and a clean-looking
+    // phase, with nothing indicating that events had been dropped.
+    const { writeEvent, getShieldDir, getEventsPath } = await import('../../src/shield/events.js');
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'chain-test', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const base = {
+      source: 'shield' as const, category: 'posture-assessment', severity: 'info' as const,
+      agent: null, sessionId: null, outcome: 'allowed' as const, detail: {},
+      orgId: null, managed: false, agentId: null,
+    };
+    getShieldDir();
+    writeEvent({ ...base, action: 'genuine-1', target: 'baseline' });
+    // One unparseable line: writeEvent can no longer read the previous hash,
+    // falls back to genesis, and every event after this point fails
+    // verification. This is the whole cost of the attack.
+    fs.appendFileSync(getEventsPath(), 'not json at all\n', 'utf-8');
+    writeEvent({
+      ...base, source: 'configguard', outcome: 'blocked', severity: 'critical',
+      action: 'tamper-detected', target: path.join(tempDir, 'mcp.json'),
+    });
+    writeEvent({ ...base, source: 'arp', category: 'process.spawn', action: 'spawn', target: '/usr/bin/curl' });
+
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let output = '';
+    try {
+      ({ output } = await captureStdout(() => review({
+        targetDir: tempDir, format: 'json', autoOpen: false, skipHma: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    const report = JSON.parse(output); // stdout JSON stays parseable...
+    const shieldPhase = report.phases.find((p: any) => p.name === 'Shield Analysis');
+    expect(shieldPhase.provisional).toBe(true);
+    expect(shieldPhase.provisionalReason).toMatch(/chain broken/);
+    // The detail line carries the excluded count, not just the survivors.
+    expect(shieldPhase.detail).toMatch(/2 excluded/);
+    expect(shieldPhase.detail).toMatch(/chain broken at 1/);
+    expect(report.shieldData.chainBroken).toBe(true);
+    expect(report.shieldData.untrustedEventsExcluded).toBe(2);
+    expect(report.shieldData.brokenAt).toBe(1);
+
+    // ...and a human watching the terminal is told, on stderr, like the HMA notice.
+    const stderr = stderrChunks.join('');
+    expect(stderr).toMatch(/chain broken/);
+    expect(stderr).toMatch(/2 untrusted events/);
+    // stdout JSON stays clean: the notice text is on stderr only, and stdout is
+    // nothing but the document. (`provisionalReason` legitimately appears IN
+    // the JSON — that is the machine-readable half of the same signal.)
+    expect(output).not.toMatch(/Shield events partially excluded/);
+    expect(output.trimStart().startsWith('{')).toBe(true);
+
+    // The excluded events never become reported findings — only the single
+    // chain-break finding does.
+    const shieldFindingIds = report.findings
+      .filter((f: any) => f.source === 'shield').map((f: any) => f.id);
+    expect(shieldFindingIds).toEqual(['SHIELD-INT-002']);
+    expect(shieldFindingIds).not.toContain('SHIELD-INT-001');
+    expect(shieldFindingIds).not.toContain('SHIELD-PROC-001');
+  });
+
+  it('C6: a broken chain is visible in the human summary and on the HTML Shield tab', async () => {
+    // The two surfaces a person actually looks at. The JSON fields and the
+    // stderr notice are covered above; these are the ones that were silent.
+    const { writeEvent, getShieldDir, getEventsPath } = await import('../../src/shield/events.js');
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'chain-html', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const base = {
+      source: 'shield' as const, category: 'posture-assessment', severity: 'info' as const,
+      agent: null, sessionId: null, outcome: 'allowed' as const, detail: {},
+      orgId: null, managed: false, agentId: null,
+    };
+    getShieldDir();
+    writeEvent({ ...base, action: 'genuine-1', target: 'baseline' });
+    fs.appendFileSync(getEventsPath(), 'not json at all\n', 'utf-8');
+    writeEvent({ ...base, source: 'arp', category: 'process.spawn', action: 'spawn', target: '/usr/bin/curl' });
+
+    const reportPath = path.join(tempDir, 'chain-report.html');
+    const origStderr = process.stderr.write;
+    process.stderr.write = (() => true) as any;
+    let output = '';
+    try {
+      ({ output } = await captureStdout(() => review({
+        targetDir: tempDir, reportPath, autoOpen: false, skipHma: true, ci: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    // Terminal summary, on the same screen as the finding count it qualifies.
+    expect(output).toMatch(/1 shield events excluded/);
+    expect(output).toMatch(/chain broken at index 1/);
+
+    // HTML Shield tab, actually rendered (not merely present in the template).
+    const shieldHtml = renderReportPage(fs.readFileSync(reportPath, 'utf-8'), 'shield');
+    expect(shieldHtml).toContain('Excluded (Chain Break)');
+    expect(shieldHtml).toContain('Event log hash chain broken');
+    expect(shieldHtml).toContain('opena2a shield selfcheck');
+  });
+
+  it('C6: an intact event chain leaves the Shield phase non-provisional and silent', async () => {
+    // Non-vacuity for the test above: the provisional flag and the notice must
+    // be caused by the break, not emitted unconditionally.
+    const { writeEvent, getShieldDir } = await import('../../src/shield/events.js');
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'chain-test', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    getShieldDir();
+    writeEvent({
+      source: 'shield', category: 'posture-assessment', severity: 'info',
+      agent: null, sessionId: null, action: 'genuine-1', target: 'baseline',
+      outcome: 'allowed', detail: {}, orgId: null, managed: false, agentId: null,
+    });
+
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let output = '';
+    try {
+      ({ output } = await captureStdout(() => review({
+        targetDir: tempDir, format: 'json', autoOpen: false, skipHma: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    const report = JSON.parse(output);
+    const shieldPhase = report.phases.find((p: any) => p.name === 'Shield Analysis');
+    expect(shieldPhase.provisional).toBeUndefined();
+    expect(shieldPhase.detail).not.toMatch(/excluded/);
+    expect(report.shieldData.chainBroken).toBe(false);
+    expect(stderrChunks.join('')).not.toMatch(/chain broken/);
   });
 
   it('a full scan (HMA ran) is not marked provisional', async () => {
@@ -321,7 +515,10 @@ describe('aggregateFindings', () => {
     eventCount: 0,
     classifiedFindings: [],
     arpStats: {} as any,
-    postureScore: 100,
+    chainBroken: false,
+    untrustedEventsExcluded: 0,
+    brokenAt: null,
+    shieldPostureScore: 100,
     policyLoaded: false,
     policyMode: null,
     integrityStatus: 'ok',
@@ -767,6 +964,21 @@ describe('adoption-as-recovery composite scoring (#175 follow-up)', () => {
       expect(shieldCompositeScore({ classifiedFindings: [sev('medium')] })).toBe(84);   // 90-6 (not neutralized)
       expect(shieldCompositeScore({ classifiedFindings: [sev('critical'), sev('critical'), sev('critical')] })).toBe(0); // clamped
     });
+    it('C1: takes the harsher of reported and intact-chain counts when the chain broke', () => {
+      // The reported findings are only what survived chain verification. When
+      // the exclusion dropped genuine findings, scoring the survivors alone
+      // rewards the break. `preExclusionCounts` is what an intact chain would
+      // have classified; the harsher of the two wins.
+      expect(shieldCompositeScore({
+        classifiedFindings: [sev('critical')],                         // 90-30 = 60
+        preExclusionCounts: { critical: 1, high: 1, medium: 2 },        // 90-30-15-12 = 33
+      })).toBe(33);
+      // Never the other direction: the counterfactual can lower a score, never raise one.
+      expect(shieldCompositeScore({
+        classifiedFindings: [sev('critical'), sev('high')],             // 45
+        preExclusionCounts: { critical: 0, high: 0, medium: 0 },        // 90
+      })).toBe(45);
+    });
   });
 
   describe('shieldRiskFloorScore (floor participant — real runtime risk only)', () => {
@@ -782,6 +994,26 @@ describe('adoption-as-recovery composite scoring (#175 follow-up)', () => {
       const high = shieldRiskFloorScore({ classifiedFindings: [sev('high')] });
       expect(high.ran).toBe(true);
       expect(high.score).toBeLessThan(CRITICAL_BAND);
+    });
+    it('C1: an excluded critical still floors, even when the survivors would not', () => {
+      // Currently defence-in-depth rather than a live path: runShieldPhase
+      // always injects a critical chain-break finding, so the reported side is
+      // already at the harshest band whenever preExclusionCounts exists. The
+      // invariant is pinned here so it survives a change to that synthetic
+      // finding's severity — a break must not be able to relax the floor.
+      expect(shieldRiskFloorScore({
+        classifiedFindings: [sev('medium')],                     // would not participate
+        preExclusionCounts: { critical: 1, high: 0, medium: 0 },
+      })).toEqual({ score: CRITICAL_BAND - 10, ran: true });
+      expect(shieldRiskFloorScore({
+        classifiedFindings: [sev('high')],
+        preExclusionCounts: { critical: 1, high: 0, medium: 0 },
+      })).toEqual({ score: CRITICAL_BAND - 10, ran: true });
+      // ...and never relaxes one: a clean counterfactual cannot lift a real finding.
+      expect(shieldRiskFloorScore({
+        classifiedFindings: [sev('critical')],
+        preExclusionCounts: { critical: 0, high: 0, medium: 0 },
+      })).toEqual({ score: CRITICAL_BAND - 10, ran: true });
     });
     it('SECURITY: a real Shield critical floors the composite to "needs attention" (not a false good)', () => {
       const shieldRisk = shieldRiskFloorScore({ classifiedFindings: [sev('critical')] });

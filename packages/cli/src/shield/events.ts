@@ -421,6 +421,19 @@ export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
 export interface VerifiedEventsResult {
   /** Trusted events (before the first chain break), filtered, newest-first. */
   events: ShieldEvent[];
+  /**
+   * Events at or after the first chain break, filtered, newest-first.
+   * Empty when the chain is intact.
+   *
+   * UNTRUSTED — forged, tampered, or corrupted.  Never classify these into
+   * reported findings; doing so readmits the manufacture vectors the
+   * exclusion exists to close.  They are exposed for one purpose only: a
+   * caller can classify them for COUNTS, to learn what the same log would
+   * have scored with an intact chain, and floor its score at that value.
+   * Without that floor, corrupting one line scores BETTER than leaving the
+   * log alone — blinding the sensor would beat forging into it.
+   */
+  untrusted: ShieldEvent[];
   /** True if the hash chain is broken anywhere in the log. */
   chainBroken: boolean;
   /** Chronological index of the first untrusted event, or null if intact. */
@@ -463,6 +476,7 @@ export function readVerifiedEvents(filters: EventFilters = {}): VerifiedEventsRe
 
   return {
     events: applyEventFilters(trusted, filters),
+    untrusted: valid ? [] : applyEventFilters(all.slice(brokenAt as number), filters),
     chainBroken: !valid,
     brokenAt,
     untrustedCount: valid ? 0 : all.length - (brokenAt as number),
