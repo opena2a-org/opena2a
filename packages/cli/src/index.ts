@@ -705,8 +705,12 @@ analysis runs and results can be shared with the community.
     .option('--action <action>', 'Action to evaluate (e.g. process.spawn, network.connect)')
     .option('--target <target>', 'Target of the action (binary, host, path)')
     .option('--verify', 'Verify before recovering')
-    .option('--reset', 'Force exit lockdown')
-    .option('--forensic', 'Forensic mode')
+    // `--reset` and `--forensic` were registered and documented but never
+    // read: `handleRecover` branched only on `--verify`, and `--forensic`
+    // ("read-only, no changes") in fact exited lockdown. Removed rather than
+    // implemented -- a flag whose help text describes the opposite of what
+    // the command does is worse than no flag (#231).
+    .option('--archive-log', 'Archive a broken event log and start a fresh chain (recover)')
     .option('--analyze', 'Enable LLM analysis')
     .option('--report <path>', 'Write HTML posture report to file')
     .option('--shell-hook', 'Install shell preexec hook (shield init only)')

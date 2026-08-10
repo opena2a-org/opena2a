@@ -20,6 +20,7 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { getEventLockPath, withEventLock } from './lock.js';
 import type { ShieldEvent } from './types.js';
 import { MAX_EVENTS_FILE_SIZE, SHIELD_EVENTS_FILE } from './types.js';
 
@@ -169,9 +170,24 @@ function getPrevHash(eventsPath: string): string {
 }
 
 /**
+ * Timestamped sibling path for a retired events file:
+ * `events.jsonl` -> `events-2026-08-10T12-00-00-000Z.jsonl`.
+ *
+ * Shared by size-based rotation and by `shield recover --archive-log`, so a
+ * retired log has one recognisable shape however it was retired.
+ */
+export function rotatedEventsPath(eventsPath: string, at: Date = new Date()): string {
+  const timestamp = at.toISOString().replace(/[:.]/g, '-');
+  return eventsPath.replace(/\.jsonl$/, `-${timestamp}.jsonl`);
+}
+
+/**
  * Rotate the events file if it exceeds MAX_EVENTS_FILE_SIZE.
  * The current file is renamed with a timestamp suffix, and a fresh
  * file is started.
+ *
+ * Callers must hold the event lock: rotation racing an append would rename
+ * the file out from under a writer that has already read its prevHash.
  */
 function rotateIfNeeded(eventsPath: string): void {
   if (!existsSync(eventsPath)) return;
@@ -185,9 +201,7 @@ function rotateIfNeeded(eventsPath: string): void {
 
   if (size <= MAX_EVENTS_FILE_SIZE) return;
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const rotatedPath = eventsPath.replace(/\.jsonl$/, `-${timestamp}.jsonl`);
-  renameSync(eventsPath, rotatedPath);
+  renameSync(eventsPath, rotatedEventsPath(eventsPath));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +217,13 @@ type GeneratedFields = 'id' | 'timestamp' | 'version' | 'prevHash' | 'eventHash'
  * The caller provides all event fields except id, timestamp, version,
  * prevHash, and eventHash -- those are generated automatically.
  *
+ * Read-prevHash and append are one critical section, held under the event
+ * lock (see ./lock.ts).  Two unlocked writers read the same prevHash and
+ * append two events claiming the same predecessor, which forks the chain
+ * permanently -- and a forked chain now costs every later event its trust.
+ * Rotation is inside the same section so a rename cannot land between a
+ * writer's prevHash read and its append.
+ *
  * @param partial     Event fields (minus auto-generated ones).
  * @param projectDir  Optional project root to write events to a
  *                    project-local `.opena2a/shield/` instead of global.
@@ -213,42 +234,44 @@ export function writeEvent(
 ): ShieldEvent {
   const eventsPath = getEventsPath(projectDir);
 
-  // Rotate before writing if the file is oversized
-  rotateIfNeeded(eventsPath);
+  return withEventLock(getEventLockPath(eventsPath), () => {
+    // Rotate before writing if the file is oversized
+    rotateIfNeeded(eventsPath);
 
-  const prevHash = getPrevHash(eventsPath);
+    const prevHash = getPrevHash(eventsPath);
 
-  // Build the event without the final eventHash
-  const event: Omit<ShieldEvent, 'eventHash'> & { eventHash?: string } = {
-    id: uuidv7(),
-    timestamp: new Date().toISOString(),
-    version: 1,
-    ...partial,
-    prevHash,
-  };
+    // Build the event without the final eventHash
+    const event: Omit<ShieldEvent, 'eventHash'> & { eventHash?: string } = {
+      id: uuidv7(),
+      timestamp: new Date().toISOString(),
+      version: 1,
+      ...partial,
+      prevHash,
+    };
 
-  // Compute the hash over the event (without the eventHash field itself)
-  const hashInput = JSON.stringify(event);
-  const eventHash = sha256(hashInput);
+    // Compute the hash over the event (without the eventHash field itself)
+    const hashInput = JSON.stringify(event);
+    const eventHash = sha256(hashInput);
 
-  const fullEvent: ShieldEvent = {
-    ...(event as Omit<ShieldEvent, 'eventHash'>),
-    eventHash,
-  };
+    const fullEvent: ShieldEvent = {
+      ...(event as Omit<ShieldEvent, 'eventHash'>),
+      eventHash,
+    };
 
-  const line = JSON.stringify(fullEvent) + '\n';
+    const line = JSON.stringify(fullEvent) + '\n';
 
-  // Ensure the shield directory exists (getEventsPath already calls getShieldDir)
-  appendFileSync(eventsPath, line, { encoding: 'utf-8', mode: 0o600 });
+    // Ensure the shield directory exists (getEventsPath already calls getShieldDir)
+    appendFileSync(eventsPath, line, { encoding: 'utf-8', mode: 0o600 });
 
-  // Ensure restrictive permissions on the events file
-  try {
-    chmodSync(eventsPath, 0o600);
-  } catch {
-    // Best-effort; appendFileSync already set mode on creation
-  }
+    // Ensure restrictive permissions on the events file
+    try {
+      chmodSync(eventsPath, 0o600);
+    } catch {
+      // Best-effort; appendFileSync already set mode on creation
+    }
 
-  return fullEvent;
+    return fullEvent;
+  });
 }
 
 // ---------------------------------------------------------------------------

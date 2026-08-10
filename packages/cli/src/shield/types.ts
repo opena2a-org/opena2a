@@ -354,8 +354,7 @@ export interface ShieldOptions {
   verbose?: boolean;
   // recover flags
   verify?: boolean;
-  reset?: boolean;
-  forensic?: boolean;
+  archiveLog?: boolean;
   // LLM intelligence flags
   analyze?: boolean;
 }

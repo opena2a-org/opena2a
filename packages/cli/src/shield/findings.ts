@@ -111,8 +111,14 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'pol',
     owaspAgentic: 'ASI03',
     mitreAtlas: 'AML.T0040',
-    remediation: 'opena2a shield policy --enforce',
-    description: 'The security policy is in monitor-only mode. Violations are logged but not blocked. Consider enabling enforcement.',
+    // `--enforce` is a `guard` flag, not a `shield` one. On `shield` it was
+    // swallowed by allowUnknownOption() and did nothing, so the remediation
+    // was a no-op -- the same defect class as `recover --forensic` (#231).
+    // No CLI path switches the policy mode today, so this points at the
+    // command that shows the mode; adding a real enforcement switch is a
+    // separate change.
+    remediation: 'opena2a shield policy',
+    description: 'The security policy is in monitor-only mode. Violations are logged but not blocked. Enforcement is set by the "mode" field of the policy file that this command prints.',
   },
   'SHIELD-PROC-001': {
     id: 'SHIELD-PROC-001',
@@ -151,7 +157,7 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'int',
     owaspAgentic: 'ASI10',
     mitreAtlas: 'AML.T0006',
-    remediation: 'opena2a shield selfcheck && opena2a shield recover --forensic',
+    remediation: 'opena2a shield selfcheck && opena2a shield recover --archive-log',
     description: 'The tamper-evident event log hash chain has been broken. This indicates log tampering or corruption.',
   },
   'SHIELD-INT-003': {
