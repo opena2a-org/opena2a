@@ -271,6 +271,10 @@ Learn more: https://opena2a.org/docs`);
     .command('protect [directory]')
     .description('Detect and migrate credentials to encrypted vault')
     .option('--dry-run', 'Show what would change without modifying files')
+    // Also a global option, but protect is the command where its absence is
+    // actively harmful: without it a non-interactive run cannot migrate, so it
+    // must be discoverable from `protect --help` (#256).
+    .option('--ci', 'Migrate without prompting (required when stdin is not a terminal)')
     .option('--report <path>', 'Write interactive HTML report')
     .option('--skip-verify', 'Skip verification re-scan')
     .option('--skip-liveness', 'Skip drift liveness verification (offline/CI)')
@@ -289,7 +293,9 @@ Learn more: https://opena2a.org/docs`);
         targetDir: opts.dir ?? directory ?? process.cwd(),
         dryRun: opts.dryRun,
         verbose: globalOpts.verbose,
-        ci: globalOpts.ci,
+        // Accept both placements: `opena2a --ci protect` (global) and
+        // `opena2a protect --ci` (subcommand, the form users actually type).
+        ci: opts.ci ?? globalOpts.ci,
         format: globalOpts.format as 'text' | 'json',
         skipVerify: opts.skipVerify,
         skipLiveness: opts.skipLiveness,
@@ -692,6 +698,12 @@ analysis runs and results can be shared with the community.
     .option('--severity <level>', 'Severity filter')
     .option('--source <source>', 'Source filter')
     .option('--category <cat>', 'Category filter')
+    // `shield evaluate --action X --target Y` is printed as remediation by
+    // src/shield/findings.ts. Both flags were unregistered, and
+    // .allowUnknownOption(true) swallowed them into args, so the evaluated
+    // target was always '' and the run printed nothing (#255).
+    .option('--action <action>', 'Action to evaluate (e.g. process.spawn, network.connect)')
+    .option('--target <target>', 'Target of the action (binary, host, path)')
     .option('--verify', 'Verify before recovering')
     .option('--reset', 'Force exit lockdown')
     .option('--forensic', 'Forensic mode')
@@ -863,6 +875,7 @@ analysis runs and results can be shared with the community.
     .option('--skip-scan', 'Skip HMA scanning, register metadata only')
     .option('--only <tools>', 'Comma-separated tool names')
     .option('--dry-run', 'Show what would happen without making changes')
+    .option('-y, --yes', 'Skip the confirmation prompt (required non-interactively)')
     .action(async (opts) => {
       const { selfRegister } = await import('./commands/self-register.js');
       const globalOpts = program.opts();
@@ -871,6 +884,7 @@ analysis runs and results can be shared with the community.
         skipScan: opts.skipScan,
         only: opts.only?.split(','),
         dryRun: opts.dryRun,
+        yes: opts.yes,
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
@@ -958,6 +972,43 @@ Examples:
         verbose: globalOpts.verbose,
       });
       printFooter({ ci: globalOpts.ci, json: opts.json || globalOpts.format === 'json' });
+    });
+
+  // Admin command (registry operator tooling; requires the internal admin key)
+  program
+    .command('admin [subcommand] [args...]')
+    .description('Registry operator tooling (sensors list-pending|approve|reject)')
+    .allowUnknownOption(true)
+    .helpOption(false)
+    .option('--api-key <key>', 'Registry internal admin key (else OPENA2A_INTERNAL_API_KEY / INTERNAL_API_KEY)')
+    .option('--registry <url>', 'Registry base URL (default: https://api.oa2a.org)')
+    .option('--yes', 'Skip the confirmation prompt for approve/reject')
+    .option('--json', 'Output as JSON (alias for --format json)')
+    .addHelpText('after', `
+Examples:
+  $ opena2a admin sensors list-pending          Inbox of enrollments awaiting approval
+  $ opena2a admin sensors approve <sensorId>     Promote a pending enrollment to verified
+  $ opena2a admin sensors reject <sensorId>      Reject (revoke) a pending enrollment
+
+Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed).`)
+    .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
+      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
+        process.stdout.write(cmd.helpInformation());
+        return;
+      }
+      const { admin } = await import('./commands/admin.js');
+      const globalOpts = program.opts();
+      process.exitCode = await admin({
+        subcommand,
+        args: args ?? [],
+        apiKey: opts.apiKey,
+        registryUrl: opts.registry,
+        yes: opts.yes,
+        ci: globalOpts.ci,
+        format: globalOpts.format,
+        json: opts.json,
+        verbose: globalOpts.verbose,
+      });
     });
 
   // Baselines command
@@ -1128,7 +1179,15 @@ Valid actions:
         }
       } else if (action === 'show' || action === 'get') {
         const config = loadUserConfig();
-        process.stdout.write(JSON.stringify(config, null, 2) + '\n');
+        // Report the registry URL commands will ACTUALLY use, not the raw
+        // stored value. `config show` used to print whatever the config file
+        // (or the pinned shared package's default) held, which on a fresh
+        // install was `https://registry.opena2a.org` — a host with no DNS, so
+        // the one command a user runs to find out where the CLI points told
+        // them somewhere it never talks to.
+        const { getRegistryUrl } = await import('./util/report-submission.js');
+        const effective = { ...config, registry: { ...config.registry, url: await getRegistryUrl() } };
+        process.stdout.write(JSON.stringify(effective, null, 2) + '\n');
       } else {
         process.stderr.write(`Unknown config action: ${action}\n`);
         process.stderr.write('Usage: opena2a config contribute on|off|--enable|--disable\n');

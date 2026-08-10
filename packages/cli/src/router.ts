@@ -57,7 +57,7 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     'guard', 'broker', 'config', 'self-register',
     'verify', 'baselines', 'review',
     'scan-soul', 'harden-soul', 'harden-skill', 'detect', 'mcp', 'demo',
-    'trust', 'claim',
+    'trust', 'claim', 'admin',
   ];
 
   if (KNOWN_COMMANDS.includes(first)) {
@@ -93,7 +93,11 @@ export async function dispatchCommand(
       targetDir,
       dryRun: args.includes('--dry-run'),
       verbose: globalOptions.verbose ?? false,
-      ci: globalOptions.ci ?? false,
+      // Read --ci off args as well as globals. protect's non-TTY refusal tells
+      // the user to run `opena2a protect --ci`; on this dispatch path that flag
+      // arrives in args, so taking it only from globalOptions made the printed
+      // remedy fail (#256).
+      ci: args.includes('--ci') || (globalOptions.ci ?? false),
       format: (globalOptions.format as 'text' | 'json') ?? 'text',
       skipVerify: args.includes('--skip-verify'),
       grant: grantIdx >= 0 ? args[grantIdx + 1] : undefined,

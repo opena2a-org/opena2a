@@ -22,6 +22,15 @@
  *                            ceiling of 30 — actively-malicious
  *                            scoring will tighten in follow-up waves)
  *
+ *   #227 calibration: the buggy tier (`repo/buggy/leaky-env-example`) used to
+ *   score 93 == benign because `init` could not see the credential-shaped
+ *   values in the committed `.env.example` (the migration scanner skips
+ *   template env files by design). `init` now runs `scanTemplateEnvLeaks` and
+ *   emits an `ENV-EXAMPLE-LEAK` critical (one critical-equivalent, -20),
+ *   landing the tier at 73 — squarely inside the existing [50,80] band. The
+ *   band was NOT widened; the gap was closed at the detector, matching HMA
+ *   `secure` (CONFIG-004) and the corpus manifest's ratified `critical`.
+ *
  *   Failures are release-blockers. The init scoring algorithm cannot drift
  *   past these bounds without an audit-doc decision and a band update.
  *
@@ -34,6 +43,8 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { buildChildEnv } from '../src/util/child-env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,7 +78,8 @@ function runInit(targetDir: string): { score: number; raw: string } | null {
     'node',
     [OPENA2A_CLI, 'init', '--json', '--ci', '--no-contribute', targetDir],
     {
-      env: { ...process.env, OPENA2A_CORPUS_DETERMINISTIC: '1' },
+      // Allowlisted environment (#228) — same reasoning as the comply smoke.
+      env: buildChildEnv({ allowPrefixes: ['npm_config_', 'NPM_CONFIG_', 'NODE_', 'NVM_', 'COREPACK_', 'YARN_', 'PNPM_'] }, { ...process.env, OPENA2A_CORPUS_DETERMINISTIC: '1' }),
       encoding: 'utf-8',
     },
   );

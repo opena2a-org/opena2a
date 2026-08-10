@@ -29,7 +29,6 @@ export interface TrustOptions {
 
 // --- Constants ---
 
-const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
 
 // --- Testable internals ---
 
@@ -494,8 +493,14 @@ function formatPackageType(packageType?: string): string | undefined {
 }
 
 async function resolveRegistryUrl(override?: string): Promise<string> {
+  const { isStaleRegistryUrl, CANONICAL_REGISTRY_URL, getRegistryUrl } =
+    await import('../util/report-submission.js');
   if (override) {
     const url = override.replace(/\/$/, '');
+    // Highest-precedence input, and it bypassed the stale mapping entirely:
+    // `--registry-url https://registry.opena2a.org` reproduced the original
+    // "fetch failed" on the one input a user is most explicit about.
+    if (isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
     validateRegistryUrl(url);
     return url;
   }
@@ -504,19 +509,22 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
   const envUrl = process.env.OPENA2A_REGISTRY_URL;
   if (envUrl) {
     const url = envUrl.replace(/\/$/, '');
+    // Same bypass as the flag above. This value is in circulation — child-env
+    // forwards it to spawned tools — so a stale export propagates.
+    if (isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
     validateRegistryUrl(url);
     return url;
   }
 
-  try {
-    const shared = await import('@opena2a/shared') as any;
-    const mod = 'default' in shared ? shared.default : shared;
-    const config = mod.loadUserConfig();
-    if (config.registry.url) {
-      validateRegistryUrl(config.registry.url);
-      return config.registry.url;
-    }
-  } catch { /* not available */ }
-
-  return DEFAULT_REGISTRY_URL;
+  // Config, via the shared resolver rather than a direct read.
+  //
+  // This used to read `config.registry.url` and return it whenever it was
+  // truthy. The CLI pins `@opena2a/shared`, and the pinned build's
+  // DEFAULT_CONFIG shipped `https://registry.opena2a.org` — a host with no DNS,
+  // because it names the unreleased Registry FRONTEND. So the value was ALWAYS
+  // truthy and ALWAYS dead, and `opena2a trust <pkg>` failed with "fetch
+  // failed" on every fresh install. The resolver maps stale hosts and the empty
+  // string alike onto the canonical API host, so this cannot recur when the pin
+  // moves again.
+  return getRegistryUrl();
 }

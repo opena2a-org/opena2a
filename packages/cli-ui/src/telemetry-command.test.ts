@@ -6,21 +6,125 @@ beforeEach(() => {
   chalk.level = 0;
 });
 
-function makeInput(overrides: { enabled?: boolean } = {}) {
+function makeInput(
+  overrides: { enabled?: boolean; suppressedBy?: "ci" | "do-not-track" } = {},
+) {
   let enabled = overrides.enabled ?? true;
   return {
     tool: "dvaa",
     setOptOut: vi.fn((v: boolean) => {
-      enabled = v;
+      // Mirrors the real SDK: under automatic suppression the preference is
+      // persisted but the effective state stays off.
+      enabled = overrides.suppressedBy ? false : v;
     }),
     getStatus: () => ({
       enabled,
       policyURL: "https://opena2a.org/telemetry",
       configPath: "/home/user/.config/opena2a/telemetry.json",
       installId: "abc-123",
+      ...(overrides.suppressedBy ? { suppressedBy: overrides.suppressedBy } : {}),
     }),
   };
 }
+
+describe("automatic suppression rendering", () => {
+  // The dead end this guards: under CI suppression the old renderer printed
+  // `state: off` with a `dvaa telemetry on` hint. That hint writes
+  // enabled=true, changes nothing, and the next status still says off.
+  it("explains CI suppression instead of suggesting a toggle that cannot work", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: false, suppressedBy: "ci" }));
+    expect(out).toContain("CI environment detected");
+    expect(out).toContain("you did not turn it off");
+    expect(out).toContain("OPENA2A_TELEMETRY=on dvaa <cmd>");
+    // The broken hint must not appear.
+    expect(out).not.toContain("dvaa telemetry on'");
+  });
+
+  it("explains DO_NOT_TRACK suppression and offers a remedy that works", () => {
+    const out = runTelemetryCommand(
+      "status",
+      makeInput({ enabled: false, suppressedBy: "do-not-track" }),
+    );
+    expect(out).toContain("DO_NOT_TRACK is set");
+    expect(out).toContain("unset DO_NOT_TRACK");
+    expect(out).not.toContain("dvaa telemetry on'");
+    // OPENA2A_TELEMETRY=on does not override DO_NOT_TRACK, so suggesting it
+    // here would be a second dead end.
+    expect(out).not.toContain("OPENA2A_TELEMETRY=on");
+    // DO_NOT_TRACK is the user's own choice — don't tell them they didn't.
+    expect(out).not.toContain("you did not turn it off");
+  });
+
+  it("does not contradict itself when 'on' is run under suppression", () => {
+    const out = runTelemetryCommand("on", makeInput({ enabled: false, suppressedBy: "ci" }));
+    expect(out).toContain("Preference saved");
+    expect(out).toContain("stays off");
+    expect(out).toContain("state:       off");
+    // The old header claimed "Telemetry enabled" directly above `state: off`.
+    expect(out).not.toContain("Telemetry enabled for dvaa.");
+  });
+
+  it("a plain off state (user's own choice) keeps the normal toggle hint", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: false }));
+    expect(out).toContain("dvaa telemetry on");
+    expect(out).not.toContain("CI environment detected");
+    expect(out).not.toContain("did not turn it off");
+  });
+
+  it("a persisted off state does NOT offer OPENA2A_TELEMETRY=on", () => {
+    // Precedence rule 2: a config-file opt-out is re-enabled by nothing,
+    // including OPENA2A_TELEMETRY=on. This hint only ever prints for an
+    // off-state that came from that file, so offering the env var sent the
+    // user round a loop landing on an identical, unexplained "off".
+    const out = runTelemetryCommand("status", makeInput({ enabled: false }));
+    expect(out).not.toContain("OPENA2A_TELEMETRY=on");
+  });
+
+  it("an on state still offers OPENA2A_TELEMETRY=off (that direction works)", () => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: true }));
+    expect(out).toContain("dvaa telemetry off");
+    expect(out).toContain("OPENA2A_TELEMETRY=off");
+  });
+
+  it("explains OPENA2A_TELEMETRY=off instead of suggesting a toggle it overrides", () => {
+    // `telemetry on` cannot survive an env opt-out — env-off always wins —
+    // so the old hint sent the user round a loop that always landed on off.
+    const out = runTelemetryCommand(
+      "status",
+      makeInput({ enabled: false, suppressedBy: "env-opt-out" }),
+    );
+    expect(out).toContain("OPENA2A_TELEMETRY=off is set");
+    expect(out).toContain("overrides the saved preference");
+    expect(out).toContain("unset OPENA2A_TELEMETRY");
+    expect(out).not.toContain("dvaa telemetry on'");
+    expect(out).not.toContain("you did not turn it off");
+  });
+
+  it("'on' under an env opt-out explains why it did not take effect", () => {
+    // Regression guard: this path printed "Preference saved, but telemetry
+    // stays off for dvaa here." with no reason and no remedy — the word
+    // "here" promising an explanation that never came.
+    const out = runTelemetryCommand("on", makeInput({ enabled: false, suppressedBy: "env-opt-out" }));
+    expect(out).toContain("Preference saved");
+    expect(out).toContain("OPENA2A_TELEMETRY=off is set");
+    expect(out).toContain("unset OPENA2A_TELEMETRY");
+  });
+
+  it("every suppression reason renders a remedy", () => {
+    // NOT a fail-by-construction guard, despite appearances: the reason list
+    // below is a hardcoded literal, so a new union member does not extend it.
+    // The actual guard is the compiler — `SUPPRESSION_LABEL` /
+    // `SUPPRESSION_EXPLANATION` are Record<SuppressionReason, string> and
+    // `suppressionRemedy` is a switch with no default, so a fourth reason
+    // fails tsc at all three sites. This is a characterization test: it pins
+    // the rendered shape of the three reasons that exist today.
+    for (const reason of ["ci", "do-not-track", "env-opt-out"] as const) {
+      const out = runTelemetryCommand("status", makeInput({ enabled: false, suppressedBy: reason }));
+      expect(out, `reason=${reason}`).toMatch(/override:|to re-enable:/);
+      expect(out, `reason=${reason}`).not.toContain("dvaa telemetry on'");
+    }
+  });
+});
 
 describe("runTelemetryCommand", () => {
   it("status (no action) prints current state and toggle hint", () => {
@@ -46,9 +150,19 @@ describe("runTelemetryCommand", () => {
   });
 
   it("status hint suggests 'on' when telemetry is off (papercut from DVAA 0.9.0 release-test)", () => {
+    // The original papercut (#170) was hint DIRECTION: status suggested
+    // turning telemetry *off* when it was already off. That guard is intact —
+    // `dvaa telemetry on` is still suggested, and no "off" affordance appears.
+    //
+    // The `OPENA2A_TELEMETRY=on` assertion that used to live here was
+    // incidental to that fix (the env hint merely mirrored the flip) and was
+    // wrong: this hint only prints for an off-state that came from the config
+    // file, and precedence rule 2 says nothing re-enables that — including
+    // OPENA2A_TELEMETRY=on. Following it landed on an identical, unexplained
+    // "off". Asserting its absence now.
     const out = runTelemetryCommand("status", makeInput({ enabled: false }));
     expect(out).toContain("dvaa telemetry on");
-    expect(out).toContain("OPENA2A_TELEMETRY=on");
+    expect(out).not.toContain("OPENA2A_TELEMETRY=on");
     expect(out).not.toContain("dvaa telemetry off'");
     expect(out).not.toContain("OPENA2A_TELEMETRY=off");
   });

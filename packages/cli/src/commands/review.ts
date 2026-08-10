@@ -147,7 +147,19 @@ export interface ShieldPhaseData {
   eventCount: number;
   classifiedFindings: ClassifiedFinding[];
   arpStats: ARPStats;
-  postureScore: number;
+  /**
+   * Runtime posture of the Shield layer: active tools, policy, shell
+   * integration, penalized by classified findings.
+   *
+   * NOT the same quantity as `InitPhaseData.postureScore`, which scores the
+   * project's governance and does not know about Shield at all. Both were
+   * called `postureScore` and both rendered under the label "Posture Score",
+   * so one review report showed `postureScore` 52 on Overview and 35 on
+   * Shield with nothing saying they measured different things — and
+   * `init --json | jq .postureScore` agreed with neither reliably. The name
+   * now states which posture it is.
+   */
+  shieldPostureScore: number;
   policyLoaded: boolean;
   policyMode: string | null;
   integrityStatus: string;
@@ -349,12 +361,12 @@ export async function review(options: ReviewOptions): Promise<number> {
   progress(4, 'Analyzing shield events...');
   const shieldData = runShieldPhase(targetDir);
   const phase4Ms = Date.now() - phase4Start;
-  const phase4Status = shieldData.postureScore >= 70 ? 'pass'
-    : shieldData.postureScore >= 40 ? 'warn' : 'fail';
+  const phase4Status = shieldData.shieldPostureScore >= 70 ? 'pass'
+    : shieldData.shieldPostureScore >= 40 ? 'warn' : 'fail';
   phases.push({
     name: 'Shield Analysis',
     status: phase4Status,
-    score: shieldData.postureScore,
+    score: shieldData.shieldPostureScore,
     durationMs: phase4Ms,
     detail: `${shieldData.eventCount} events, ${shieldData.classifiedFindings.length} findings`,
   });
@@ -521,8 +533,22 @@ export async function review(options: ReviewOptions): Promise<number> {
   const recoveryHint = recoverySummary.totalRecoverable > 0
     ? ` -- path to ${recoverySummary.potentialScore} available (${topRecovery})`
     : '';
+  // Scope label (#252). The composite is NOT an average — applyDominantAnalyzerFloor
+  // caps it at the worst participating dimension once that dimension is in the
+  // critical band, so a single critical credential legitimately drags the whole
+  // review down while `scan` (static code checks only) stays high. Saying so
+  // turns an apparent contradiction between commands into two stated scopes.
+  // The floor is driven by risk-only dimension views, not by the phase scores
+  // shown above, so the capping dimension cannot be named from `phases`. What
+  // IS observable and worth saying: the composite sits below every phase, which
+  // is the signal that a critical dimension capped it rather than an average
+  // producing it.
+  const lowestPhase = phases.length > 0 ? Math.min(...phases.map(ph => ph.score)) : 0;
+  const scopeNote = compositeScore < lowestPhase
+    ? `  (composite across ${phases.length} dimensions; capped by a critical dimension)`
+    : `  (composite across ${phases.length} dimensions)`;
   process.stdout.write(
-    `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}` +
+    `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}${dim(scopeNote)}` +
     `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)\n`,
   );
 
@@ -809,22 +835,22 @@ export function runShieldPhase(targetDir: string): ShieldPhaseData {
   const activeTools = shieldStatus.tools.filter(p => p.active).length;
 
   // Compute shield posture score (baseline 25 for CLI users)
-  let postureScore = 25;
-  postureScore += Math.min(activeTools * 10, 50);
-  if (shieldStatus.policyLoaded) postureScore += 10;
-  if (shieldStatus.shellIntegration) postureScore += 5;
+  let shieldPostureScore = 25;
+  shieldPostureScore += Math.min(activeTools * 10, 50);
+  if (shieldStatus.policyLoaded) shieldPostureScore += 10;
+  if (shieldStatus.shellIntegration) shieldPostureScore += 5;
   // Penalize for findings
   const critCount = classifiedFindings.filter(f => f.finding.severity === 'critical').length;
   const highCount = classifiedFindings.filter(f => f.finding.severity === 'high').length;
-  postureScore -= critCount * 15;
-  postureScore -= highCount * 8;
-  postureScore = Math.max(0, Math.min(100, postureScore));
+  shieldPostureScore -= critCount * 15;
+  shieldPostureScore -= highCount * 8;
+  shieldPostureScore = Math.max(0, Math.min(100, shieldPostureScore));
 
   return {
     eventCount: events.length,
     classifiedFindings,
     arpStats,
-    postureScore,
+    shieldPostureScore,
     policyLoaded: shieldStatus.policyLoaded,
     policyMode: shieldStatus.policyMode,
     integrityStatus: shieldStatus.integrityStatus,

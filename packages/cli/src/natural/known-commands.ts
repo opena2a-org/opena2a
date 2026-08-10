@@ -17,7 +17,7 @@ export const CORE_COMMAND_NAMES: readonly string[] = [
   'init', 'protect', 'comply', 'guard', 'runtime', 'shield', 'review', 'identity',
   'config', 'self-register', 'verify', 'baselines', 'benchmark',
   'check', 'status', 'publish', 'detect', 'mcp', 'demo', 'setup', 'watch',
-  'trust', 'claim', 'create', 'login', 'logout', 'whoami',
+  'trust', 'claim', 'create', 'login', 'logout', 'whoami', 'admin',
 ];
 
 /** Every command name Commander will route directly: adapters + core. */

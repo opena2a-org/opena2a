@@ -8,11 +8,33 @@
 import { platform as osPlatform } from "node:os";
 import { loadConfig, setEnabled, configPaths, POLICY_URL } from "./config.js";
 import { sendEvent } from "./sender.js";
-import type { InitOptions, Status, TrackFields, UsageEvent } from "./types.js";
+import type { InitOptions, Status, SuppressionReason, TrackFields, UsageEvent } from "./types.js";
 
 export { flush } from "./sender.js";
 
-let session: { tool: string; version: string; installId: string; enabled: boolean } | null = null;
+let session: {
+  tool: string;
+  version: string;
+  installId: string;
+  enabled: boolean;
+  suppressedBy: SuppressionReason | null;
+} | null = null;
+
+/** Build a Status, omitting `suppressedBy` entirely when nothing suppressed. */
+function toStatus(
+  enabled: boolean,
+  installId: string,
+  configPath: string,
+  suppressedBy: SuppressionReason | null,
+): Status {
+  return {
+    enabled,
+    configPath,
+    policyURL: POLICY_URL,
+    installId,
+    ...(suppressedBy ? { suppressedBy } : {}),
+  };
+}
 
 function nodeMajor(): number {
   return parseInt(process.versions.node.split(".")[0], 10);
@@ -24,12 +46,13 @@ function nodeMajor(): number {
  * call rebinds the session — useful in test harnesses).
  */
 export async function init(opts: InitOptions): Promise<void> {
-  const { config } = loadConfig();
+  const { config, suppressedBy } = loadConfig();
   session = {
     tool: opts.tool,
     version: opts.version,
     installId: config.installId,
     enabled: config.enabled,
+    suppressedBy,
   };
 }
 
@@ -72,35 +95,36 @@ export function error(name: string, code: string): void {
 
 export function status(): Status {
   if (!session) {
-    const { config, paths } = loadConfig();
-    return {
-      enabled: config.enabled,
-      configPath: paths.file,
-      policyURL: POLICY_URL,
-      installId: config.installId,
-    };
+    const { config, paths, suppressedBy } = loadConfig();
+    return toStatus(config.enabled, config.installId, paths.file, suppressedBy);
   }
-  return {
-    enabled: session.enabled,
-    configPath: configPaths().file,
-    policyURL: POLICY_URL,
-    installId: session.installId,
-  };
+  return toStatus(
+    session.enabled,
+    session.installId,
+    configPaths().file,
+    session.suppressedBy,
+  );
 }
 
 /**
  * Persist enabled=true|false to the config file.
  * Used by `<tool> telemetry on|off` subcommands.
+ *
+ * Returns the *effective* state, not the flag just written. In a CI
+ * environment `telemetry on` writes enabled=true and still returns
+ * `enabled: false, suppressedBy: "ci"` — because automatic suppression
+ * re-applies on every load. Reporting the written flag instead would
+ * print "on" and then have the very next `telemetry status` print "off",
+ * with nothing explaining the flip.
  */
 export function setOptOut(enabled: boolean): Status {
-  const cfg = setEnabled(enabled);
-  if (session) session.enabled = enabled;
-  return {
-    enabled: cfg.enabled,
-    configPath: configPaths().file,
-    policyURL: POLICY_URL,
-    installId: cfg.installId,
-  };
+  setEnabled(enabled);
+  const { config, paths, suppressedBy } = loadConfig();
+  if (session) {
+    session.enabled = config.enabled;
+    session.suppressedBy = suppressedBy;
+  }
+  return toStatus(config.enabled, config.installId, paths.file, suppressedBy);
 }
 
 /**
@@ -165,4 +189,10 @@ export function successFromExitCode(
 }
 
 export { POLICY_URL } from "./config.js";
-export type { InitOptions, Status, TrackFields, UsageEvent } from "./types.js";
+export type {
+  InitOptions,
+  Status,
+  SuppressionReason,
+  TrackFields,
+  UsageEvent,
+} from "./types.js";

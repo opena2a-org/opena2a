@@ -2,11 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, setEnabled, configPaths, endpointURL, debugPrintEnabled, DEFAULT_ENDPOINT } from "./config.js";
+import { loadConfig, setEnabled, configPaths, endpointURL, debugPrintEnabled, isCI, doNotTrack, DEFAULT_ENDPOINT } from "./config.js";
+import { scrubSuppressionEnv, restoreSuppressionEnv, type SavedEnv } from "./test-support.js";
 
 let tmpHome: string;
+let savedEnv: SavedEnv;
 
 beforeEach(() => {
+  savedEnv = scrubSuppressionEnv();
   tmpHome = mkdtempSync(join(tmpdir(), "opena2a-telem-"));
   process.env.XDG_CONFIG_HOME = tmpHome;
   delete process.env.OPENA2A_TELEMETRY;
@@ -15,6 +18,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  restoreSuppressionEnv(savedEnv);
   rmSync(tmpHome, { recursive: true, force: true });
   delete process.env.XDG_CONFIG_HOME;
 });
@@ -76,6 +80,172 @@ describe("loadConfig", () => {
     const result = loadConfig();
     expect(result.config.enabled).toBe(true);
     expect(result.config.installId).toBeTruthy();
+  });
+});
+
+describe("isCI", () => {
+  it("is false on a clean environment", () => {
+    expect(isCI()).toBe(false);
+  });
+
+  it.each([["true"], ["1"], ["yes"], ["anything"]])("CI=%s is CI", (val) => {
+    process.env.CI = val;
+    expect(isCI()).toBe(true);
+  });
+
+  it.each([["false"], ["0"], ["no"], [""]])("CI=%s is not CI", (val) => {
+    process.env.CI = val;
+    expect(isCI()).toBe(false);
+  });
+
+  it.each([
+    ["GITHUB_ACTIONS"],
+    ["GITLAB_CI"],
+    ["CIRCLECI"],
+    ["BUILDKITE"],
+    ["JENKINS_URL"],
+    ["TF_BUILD"],
+    ["VERCEL"],
+  ])("%s presence marks CI even when CI is unset", (key) => {
+    process.env[key] = "true";
+    expect(isCI()).toBe(true);
+  });
+
+  it("reads the passed env rather than process.env", () => {
+    expect(isCI({ CI: "true" } as NodeJS.ProcessEnv)).toBe(true);
+    expect(isCI({} as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
+
+describe("doNotTrack", () => {
+  it.each([["1"], ["true"], ["yes"]])("DO_NOT_TRACK=%s opts out", (val) => {
+    process.env.DO_NOT_TRACK = val;
+    expect(doNotTrack()).toBe(true);
+  });
+
+  it.each([["0"], ["false"], [""]])("DO_NOT_TRACK=%s does not opt out", (val) => {
+    process.env.DO_NOT_TRACK = val;
+    expect(doNotTrack()).toBe(false);
+  });
+
+  it("is false when unset", () => {
+    expect(doNotTrack()).toBe(false);
+  });
+});
+
+describe("loadConfig automatic suppression", () => {
+  // Regression guard for the metric bug this suppression exists to fix:
+  // CI runners are provisioned fresh per job, so the machine-id (or the
+  // hostname fallback) differs every run — a CI run typically minted a new
+  // install_id and inflated distinct-install and active-user counts with
+  // our own pipelines.
+  it("CI suppresses telemetry despite default-on", () => {
+    process.env.CI = "true";
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("DO_NOT_TRACK suppresses telemetry despite default-on", () => {
+    process.env.DO_NOT_TRACK = "1";
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it.each([["on"], ["1"], ["true"], ["yes"]])(
+    "OPENA2A_TELEMETRY=%s re-enables in CI (escape hatch for our own e2e)",
+    (val) => {
+      process.env.CI = "true";
+      process.env.OPENA2A_TELEMETRY = val;
+      expect(loadConfig().config.enabled).toBe(true);
+    },
+  );
+
+  it("OPENA2A_TELEMETRY=on does NOT override DO_NOT_TRACK", () => {
+    // DO_NOT_TRACK is a deliberate user intent, not an environmental fact.
+    // A wrapper script, Makefile, Dockerfile ENV or org-wide CI config that
+    // exports OPENA2A_TELEMETRY=on must never silently re-enable tracking
+    // for a user who set DO_NOT_TRACK in their shell profile and never
+    // touched OPENA2A_TELEMETRY at all.
+    process.env.DO_NOT_TRACK = "1";
+    process.env.OPENA2A_TELEMETRY = "on";
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("DO_NOT_TRACK still wins when CI is also present and opt-in is set", () => {
+    process.env.CI = "true";
+    process.env.DO_NOT_TRACK = "1";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBe("do-not-track");
+  });
+
+  it.each([["off "], [" off"], ["off\n"], ["\toff\t"]])(
+    "OPENA2A_TELEMETRY=%j (untrimmed) still disables",
+    (val) => {
+      // Trailing whitespace/newlines are routine in .env files, compose
+      // YAML and $(cmd) substitution. A privacy control must fail closed.
+      process.env.OPENA2A_TELEMETRY = val;
+      expect(loadConfig().config.enabled).toBe(false);
+    },
+  );
+
+  it("DO_NOT_TRACK with surrounding whitespace still opts out", () => {
+    process.env.DO_NOT_TRACK = " 1 ";
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("attributes an env opt-out so a CLI can explain it", () => {
+    // Without a reason code a CLI can only print a bare "off" and suggest
+    // `telemetry on` — which cannot work, since env-off wins outright.
+    process.env.OPENA2A_TELEMETRY = "off";
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBe("env-opt-out");
+  });
+
+  it("env opt-out outranks CI in attribution", () => {
+    process.env.OPENA2A_TELEMETRY = "off";
+    process.env.CI = "true";
+    expect(loadConfig().suppressedBy).toBe("env-opt-out");
+  });
+
+  it("a persisted opt-out gets NO reason code (the plain toggle works there)", () => {
+    setEnabled(false);
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBeNull();
+  });
+
+  it("a deliberate file opt-out still wins over env=on in CI", () => {
+    setEnabled(false);
+    process.env.CI = "true";
+    process.env.OPENA2A_TELEMETRY = "on";
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("env=off still wins over env-based re-enable paths", () => {
+    process.env.CI = "true";
+    process.env.OPENA2A_TELEMETRY = "off";
+    expect(loadConfig().config.enabled).toBe(false);
+  });
+
+  it("does not persist CI suppression to the config file", () => {
+    process.env.CI = "true";
+    const { config, paths } = loadConfig();
+    expect(config.enabled).toBe(false);
+    // The file records the user's choice, not where the process ran —
+    // otherwise one CI run would poison a developer's real config.
+    const persisted = JSON.parse(readFileSync(paths.file, "utf8"));
+    expect(persisted.enabled).toBe(true);
+
+    delete process.env.CI;
+    expect(loadConfig().config.enabled).toBe(true);
+  });
+
+  it("still persists a stable install_id while suppressed", () => {
+    process.env.CI = "true";
+    const a = loadConfig().config.installId;
+    const b = loadConfig().config.installId;
+    expect(a).toBe(b);
   });
 });
 

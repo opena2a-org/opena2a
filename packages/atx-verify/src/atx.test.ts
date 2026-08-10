@@ -87,6 +87,17 @@ describe('LocalAtxVerifier', () => {
     const r = new LocalAtxVerifier(makeTrustAnchors(pubHex)).verify(atx);
     expect(r.valid).toBe(false);
     expect(r.rejectCategory).toBe('UNSUPPORTED_VERSION');
+    expect(r.reason).toContain('unsupported atcVersion 2.0');
+  });
+
+  it('names the absence, not "undefined", when atcVersion is missing', () => {
+    const { atx, pubHex } = makeSignedAtx({});
+    delete (atx as Record<string, unknown>).atcVersion;
+    const r = new LocalAtxVerifier(makeTrustAnchors(pubHex)).verify(atx);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('UNSUPPORTED_VERSION');
+    expect(r.reason).toContain('atcVersion is missing');
+    expect(r.reason).not.toContain('undefined');
   });
 
   it('rejects an expired ATX', () => {

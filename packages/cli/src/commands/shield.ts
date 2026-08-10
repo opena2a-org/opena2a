@@ -19,7 +19,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { EventSeverity } from '../shield/types.js';
+import type { EventSeverity, IntegrityState } from '../shield/types.js';
 import { bold, dim, gray, green, yellow, red, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
 
@@ -35,6 +35,10 @@ export interface ShieldOptions {
   severity?: string;
   source?: string;
   category?: string;
+  /** `--action process.spawn` — the action to evaluate (evaluate only). */
+  action?: string;
+  /** `--target /usr/bin/curl` — the subject of that action (evaluate only). */
+  target?: string;
   verify?: boolean;
   reset?: boolean;
   forensic?: boolean;
@@ -258,11 +262,28 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
   const commandArgs = rawArgs.filter(a => !a.startsWith('/') && !a.startsWith('./') && !a.startsWith('../'));
   const commandString = commandArgs.length > 0 ? commandArgs.join(' ') : null;
 
+  // An explicit --action/--target is unambiguously a human (or a script)
+  // asking for a verdict: the preexec hook never passes them. This is the
+  // form src/shield/findings.ts prints as remediation, so it must report.
+  const hasExplicitSubject = Boolean(options.action || options.target);
+
+  // Otherwise hook mode is "a command was handed to us", keyed off the RAW
+  // args: the installed preexec hook is `opena2a shield evaluate "$1"` and
+  // always passes one. Keying off `commandString` instead would misread an
+  // absolute-path command (`/usr/bin/ls`, dropped by the filter above) as a
+  // direct invocation and print a verdict on every such hook run.
+  const isHookInvocation = rawArgs.length > 0 && !hasExplicitSubject;
+
   const agent = options.agent ?? null;
   let category: string;
   let target: string;
 
-  if (commandString) {
+  if (hasExplicitSubject) {
+    // evaluatePolicy accepts either an action string ('process.spawn') or a
+    // bare category ('processes') and maps it internally.
+    category = options.action ?? options.category ?? 'processes';
+    target = options.target ?? '';
+  } else if (commandString) {
     // Shell hook mode: parse the command to extract the binary name (first word).
     // Handle pipes, subshells, and quoted strings by taking the first token.
     const trimmed = commandString.trim();
@@ -313,13 +334,63 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
 
   if (isJson) {
     process.stdout.write(JSON.stringify(decision, null, 2) + '\n');
-  } else if (decision.outcome === 'monitored') {
-    // Only print monitored outcomes -- allowed is silent to avoid noise
-    // in shell preexec hooks where evaluate runs on every command.
-    process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}\n`);
+  } else if (isHookInvocation) {
+    // Hook mode: `evaluate` runs on EVERY interactive command, so an allowed
+    // verdict must stay silent. Only the exception is worth a line.
+    if (decision.outcome === 'monitored') {
+      process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}\n`);
+    }
+  } else {
+    // Direct invocation: the user typed `shield evaluate` to be told the
+    // verdict, and reporting it is the command's entire purpose. Silence here
+    // was indistinguishable from a crash (#255).
+    writeEvaluateVerdict(decision, category, target, agent);
   }
 
   return decision.outcome === 'blocked' ? 1 : 0;
+}
+
+/**
+ * Render the verdict the --json path already returns: outcome, deciding rule,
+ * agent, and the subject actually evaluated.
+ *
+ * The subject line is not decoration. `shield evaluate --action X --target Y`
+ * is printed as remediation by src/shield/findings.ts, but neither flag is
+ * registered on the command, so the target evaluated is the empty string.
+ * Showing category/target lets a user see WHAT was judged rather than read a
+ * confident verdict about nothing.
+ */
+function writeEvaluateVerdict(
+  decision: { outcome: string; rule: string },
+  category: string,
+  target: string,
+  agent: string | null,
+): void {
+  const label =
+    decision.outcome === 'blocked'
+      ? red('BLOCKED')
+      : decision.outcome === 'monitored'
+        ? yellow('MONITORED')
+        : green('ALLOWED');
+
+  process.stdout.write('\n');
+  process.stdout.write(`  ${bold(label)}  ${dim(`rule ${decision.rule}`)}\n`);
+  process.stdout.write(
+    `  ${dim('Evaluated:')} ${category}${target ? ` -> ${target}` : dim(' (no target given)')}\n`,
+  );
+  process.stdout.write(`  ${dim('Agent:')} ${agent ?? dim('none')}\n`);
+
+  // A default-allow is the state an operator most needs stated out loud: it
+  // means nothing in the policy spoke to this action, not that it was vetted.
+  if (decision.rule.endsWith(':no-match')) {
+    process.stdout.write(
+      `  ${dim('No policy rule matched. Allowing by default -- this action was not vetted.')}\n`,
+    );
+    process.stdout.write(
+      `  ${dim('Review or tighten the policy:')} ${cyan('opena2a shield policy')}\n`,
+    );
+  }
+  process.stdout.write('\n');
 }
 
 async function handleRecover(options: ShieldOptions): Promise<number> {
@@ -343,13 +414,34 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       : process.env.SHELL?.includes('bash') ? 'bash' as const
       : undefined;
 
-    exitLockdown();
-    const state = runIntegrityChecks({ shell });
+    // Verify BEFORE recovering, which is what --verify promises (#228).
+    // `ignoreLockdown` lets the checks run with the marker still in place, so
+    // a compromised machine is never briefly unlocked and an interrupted
+    // verification cannot strand it out of lockdown.
+    //
+    // A check that throws must stay locked AND stay actionable: `shield
+    // status` cites this command as the single way out of lockdown, so an
+    // unhandled stack trace here would leave the user with no cited path.
+    let state: IntegrityState;
+    try {
+      state = runIntegrityChecks({ shell, ignoreLockdown: true });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          status: 'verification_error', detail, stillInLockdown: true,
+        }, null, 2) + '\n');
+      } else {
+        process.stderr.write(red(`Verification could not complete: ${detail}\n`));
+        process.stderr.write('System remains in lockdown.\n');
+        process.stderr.write(dim('  Inspect:  opena2a shield selfcheck\n'));
+        process.stderr.write(dim('  Unlock without verifying:  opena2a shield recover\n'));
+      }
+      return 1;
+    }
 
     if (state.status === 'compromised') {
-      const { enterLockdown } = await import('../shield/integrity.js');
-      enterLockdown(reason ?? 'Verification failed');
-
+      // Still locked — nothing to re-enter, and the original reason survives.
       if (isJson) {
         process.stdout.write(JSON.stringify({ status: 'verification_failed', state }, null, 2) + '\n');
       } else {
@@ -363,8 +455,29 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
       return 1;
     }
 
+    // No failing check — safe to lift the marker. `degraded` (warn-level
+    // checks) still unlocks, as it always has: a missing shell rc file must
+    // not strand someone in lockdown. But it is NOT "successful
+    // verification", and saying so would paper over a warn on the
+    // tamper-evidence log itself, so the warnings are named.
+    exitLockdown();
+
+    const warnings = state.checks.filter(c => c.status === 'warn');
+
     if (isJson) {
-      process.stdout.write(JSON.stringify({ status: 'recovered', verified: true }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({
+        status: 'recovered',
+        verified: true,
+        integrityStatus: state.status,
+        warnings: warnings.map(c => ({ name: c.name, detail: c.detail })),
+      }, null, 2) + '\n');
+    } else if (warnings.length > 0) {
+      process.stdout.write(yellow(
+        `Lockdown lifted. Verification passed with ${warnings.length} warning(s):\n`,
+      ));
+      for (const c of warnings) {
+        process.stdout.write(`  ${yellow('WARN')}  ${c.name}: ${c.detail}\n`);
+      }
     } else {
       process.stdout.write(green('Lockdown lifted after successful verification.\n'));
     }

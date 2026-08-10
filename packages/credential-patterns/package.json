@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/credential-patterns",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Canonical credential regex catalog and match-with-allowlist helpers for OpenA2A security tools (secretless-ai, hackmyagent).",
   "type": "module",
   "main": "dist/index.js",

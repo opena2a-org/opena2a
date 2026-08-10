@@ -5,7 +5,9 @@ import * as crypto from 'node:crypto';
 import { bold, dim, green, yellow, red, cyan, gray } from '../util/colors.js';
 import { getVersion } from '../util/version.js';
 
-const DEFAULT_REGISTRY_BASE = 'https://api.oa2a.org';
+// No local default: the registry host is resolved once, centrally, so this
+// command cannot drift onto a different answer than `trust` / `claim` / `config
+// show` — which is how the CLI came to advertise two conflicting registries.
 
 interface McpCommandOptions {
   subcommand: string;
@@ -154,8 +156,9 @@ function computeConfigHash(entry: McpServerEntry): string {
 async function fetchTrustScore(serverName: string): Promise<number | null> {
   try {
     const { RegistryClient } = await import('@opena2a/registry-client');
+    const { getRegistryUrl } = await import('../util/report-submission.js');
     const client = new RegistryClient({
-      baseUrl: DEFAULT_REGISTRY_BASE,
+      baseUrl: await getRegistryUrl(),
       userAgent: `opena2a-cli/${getVersion()}`,
       timeoutMs: 5000,
     });

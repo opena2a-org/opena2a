@@ -74,7 +74,14 @@ export interface AtxSignature {
 
 /** The ATX credential (subset used for verification + context derivation). */
 export interface Atx {
-  atcVersion?: string;
+  /**
+   * Schema version, "1.0" or "1.1". Required: there is no default — a
+   * credential without it always rejects UNSUPPORTED_VERSION, so the optional
+   * typing this field used to carry only misled constructors. (ATX is the
+   * current name for the credential formerly called ATC; the wire field keeps
+   * the historical spelling.)
+   */
+  atcVersion: string;
   agentId: string;
   agentDid: string;
   /** Publisher identity. Unsigned under v1.0; covered by the v1.1 signature. */
@@ -200,7 +207,7 @@ export class LocalAtxVerifier implements AtxVerifier {
    */
   verifyCredential(credentialJson: string | Uint8Array): AtxVerificationResult {
     if (credentialJson === null || credentialJson === undefined) {
-      return reject('MALFORMED', 'credential is null');
+      return reject('MALFORMED', 'credential is null or undefined');
     }
     // Out-of-contract argument types stay MALFORMED rejections, never escaping
     // throws — including a Proxy whose getPrototypeOf trap throws inside the
@@ -261,12 +268,24 @@ export class LocalAtxVerifier implements AtxVerifier {
   }
 
   verify(atx: Atx): AtxVerificationResult {
+    // The type forbids it, but a plain-JS caller doing verify(JSON.parse(body))
+    // reaches here with null (or a scalar) when the wire body is degenerate —
+    // reject structurally rather than throw on the first property read.
+    if (atx === null || typeof atx !== 'object') {
+      return reject('MALFORMED', 'credential is not an object');
+    }
     const now = (this.anchors.now ?? (() => new Date()))();
 
     // Step 1: schema version. Dispatch on atcVersion: "1.0" verifies the legacy
-    // pipe form, "1.1" verifies JCS(TBS) (atx-spec §1.3a).
+    // pipe form, "1.1" verifies JCS(TBS) (atx-spec §1.3a). The reason names
+    // atcVersion — the schema field a consumer greps their credential for.
     if (atx.atcVersion !== SUPPORTED_ATX_VERSION && atx.atcVersion !== SUPPORTED_ATX_VERSION_V11) {
-      return reject('UNSUPPORTED_VERSION', `unsupported atxVersion ${String(atx.atcVersion)}`);
+      return reject(
+        'UNSUPPORTED_VERSION',
+        atx.atcVersion === undefined || atx.atcVersion === null
+          ? 'atcVersion is missing (supported: "1.0", "1.1")'
+          : `unsupported atcVersion ${String(atx.atcVersion)}`,
+      );
     }
     const isV11 = atx.atcVersion === SUPPORTED_ATX_VERSION_V11;
 
@@ -316,9 +335,13 @@ export class LocalAtxVerifier implements AtxVerifier {
     if (isV11) {
       for (const did of atx.issuerChain ?? []) authoritySet.add(did);
     }
-    const edKeys = this.anchors.publicKeys
-      .filter((k) => k.algorithm === 'Ed25519')
-      .filter((k) => keyEligible(k.keyId, authoritySet))
+    // Staged so an empty final key set can be diagnosed precisely: nothing
+    // configured vs binding-excluded vs unparseable key material. All three
+    // used to collapse into "signature did not verify", which reads as bad
+    // signature bytes when the actual fault is anchor configuration.
+    const configuredEd = this.anchors.publicKeys.filter((k) => k.algorithm === 'Ed25519');
+    const eligibleEd = configuredEd.filter((k) => keyEligible(k.keyId, authoritySet));
+    const edKeys = eligibleEd
       .map((k) => ed25519FromRawHex(k.publicKeyHex))
       .filter((k): k is crypto.KeyObject => k !== null);
 
@@ -327,11 +350,29 @@ export class LocalAtxVerifier implements AtxVerifier {
 
     for (const sig of atx.signatures ?? []) {
       if (sig.algorithm === 'Ed25519') {
+        // An empty eligible-key set can never verify — name the configuration
+        // fault instead of letting it read as bad signature bytes.
+        if (edKeys.length === 0) {
+          if (configuredEd.length === 0) {
+            return reject('SIGNATURE_INVALID', 'no Ed25519 trust anchors configured');
+          }
+          if (eligibleEd.length === 0) {
+            return reject(
+              'SIGNATURE_INVALID',
+              `key-to-issuer binding: none of the ${configuredEd.length} configured Ed25519 key(s) ` +
+                `is controlled by an authority of this credential (issuer ${atx.issuerDid})`,
+            );
+          }
+          return reject(
+            'SIGNATURE_INVALID',
+            'configured Ed25519 key(s) for this issuer failed to parse (expected 32-byte raw public key hex)',
+          );
+        }
         let sigBytes: Buffer;
         try {
           sigBytes = Buffer.from(sig.value, 'base64');
         } catch {
-          return reject('SIGNATURE_INVALID', `signature ${sig.keyId ?? ''} has invalid base64`);
+          return reject('SIGNATURE_INVALID', `${sigLabel(sig.keyId)} has invalid base64`);
         }
         const ok = edKeys.some((key) => {
           try {
@@ -341,7 +382,7 @@ export class LocalAtxVerifier implements AtxVerifier {
           }
         });
         if (!ok) {
-          return reject('SIGNATURE_INVALID', `Ed25519 signature ${sig.keyId ?? ''} did not verify`);
+          return reject('SIGNATURE_INVALID', `Ed25519 ${sigLabel(sig.keyId)} did not verify`);
         }
         edVerified = true;
       } else if (sig.algorithm === 'ML-DSA-65') {
@@ -351,7 +392,11 @@ export class LocalAtxVerifier implements AtxVerifier {
     }
 
     if (!edVerified) {
-      return reject('SIGNATURE_INVALID', 'no Ed25519 signature verified');
+      // Keep mldsaPresent on this rejection: an ML-DSA-only credential fails
+      // here precisely because its PQC half is delegated, and the flag is how
+      // a caller distinguishes "delegated, bring your own ML-DSA verifier"
+      // from "carried no usable signature at all".
+      return { ...reject('SIGNATURE_INVALID', 'no Ed25519 signature verified'), mldsaPresent };
     }
 
     return {
@@ -375,6 +420,11 @@ export class LocalAtxVerifier implements AtxVerifier {
 
 function reject(rejectCategory: RejectCategory, reason: string): AtxVerificationResult {
   return { valid: false, rejectCategory, reason };
+}
+
+/** "signature <keyId>" or plain "signature" — no dangling space when keyId is absent. */
+function sigLabel(keyId: string | undefined): string {
+  return keyId ? `signature ${keyId}` : 'signature';
 }
 
 /**

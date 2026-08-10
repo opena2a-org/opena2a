@@ -1,5 +1,38 @@
 # Changelog — @opena2a/cli-ui
 
+## Unreleased
+
+### Fixed
+- `runTelemetryCommand` no longer prints a toggle hint that cannot work. When
+  `@opena2a/telemetry` reports the new optional
+  `TelemetryStatusLike.suppressedBy` (`"ci"` / `"do-not-track"` /
+  `"env-opt-out"`), the status block names the cause (e.g.
+  `state: off (CI environment detected)`) and offers a remedy that actually
+  works for that cause. Previously it suggested `<tool> telemetry on`, which
+  persists `enabled: true`, changes nothing observable, and leaves the next
+  `status` still reporting off.
+
+  Each reason gets its own remedy, because a shared one is wrong for two of
+  the three: `OPENA2A_TELEMETRY=on` overrides CI detection but deliberately
+  does **not** override `DO_NOT_TRACK`, and nothing re-enables telemetry while
+  `OPENA2A_TELEMETRY=off` is set. Only the CI copy says "you did not turn it
+  off" — for the other two the user did. A persisted `telemetry off` carries
+  no reason code and keeps the ordinary toggle hint, which works there.
+- `<tool> telemetry on` under automatic suppression no longer prints
+  "Telemetry enabled for <tool>." directly above a `state: off` line. It now
+  reports that the preference was saved but telemetry stays off here.
+- `TelemetryStatusLike.suppressedBy` is optional, so this stays structurally
+  compatible with older `@opena2a/telemetry` versions that never set it.
+- The off-state toggle hint no longer offers `OPENA2A_TELEMETRY=on`. The two
+  directions are not symmetric: `OPENA2A_TELEMETRY=off` disables from any
+  state, but `OPENA2A_TELEMETRY=on` cannot re-enable a persisted opt-out
+  (precedence rule 2 — the config file wins), and this hint only ever prints
+  for an off-state that came from that file. Following it produced an
+  identical, unexplained "off". `<tool> telemetry on` alone is the remedy that
+  works there, and the on-state hint keeps `OPENA2A_TELEMETRY=off` unchanged.
+  The 0.5.1 papercut guard (#170, hint *direction*) is preserved; only the
+  incidental env-var assertion changed.
+
 ## 0.5.2
 
 ### Added

@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in any OpenA2A project, please report it responsibly.
 
-**Email:** security@opena2a.org
+**Email:** info@opena2a.org
 
 Please include:
 - Description of the vulnerability

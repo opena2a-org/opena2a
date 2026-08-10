@@ -223,3 +223,44 @@ describe('LocalAtxVerifier.verifyCredential', () => {
     expect(r.rejectCategory).toBe('MALFORMED');
   });
 });
+
+describe('LocalAtxVerifier.verify (object overload, plain-JS runtime inputs)', () => {
+  const verifier = new LocalAtxVerifier(emptyAnchors);
+
+  it('rejects null/scalar credentials as MALFORMED instead of throwing', () => {
+    // Release-test P2: verify(JSON.parse('null')) threw on the first property
+    // read. The type forbids these, plain-JS callers reach them anyway.
+    for (const bad of [null, undefined, 5, 'x', true]) {
+      const r = verifier.verify(bad as never);
+      expect(r.valid, String(bad)).toBe(false);
+      expect(r.rejectCategory, String(bad)).toBe('MALFORMED');
+    }
+  });
+
+  it('names the schema field atcVersion in the version rejection reason', () => {
+    const r = verifier.verify({ atcVersion: '2.0' } as never);
+    expect(r.rejectCategory).toBe('UNSUPPORTED_VERSION');
+    expect(r.reason).toContain('atcVersion');
+  });
+
+  it('mldsaPresent is set when an ML-DSA-only credential fails Ed25519 verification', () => {
+    const anchors: AtxTrustAnchors = { trustedIssuers: ['did:x:issuer'], publicKeys: [] };
+    const r = new LocalAtxVerifier(anchors).verify({
+      atcVersion: '1.0',
+      agentId: 'a',
+      agentDid: 'did:x:a',
+      version: '1',
+      contentHash: 'h',
+      issuerDid: 'did:x:issuer',
+      trustLevel: 1,
+      trustScore: 0.5,
+      issuedAt: '2026-01-01T00:00:00Z',
+      expiresAt: '2999-01-01T00:00:00Z',
+      signatures: [{ algorithm: 'ML-DSA-65', value: 'AA==' }],
+    } as never);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(r.reason).toContain('no Ed25519 signature verified');
+    expect(r.mldsaPresent).toBe(true);
+  });
+});

@@ -244,16 +244,90 @@ export async function isContributeEnabled(): Promise<boolean> {
   }
 }
 
+/**
+ * The registry every command should talk to.
+ *
+ * Canonical host, defined once. Each command used to carry its own
+ * `DEFAULT_REGISTRY_URL` constant, which is how the CLI ended up advertising
+ * `https://api.oa2a.org` in `scan --help` while `config show` reported
+ * `https://registry.opena2a.org` — a host that deliberately has no DNS,
+ * because it names the unreleased Registry FRONTEND, not the API. Do not
+ * "fix" a failure against that host by creating the record.
+ */
+export const CANONICAL_REGISTRY_URL = 'https://api.oa2a.org';
+
+/**
+ * Hosts a config may still be pinned to from an older install. Superset of the
+ * list in `@opena2a/shared`, so a CLI running against an older pinned shared
+ * package still resolves them — the miss this closes was exactly that: the CLI
+ * pinned `@opena2a/shared@0.1.0`, whose DEFAULT_CONFIG shipped
+ * `registry.opena2a.org` and which had no migration at all, so every fresh
+ * install failed `opena2a trust <pkg>` with "fetch failed" until the user ran
+ * some other command that happened to rewrite the config.
+ */
+const STALE_REGISTRY_HOSTS = [
+  'https://registry.opena2a.org',
+  'http://registry.opena2a.org',
+  'https://api.opena2a.org',
+  'http://api.opena2a.org',
+];
+
+/** Hostnames — not URL prefixes — that no longer resolve. */
+const STALE_REGISTRY_HOSTNAMES = new Set([
+  'registry.opena2a.org',
+  'api.opena2a.org',
+]);
+
+export function isStaleRegistryUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  // Compare the parsed HOSTNAME, not a string prefix. Prefix matching missed
+  // every DNS-equivalent spelling — `:443`, a `user@` prefix, a trailing dot,
+  // `?query` and `#fragment` all reached the dead host unchanged — while a
+  // parsed hostname is exactly the thing DNS resolves. A trailing dot is the
+  // fully-qualified form of the same name, so it is stripped before comparison.
+  try {
+    const host = new URL(trimmed).hostname.toLowerCase().replace(/\.$/, '');
+    return STALE_REGISTRY_HOSTNAMES.has(host);
+  } catch {
+    // Unparseable: not something we can claim is stale. It is handled by the
+    // validator in `getRegistryUrl`, which fails rather than redirecting.
+    return false;
+  }
+}
+
+/**
+ * Resolve the registry URL a command should use.
+ *
+ * Always returns a usable URL. Unset and known-stale both resolve to the
+ * canonical host, so no caller needs its own `|| 'https://...'` fallback — and
+ * a caller that forgets one cannot silently inherit a dead hostname.
+ */
 export async function getRegistryUrl(): Promise<string> {
+  let url: string;
   try {
     const mod = await loadShared();
-    const config = mod.loadUserConfig();
-    const url = config.registry?.url ?? '';
-    if (url) validateRegistryUrl(url);
-    return url;
+    url = ((mod.loadUserConfig().registry?.url ?? '') as string).trim();
   } catch {
-    return ''; // registry not yet available
+    // The config could not be read at all. There is no configured destination
+    // to honour, so this is the same situation as a fresh install.
+    return CANONICAL_REGISTRY_URL;
   }
+
+  // Unset, or a host we know is dead: the canonical API is the intended answer.
+  if (!url || isStaleRegistryUrl(url)) return CANONICAL_REGISTRY_URL;
+
+  // A URL IS configured. From here the only safe outcomes are "use it" or
+  // "fail" — never "silently use ours instead".
+  //
+  // Wrapping this in a catch that fell back to the canonical host made the
+  // resolver fail-OPEN on the egress destination: a user who deliberately set
+  // `http://registry.internal.corp` (rejected — the validator requires https)
+  // or whose config held a typo would have had scan reports, finding titles and
+  // verdicts POSTed to api.oa2a.org instead of nowhere. Consent covers whether
+  // to share, not with whom.
+  validateRegistryUrl(url);
+  return url;
 }
 
 /**

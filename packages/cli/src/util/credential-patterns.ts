@@ -194,6 +194,112 @@ export function isPlaceholderSecretValue(value: string): boolean {
   return false;
 }
 
+/** Signature of the package's exact-match known-example key set. */
+type KnownExampleKeys = ReadonlySet<string>;
+
+let _knownExampleKeys: Promise<KnownExampleKeys> | null = null;
+
+/**
+ * Lazily import the canonical KNOWN_EXAMPLE_KEYS set -- published credential
+ * values from vendor documentation (AWS's `AKIAIOSFODNN7EXAMPLE` and its
+ * paired secret, OpenAI's `sk-proj-abc123`), each source-verified in the
+ * package. Falls back to an empty set, which suppresses nothing.
+ */
+export function loadKnownExampleKeys(): Promise<KnownExampleKeys> {
+  if (!_knownExampleKeys) {
+    _knownExampleKeys = import('@opena2a/credential-patterns')
+      .then(m => (m.KNOWN_EXAMPLE_KEYS as KnownExampleKeys) ?? new Set<string>())
+      .catch(() => new Set<string>());
+  }
+  return _knownExampleKeys;
+}
+
+/**
+ * The single suppression rule for the migration scanner, applied to every
+ * pattern -- but with the evidence each pattern class actually justifies.
+ *
+ * The defect (#258) was that the AWS documentation pair was split across two
+ * rules: the secret half is name-gated and was suppressed, the id half is not
+ * and was reported, so the pair produced exactly one finding -- the harmless
+ * identifier -- and a user acting on it migrated the wrong half.
+ *
+ * `nameGated` patterns match a prefix-less value purely because a credential
+ * NAME sits next to it, so the value alone carries no evidence and the broad
+ * placeholder + entropy guard is warranted.
+ *
+ * Prefix-bearing patterns (`AKIA…`, `sk-ant-api03-…`, `ghp_…`) get EXACT
+ * membership in the canonical known-example set and nothing more. A substring
+ * test here would be a credential-laundering bypass: every one of those
+ * patterns admits `_`/`-` in its body, so `<live key>-SAMPLE` would match the
+ * pattern greedily, contain a placeholder word, and be dropped -- while
+ * `.replace('-SAMPLE','')` restores the key at runtime. It would also blind
+ * the scanner to the project's own malicious corpus, whose fixture credentials
+ * are deliberately marked `FAKE` (`ghp_FAKEexfil…`, `AKIAFAKE0EXFIL000000`),
+ * and put this scanner in direct disagreement with `hackmyagent`, which still
+ * reports them and prints `opena2a protect .` as the remediation.
+ *
+ * Exact match cannot be laundered: a value that equals a published example IS
+ * that example.
+ */
+export function isSuppressedCredentialValue(
+  value: string,
+  pattern: { nameGated?: boolean },
+  knownExampleKeys?: KnownExampleKeys,
+): boolean {
+  if (pattern.nameGated) return isPlaceholderSecretValue(value);
+  return knownExampleKeys?.has(value) ?? false;
+}
+
+/**
+ * Curated, high-precision credential patterns for the template-env-leak POSTURE
+ * scan (`scanTemplateEnvLeaks`), separate from the migration `CREDENTIAL_PATTERNS`
+ * so scanning a template can never feed the `protect` rewrite path.
+ *
+ * Every pattern here is ALNUM-BODY after a rigid, credential-specific literal
+ * prefix — the shape a real leaked key has and a hand-authored placeholder does
+ * not. The OpenAI/Stripe entries are the alnum-only forms HMA's `secure` scan
+ * uses (CONFIG-004); they match a real `sk-proj-…` / `sk_live_…` key but reject
+ * hyphenated placeholders like `sk-your-openai-api-key-goes-here`. The broad
+ * migration OpenAI pattern (`sk-(?!ant-)…[A-Za-z0-9_-]{20,}`) is intentionally
+ * NOT reused here precisely because it matches those placeholders. Keeping this
+ * set aligned with HMA's env-file patterns is what makes `init` and `secure`
+ * agree in DIRECTION on a real template leak.
+ */
+export const TEMPLATE_SCAN_PATTERNS: { id: string; title: string; pattern: RegExp }[] = [
+  { id: 'CRED-001', title: 'Anthropic API Key', pattern: /sk-ant-api\d{2}-[A-Za-z0-9_-]{20,}/g },
+  { id: 'CRED-002', title: 'OpenAI API Key',    pattern: /sk-proj-[A-Za-z0-9]{20,}/g },
+  { id: 'CRED-002', title: 'OpenAI API Key',    pattern: /sk-[A-Za-z0-9]{48,}/g },
+  { id: 'DRIFT-001', title: 'Google API Key',   pattern: /AIza[0-9A-Za-z_-]{35,}/g },
+  { id: 'DRIFT-002', title: 'AWS Access Key',   pattern: /AKIA[0-9A-Z]{16}/g },
+  { id: 'CRED-003', title: 'GitHub Token',      pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g },
+  { id: 'CRED-STRIPE', title: 'Stripe Secret Key', pattern: /sk_live_[0-9a-zA-Z]{24,}/g },
+];
+
+/**
+ * True when a template-env value is a placeholder rather than a real-shaped
+ * secret, so `scanTemplateEnvLeaks` should NOT flag it (empower-never-shame — a
+ * documented example key is not a leak the user must rotate).
+ *
+ * This gates on the placeholder conventions real benign templates actually use
+ * — the documentation words AWS/GitHub/Google/cookiecutter templates print
+ * (`EXAMPLE`, `YOUR_KEY`, `SAMPLE`, `REPLACE_ME`, …) plus low-entropy filler.
+ * It is deliberately a SUBSET of {@link isPlaceholderSecretValue}: it OMITS the
+ * `FAKE` token, which is not a real-world template convention but the
+ * opena2a-corpus's internal fixture-safety marker (its adversarial
+ * `.env.example` fixtures embed `FAKE` inside otherwise real-shaped values).
+ * Gating on `FAKE` would blind this posture check to the very regression
+ * fixtures it exists to catch, at no real-world precision cost. A markerless,
+ * high-entropy, real-shaped value (e.g. `ghp_` + 36 random chars) is NOT a
+ * placeholder and correctly still fires.
+ */
+export function isTemplateEnvPlaceholder(value: string): boolean {
+  if (/EXAMPLE|PLACEHOLDER|DUMMY|YOUR[_-]?(?:KEY|SECRET|TOKEN)|REPLACE[_-]?ME|INSERT[_-]?HERE|SAMPLE|CHANGE[_-]?ME|TEST[_-]?(?:KEY|SECRET)/i.test(value)) {
+    return true;
+  }
+  if (new Set(value).size <= 6) return true;
+  return false;
+}
+
 /**
  * Local finding IDs whose label is a generic/catch-all bucket and so should be
  * refined against the canonical `@opena2a/credential-patterns` catalog:
@@ -608,6 +714,7 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
   // detection stay synchronous inside the walkFiles callback.
   const catalog = await loadCanonicalPatterns();
   const isKnownExample = await loadCanonicalAllowlist();
+  const knownExampleKeys = await loadKnownExampleKeys();
 
   walkFiles(targetDir, (filePath) => {
     let content: string;
@@ -626,10 +733,11 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
         let match: RegExpExecArray | null;
         while ((match = re.exec(line)) !== null) {
           const value = match[1] ?? match[0];
-          // Name-gated patterns match a prefix-less value purely by name, so a
-          // placeholder / low-entropy value (AWS docs `wJalr…EXAMPLEKEY`,
-          // `xxxx…`, `0000…`) must be dropped — it's not a real exposure.
-          if (pattern.nameGated && isPlaceholderSecretValue(value)) continue;
+          // One placeholder rule for every pattern: a value that announces
+          // itself as an example is not an exposure, whatever matched it.
+          // Name-gated patterns also get the entropy floor (see
+          // isSuppressedCredentialValue).
+          if (isSuppressedCredentialValue(value, pattern, knownExampleKeys)) continue;
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;
@@ -677,4 +785,105 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
   });
 
   return matches;
+}
+
+// --- Template env leak posture scan (used by init, NOT by protect) ---
+
+/** A credential-shaped value found inside a template env file. */
+export interface TemplateEnvLeak {
+  /** Absolute path of the template env file (`.env.example`, …). */
+  filePath: string;
+  /** 1-indexed line where the credential-shaped value sits. */
+  line: number;
+  /** Clean provider label (drift-risk parenthetical stripped). */
+  title: string;
+  /** The pattern id that matched, for provenance. */
+  patternId: string;
+}
+
+/**
+ * Posture scan for credential-shaped values committed inside TEMPLATE env files
+ * (`.env.example` / `.sample` / `.template` / `.dist`).
+ *
+ * The migration scanner (`quickCredentialScan` / `protect`) deliberately does
+ * NOT scan these files — a `sk-your-key-here` placeholder is not a migration
+ * target and rewriting a template would corrupt it. But a template that carries
+ * a value shaped like a REAL credential (an `AKIA…` access key, a `ghp_…`
+ * token) is a genuine exposure: onboarding docs routinely say "rename
+ * `.env.example` to `.env` and you're done", which activates whatever is there,
+ * and the committed template is readable by anyone with repo access. HMA's
+ * `secure` scan flags exactly this (CONFIG-004), and the shared corpus manifest
+ * ratifies it as `critical`. This function restores that signal to `init`'s
+ * lightweight posture score WITHOUT touching the migration path.
+ *
+ * Precision comes from PATTERN SELECTION plus a placeholder gate, not from
+ * scanning value content for the leak: every {@link TEMPLATE_SCAN_PATTERNS}
+ * entry is a rigid credential prefix + alnum body (the shape a real key has and
+ * a hand-authored placeholder does not), and {@link isTemplateEnvPlaceholder}
+ * drops the documentation-placeholder conventions real benign templates use
+ * (`EXAMPLE`, `YOUR_KEY`, `SAMPLE`, low-entropy filler). The alnum-only
+ * OpenAI/Stripe patterns keep this aligned with HMA's env-file scan so `init`
+ * and `secure` agree in direction on a real leak, while `AKIAIOSFODNN7EXAMPLE`
+ * (AWS's own docs example) and `AIza…EXAMPLE…` are suppressed rather than
+ * shaming a user to "rotate" a non-secret.
+ */
+export function scanTemplateEnvLeaks(targetDir: string): TemplateEnvLeak[] {
+  const leaks: TemplateEnvLeak[] = [];
+  const seen = new Set<string>();
+
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        // Recurse hidden dirs too (a `.config/.env.example` can still leak),
+        // but never the version-control store.
+        if (entry.name === '.git') continue;
+        walk(full);
+        continue;
+      }
+      if (!entry.isFile() || !TEMPLATE_ENV_FILES.has(entry.name)) continue;
+      let content: string;
+      try {
+        if (fs.statSync(full).size > 1_048_576) continue;
+        content = fs.readFileSync(full, 'utf-8');
+        // Defense-in-depth against a stat/read TOCTOU: re-check the read size
+        // so a file that grew after statSync still can't blow past the cap.
+        if (content.length > 1_048_576) continue;
+      } catch {
+        continue;
+      }
+      const lines = content.split('\n');
+      for (const pattern of TEMPLATE_SCAN_PATTERNS) {
+        for (let i = 0; i < lines.length; i++) {
+          const re = new RegExp(pattern.pattern.source, pattern.pattern.flags);
+          let match: RegExpExecArray | null;
+          while ((match = re.exec(lines[i])) !== null) {
+            const value = match[0];
+            // Documented placeholder (EXAMPLE/YOUR_KEY/…) or low-entropy filler
+            // is not a leak — do not shame the user into rotating a non-secret.
+            if (isTemplateEnvPlaceholder(value)) continue;
+            const dedupKey = `${value}:${full}`;
+            if (seen.has(dedupKey)) continue;
+            seen.add(dedupKey);
+            leaks.push({
+              filePath: full,
+              line: i + 1,
+              title: pattern.title,
+              patternId: pattern.id,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  walk(targetDir);
+  return leaks;
 }
