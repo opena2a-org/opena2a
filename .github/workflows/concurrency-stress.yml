@@ -1,0 +1,81 @@
+name: Concurrency stress
+
+# The PR gate runs the shield concurrent-writer test at N=8 for two rounds, which
+# accumulates four iterations across two CI runs. With zero observed failures in
+# n trials, the one-sided 95% upper bound on the per-iteration failure
+# probability is approximately 3/n. Four iterations bound it at roughly 75%,
+# which is uninformative — it is consistent with a lock that fails one time in
+# two. This job exists to reach a bound worth quoting.
+#
+# Re-derive the iteration count from that rule, do not copy the literal. If the
+# runner, the lock implementation or the filesystem changes, the required n
+# changes with the bound you need, not with what was written here.
+#
+# It is workflow_dispatch on purpose. ci.yml triggers on pull_request only, so
+# nothing has ever run against the commit a release tag is cut from. Dispatch
+# this against main's tip before cutting a tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Ref to run against. Use main for a pre-tag gate run.'
+        required: false
+        default: 'main'
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 100 iterations total: 40 + 40 + 20. The bound needs the count; the
+          # spread across writer counts is what exercises different contention
+          # regimes on a 4-core runner.
+          - writers: 2
+            rounds: 40
+          - writers: 8
+            rounds: 40
+          - writers: 32
+            rounds: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      # Prove the harness can fail before trusting that it passed. The test must
+      # reject an override that would silently reduce coverage to zero
+      # iterations; if it accepts one, every green run below is meaningless.
+      - name: Calibrate the override guard (MUST fail)
+        working-directory: packages/cli
+        env:
+          SHIELD_CONCURRENT_WRITERS: 'eight'
+          SHIELD_CONCURRENT_ROUNDS: '2'
+        run: |
+          if npx vitest run __tests__/shield/concurrent-write.test.ts >/dev/null 2>&1; then
+            echo "::error::Calibration failed: a non-integer writer count was accepted. A typo'd override would run zero iterations and still report success."
+            exit 1
+          fi
+          echo "Calibration passed: the override guard rejects a non-integer writer count."
+
+      - name: Stress the shield event lock
+        working-directory: packages/cli
+        env:
+          SHIELD_CONCURRENT_WRITERS: ${{ matrix.writers }}
+          SHIELD_CONCURRENT_ROUNDS: ${{ matrix.rounds }}
+        run: |
+          echo "Running ${{ matrix.rounds }} rounds at N=${{ matrix.writers }} concurrent writers."
+          npx vitest run __tests__/shield/concurrent-write.test.ts --reporter=verbose
+
+      - name: Record what this leg actually ran
+        if: always()
+        run: |
+          echo "ref=${{ inputs.ref }} commit=${{ github.sha }} writers=${{ matrix.writers }} rounds=${{ matrix.rounds }}" >> "$GITHUB_STEP_SUMMARY"

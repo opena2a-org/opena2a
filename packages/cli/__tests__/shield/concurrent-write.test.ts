@@ -95,10 +95,26 @@ function readLog(home: string): { lines: string[]; shieldDir: string } {
 }
 
 describe('concurrent writeEvent (#231)', () => {
-  const N = 8;
+  // Defaults are the PR-gate configuration and must not change: 8 writers, two
+  // rounds. The env overrides exist so the dispatchable stress job in
+  // concurrency-stress.yml can drive the SAME test at higher writer counts and
+  // more rounds, rather than forking a second copy that can drift from this one.
+  const N = Number(process.env.SHIELD_CONCURRENT_WRITERS ?? 8);
+  const ROUNDS = Number(process.env.SHIELD_CONCURRENT_ROUNDS ?? 2);
+
+  if (!Number.isInteger(N) || N < 1 || !Number.isInteger(ROUNDS) || ROUNDS < 1) {
+    // A typo'd override must not silently reduce coverage to nothing. Without
+    // this, SHIELD_CONCURRENT_WRITERS=eight yields NaN, the loop body never
+    // runs, and the job reports success having tested zero writers — the same
+    // shape as a gate that passes because it measured nothing.
+    throw new Error(
+      `Invalid concurrency override: SHIELD_CONCURRENT_WRITERS=${process.env.SHIELD_CONCURRENT_WRITERS}, ` +
+      `SHIELD_CONCURRENT_ROUNDS=${process.env.SHIELD_CONCURRENT_ROUNDS}. Both must be positive integers.`,
+    );
+  }
 
   // Two rounds: one clean round can hide a lock that only mostly works.
-  for (const round of [1, 2]) {
+  for (const round of Array.from({ length: ROUNDS }, (_, i) => i + 1)) {
     it(`keeps the chain intact across ${N} concurrent writer processes (round ${round})`, async () => {
       const home = makeHome();
       await runChildren(home, N);
