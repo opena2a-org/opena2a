@@ -24,6 +24,97 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
 
+  # The job above audits this workspace: `packages/*`, devDependencies, and the
+  # committed lockfile. A user gets none of that — they get the published
+  # `opena2a-cli` tarball and its production closure, resolved fresh on their
+  # machine. The two trees are different, and on 2026-08-10 the difference was
+  # a live high advisory (GHSA-xcpc-8h2w-3j85, adm-zip <0.6.0) reaching users
+  # through opena2a-cli -> hackmyagent -> onnxruntime-node.
+  #
+  # `hackmyagent`'s own dependency-audit workflow was green throughout, which
+  # is why that repo added a consumer-resolution job. This is the same gate for
+  # the package that actually shipped it. Kept as a separate job rather than
+  # folded into `dependency-audit` so the two numbers stay legible as the two
+  # different measurements they are: a reviewer seeing "N here, M there" should
+  # be able to tell which tree each one describes.
+  #
+  # There are TWO consumer jobs below because there are two artifacts, and the
+  # first version of this wiring measured only one of them — the wrong one for
+  # a pull request.
+  #
+  # It passed no `--target`, so the script fell back to `opena2a-cli@latest` and
+  # resolved the ALREADY-PUBLISHED package on every PR. A PR that added a
+  # vulnerable dependency therefore went GREEN, because the gate was reading npm
+  # rather than what the PR would publish. That is this gate's own stated rule —
+  # a gate is defined by the artifact it measures — broken by the gate itself.
+  #
+  #   consumer-audit-candidate  packs this branch and audits the tarball.
+  #                             Runs on pull_request and push. This is the one
+  #                             that can fail on a diff.
+  #   consumer-audit-published  audits `opena2a-cli@latest`. Runs on the weekly
+  #                             schedule. Answers a different question — has the
+  #                             tree users already installed drifted? — that no
+  #                             PR can turn green and no diff can trigger.
+  #
+  # Both print `[CANDIDATE]` / `[PUBLISHED]` in every banner and in the closing
+  # line, because the two numbers are not comparable and a reader has to be able
+  # to tell which tree a red build describes.
+  consumer-audit-candidate:
+    name: Consumer resolution audit (candidate artifact)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # No `cache: npm` and no `npm ci`: the script uses only node builtins
+          # and the npm CLI, and it must not read this repo's node_modules —
+          # it measures a packed tarball's own resolution instead.
+
+      # `--ignore-scripts` so a fork's `prepack`/`prepare` cannot execute on the
+      # runner, and NO build step, deliberately. What decides whether a user
+      # inherits an advisory is the manifest's dependency closure, which
+      # `npm pack` carries whether or not `dist/` was compiled — so building
+      # would buy no measurement and would cost arbitrary code execution from a
+      # pull request's branch.
+      - name: Pack the artifact this branch would publish
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/candidate"
+          npm pack -w packages/cli --ignore-scripts \
+            --pack-destination "$RUNNER_TEMP/candidate" >/dev/null
+          tarball="$(find "$RUNNER_TEMP/candidate" -maxdepth 1 -name '*.tgz' | head -n1)"
+          test -n "$tarball"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      # No `|| true` and no `continue-on-error`. A gate that cannot fail is not
+      # a gate, and this one is expected to fail the moment the tree THIS BRANCH
+      # would ship carries an advisory that is not named, dated and justified in
+      # the script's ALLOWED list.
+      - name: Audit the tree a consumer would resolve from this branch
+        run: npm run audit:consumer -- --target "${{ steps.pack.outputs.tarball }}"
+
+  consumer-audit-published:
+    name: Consumer resolution audit (published artifact)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Nothing from this checkout is installed: the target is a published
+      # registry spec, resolved with `--ignore-scripts`. A failure here is not
+      # fixable by merging anything; it clears when a fix is RELEASED.
+      - name: Audit the tree a consumer resolves from npm today
+        run: npm run audit:consumer
+
   sast:
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
