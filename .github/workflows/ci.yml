@@ -3,16 +3,36 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'packages/**'
-      - 'package.json'
-      - 'turbo.json'
-      - 'tsconfig.base.json'
-      # A lone ATX_CONFORMANCE_REF bump must still run the fixture drift gate.
-      - '.github/workflows/ci.yml'
+  # A release tag is cut from main, and until now nothing here had ever run
+  # against a commit on main -- only against pull request heads. This repository
+  # squash-merges, so the squash commit's tree can differ from any tree CI saw.
+  push:
+    branches: [main]
+  # Lets a red or missing run on main's tip be re-checked without an empty
+  # commit, which cannot re-trigger a workflow anyway.
+  workflow_dispatch:
+
+# The paths filter is deliberately absent from BOTH triggers.
+#
+# On push it would be wrong in kind: this trigger answers "is main's tip green",
+# which is a property of the tip, not of a diff, and a filtered push can leave a
+# commit with no run at all.
+#
+# On pull_request it was a coverage gap in its own right: a change touching only
+# release.yml, security.yml or scripts/ got no CI, and would then meet CI for the
+# first time on main. Cost of removing it is about two minutes on a docs-only
+# pull request, and standard runners are free on a public repository.
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  # Was `ci-${{ github.event.pull_request.number }}`, which evaluates to the
+  # literal `ci-` on any non-pull-request event. With cancel-in-progress, every
+  # push to main would have shared one group and each merge would have cancelled
+  # the previous tip's run.
+  #
+  # event_name is part of the key so that a manual re-check does not cancel the
+  # in-flight push run for the same commit -- github.ref is refs/heads/main for
+  # both, so ref alone is not enough to separate them.
+  group: ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.ref) }}
   cancel-in-progress: true
 
 jobs:
@@ -67,8 +87,24 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Clone pinned atx-conformance suite
+        # Retried, and its failure is labelled, because this job now runs on
+        # main. A single un-retried clone of a third party's repository means a
+        # transient network failure leaves main's tip red, and a red tip is
+        # indistinguishable from real fixture drift -- which is a supply-chain
+        # signal. Never let an outage read as tampering, or the reverse.
         run: |
-          git clone --no-checkout https://github.com/opena2a-standards/atx-conformance.git /tmp/atx-conformance
+          for attempt in 1 2 3; do
+            if git clone --no-checkout https://github.com/opena2a-standards/atx-conformance.git /tmp/atx-conformance; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::Could not reach github.com/opena2a-standards/atx-conformance after 3 attempts. This is a NETWORK failure, not fixture drift. Re-run this job; do not treat it as a conformance finding."
+              exit 1
+            fi
+            echo "Clone attempt $attempt failed, retrying in $((attempt * 5))s."
+            sleep $((attempt * 5))
+            rm -rf /tmp/atx-conformance
+          done
           git -C /tmp/atx-conformance checkout "$ATX_CONFORMANCE_REF"
 
       - name: MANIFEST.sha256 integrity
