@@ -11,7 +11,8 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "audit:consumer": "node scripts/audit-consumer-resolution.mjs"
   },
   "devDependencies": {
     "turbo": "^2.4.0",

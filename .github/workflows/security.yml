@@ -24,6 +24,50 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
 
+  # The job above audits this workspace: `packages/*`, devDependencies, and the
+  # committed lockfile. A user gets none of that — they get the published
+  # `opena2a-cli` tarball and its production closure, resolved fresh on their
+  # machine. The two trees are different, and on 2026-08-10 the difference was
+  # a live high advisory (GHSA-xcpc-8h2w-3j85, adm-zip <0.6.0) reaching users
+  # through opena2a-cli -> hackmyagent -> onnxruntime-node.
+  #
+  # `hackmyagent`'s own dependency-audit workflow was green throughout, which
+  # is why that repo added a consumer-resolution job. This is the same gate for
+  # the package that actually shipped it. Kept as a separate job rather than
+  # folded into `dependency-audit` so the two numbers stay legible as the two
+  # different measurements they are: a reviewer seeing "N here, M there" should
+  # be able to tell which tree each one describes.
+  #
+  # It resolves `opena2a-cli@latest` by default, so it can go red for something
+  # the PR's own diff did not introduce. That is the intended behaviour: a new
+  # high advisory against the shipped CLI's dependency tree should stop the
+  # line whether or not anyone was editing that day. It also runs on the weekly
+  # schedule above, which is the trigger that catches an advisory published
+  # against an unchanged package.
+  #
+  # Fork-safety: this installs a PUBLISHED registry package, never the PR's
+  # branch, and always with `--ignore-scripts`, so no code from the pull
+  # request and no dependency `postinstall` executes here.
+  consumer-audit:
+    name: Consumer resolution audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # No `cache: npm` and no `npm ci`: the script uses only node builtins
+          # and the npm CLI, and it must not read this repo's node_modules —
+          # the whole point is that it measures the published tree instead.
+      # No `|| true` and no `continue-on-error`. A gate that cannot fail is not
+      # a gate, and this one is expected to fail the moment the published tree
+      # carries an advisory that is not named, dated and justified in the
+      # script's ALLOWED list.
+      - name: Audit the tree a consumer resolves
+        run: npm run audit:consumer
+
   sast:
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
