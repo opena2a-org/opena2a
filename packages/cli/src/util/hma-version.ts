@@ -27,10 +27,21 @@ import { execFileSync } from 'node:child_process';
 //   max(0.26.0, 0.26.1) = 0.26.1.
 //
 // Deliberately NOT in this floor: hackmyagent#406 (`attack` reports SECURE for
-// a target it never reached; first fixed in 0.27.0, commit 8ef9171). opena2a-cli
-// exposes no `attack` verb and both call sites spawn only `check`, so #406
-// cannot reach a user through this binary. A 0.27.0 floor would warn a user
-// whose opena2a-cli surface is measurably sound.
+// a target it never reached; first fixed in 0.27.0). #406 cannot reach a user
+// through this CLI, so a 0.27.0 floor would warn someone whose opena2a-cli
+// surface is measurably sound.
+//
+// Be precise about WHY, because an earlier version of this comment got the
+// reason wrong. It is NOT that "every spawn site hardcodes `check`" — there are
+// three PATH spawn sites, and one of them takes arbitrary args:
+//   index.ts:1487   spawnHmaCheck            -> ['check', ...]      guarded
+//   router.ts:586   spawnHmaCheckFromRouter  -> ['check', ...]      guarded
+//   index.ts:1525   spawnHackmyagent(args)   -> caller-supplied     NOT guarded
+// The real reason is that no caller passes `attack`: the only invocation of the
+// arbitrary-args site is index.ts:795 with ['scan-soul','--explain'], the CLI
+// registers no `attack` command, and the router force-prepends each adapter's
+// own subcommand, so `opena2a scan attack` becomes `hackmyagent secure attack`.
+// If any caller ever passes a verb through to the PATH binary, re-derive this.
 //
 // Superseded: 0.16.7 was the HMA_CHECK_COMMAND / HMA_FULL_SCAN_HINT env-var
 // contract version. Those vars still ship, and that floor is subsumed because
