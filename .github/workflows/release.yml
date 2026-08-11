@@ -19,6 +19,11 @@ on:
 permissions:
   contents: write
   id-token: write
+  # Read-only; needed by the "CI must be green on the tagged commit" step below
+  # to query the Actions API. A `permissions:` block grants ONLY what is
+  # listed, so omitting this makes that query 403 -- which fails closed and
+  # looks exactly like red CI, for the wrong reason.
+  actions: read
 
 # Opt the v4-line JavaScript actions (checkout, setup-node, action-gh-release)
 # into Node 24 today. They run on Node 20 by default and emit a deprecation
@@ -52,6 +57,68 @@ jobs:
             exit 1
           fi
           echo "$GITHUB_SHA is on main."
+
+      - name: CI must be green on the tagged commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The tag push IS the publish event, so "main is green" has to be
+          # true of THIS commit at THIS moment, not of some earlier run in a
+          # tab. ci.yml runs on every push to main (since #283), so the tagged
+          # commit -- always an ancestor of main per the guard above -- has a
+          # run to find, though not always a FINISHED one: a tag is routinely
+          # pushed 44-81s after its merge commit, and ci.yml's wall clock is
+          # ~110-125s. Reading only completed runs would fail closed on a
+          # release that is perfectly fine and merely early -- measured, that
+          # was 5 of the last 6 releases. So queued/in_progress means WAIT;
+          # only a finished non-success is red.
+          deadline=$(( SECONDS + 900 ))   # 15 min; ci.yml wall clock is ~110-125s
+          while :; do
+            runs=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&per_page=100" \
+              --jq '[.workflow_runs[] | {status, conclusion}]')
+
+            total=$(echo "$runs" | jq 'length')
+            if [ "$total" -eq 0 ]; then
+              # No run YET is not the same as no run EVER. Keep waiting until
+              # the deadline, then fail -- a tagged commit with no CI run at
+              # all is exactly the state this gate exists to refuse.
+              if [ $SECONDS -ge $deadline ]; then
+                echo "::error::No ci.yml run found for ${GITHUB_SHA} after 15 minutes."
+                echo "main's tip must have a CI run before it can be published."
+                exit 1
+              fi
+              echo "No ci.yml run for ${GITHUB_SHA} yet; waiting... (${SECONDS}s)"
+              sleep 15
+              continue
+            fi
+
+            pending=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
+            failed=$(echo "$runs"  | jq '[.[] | select(.status == "completed" and .conclusion != "success")] | length')
+
+            # A finished failure is decisive immediately -- do not burn 15
+            # minutes waiting for a sibling when one leg has already lost.
+            if [ "$failed" -gt 0 ]; then
+              echo "::error::CI is not green on ${GITHUB_SHA} (${failed} non-success run(s))."
+              echo "Publishing from a red tip would ship a commit no gate vouched for."
+              gh run list --commit "${GITHUB_SHA}" --limit 20 || true
+              exit 1
+            fi
+
+            if [ "$pending" -eq 0 ]; then
+              echo "CI is green on ${GITHUB_SHA} (${total} completed run(s), all success)."
+              break
+            fi
+
+            if [ $SECONDS -ge $deadline ]; then
+              echo "::error::CI still in progress on ${GITHUB_SHA} after 15 minutes (${pending} pending)."
+              echo "Failing closed: the publish must not race the gate."
+              exit 1
+            fi
+            echo "CI in progress on ${GITHUB_SHA} (${pending} pending); waiting... (${SECONDS}s)"
+            sleep 15
+          done
 
       - uses: actions/setup-node@v4
         with:
