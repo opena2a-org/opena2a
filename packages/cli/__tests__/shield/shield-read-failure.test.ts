@@ -52,6 +52,11 @@ describe('runShieldPhase when the event log cannot be read', () => {
 
     expect(data.chainBroken).toBe(true);
     expect(data.eventCount).toBe(0);
+    // Broken, but with nothing actually excluded and no known break index:
+    // reporting a count here would put a number in the finding that no read
+    // ever produced. Unpinned, a mutation of either fallback field survived.
+    expect(data.untrustedEventsExcluded).toBe(0);
+    expect(data.brokenAt).toBe(0);
   });
 
   it('does not score better than a readable log with the same zero events', async () => {
