@@ -13,7 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  dependency-audit:
+  # Named for the artifact it measures, not "dependency-audit" claiming the
+  # whole domain — that naming let this job's own 25-run red streak on `main`
+  # read as ambiguous with the consumer jobs below, which measure a DIFFERENT
+  # tree. This one audits what our own CI runner and maintainer machines
+  # install and execute: `packages/*`, devDependencies, and the committed
+  # lockfile, in the repo that holds `id-token: write` and publishes with
+  # `--provenance`. A gate may not stay red across more than one merge to
+  # `main` — no lowered --audit-level, no `|| true`, no deletion to make the
+  # surface look better; the remedy is a lockfile that is actually current,
+  # or (for a transitive advisory whose owning package's own declared range
+  # cannot reach the fix) a root-level `overrides` entry scoped to what WE
+  # install — never something that changes what gets published.
+  build-tree-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +46,7 @@ jobs:
   # `hackmyagent`'s own dependency-audit workflow was green throughout, which
   # is why that repo added a consumer-resolution job. This is the same gate for
   # the package that actually shipped it. Kept as a separate job rather than
-  # folded into `dependency-audit` so the two numbers stay legible as the two
+  # folded into `build-tree-audit` so the two numbers stay legible as the two
   # different measurements they are: a reviewer seeing "N here, M there" should
   # be able to tell which tree each one describes.
   #
