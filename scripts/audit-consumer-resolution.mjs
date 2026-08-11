@@ -420,10 +420,8 @@ const ALLOWED = [
       'Reached only through hackmyagent -> onnxruntime-node, which the CLI needs for local ' +
       'NanoMind inference. There is no version of this dependency chain that resolves clean: ' +
       'the caret pin and the resolved versions are printed under `derived` below, and no ' +
-      '`overrides` we write reaches a consumer, since overrides are not published. The impact ' +
-      'is availability-only and install-time — a crafted ZIP makes the postinstall allocate — ' +
-      'and it lands only on the platforms `derived` names, which is measured on every run ' +
-      'rather than claimed here. The fix has to come from upstream raising its adm-zip range; ' +
+      '`overrides` we write reaches a consumer, since overrides are not published. ' +
+      'The fix has to come from upstream raising its adm-zip range; ' +
       'when it does, this advisory leaves the consumer tree and rule 2 below fails the build ' +
       'until this entry is deleted.',
     reviewBy: '2026-11-01',
