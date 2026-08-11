@@ -125,7 +125,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx eslint --no-eslintrc -c '{"rules":{"no-eval":"error","no-implied-eval":"error"}}' 'packages/*/src/**/*.ts' || true
+      # Prove the gate can fail before trusting that it passed. Each probe
+      # plants one dynamic-evaluation primitive and asserts the lint rejects
+      # it; then the probe is removed and the real tree is linted. Without
+      # this, a config that silently matches no files, or a rule that cannot
+      # resolve its callee, reports success identically to a clean tree.
+      - name: Calibrate the lint (each probe MUST fail)
+        run: |
+          set -u
+          for probe in 'eval("1+1")' 'setTimeout("danger()", 1)' 'setInterval("danger()", 1)' 'new Function("return 1")()'; do
+            printf 'export const p = () => %s;\n' "$probe" > packages/cli/src/__sast_probe.ts
+            if npx eslint 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts' >/dev/null 2>&1; then
+              rm -f packages/cli/src/__sast_probe.ts
+              echo "::error::Calibration failed: the lint accepted [$probe]. The sast gate is not measuring anything."
+              exit 1
+            fi
+            rm -f packages/cli/src/__sast_probe.ts
+          done
+          echo "Calibration passed: all four probes rejected."
+      - name: Lint for dynamic evaluation
+        run: npm run lint:sast
 
   license-check:
     if: github.event_name == 'pull_request'
@@ -139,4 +158,4 @@ jobs:
       - run: npm ci
       - name: Check for problematic licenses
         run: |
-          npx license-checker --production --failOn 'GPL-2.0;GPL-3.0;AGPL-1.0;AGPL-3.0;SSPL-1.0' || true
+          npx license-checker --production --failOn 'GPL-2.0;GPL-3.0;AGPL-1.0;AGPL-3.0;SSPL-1.0'
