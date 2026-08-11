@@ -111,11 +111,10 @@ Some checks on this repository need credentials that GitHub does not provide
 to workflows triggered from a fork. Those checks will not report a result on
 your pull request, and that is not a problem with your change.
 
-When that happens, a maintainer runs the build, the type check and the full
-test suite against the merged tree before merging, and records the result on
-the pull request. You do not need to do anything differently. Running
-`npx turbo build` and `npx turbo test` locally before you open the pull
-request is the fastest way to keep that step short.
+Run `npx turbo build` and `npx turbo test` locally before you open the pull
+request, and put what you ran and what it returned in the description. When a
+check cannot report, that description is the only record of the change being
+exercised, so it is worth writing out in full.
 
 ## License
 
