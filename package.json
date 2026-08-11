@@ -10,11 +10,14 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
+    "lint:sast": "eslint 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
     "clean": "turbo run clean",
     "typecheck": "turbo run typecheck",
     "audit:consumer": "node scripts/audit-consumer-resolution.mjs"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "8.67.0",
+    "eslint": "10.8.1",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"
   },
