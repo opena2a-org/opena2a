@@ -32,6 +32,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The ancestry guard below needs real history; the default shallow
+          # clone cannot answer whether the tagged commit is on main.
+          fetch-depth: 0
+
+      - name: Tagged commit must be on main
+        run: |
+          # The tag push IS the publish event, and it publishes whatever commit
+          # the tag points at -- including one on a branch that was never
+          # merged, or force-pushed somewhere unreviewed. Every gate on `main`
+          # is bypassed by tagging around it, so this is the check that makes
+          # those gates mean something at publish time.
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag ${GITHUB_REF_NAME} points at $GITHUB_SHA, which is not an ancestor of origin/main."
+            echo "Publishing from a commit that is not on main bypasses every check that gates main."
+            echo "Merge it first, then tag the merged commit."
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main."
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
