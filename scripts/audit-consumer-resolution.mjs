@@ -24,6 +24,34 @@
  * the repo when the risk lives in the published tree is decorative regardless
  * of its colour.
  *
+ * ## The two artifacts, and why both are measured
+ *
+ * That rule cuts both ways, and the first version of this script failed its own
+ * test. It defaulted to `opena2a-cli@latest` and the workflow passed no
+ * `--target`, so on a pull request it resolved the ALREADY-PUBLISHED package.
+ * It therefore could not fail on the PR's own diff: a PR adding a vulnerable
+ * dependency went green, because the gate was looking at npm rather than at
+ * what the PR would publish.
+ *
+ * So there are two runs, asking two genuinely different questions:
+ *
+ *   CANDIDATE  (`--target <tarball>`, wired to pull_request and push)
+ *     "Would the tree a user resolves from THIS BRANCH carry an advisory?"
+ *     The workflow runs `npm pack -w packages/cli` and points the gate at the
+ *     resulting tarball. This is the run that can fail on a diff, and it is the
+ *     one that has to be green before a change lands.
+ *
+ *   PUBLISHED  (default `opena2a-cli@latest`, wired to the weekly schedule)
+ *     "Has the tree users already installed drifted into an advisory?"
+ *     Nothing in this repository has to change for that answer to flip — an
+ *     advisory published against an untouched transitive dependency does it —
+ *     so it is asked on a timer rather than on a diff. A PR cannot turn this
+ *     one green; only a release can.
+ *
+ * Both print their mode in the banner and in the closing line, because the two
+ * numbers are not comparable and a reader has to be able to tell which tree a
+ * given failure describes.
+ *
  * ## What this installs, and why it installs at all
  *
  * The upstream version of this gate resolves `--package-lock-only`, so nothing
@@ -32,15 +60,24 @@
  * needs the tree on disk. So it installs, and buys the safety back a different
  * way:
  *
- *   - `--ignore-scripts`, so no `postinstall` runs. That is not theoretical
- *     here: `onnxruntime-node` has a `postinstall` that downloads a nupkg from
- *     nuget.org and unzips it (see the derived facts printed below).
- *   - the thing installed is a PUBLISHED registry package, never this
- *     repository's working tree. A pull request from a fork cannot reach code
- *     execution through this job, because none of the fork's code is installed
- *     or run. (The `dependency-audit` job in the same workflow does `npm ci` on
- *     the PR branch; that is tracked separately and deliberately untouched
- *     here.)
+ *   - `--ignore-scripts` on every install, so no `postinstall` runs. That is
+ *     not theoretical here: `onnxruntime-node` has a `postinstall` that
+ *     downloads a nupkg from nuget.org and unzips it (see the derived facts
+ *     printed below).
+ *   - nothing from the target is ever executed or imported by this script. It
+ *     is unpacked, its manifests are read as text, and that is all.
+ *
+ * In CANDIDATE mode the tarball IS built from the branch under test, so the
+ * older claim that "none of the fork's code is installed" no longer holds and
+ * is not made here. What holds instead: the branch's code is unpacked but never
+ * run, and the workflow packs with `--ignore-scripts` so the branch's own
+ * `prepack`/`prepare` hooks do not execute either. The workflow also does not
+ * build first — deliberately. What decides whether a user inherits an advisory
+ * is the manifest's dependency closure, which `npm pack` carries whether or not
+ * `dist/` was compiled, so building would buy no measurement and would cost
+ * arbitrary code execution from a fork's branch. (The separate
+ * `dependency-audit` job in the same workflow does `npm ci` on the PR branch;
+ * that is tracked separately and deliberately untouched here.)
  *
  * ## Why the gate is an allowlist and not a count
  *
@@ -79,8 +116,39 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SELF = path.relative(REPO_ROOT, fileURLToPath(import.meta.url));
 
-/** The published package this repo ships. Overridable with `--target <spec>`. */
+/**
+ * The already-published package, used when no `--target` is given.
+ *
+ * This is the PUBLISHED question (see the header). The CANDIDATE question is
+ * asked by passing `--target` a tarball from `npm pack -w packages/cli`.
+ */
 const DEFAULT_TARGET = 'opena2a-cli@latest';
+
+/**
+ * Which of the two questions this invocation is answering.
+ *
+ * Decided from the target rather than from a flag, so the label cannot drift
+ * away from the thing actually installed: a target that exists on disk as a
+ * tarball is by construction something this repo just built, and anything else
+ * is resolved from the registry.
+ */
+function classifyTarget(spec) {
+  const asPath = spec.startsWith('file:') ? spec.slice('file:'.length) : spec;
+  if (/\.(tgz|tar\.gz)$/i.test(asPath) && existsSync(asPath)) {
+    return {
+      mode: 'CANDIDATE',
+      spec: path.resolve(asPath),
+      headline: 'CANDIDATE artifact — the tree a user would resolve from THIS BRANCH',
+      question: 'Would merging this change ship an advisory to users?',
+    };
+  }
+  return {
+    mode: 'PUBLISHED',
+    spec,
+    headline: 'PUBLISHED artifact — the tree a user resolves from npm right now',
+    question: 'Has the already-shipped tree drifted into an advisory since release?',
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Derivations. Each returns lines of MEASURED fact, or throws.
@@ -103,7 +171,18 @@ function deriveAdmZipReachability(ctx) {
   const zip = ctx.installed('adm-zip');
   const lines = [];
 
-  // 1. The trap: the declared range cannot reach the patched version.
+  // 1. The trap: does the declared range admit ANY version outside the
+  //    advisory? Both halves are measured. The vulnerable range comes out of
+  //    this run's own audit report, and the set of versions the declared range
+  //    admits is resolved by npm's semver against the real published version
+  //    list — the same resolution a consumer's install performs.
+  //
+  //    An earlier version of this line interpolated the measured range and then
+  //    asserted a FIXED conclusion about it ("the advisory range is <0.6.0 and
+  //    0.6.0 is outside that caret"). That is the prose-drift failure the
+  //    derive() rule exists to prevent, relocated inside the derivation: it
+  //    would have kept printing, unchanged and in our favour, the day upstream
+  //    widened the caret.
   const declared = ort.manifest.dependencies?.['adm-zip'];
   if (!declared) {
     throw new Error(
@@ -111,10 +190,35 @@ function deriveAdmZipReachability(ctx) {
         'The reason this waiver exists has changed; re-read it.'
     );
   }
+  const vulnRange = ctx.vulnerableRange('adm-zip', 'GHSA-xcpc-8h2w-3j85');
+  const admitted = ctx.versionsSatisfying('adm-zip', declared);
+  if (admitted.length === 0) {
+    // Otherwise "every admitted version is vulnerable" is vacuously true over an
+    // empty set, and the waiver would hold on a measurement of nothing — the
+    // same defect this derivation exists to prevent.
+    throw new Error(
+      `no published adm-zip version satisfies onnxruntime-node's declared range ` +
+        `"${declared}", so the claim that none of them is patched is a conclusion about an ` +
+        'empty set. The dependency was resolved from somewhere this check cannot see. Not a pass.'
+    );
+  }
+  const vulnerable = new Set(ctx.versionsSatisfying('adm-zip', vulnRange));
+  const cleanAdmissible = admitted.filter((v) => !vulnerable.has(v));
+  if (cleanAdmissible.length > 0) {
+    throw new Error(
+      `onnxruntime-node@${ort.version} declares adm-zip "${declared}", and ` +
+        `${cleanAdmissible.length} published version(s) satisfying it now fall OUTSIDE the ` +
+        `advisory range "${vulnRange}" (${cleanAdmissible.slice(-3).join(', ')}). ` +
+        'A clean resolution is reachable, ' +
+        'so this waiver\'s premise — that no admissible version is patched — is false. ' +
+        'Raise the resolution instead of re-dating the waiver.'
+    );
+  }
   lines.push(
     `onnxruntime-node@${ort.version} declares adm-zip "${declared}"; the consumer tree ` +
-      `resolves adm-zip@${zip.version}. The advisory range is <0.6.0 and 0.6.0 is outside ` +
-      `that caret, so no version satisfying "${declared}" is clean.`
+      `resolves adm-zip@${zip.version}. This run's audit report gives the advisory range as ` +
+      `"${vulnRange}", and all ${admitted.length} published versions satisfying "${declared}" ` +
+      `resolve inside it, so no admissible version is clean.`
   );
 
   // 2. Is adm-zip loaded at all, and on which platforms?
@@ -264,17 +368,33 @@ function deriveNestedHackmyagent(ctx) {
           'of re-dating the waiver.'
       );
     }
-    if (pinned === shipped) {
+    // `pinned` is a semver RANGE and `shipped` is a VERSION, so the question
+    // "would raising the intermediate collapse the two copies" is a semver
+    // satisfaction, not a string comparison. This previously read
+    // `pinned === shipped`, which answers "no" for every range that is not
+    // written as a bare exact version — `^0.25.0` vs `0.25.2` compared unequal
+    // and the waiver held, when npm would in fact have deduped them into one
+    // copy and the honest action was to bump the range.
+    // Resolved against `hackmyagent`, NOT against `parentName`: `pinned` is the
+    // range the intermediate declares FOR hackmyagent, and `shipped` is a
+    // hackmyagent version, so the intermediate is the wrong version list to ask.
+    // Asking the wrong one returns the right answer today only by accident —
+    // `ai-trust@0.23.11` does not exist, so it 404s to "does not admit" — and
+    // would flip the day the intermediate happens to publish a version number
+    // matching the pin string.
+    if (ctx.rangeAdmits('hackmyagent', pinned, shipped)) {
       throw new Error(
-        `${parentName}@${latest.version} (latest) now pins hackmyagent@${pinned}, the same ` +
-          `version this CLI ships, so raising the ${parentName} range would collapse the two ` +
-          'copies into one. Bump the range instead of re-dating the waiver.'
+        `${parentName}@${latest.version} (latest) pins hackmyagent "${pinned}", which npm ` +
+          `resolves to include hackmyagent@${shipped} — the version this CLI ships — so ` +
+          `raising the ${parentName} range would collapse the two copies into one. Bump the ` +
+          'range instead of re-dating the waiver.'
       );
     }
     lines.push(
-      `${parentName}@${latest.version} (latest today) pins hackmyagent "${pinned}", which is ` +
-        `not the hackmyagent@${shipped} this CLI ships, so raising the ${parentName} range ` +
-        'moves the nested copy forward without removing it.'
+      `${parentName}@${latest.version} (latest today) pins hackmyagent "${pinned}". npm ` +
+        `resolves that range against the published version list and it does NOT admit the ` +
+        `hackmyagent@${shipped} this CLI ships, so raising the ${parentName} range moves the ` +
+        'nested copy forward without removing it.'
     );
   }
   return lines;
@@ -404,6 +524,95 @@ function readInstallMetadata(pkgDir) {
   }
 }
 
+/**
+ * Assert `npm audit --json` actually returned a MEASUREMENT, and hand back the
+ * counts.
+ *
+ * This is not defensive tidying, it closes a hole that silently inverted the
+ * gate. When the advisory database is unreachable, `npm audit --json` exits
+ * non-zero but writes VALID JSON to stdout:
+ *
+ *   {"message":"request to https://registry.npmjs.org/-/npm/v1/security/
+ *     advisories/bulk failed, reason: connect ECONNREFUSED","error":{...}}
+ *
+ * No `vulnerabilities` key, no `metadata`. `JSON.parse` succeeds, every reader
+ * below is written `?? {}`, and the run reports "0 critical, 0 high" and passes
+ * — so an outage, a proxy, an auth failure or a rate limit all present as a
+ * clean tree, which is the single worst direction for this gate to be wrong in.
+ *
+ * A structure we cannot read a count out of means the tree was not measured,
+ * and not measured is not a pass.
+ */
+function assertMeasurableReport(report, raw) {
+  const fail = (why) => {
+    const said = (report && typeof report === 'object' && report.message) || raw || '(nothing)';
+    throw new Error(
+      `npm audit returned no usable report, so the consumer tree was NOT measured: ${why}.\n` +
+        '    Unknown is not a pass — an unreachable advisory database otherwise reads as ' +
+        'zero vulnerabilities. Check network access to the npm advisory database and re-run.\n' +
+        `    npm said: ${String(said).trim().slice(0, 400)}`
+    );
+  };
+  if (!report || typeof report !== 'object' || Array.isArray(report)) fail('not a JSON object');
+  if (!report.vulnerabilities || typeof report.vulnerabilities !== 'object') {
+    fail('no `vulnerabilities` map — this is exactly the shape an advisory-database failure returns');
+  }
+  const counts = report.metadata?.vulnerabilities;
+  if (!counts || typeof counts !== 'object') fail('no `metadata.vulnerabilities` counts');
+  for (const key of ['critical', 'high', 'moderate', 'low', 'total']) {
+    if (typeof counts[key] !== 'number') fail(`\`metadata.vulnerabilities.${key}\` is not a number`);
+  }
+  return counts;
+}
+
+/**
+ * Assert the tree under test was actually RESOLVED, and say what it resolved to.
+ *
+ * Everything below reads the lockfile, and every one of those readers treats an
+ * absent entry as "nothing to report". So a botched install — a target that
+ * resolved to nothing, an `npm install` that half-failed, an empty probe —
+ * produces an empty lockfile and a clean, confident, meaningless pass. The
+ * liveness facts are therefore asserted before any of them run.
+ *
+ * The root name is taken from the lockfile rather than parsed out of the target
+ * spec, because the spec may be a filesystem path to a tarball, from which the
+ * package name cannot be recovered by string surgery.
+ */
+function assertTreeResolved(lock, probe) {
+  const rootDeps = lock.packages?.['']?.dependencies ?? {};
+  const names = Object.keys(rootDeps);
+  if (names.length !== 1) {
+    throw new Error(
+      `the probe's lockfile records ${names.length} root dependencies (${names.join(', ') || 'none'}) ` +
+        'where exactly one was installed. The tree under test was not resolved, so nothing ' +
+        'below measured anything. Not a pass.'
+    );
+  }
+  const rootName = names[0];
+  const rootEntry = lock.packages[`node_modules/${rootName}`];
+  if (!rootEntry?.version) {
+    throw new Error(
+      `\`${rootName}\` is named as the root dependency but has no node_modules/${rootName} ` +
+        'entry in the lockfile, so the target was never resolved. Not a pass.'
+    );
+  }
+  if (!existsSync(path.join(probe, 'node_modules', rootName))) {
+    throw new Error(
+      `the lockfile resolves \`${rootName}\` but node_modules/${rootName} is not on disk, so ` +
+        'the install did not complete. Not a pass.'
+    );
+  }
+  const entries = Object.keys(lock.packages).filter((p) => p !== '');
+  if (entries.length <= 1) {
+    throw new Error(
+      `the consumer tree resolved to ${entries.length} package(s) — \`${rootName}\` and nothing ` +
+        'below it. This package has production dependencies, so a closure that small means the ' +
+        'install did not resolve them rather than that the tree is clean. Not a pass.'
+    );
+  }
+  return { rootName, rootVersion: rootEntry.version, packageCount: entries.length };
+}
+
 /** Install `spec` the way a consumer does, and return npm's audit report. */
 function auditConsumerTree(spec, probe) {
   writeFileSync(
@@ -439,8 +648,20 @@ function auditConsumerTree(spec, probe) {
         `npm said: ${(raw || '(nothing)').slice(0, 500)}`
     );
   }
-  const lock = JSON.parse(readFileSync(path.join(probe, 'package-lock.json'), 'utf8'));
-  return { report, lock };
+  // Parseable is not usable, and usable is not resolved. Both are asserted
+  // before anything downstream is allowed to read a zero as good news.
+  const counts = assertMeasurableReport(report, raw);
+
+  const lockPath = path.join(probe, 'package-lock.json');
+  if (!existsSync(lockPath)) {
+    throw new Error(
+      'the probe wrote no package-lock.json, so npm never resolved a tree here and every ' +
+        'lockfile-driven check below would report nothing found. Not a pass.'
+    );
+  }
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+  const liveness = assertTreeResolved(lock, probe);
+  return { report, lock, counts, liveness };
 }
 
 /** Every GHSA id at `high` or `critical`, with the package it lands on. */
@@ -466,9 +687,86 @@ function nestedCopies(lock, name) {
 }
 
 /** What a `derive` gets: the installed tree, and a way to find things in it. */
-function makeContext(probe, lock) {
+function makeContext(probe, lock, report) {
   return {
     lock,
+    report,
+
+    /**
+     * The vulnerable range this run's audit report gives for `id` on `pkg`.
+     *
+     * Read out of the report rather than typed into a waiver, because it is a
+     * property of the live advisory and advisories get revised. A waiver that
+     * hardcodes "<0.6.0" keeps printing "<0.6.0" after the advisory is widened.
+     */
+    vulnerableRange(pkg, id) {
+      const entry = report.vulnerabilities?.[pkg];
+      if (!entry) {
+        throw new Error(
+          `the audit report has no entry for \`${pkg}\`, so the advisory range for ${id} ` +
+            'cannot be read. Not a pass.'
+        );
+      }
+      for (const via of entry.via ?? []) {
+        if (typeof via === 'object' && via.url?.endsWith(id) && via.range) return via.range;
+      }
+      throw new Error(
+        `the audit report's entry for \`${pkg}\` names no ${id} advisory carrying a range, so ` +
+          'the vulnerable range cannot be measured. Not a pass.'
+      );
+    },
+
+    /**
+     * Every PUBLISHED version of `name` that `range` admits, resolved by npm.
+     *
+     * npm's own semver against the real version list, which is the same
+     * resolution a consumer's install performs. Doing it this way rather than
+     * hand-rolling range arithmetic keeps the answer identical to the one that
+     * decides what a user actually gets, and keeps this script dependency-free
+     * — the job installs nothing from this repo, so `semver` is not importable
+     * here.
+     */
+    versionsSatisfying(name, range) {
+      let raw;
+      try {
+        raw = run('npm', ['view', `${name}@${range}`, 'version', '--json']);
+      } catch (e) {
+        const said = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+        // "nothing published satisfies this range" is a real, usable answer.
+        if (/E404|No match found for version/.test(said)) return [];
+        throw new Error(
+          `could not resolve "${name}@${range}" against the registry, so the versions it ` +
+            `admits are unknown: ${said.trim().slice(0, 200)}`
+        );
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error(`npm view "${name}@${range}" returned no parseable version list.`);
+      }
+      // `npm view` returns a bare string when exactly one version matches.
+      const versions = (Array.isArray(parsed) ? parsed : [parsed]).filter(
+        (v) => typeof v === 'string'
+      );
+      if (versions.length === 0) {
+        throw new Error(`npm view "${name}@${range}" returned no versions in a usable shape.`);
+      }
+      return versions;
+    },
+
+    /**
+     * Does `range` admit `version`, per npm's semver?
+     *
+     * The question "would raising this range collapse the two copies" is a
+     * semver satisfaction. It was previously asked with `===` between a RANGE
+     * and a VERSION, which answers "no" for every range not written as a bare
+     * exact version, so the check silently held open a waiver that had already
+     * become fixable.
+     */
+    rangeAdmits(name, range, version) {
+      return this.versionsSatisfying(name, range).includes(version);
+    },
     installed(name) {
       const dir = path.join(probe, 'node_modules', name);
       const manifestPath = path.join(dir, 'package.json');
@@ -552,31 +850,41 @@ function expired(reviewBy, today) {
 function main() {
   const argv = process.argv.slice(2);
   const i = argv.indexOf('--target');
-  const spec = i !== -1 ? argv[i + 1] : DEFAULT_TARGET;
-  if (!spec) {
+  const requested = i !== -1 ? argv[i + 1] : DEFAULT_TARGET;
+  if (!requested) {
     console.error('--target needs a value (an npm spec or a path to a tarball).');
     process.exit(2);
   }
+  const target = classifyTarget(requested);
+  const spec = target.spec;
 
   const scratch = mkdtempSync(path.join(tmpdir(), 'opena2a-consumer-audit-'));
   const failures = [];
+  let rootName = '(unresolved)';
   try {
     const probe = path.join(scratch, 'probe');
     mkdirSync(probe, { recursive: true });
 
-    console.log(`Resolving the tree a consumer gets for: ${spec}\n`);
-    const { report, lock } = auditConsumerTree(spec, probe);
-    const ctx = makeContext(probe, lock);
+    // Which of the two questions this run answers, said before anything else,
+    // so a failure in the log is attributable to a tree without reading the
+    // workflow that produced it.
+    console.log(`[${target.mode}] ${target.headline}`);
+    console.log(`[${target.mode}] ${target.question}`);
+    console.log(`[${target.mode}] Target: ${spec}\n`);
 
-    // Say which artifact was actually measured. `latest` is a moving target by
-    // design — this gate is meant to go red when the published package goes
-    // bad, not only when a diff touches it — so the resolved version has to be
-    // in the log or the measurement is unattributable.
-    const rootName = spec.replace(/^(@?[^@]*(?:\/[^@]*)?)@.*$/, '$1');
-    const resolved = lock.packages?.[`node_modules/${rootName}`]?.version;
-    if (resolved) console.log(`Resolved ${rootName}@${resolved}\n`);
+    const { report, lock, counts, liveness } = auditConsumerTree(spec, probe);
+    const ctx = makeContext(probe, lock, report);
+    rootName = liveness.rootName;
 
-    const counts = report.metadata?.vulnerabilities ?? {};
+    // Say what was actually measured. In PUBLISHED mode `latest` is a moving
+    // target by design, and in CANDIDATE mode the tarball name does not have to
+    // match what is inside it, so the resolved version is read back off the
+    // lockfile or the measurement is unattributable.
+    console.log(
+      `[${target.mode}] Resolved ${liveness.rootName}@${liveness.rootVersion} — ` +
+        `${liveness.packageCount} packages in the production closure\n`
+    );
+
     console.log(
       `Consumer resolution: ${counts.critical ?? 0} critical, ${counts.high ?? 0} high, ` +
         `${counts.moderate ?? 0} moderate, ${counts.low ?? 0} low`
@@ -658,16 +966,36 @@ function main() {
         );
       }
     }
+  } catch (e) {
+    // A throw before or during measurement means there IS no measurement.
+    // Routed through `failures` rather than left to crash, so it exits in the
+    // gate's own failure format instead of a stack trace that reads like a bug
+    // in this script — and so it can never be mistaken for a clean run.
+    failures.push(
+      `The consumer tree was not measured, so this run produced no result:\n    ${e?.message ?? e}`
+    );
+    if (process.env.CONSUMER_AUDIT_DEBUG) console.error(e?.stack ?? e);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
 
   if (failures.length > 0) {
-    console.error('\nConsumer-resolution audit FAILED:\n');
+    console.error(`\n[${target.mode}] Consumer-resolution audit FAILED — ${target.headline}:\n`);
     for (const f of failures) console.error(`  - ${f}\n`);
+    if (target.mode === 'CANDIDATE') {
+      console.error(
+        '  This is the CANDIDATE run. It measured the tarball this branch would publish, so a\n' +
+          '  failure here is about the change under review and is fixable in this branch.\n'
+      );
+    } else {
+      console.error(
+        '  This is the PUBLISHED run. It measured what users can install right now, so a\n' +
+          '  failure here is NOT fixable by merging — it clears when a fix is released.\n'
+      );
+    }
     process.exit(1);
   }
-  console.log('Consumer-resolution audit passed.');
+  console.log(`[${target.mode}] Consumer-resolution audit passed (${rootName}).`);
 }
 
 main();
