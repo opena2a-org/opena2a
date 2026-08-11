@@ -231,7 +231,7 @@ Full index: [docs/USE-CASES.md](docs/USE-CASES.md).
 
 ## Contributing
 
-Apache 2.0. PRs from outside the org welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the dev loop, test conventions, and pre-push review gates.
+Apache 2.0. PRs from outside the org welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the dev loop, the test conventions, and what to expect on a pull request opened from a fork.
 
 ```bash
 git clone https://github.com/opena2a-org/opena2a.git
