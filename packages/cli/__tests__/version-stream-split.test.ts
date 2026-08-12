@@ -8,19 +8,46 @@
  *
  * Exercises the built `dist/index.js` end-to-end.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const CLI_PATH = resolve(__dirname, '../dist/index.js');
 const STRIP_ANSI = /\x1b\[[0-9;]*m/g;
+
+// @opena2a/telemetry's env opt-out is ONE-WAY: loadConfig computes
+// `enabled = !envDisabled && fileEnabled`, so OPENA2A_TELEMETRY=on can never
+// force telemetry ON over a persisted ~/.config/opena2a/telemetry.json that
+// says enabled:false. This suite spawns the real CLI and asserts on that
+// disclosure line, so without isolation it silently reads the HOST's opt-out
+// state instead of the "on" scenario it means to test — green on CI (fresh
+// runner, no config file) and red on any machine where telemetry is genuinely
+// opted out. Isolating XDG_CONFIG_HOME to a fresh directory makes it
+// deterministic: no telemetry.json there, so loadConfig's `fileEnabled ?? true`
+// default applies. Same fix as ai-trust's copy of this suite.
+let xdgConfigHome: string;
+
+beforeAll(() => {
+  xdgConfigHome = mkdtempSync(join(tmpdir(), 'opena2a-version-test-'));
+});
+
+afterAll(() => {
+  rmSync(xdgConfigHome, { recursive: true, force: true });
+});
 
 function runVersion(flag: string, telemetry = 'on'): { stdout: string; stderr: string; status: number } {
   const res = spawnSync(process.execPath, [CLI_PATH, flag], {
     encoding: 'utf8',
     timeout: 20000,
-    env: { ...process.env, NODE_OPTIONS: '', NO_COLOR: '1', OPENA2A_TELEMETRY: telemetry },
+    env: {
+      ...process.env,
+      NODE_OPTIONS: '',
+      NO_COLOR: '1',
+      OPENA2A_TELEMETRY: telemetry,
+      XDG_CONFIG_HOME: xdgConfigHome,
+    },
   });
   return {
     stdout: (res.stdout ?? '').replace(STRIP_ANSI, ''),
