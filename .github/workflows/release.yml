@@ -16,25 +16,46 @@ on:
       - 'credential-patterns-v*'
       - 'atx-verify-v*'
 
-permissions:
-  contents: write
-  id-token: write
-  # Read-only; needed by the "CI must be green on the tagged commit" step below
-  # to query the Actions API. A `permissions:` block grants ONLY what is
-  # listed, so omitting this makes that query 403 -- which fails closed and
-  # looks exactly like red CI, for the wrong reason.
-  actions: read
+# No workflow-level grant. Every job declares its own block, and a job-level
+# block REPLACES rather than merges -- anything unlisted becomes `none`. This
+# file previously granted contents: write + id-token: write + actions: read
+# workflow-wide, and the single `release` job declared no override, so it
+# inherited all three while running `npm ci`. That put the OIDC publish
+# identity in the same process as every dependency's install script.
+permissions: {}
 
 # Opt the v4-line JavaScript actions (checkout, setup-node, action-gh-release)
-# into Node 24 today. They run on Node 20 by default and emit a deprecation
-# warning on every release; the runner forces Node 24 on 2026-06-02. Setting
-# this env now silences the warning AND avoids surprise breakage in June.
+# into Node 24. They defaulted to Node 20 and emitted a deprecation warning on
+# every release; the runner now forces Node 24, so this pins the behaviour
+# rather than silencing a warning.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  release:
+  # BUILD -- gates, compiles, tests, packs. Holds only read scopes.
+  #
+  # `npm ci --ignore-scripts` is load-bearing, not tidiness. A plain `npm ci`
+  # executes every dependency's install script; hackmyagent pulls
+  # onnxruntime-node, whose postinstall downloads a nupkg from api.nuget.org
+  # and extracts a native .so with no signature or checksum check. That is
+  # unverified third-party code running in the job that produces the bytes we
+  # sign.
+  #
+  # Skipping it is safe here and was MEASURED, not assumed: with
+  # --ignore-scripts the full workspace build is clean and all 22 turbo test
+  # tasks pass (1573 cli tests). Nothing in any published tarball comes from an
+  # install script either. If a future dependency genuinely needs its
+  # postinstall to build or test, do not delete this flag -- move that work
+  # into an explicit, reviewable step.
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read   # the CI-green gate below queries the Actions API; a
+                      # permissions block grants ONLY what is listed, so
+                      # omitting this 403s and fails closed looking like red CI
+    outputs:
+      manifest_sha256: ${{ steps.pack.outputs.manifest_sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,21 +145,240 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          registry-url: https://registry.npmjs.org
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
 
       - name: Generate release manifest
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           cd packages/cli
-          echo '{"version":"${{ github.ref_name }}","generatedAt":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","algorithm":"sha256","artifacts":{}}' > dist/manifest.json
-          find dist -type f -name '*.js' -o -name '*.d.ts' | sort | while read f; do
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync("dist/manifest.json", JSON.stringify({
+              version: process.env.REF_NAME,
+              generatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+              algorithm: "sha256",
+              artifacts: {},
+            }, null, 2));
+          '
+          find dist -type f \( -name '*.js' -o -name '*.d.ts' \) | sort | while read -r f; do
             hash=$(shasum -a 256 "$f" | cut -d' ' -f1)
-            node -e "const m=require('./dist/manifest.json');m.artifacts['$(basename $f)']='$hash';require('fs').writeFileSync('./dist/manifest.json',JSON.stringify(m,null,2))"
+            HASH="$hash" BASE="$(basename "$f")" node -e '
+              const fs = require("fs");
+              const m = JSON.parse(fs.readFileSync("./dist/manifest.json", "utf8"));
+              m.artifacts[process.env.BASE] = process.env.HASH;
+              fs.writeFileSync("./dist/manifest.json", JSON.stringify(m, null, 2));
+            '
           done
           cat dist/manifest.json
 
       - run: npm run test
+
+      # Pack every publishable workspace here, so the job holding the publish
+      # identity never has to run `npm pack` (which would need the source tree
+      # and a full install). The tarballs are the artifact; the publish job
+      # uploads exactly these bytes.
+      #
+      # `manifest_sha256` is emitted as a JOB OUTPUT and is the trust anchor:
+      # any job in a run can upload an artifact, so the artifact alone proves
+      # only that bytes survived transport. A job output cannot be written by
+      # another job, so verifying the manifest against it -- and then each
+      # tarball against the manifest -- chains back to something the build job
+      # alone controls.
+      - name: Pack every workspace the publish job will sign
+        id: pack
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/dist"
+          mkdir -p "$out"
+          npm pack --ignore-scripts --pack-destination "$out" \
+            --workspace=packages/cli \
+            --workspace=packages/shared \
+            --workspace=packages/cli-ui \
+            --workspace=packages/contribute \
+            --workspace=packages/ai-classifier \
+            --workspace=packages/aim-core \
+            --workspace=packages/registry-client \
+            --workspace=packages/check-core \
+            --workspace=packages/telemetry \
+            --workspace=packages/credential-patterns \
+            --workspace=packages/atx-verify \
+            >/dev/null
+
+          # Build the pack manifest from the workspaces themselves rather than
+          # from whatever happens to be on disk, so an unexpected extra .tgz
+          # cannot smuggle itself into the publish loop.
+          node -e '
+            const fs = require("fs"), path = require("path"), cp = require("child_process");
+            const out = process.env.RUNNER_TEMP + "/dist";
+            const wss = [
+              ["packages/cli","opena2a-cli"],["packages/shared","@opena2a/shared"],
+              ["packages/cli-ui","@opena2a/cli-ui"],["packages/contribute","@opena2a/contribute"],
+              ["packages/ai-classifier","@opena2a/ai-classifier"],["packages/aim-core","@opena2a/aim-core"],
+              ["packages/registry-client","@opena2a/registry-client"],["packages/check-core","@opena2a/check-core"],
+              ["packages/telemetry","@opena2a/telemetry"],["packages/credential-patterns","@opena2a/credential-patterns"],
+              ["packages/atx-verify","@opena2a/atx-verify"],
+            ];
+            const entries = wss.map(([ws, expected]) => {
+              const pj = JSON.parse(fs.readFileSync(path.join(ws, "package.json"), "utf8"));
+              if (pj.name !== expected) throw new Error(`${ws} is ${pj.name}, expected ${expected}`);
+              const file = pj.name.replace("@","").replace("/","-") + "-" + pj.version + ".tgz";
+              if (!/^[a-zA-Z0-9@._-]+\.tgz$/.test(file)) throw new Error("bad tarball name " + file);
+              const abs = path.join(out, file);
+              if (!fs.existsSync(abs)) throw new Error("npm pack did not produce " + file);
+              const sha = cp.execFileSync("sha256sum", [abs]).toString().split(" ")[0];
+              return { pkg: pj.name, version: pj.version, file, sha256: sha };
+            });
+            fs.writeFileSync(out + "/pack-manifest.json", JSON.stringify({ entries }, null, 2));
+            console.log(JSON.stringify(entries.map(e => `${e.pkg}@${e.version}`), null, 2));
+          '
+          echo "manifest_sha256=$(sha256sum "$out/pack-manifest.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: |
+            ${{ runner.temp }}/dist/*.tgz
+            ${{ runner.temp }}/dist/pack-manifest.json
+          if-no-files-found: error
+
+  # PUBLISH -- holds the publish identity. Runs no dependency code.
+  #
+  # No checkout and no `npm ci`. `npm publish <tarball>` reads the manifest
+  # from INSIDE the tarball and builds the SLSA predicate purely from GITHUB_*
+  # env vars, so nothing else needs to be on disk. Every lifecycle hook
+  # (prepack/postpack/prepublishOnly/publish/postpublish) is gated on
+  # `spec.type === 'directory'` in the npm CLI, so publishing a tarball fires
+  # none of them -- verified against npm 11.19.0 source, and measured: 0 of 4
+  # fired on a probe package defining all four.
+  #
+  # HONEST RESIDUE: `setup-node` and `download-artifact` are still third-party
+  # JavaScript from mutable tags, running with the OIDC token in the
+  # environment. Much less exposure than `npm ci`, not zero. SHA-pinning every
+  # action is a separate change, not done here.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC trusted publishing. `contents` is `none` by
+                        # replacement -- the publish path needs no repo write.
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          # No `cache: npm` -- it hashes package-lock.json, which does not
+          # exist without a checkout, and the step hard-fails without one.
+
+      - name: npm must be new enough for trusted publishing
+        run: |
+          set -euo pipefail
+          have="$(npm --version)"
+          need="11.5.1"
+          if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -n1)" != "$need" ]; then
+            echo "::error::npm $have is older than the required $need for OIDC trusted publishing."
+            exit 1
+          fi
+          echo "npm $have"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs
+          path: ${{ runner.temp }}/dist
+
+      # The manifest digest arrives via `env:`, never interpolated into the
+      # script body: GitHub expands ${{ }} into the text BEFORE bash parses it,
+      # so a crafted value would execute as code in precisely the job this
+      # split exists to protect. Everything else is read from the manifest
+      # FILE, after the file itself has been checked against this digest.
+      - name: Verify transport integrity (does not attest content)
+        env:
+          EXPECT_MANIFEST_SHA: ${{ needs.build.outputs.manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          echo "${EXPECT_MANIFEST_SHA}  pack-manifest.json" | sha256sum -c -
+          node -e '
+            const fs = require("fs"), cp = require("child_process");
+            const m = JSON.parse(fs.readFileSync("pack-manifest.json", "utf8"));
+            for (const e of m.entries) {
+              if (!/^[a-zA-Z0-9@._-]+\.tgz$/.test(e.file)) throw new Error("bad name " + e.file);
+              const sha = cp.execFileSync("sha256sum", [e.file]).toString().split(" ")[0];
+              if (sha !== e.sha256) throw new Error("digest mismatch for " + e.file);
+              console.log("ok " + e.pkg + "@" + e.version + "  " + e.file);
+            }
+          '
+
+      # Idempotent, and it has to be: a green publish followed by a red later
+      # step must leave a re-run able to reach the remaining steps. npm refuses
+      # to republish a version unconditionally, so without this a partial
+      # release could never be completed.
+      - name: Publish packages (idempotent — skips versions already on npm)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          : > /tmp/published.txt
+          : > /tmp/skipped.txt
+          # Entries come from the manifest file, already digest-verified above.
+          node -e '
+            const fs=require("fs");
+            for (const e of JSON.parse(fs.readFileSync("pack-manifest.json","utf8")).entries)
+              console.log([e.pkg, e.version, e.file].join("\t"));
+          ' | while IFS=$'\t' read -r pkg version file; do
+            if npm view "$pkg@$version" version >/dev/null 2>&1; then
+              echo "::notice::$pkg@$version already on npm — skipping publish"
+              printf '%s\t%s\n' "$pkg" "$version" >> /tmp/skipped.txt
+            else
+              echo "Publishing $pkg@$version with provenance..."
+              # --registry is explicit because publishConfig inside a tarball's
+              # own manifest is flattened into the publish options, and registry
+              # is not otherwise a CLI flag -- so a poisoned manifest could
+              # redirect the publish. The CLI flag wins.
+              npm publish "$file" --provenance --access public \
+                --registry=https://registry.npmjs.org/
+              printf '%s\t%s\n' "$pkg" "$version" >> /tmp/published.txt
+            fi
+          done
+          echo "=== Published this run ==="; cat /tmp/published.txt
+          echo "=== Skipped (already on npm) ==="; cat /tmp/skipped.txt
+
+      # This gate was previously incapable of failing, twice over. It captured
+      # stderr into the variable it tested (`2>&1`), so an E404 -- exactly what
+      # registry propagation lag returns, which is the whole reason for the
+      # poll -- produced a long non-empty string and passed on the first
+      # iteration. Measured against the real registry: ~740 characters of
+      # error. It also queried `npm view <pkg>` with no version, so it could
+      # be satisfied by an OLDER release's attestations.
+      # Now: stdout only, pinned to the exact version, and the shape asserted.
+      - name: Verify provenance on newly-published packages
+        run: |
+          set -uo pipefail
+          if [ ! -s /tmp/published.txt ]; then
+            echo "No packages published this run — nothing to verify."
+            exit 0
+          fi
+          rc=0
+          while IFS=$'\t' read -r pkg version; do
+            deadline=$((SECONDS + 300))
+            ok=0
+            while [ $SECONDS -lt $deadline ]; do
+              if att="$(npm view "$pkg@$version" dist.attestations --json 2>/dev/null)" \
+                 && [ -n "$att" ] \
+                 && echo "$att" | jq -e '.provenance.predicateType == "https://slsa.dev/provenance/v1"' >/dev/null 2>&1; then
+                echo "Provenance verified for $pkg@$version"
+                ok=1
+                break
+              fi
+              echo "Attestations for $pkg@$version not yet visible, retrying in 15s... (elapsed ${SECONDS}s)"
+              sleep 15
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "::error::No SLSA v1 provenance attestation on npm for $pkg@$version after 5 minutes"
+              rc=1
+            fi
+          done < /tmp/published.txt
+          exit $rc
 
       - name: Publish packages (idempotent — skips if version already on npm)
         id: publish
@@ -202,6 +442,24 @@ jobs:
             verify_attestations "$pkg" || exit 1
           done < /tmp/published.txt
 
+  # GITHUB RELEASE -- the only job with repo write.
+  #
+  # Separate so no single job holds both the npm publish identity and
+  # `contents: write`. action-gh-release is third-party, and this keeps it away
+  # from the OIDC token.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Checked out because this action's behaviour from an empty workspace is
+      # not something this repo has ever exercised, and a failure here lands
+      # AFTER an irreversible publish. persist-credentials: false because
+      # nothing here needs to push.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
