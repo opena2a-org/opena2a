@@ -168,9 +168,17 @@ const result = new LocalAtxVerifier(anchors).verifyCredential(JSON.stringify(atx
 A signature is only accepted from a key controlled by the credential's issuer.
 A configured key whose `keyId` is a DID-URL (contains `#`) is **bound** to its
 controller DID and may only verify credentials issued by that DID — or, for
-v1.1 (where `issuerChain` is signed), by an authority named in the chain. This
-prevents one trusted issuer's key from satisfying a credential issued under a
-different issuer's DID.
+v1.1, by an authority named in `issuerChain` **that is also listed in
+`trustedIssuers`**. This prevents one trusted issuer's key from satisfying a
+credential issued under a different issuer's DID.
+
+The `trustedIssuers` qualifier on the chain is load-bearing, not belt-and-braces.
+`issuerChain` is signed — but by the very signature the eligibility set is being
+built to check, so an unqualified chain authorizes its own signer: a key for a
+DID you do not trust becomes eligible by naming that DID in a chain it wrote
+itself. Requiring the chain entry to be independently trusted keeps federation
+working, because a genuine intermediate authority is one you already trust, and
+an attacker whose DID is already trusted could have issued directly.
 
 A key with no `keyId`, or a `keyId` without a `#` fragment, is treated as
 **unbound** and stays eligible for any issuer — safe for a single-issuer anchor
