@@ -121,7 +121,7 @@ export interface AtxPublicKey {
    * Optional DID-URL identifying the key and its controller, e.g.
    * `did:opena2a:authority:opena2a.org#key-1`. When present (contains `#`), the
    * key is BOUND to its controller DID: it may only verify signatures for
-   * credentials issued by that controller (or, for v1.1, an issuerChain
+   * credentials issued by that controller (or, for v1.1, a TRUSTED issuerChain
    * authority). This stops one trusted issuer's key from satisfying a credential
    * issued under a different DID. A key without a `#` fragment is unbound and is
    * eligible for any issuer (back-compat for single-issuer anchor sets).
@@ -327,13 +327,30 @@ export class LocalAtxVerifier implements AtxVerifier {
       payload = canonicalPayload(atx);
     }
     // Key↔issuer binding: a key may verify a signature for this credential only
-    // if it is controlled by one of the credential's authorities — the issuer,
-    // plus the issuerChain authorities for v1.1 (where the chain is signed; v1.0
-    // chain is unsigned/forgeable, so only the issuer counts). A key whose keyId
+    // if it is controlled by one of the credential's authorities. A key whose keyId
     // is not a DID-URL (no '#') is unbound and stays eligible (back-compat).
+    //
+    // `issuerDid` is safe to seed from because it was checked against
+    // `trustedIssuers` above. `issuerChain` is NOT, and used to be added verbatim
+    // on v1.1 on the reasoning that the chain is signed — but it is signed by the
+    // very signature this block is selecting a key to verify, so the chain was
+    // authorizing its own signer. Measured: with two anchored keys and one trusted
+    // issuer, a key belonging to an untrusted DID minted a credential under the
+    // trusted issuer simply by naming its own DID in the chain — `issuerChain: []`
+    // was correctly SIGNATURE_INVALID, `issuerChain: [own-did]` verified, yielding
+    // attacker-chosen trustLevel, capabilities and scanSummary with
+    // `signedCapabilities: true`.
+    //
+    // A chain entry therefore extends eligibility only when it is ITSELF a trusted
+    // anchor. That keeps federation working — a genuine intermediate authority is
+    // in `trustedIssuers` and stays eligible — while a DID the operator does not
+    // trust gains nothing by appearing in a chain it wrote itself. An attacker whose
+    // DID is already trusted could have issued directly, so this adds no path.
     const authoritySet = new Set<string>([atx.issuerDid]);
     if (isV11) {
-      for (const did of atx.issuerChain ?? []) authoritySet.add(did);
+      for (const did of atx.issuerChain ?? []) {
+        if (this.anchors.trustedIssuers.includes(did)) authoritySet.add(did);
+      }
     }
     // Staged so an empty final key set can be diagnosed precisely: nothing
     // configured vs binding-excluded vs unparseable key material. All three

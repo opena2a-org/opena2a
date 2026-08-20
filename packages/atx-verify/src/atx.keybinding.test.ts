@@ -1,8 +1,9 @@
 /**
  * Key↔issuer binding: a configured key whose keyId names a controller DID may
  * only verify signatures for credentials issued by that controller (or, for
- * v1.1, a signed issuerChain authority). One trusted issuer cannot impersonate
- * another. Keys without a DID-URL keyId stay unbound (back-compat).
+ * v1.1, an issuerChain authority the operator ALSO trusts). One trusted issuer
+ * cannot impersonate another. Keys without a DID-URL keyId stay unbound
+ * (back-compat).
  */
 import { describe, it, expect } from 'vitest';
 import * as crypto from 'node:crypto';
@@ -174,5 +175,96 @@ describe('anchor-fault diagnostics (empty eligible key set names the configurati
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('Ed25519 signature did not verify');
     expect(result.reason).not.toContain('  ');
+  });
+});
+
+/**
+ * The chain cannot authorize its own signer.
+ *
+ * `issuerChain` used to be added to the eligibility set verbatim on v1.1, reasoning that the
+ * chain is signed. It is — by the very signature the eligibility set is being built to check.
+ * So a key belonging to a DID the operator does not trust became eligible simply by naming its
+ * own DID in a chain it wrote itself.
+ */
+describe('issuerChain does not grant eligibility to an untrusted key', () => {
+  const UNTRUSTED = 'did:partner:untrusted.example';
+
+  function v11(chain: string[]) {
+    return atxBase({
+      atcVersion: '1.1',
+      issuerDid: ISSUER_A,
+      issuerChain: chain,
+      trustLevel: 9,
+      capabilities: ['admin:*'],
+      scanSummary: { oasbLevel: 'L3' },
+    });
+  }
+
+  function verifyWith(chain: string[], signer: crypto.KeyObject, signerDid: string, keys: AtxTrustAnchors['publicKeys']) {
+    return new LocalAtxVerifier(anchors({ publicKeys: keys })).verify(
+      signWith(v11(chain), signer, `${signerDid}#key-1`),
+    );
+  }
+
+  it('rejects an untrusted key that names its own DID in the chain', () => {
+    const a = keypair();
+    const evil = keypair();
+    const keys = [
+      { algorithm: 'Ed25519' as const, publicKeyHex: a.pubHex, keyId: `${ISSUER_A}#key-1` },
+      { algorithm: 'Ed25519' as const, publicKeyHex: evil.pubHex, keyId: `${UNTRUSTED}#key-1` },
+    ];
+
+    // The attack: the chain is attacker-written and lists the attacker's own DID.
+    const attack = verifyWith([UNTRUSTED], evil.privateKey, UNTRUSTED, keys);
+    expect(attack.valid).toBe(false);
+    expect(attack.rejectCategory).toBe('SIGNATURE_INVALID');
+
+    // Control: the same key with an empty chain was always rejected, so the assertion above is
+    // about the chain and not about the key being unanchored.
+    const noChain = verifyWith([], evil.privateKey, UNTRUSTED, keys);
+    expect(noChain.valid).toBe(false);
+
+    // Control: naming a TRUSTED did in the chain does not help an untrusted signer either.
+    const namesTrusted = verifyWith([ISSUER_B], evil.privateKey, UNTRUSTED, keys);
+    expect(namesTrusted.valid).toBe(false);
+  });
+
+  it('still admits a federated intermediate the operator trusts', () => {
+    // The behaviour the chain extension exists for, and which must survive the fix: ISSUER_B is
+    // in trustedIssuers, so its key may sign a credential issued under ISSUER_A.
+    const a = keypair();
+    const b = keypair();
+    const keys = [
+      { algorithm: 'Ed25519' as const, publicKeyHex: a.pubHex, keyId: `${ISSUER_A}#key-1` },
+      { algorithm: 'Ed25519' as const, publicKeyHex: b.pubHex, keyId: `${ISSUER_B}#key-1` },
+    ];
+
+    const federated = verifyWith([ISSUER_B], b.privateKey, ISSUER_B, keys);
+    expect(federated.valid).toBe(true);
+    expect(federated.context?.signedCapabilities).toBe(true);
+
+    // Control: the issuer's own key still works with and without a chain.
+    expect(verifyWith([], a.privateKey, ISSUER_A, keys).valid).toBe(true);
+    expect(verifyWith([ISSUER_B], a.privateKey, ISSUER_A, keys).valid).toBe(true);
+  });
+
+  it('does not let an untrusted chain entry widen eligibility on a v1.0 credential either', () => {
+    // v1.0 never added the chain, so this is a lock on behaviour rather than a change.
+    const a = keypair();
+    const evil = keypair();
+    const atx = signWith(
+      atxBase({ atcVersion: '1.0', issuerDid: ISSUER_A, issuerChain: [UNTRUSTED] }),
+      evil.privateKey,
+      `${UNTRUSTED}#key-1`,
+    );
+    const result = new LocalAtxVerifier(
+      anchors({
+        publicKeys: [
+          { algorithm: 'Ed25519', publicKeyHex: a.pubHex, keyId: `${ISSUER_A}#key-1` },
+          { algorithm: 'Ed25519', publicKeyHex: evil.pubHex, keyId: `${UNTRUSTED}#key-1` },
+        ],
+      }),
+    ).verify(atx);
+    expect(result.valid).toBe(false);
   });
 });
