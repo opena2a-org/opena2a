@@ -1,9 +1,12 @@
 /**
- * Key↔issuer binding: a configured key whose keyId names a controller DID may
- * only verify signatures for credentials issued by that controller (or, for
- * v1.1, an issuerChain authority the operator ALSO trusts). One trusted issuer
- * cannot impersonate another. Keys without a DID-URL keyId stay unbound
- * (back-compat).
+ * Key eligibility: which anchored keys the verifier will try for a given
+ * credential. A key whose keyId is a DID-URL is eligible only for credentials
+ * issued by its controller DID, or, on v1.1, for credentials whose issuerChain
+ * names that controller when trustedIssuers also lists it. A key with no `#`
+ * fragment is unbound and stays eligible for every issuer, so the binding cases
+ * below hold only for anchor sets in which every key carries a DID-URL keyId.
+ * A passing verification shows that some eligible key signed the bytes; it does
+ * not identify which one, nor that the issuerDid authority signed.
  */
 import { describe, it, expect } from 'vitest';
 import * as crypto from 'node:crypto';
@@ -99,7 +102,7 @@ describe('key-to-issuer binding', () => {
     expect(result.rejectCategory).toBe('SIGNATURE_INVALID');
   });
 
-  it('accepts a v1.1 cross-org cosignature when the signer is in the signed issuerChain', () => {
+  it('accepts a v1.1 credential issued under A whose single signature is from B, a chain authority trustedIssuers also lists', () => {
     const b = keypair();
     // issuer is A, but B is a cosigning authority named in the (signed) issuerChain.
     const atx = signWith(
