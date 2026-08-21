@@ -81,9 +81,10 @@ const anchors: AtxTrustAnchors = {
     {
       algorithm: "Ed25519",
       publicKeyHex: "<32-byte hex>",
-      // Recommended: a DID-URL keyId binds the key to its controller so it can
-      // only verify credentials issued by that DID. Required to be safe with a
-      // MULTI-issuer anchor set (see "Key-to-issuer binding" below).
+      // Recommended: a DID-URL keyId narrows the key to credentials its
+      // controller issued (plus, on v1.1, chain authorities in trustedIssuers).
+      // Give every key one once the anchor set holds more than one issuer
+      // (see "Key-to-issuer binding").
       keyId: "did:opena2a:authority:opena2a.org#key-1",
     },
   ],
@@ -165,17 +166,36 @@ const result = new LocalAtxVerifier(anchors).verifyCredential(JSON.stringify(atx
 
 ## Key-to-issuer binding
 
-A signature is only accepted from a key controlled by the credential's issuer.
-A configured key whose `keyId` is a DID-URL (contains `#`) is **bound** to its
-controller DID and may only verify credentials issued by that DID — or, for
-v1.1 (where `issuerChain` is signed), by an authority named in the chain. This
-prevents one trusted issuer's key from satisfying a credential issued under a
-different issuer's DID.
+Before checking a signature, the verifier narrows the anchored Ed25519 keys to
+the ones eligible for this credential. A key is eligible if its `keyId` carries
+no `#` fragment (**unbound**: eligible for every credential, whatever the
+issuer), or its `keyId`'s controller DID equals `issuerDid`, or the credential
+is v1.1 and that controller DID appears in `issuerChain` **and** is also listed
+in `trustedIssuers`.
 
-A key with no `keyId`, or a `keyId` without a `#` fragment, is treated as
-**unbound** and stays eligible for any issuer — safe for a single-issuer anchor
-set, but supply DID-URL `keyId`s whenever the anchor set holds keys for more
-than one issuer.
+`valid: true` therefore establishes that some key in that eligible set signed
+these bytes. It does not establish which one, and it does not establish that
+the authority named in `issuerDid` signed anything: `context.issuerDid` is a
+signed claim about the issuer, not an authenticated identification of the
+signer. To attribute a signature to one key, verify against an anchor set that
+holds only that key.
+
+Eligibility is a property of the anchor set, so that is where it is tuned. One
+`#`-less `keyId` in `publicKeys` leaves its holder eligible for every credential
+the verifier accepts, on v1.0 and v1.1 alike. Audit with
+`anchors.publicKeys.filter((k) => !k.keyId?.includes("#"))`, and give every key
+a DID-URL `keyId` once the set holds more than one issuer's keys.
+
+The `trustedIssuers` qualifier on the chain is load-bearing, not belt-and-braces.
+`issuerChain` is signed — but by the very signature the eligibility set is being
+built to check, so an unqualified chain authorizes its own signer: a key for a
+DID you do not trust becomes eligible by naming that DID in a chain it wrote
+itself. Requiring the chain entry to be independently trusted keeps federation
+working, because a genuine intermediate authority is one you already trust, and
+an attacker whose DID is already trusted could have issued directly. The
+consequence to configure for is that every DID in `trustedIssuers` can, on v1.1,
+sign for another trusted issuer that names it in `issuerChain`: keep the list to
+the authorities you would accept in that role.
 
 ## Additional exports
 

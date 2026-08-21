@@ -120,11 +120,15 @@ export interface AtxPublicKey {
   /**
    * Optional DID-URL identifying the key and its controller, e.g.
    * `did:opena2a:authority:opena2a.org#key-1`. When present (contains `#`), the
-   * key is BOUND to its controller DID: it may only verify signatures for
-   * credentials issued by that controller (or, for v1.1, an issuerChain
-   * authority). This stops one trusted issuer's key from satisfying a credential
-   * issued under a different DID. A key without a `#` fragment is unbound and is
-   * eligible for any issuer (back-compat for single-issuer anchor sets).
+   * key is BOUND to its controller DID: it is eligible only for credentials
+   * whose `issuerDid` is that controller, or, on v1.1, for credentials whose
+   * `issuerChain` names that controller when `trustedIssuers` also lists it.
+   * A key with no `#` fragment (or no `keyId` at all) is unbound and stays
+   * eligible for every credential regardless of issuer, on v1.0 and v1.1 alike,
+   * so one such entry widens the eligible set for the whole anchor set.
+   * Eligibility decides which keys may verify a signature. A `valid` result
+   * does not report which key did, and is not an authentication of the
+   * authority named in `issuerDid`.
    */
   keyId?: string;
 }
@@ -289,6 +293,50 @@ export class LocalAtxVerifier implements AtxVerifier {
     }
     const isV11 = atx.atcVersion === SUPPORTED_ATX_VERSION_V11;
 
+    // Step 1a: issuerChain is structurally an array of strings, on BOTH versions.
+    // `Atx.issuerChain` and `ResolutionContext.issuerChain` both declare `string[]`,
+    // but the wire value used to reach the caller unchecked, and a TypeScript type is
+    // not a wire validation. Two measured consequences, which is why this rejects
+    // rather than coerces:
+    //   - A STRING chain changes what a consumer's membership predicate MEANS.
+    //     `["did:opena2a:authority:a.example"].includes("a.example")` is false —
+    //     element equality. `"did:opena2a:authority:a.example".includes("a.example")`
+    //     is true — substring matching. A federation predicate written against the
+    //     declared type flips its verdict because the holder sent a string, and
+    //     secretless-ai mints `ctx.issuerChain` into a SIGNED broker assertion, so the
+    //     confusion would cross a trust boundary inside a signed artifact.
+    //   - `{}`, `5` and `true` made the v1.1 eligibility loop throw a TypeError, which
+    //     contradicts verifyCredential's own contract ("this method never throws on bad
+    //     input"). v1.0 never iterates the chain, so it was the version that accepted
+    //     every shape SILENTLY and handed a number or boolean to the caller — which is
+    //     why this guard is not scoped to v1.1.
+    // Coercing to [] was rejected: it silently accepts a schema-invalid credential and
+    // hides a malformed issuer. MALFORMED is the fail-closed direction and matches how
+    // every other structural violation is treated here.
+    // Read the property ONCE. `verify(obj)` accepts a caller-supplied object, and an
+    // accessor that returns a different value on each read would otherwise let the
+    // validated value and the delivered value differ — the guard would check an array
+    // and the caller would receive whatever the next read produced. Everything below
+    // uses this snapshot, including what goes into the resolution context.
+    const issuerChain: unknown = atx.issuerChain;
+    if (issuerChain !== undefined && issuerChain !== null) {
+      if (!Array.isArray(issuerChain)) {
+        return reject(
+          'MALFORMED',
+          `issuerChain must be an array of strings, got ${typeof issuerChain}`,
+        );
+      }
+      const badIndex = (issuerChain as unknown[]).findIndex((did) => typeof did !== 'string');
+      if (badIndex !== -1) {
+        return reject(
+          'MALFORMED',
+          `issuerChain[${badIndex}] must be a string, got ` +
+            `${typeof (issuerChain as unknown[])[badIndex]}`,
+        );
+      }
+    }
+    const checkedChain = (issuerChain ?? undefined) as string[] | undefined;
+
     // Step 2: expiry.
     const expires = new Date(atx.expiresAt);
     if (Number.isNaN(expires.getTime())) {
@@ -327,13 +375,30 @@ export class LocalAtxVerifier implements AtxVerifier {
       payload = canonicalPayload(atx);
     }
     // Key↔issuer binding: a key may verify a signature for this credential only
-    // if it is controlled by one of the credential's authorities — the issuer,
-    // plus the issuerChain authorities for v1.1 (where the chain is signed; v1.0
-    // chain is unsigned/forgeable, so only the issuer counts). A key whose keyId
+    // if it is controlled by one of the credential's authorities. A key whose keyId
     // is not a DID-URL (no '#') is unbound and stays eligible (back-compat).
+    //
+    // `issuerDid` is safe to seed from because it was checked against
+    // `trustedIssuers` above. `issuerChain` is NOT, and used to be added verbatim
+    // on v1.1 on the reasoning that the chain is signed — but it is signed by the
+    // very signature this block is selecting a key to verify, so the chain was
+    // authorizing its own signer. Measured: with two anchored keys and one trusted
+    // issuer, a key belonging to an untrusted DID minted a credential under the
+    // trusted issuer simply by naming its own DID in the chain — `issuerChain: []`
+    // was correctly SIGNATURE_INVALID, `issuerChain: [own-did]` verified, yielding
+    // attacker-chosen trustLevel, capabilities and scanSummary with
+    // `signedCapabilities: true`.
+    //
+    // A chain entry therefore extends eligibility only when it is ITSELF a trusted
+    // anchor. That keeps federation working — a genuine intermediate authority is
+    // in `trustedIssuers` and stays eligible — while a DID the operator does not
+    // trust gains nothing by appearing in a chain it wrote itself. An attacker whose
+    // DID is already trusted could have issued directly, so this adds no path.
     const authoritySet = new Set<string>([atx.issuerDid]);
     if (isV11) {
-      for (const did of atx.issuerChain ?? []) authoritySet.add(did);
+      for (const did of checkedChain ?? []) {
+        if (this.anchors.trustedIssuers.includes(did)) authoritySet.add(did);
+      }
     }
     // Staged so an empty final key set can be diagnosed precisely: nothing
     // configured vs binding-excluded vs unparseable key material. All three
@@ -406,7 +471,7 @@ export class LocalAtxVerifier implements AtxVerifier {
         agentId: atx.agentId,
         agentDid: atx.agentDid,
         issuerDid: atx.issuerDid,
-        issuerChain: atx.issuerChain ?? [atx.issuerDid],
+        issuerChain: checkedChain ?? [atx.issuerDid],
         trustLevel: atx.trustLevel,
         trustScore: atx.trustScore,
         capabilities: atx.capabilities ?? [],
