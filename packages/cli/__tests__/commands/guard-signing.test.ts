@@ -50,7 +50,7 @@ describe('guard-signing', () => {
     expect(results).toHaveLength(1);
     expect(results[0].filePath).toBe('SKILL.md');
     expect(results[0].hash).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(results[0].signedBy).toContain('@opena2a-cli');
+    expect(results[0].signedBy).toMatch(/^opena2a-cli\/\d+\.\d+\.\d+/);
     expect(results[0].expiresAt).toBeUndefined();
 
     const content = fs.readFileSync(path.join(tempDir, 'SKILL.md'), 'utf-8');

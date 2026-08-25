@@ -14,6 +14,8 @@
  */
 
 import * as fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { signedByLabel } from '../util/signed-by.js';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -96,6 +98,8 @@ const GUARD_FILES = [
   'pyproject.toml', 'requirements.txt',
   'Dockerfile', 'docker-compose.yml',
 ];
+
+interface SkippedFile { filePath: string; reason: 'gitIgnored'; rule: string }
 
 const STORE_DIR = '.opena2a/guard';
 const STORE_FILE = 'signatures.json';
@@ -191,7 +195,12 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
   const spinner = new Spinner('Signing config files...');
   if (!isJson) spinner.start();
 
-  const filesToSign = resolveFiles(targetDir, options.files);
+  const usingCustomFiles = !!(options.files && options.files.length > 0);
+  const defaultResolution = usingCustomFiles ? null : resolveDefaultFiles(targetDir);
+  const filesToSign = usingCustomFiles ? resolveFiles(targetDir, options.files) : (defaultResolution?.files ?? []);
+  const skipped: SkippedFile[] = defaultResolution?.skipped ?? [];
+  // An explicit path is signed even when ignored, but the cost is stated.
+  const explicitIgnored = usingCustomFiles ? gitIgnoredPaths(targetDir, filesToSign) : new Map<string, string>();
   const signatures: ConfigSignature[] = [];
 
   for (const relPath of filesToSign) {
@@ -200,16 +209,17 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
     const content = fs.readFileSync(fullPath);
     const hash = 'sha256:' + createHash('sha256').update(content).digest('hex');
     const stat = fs.statSync(fullPath);
-    signatures.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: os.userInfo().username + '@opena2a-cli', fileSize: stat.size });
+    signatures.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: signedByLabel(), fileSize: stat.size });
   }
 
   if (!isJson) spinner.stop();
 
   if (signatures.length === 0 && !options.skills && !options.heartbeats) {
-    if (isJson) { process.stdout.write(JSON.stringify({ signed: 0, files: [] }, null, 2) + '\n'); }
+    if (isJson) { process.stdout.write(JSON.stringify({ signed: 0, files: [], skipped }, null, 2) + '\n'); }
     else {
       process.stdout.write(yellow('No config files found to sign.\n'));
       process.stdout.write(dim('Guard signs: package.json, mcp.json, arp.yaml, tsconfig.json, Dockerfile, etc.\n'));
+      printSkippedFiles(skipped);
     }
     return 0;
   }
@@ -236,7 +246,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
   }
 
   if (isJson) {
-    const result: Record<string, unknown> = { signed: signatures.length, files: signatures.map(s => s.filePath) };
+    const result: Record<string, unknown> = { signed: signatures.length, files: signatures.map(s => s.filePath), skipped };
     if (skillResults.length > 0) result.skills = skillResults.map(s => s.filePath);
     if (heartbeatResults.length > 0) result.heartbeats = heartbeatResults.map(s => s.filePath);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -244,6 +254,12 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
     if (signatures.length > 0) {
       process.stdout.write(green(`Signed ${signatures.length} config file${signatures.length === 1 ? '' : 's'}.\n`));
       for (const sig of signatures) { process.stdout.write(dim(`  ${sig.filePath}  ${sig.hash.slice(0, 23)}...\n`)); }
+    }
+    printSkippedFiles(skipped);
+    for (const [ignoredPath, rule] of explicitIgnored) {
+      process.stdout.write(yellow(`Note: ${ignoredPath} is git-ignored here (${rule}); a committed store that lists it reports missing in every other checkout.\n`));
+    }
+    if (signatures.length > 0) {
       process.stdout.write(dim(`Run \`opena2a guard resign\` again after editing signed files.\n`));
     }
     if (skillResults.length > 0) {
@@ -280,7 +296,12 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   const store = loadStore(targetDir);
 
   if (!store) {
-    if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
+    // A store file that exists but could not be loaded (unparseable, or written by a newer CLI
+    // and refused) is not the same as no store: do not advise a sign that would overwrite it.
+    if (fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))) {
+      if (isJson) { process.stdout.write(JSON.stringify({ error: 'The signature store exists but could not be read; nothing was verified.' }, null, 2) + '\n'); }
+      else { process.stdout.write(yellow('The signature store exists but could not be read; nothing was verified.\n')); }
+    } else if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
     else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign to detect tampering.\n')); }
     return 1;
   }
@@ -434,7 +455,12 @@ async function guardWatch(targetDir: string, options: GuardOptions): Promise<num
   const store = loadStore(targetDir);
 
   if (!store) {
-    if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
+    // A store file that exists but could not be loaded (unparseable, or written by a newer CLI
+    // and refused) is not the same as no store: do not advise a sign that would overwrite it.
+    if (fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))) {
+      if (isJson) { process.stdout.write(JSON.stringify({ error: 'The signature store exists but could not be read; nothing was verified.' }, null, 2) + '\n'); }
+      else { process.stdout.write(yellow('The signature store exists but could not be read; nothing was verified.\n')); }
+    } else if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
     else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign to detect tampering.\n')); }
     return 1;
   }
@@ -532,7 +558,12 @@ async function guardDiff(targetDir: string, options: GuardOptions): Promise<numb
   const store = loadStore(targetDir);
 
   if (!store) {
-    if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
+    // A store file that exists but could not be loaded (unparseable, or written by a newer CLI
+    // and refused) is not the same as no store: do not advise a sign that would overwrite it.
+    if (fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))) {
+      if (isJson) { process.stdout.write(JSON.stringify({ error: 'The signature store exists but could not be read; nothing was verified.' }, null, 2) + '\n'); }
+      else { process.stdout.write(yellow('The signature store exists but could not be read; nothing was verified.\n')); }
+    } else if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
     else { process.stdout.write(yellow('No signature store found. Run: opena2a guard sign to detect tampering.\n')); }
     return 1;
   }
@@ -622,19 +653,102 @@ function flattenKeys(obj: unknown, prefix = ''): string[] {
 
 function resolveFiles(targetDir: string, customFiles?: string[]): string[] {
   if (customFiles && customFiles.length > 0) return customFiles.filter(f => fs.existsSync(path.join(targetDir, f)));
-  return GUARD_FILES.filter(f => fs.existsSync(path.join(targetDir, f)));
+  return resolveDefaultFiles(targetDir).files;
+}
+
+/**
+ * The default signing set: files that exist AND that git does not report as ignored. The store
+ * is committed with the repository, so an entry for a path the repository cannot contain has no
+ * verifier anywhere; outside a git repository the predicate is inert and everything present is
+ * listed. Explicit --files paths bypass this (an explicit choice beats the default).
+ */
+function resolveDefaultFiles(targetDir: string): { files: string[]; skipped: SkippedFile[] } {
+  const present = GUARD_FILES.filter(f => fs.existsSync(path.join(targetDir, f)));
+  const ignored = gitIgnoredPaths(targetDir, present);
+  return {
+    files: present.filter(f => !ignored.has(f)),
+    skipped: present.filter(f => ignored.has(f)).map(f => ({ filePath: f, reason: 'gitIgnored' as const, rule: ignored.get(f) ?? '' })),
+  };
+}
+
+/**
+ * Which of the given paths does git consider ignored here? Index-aware (a tracked file is never
+ * reported, whatever the patterns say), one batched spawn. Exit 1 means none; not a repository
+ * means the question does not apply. A failure INSIDE a repository skips nothing and says so on
+ * stderr: a degraded instrument must not emit a healthy-looking answer.
+ */
+function gitIgnoredPaths(targetDir: string, candidates: string[]): Map<string, string> {
+  const none = new Map<string, string>();
+  if (candidates.length === 0) return none;
+  let out: string;
+  try {
+    out = execFileSync('git', ['-C', targetDir, '-c', 'core.fsmonitor=false', 'check-ignore', '-z', '-v', '--stdin'], {
+      input: candidates.join('\0') + '\0',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      encoding: 'utf-8',
+    });
+  } catch (err) {
+    const e = err as { status?: number | null };
+    if (e.status === 1) return none; // ran fine: nothing is ignored
+    // Any other failure: skip nothing. Inside a repository that is a degraded instrument, and a
+    // degraded instrument must say so rather than emit a healthy-looking store; outside one the
+    // question does not apply and silence is correct.
+    if (hasGitDirAncestor(targetDir)) {
+      process.stderr.write('guard: git ignore rules could not be consulted; no files were skipped\n');
+    }
+    return none;
+  }
+  // -z -v output is <source> NUL <linenum> NUL <pattern> NUL <path> NUL, repeated.
+  const parts = out.split('\0');
+  const ignored = new Map<string, string>();
+  for (let i = 0; i + 3 < parts.length; i += 4) {
+    const source = parts[i];
+    const line = parts[i + 1];
+    const pattern = parts[i + 2];
+    const matchedPath = parts[i + 3];
+    // A negation match is check-ignore telling us the path is NOT ignored.
+    if (!matchedPath || pattern.startsWith('!')) continue;
+    ignored.set(matchedPath, source ? `${source}:${line}:${pattern}` : pattern);
+  }
+  return ignored;
+}
+
+function hasGitDirAncestor(dir: string): boolean {
+  let current = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(path.join(current, '.git'))) return true;
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
 }
 
 function loadStore(targetDir: string): SignatureStore | null {
   const storePath = path.join(targetDir, STORE_DIR, STORE_FILE);
   if (!fs.existsSync(storePath)) return null;
-  try { return JSON.parse(fs.readFileSync(storePath, 'utf-8')) as SignatureStore; } catch { return null; }
+  try {
+    const store = JSON.parse(fs.readFileSync(storePath, 'utf-8')) as SignatureStore;
+    const version = (store as { version?: unknown }).version ?? 1;
+    if (typeof version === 'number' && version > 1) {
+      // No reader consulted version before this check existed; refusing here is what lets a
+      // future shape change be a version bump instead of a silent misread.
+      process.stderr.write(`guard: ${STORE_FILE} was written by a newer opena2a-cli (store version ${version}); upgrade to read it\n`);
+      return null;
+    }
+    return store;
+  } catch { return null; }
 }
 
 function buildReport(subcommand: string, targetDir: string, results: GuardResult[], totalSigned: number): GuardReport {
   return { subcommand, directory: targetDir, results,
     passed: results.filter(r => r.status === 'pass').length, tampered: results.filter(r => r.status === 'tampered').length,
     unsigned: results.filter(r => r.status === 'unsigned').length, missing: results.filter(r => r.status === 'missing').length, totalSigned };
+}
+
+function printSkippedFiles(skipped: SkippedFile[]): void {
+  if (skipped.length === 0) return;
+  process.stdout.write(`Skipped ${skipped.length} git-ignored file${skipped.length === 1 ? '' : 's'}. The store is committed with the repository, so it lists only files the repository carries.\n`);
+  for (const skip of skipped) { process.stdout.write(dim(`  ${skip.filePath}  ${skip.rule}\n`)); }
 }
 
 function printVerifyReport(report: GuardReport, enforce?: boolean): void {
@@ -646,6 +760,9 @@ function printVerifyReport(report: GuardReport, enforce?: boolean): void {
     const statusLabel = result.status === 'pass' ? green('PASS') : result.status === 'tampered' ? red('TAMPERED') : result.status === 'unsigned' ? yellow('UNSIGNED') : red('MISSING');
     const hashDisplay = result.currentHash ? dim(result.currentHash.slice(0, 23) + '...') : dim('--');
     process.stdout.write(`  ${result.filePath.padEnd(28)} ${statusLabel.padEnd(20)} ${hashDisplay}\n`);
+    if (result.status === 'missing') {
+      process.stdout.write(`  ${' '.repeat(28)} ${dim('fix: restore the file, or run `opena2a guard sign` to rebuild the store from the files present')}\n`);
+    }
     if (result.status === 'tampered' && result.expectedHash) { process.stdout.write(`  ${' '.repeat(28)} ${dim('expected: ' + result.expectedHash.slice(0, 23) + '...')}\n`); }
     if (result.status === 'tampered' && result.diff) {
       const parts: string[] = [];
@@ -660,6 +777,7 @@ function printVerifyReport(report: GuardReport, enforce?: boolean): void {
   process.stdout.write(gray('  ' + '-'.repeat(60)) + '\n');
   process.stdout.write(`  ${dim('Result:')} ${green(String(report.passed))} passed, `);
   process.stdout.write(`${report.tampered > 0 ? red(String(report.tampered)) : '0'} tampered, `);
+  process.stdout.write(`${report.missing > 0 ? red(String(report.missing)) : '0'} missing, `);
   process.stdout.write(`${report.unsigned > 0 ? yellow(String(report.unsigned)) : '0'} unsigned`);
   if (enforce && (report.tampered > 0 || report.missing > 0)) { process.stdout.write(`  ${red('[QUARANTINE]')}`); }
   process.stdout.write('\n\n');
@@ -681,7 +799,7 @@ export async function signConfigFilesSilent(targetDir: string): Promise<{ signed
     const content = fs.readFileSync(fullPath);
     const hash = 'sha256:' + createHash('sha256').update(content).digest('hex');
     const stat = fs.statSync(fullPath);
-    signatures.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: os.userInfo().username + '@opena2a-cli', fileSize: stat.size });
+    signatures.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: signedByLabel(), fileSize: stat.size });
   }
 
   if (signatures.length === 0) {
@@ -703,6 +821,6 @@ export async function signConfigFilesSilent(targetDir: string): Promise<{ signed
 // --- Testable internals ---
 
 export const _internals = {
-  resolveFiles, loadStore, computeFileDiff, diffJsonKeys, flattenKeys, emitEvent, verifyConfigIntegrity,
+  resolveFiles, resolveDefaultFiles, gitIgnoredPaths, loadStore, computeFileDiff, diffJsonKeys, flattenKeys, emitEvent, verifyConfigIntegrity,
   GUARD_FILES, STORE_DIR, STORE_FILE, EXIT_QUARANTINE,
 };

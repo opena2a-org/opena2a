@@ -6,7 +6,7 @@
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
+import { signedByLabel } from '../util/signed-by.js';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -59,7 +59,7 @@ export async function signHeartbeatFiles(targetDir: string): Promise<SignResult[
 function signFiles(files: string[], targetDir: string, withExpiry: boolean): SignResult[] {
   const results: SignResult[] = [];
   const now = new Date();
-  const signedBy = os.userInfo().username + '@opena2a-cli';
+  const signedBy = signedByLabel();
 
   for (const fullPath of files) {
     const relPath = path.relative(targetDir, fullPath);
