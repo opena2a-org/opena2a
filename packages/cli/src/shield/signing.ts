@@ -5,9 +5,9 @@
 // in ~/.opena2a/shield/signatures.json with 0o600 permissions.
 
 import { createHash } from 'node:crypto';
+import { signedByLabel } from '../util/signed-by.js';
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { userInfo } from 'node:os';
 
 import type { ShieldSignature, ShieldSignatureStore } from './types.js';
 import {
@@ -44,7 +44,7 @@ export function signArtifact(filePath: string): ShieldSignature {
     filePath: relPath,
     hash,
     signedAt: new Date().toISOString(),
-    signedBy: userInfo().username + '@opena2a-cli',
+    signedBy: signedByLabel(),
     fileSize: stat.size,
   };
 }

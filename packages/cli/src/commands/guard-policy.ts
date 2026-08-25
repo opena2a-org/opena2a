@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { bold, green, yellow, red, dim, gray } from '../util/colors.js';
+import { _internals as guardInternals } from './guard.js';
 
 // --- Types ---
 
@@ -40,17 +41,6 @@ const GUARD_DIR = '.opena2a/guard';
 const POLICY_FILE = 'policy.json';
 const HEARTBEAT_DISABLED_FILE = 'heartbeat-disabled';
 const SIGNATURES_FILE = 'signatures.json';
-
-const DEFAULT_CONFIG_FILES = [
-  'mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json',
-  'package.json', 'package-lock.json',
-  'arp.yaml', 'arp.yml', 'arp.json',
-  'openclaw.json', '.openclaw/config.json',
-  '.opena2a.yaml', '.opena2a.json',
-  'tsconfig.json', 'go.mod', 'go.sum',
-  'pyproject.toml', 'requirements.txt',
-  'Dockerfile', 'docker-compose.yml',
-];
 
 // --- Event emission ---
 
@@ -89,7 +79,9 @@ export function saveGuardPolicy(targetDir: string, policy: GuardPolicy): void {
 // --- Default policy generation ---
 
 export function generateDefaultPolicy(targetDir: string): GuardPolicy {
-  const detected = DEFAULT_CONFIG_FILES.filter(f => fs.existsSync(path.join(targetDir, f)));
+  // One list and one predicate, shared with sign/verify/status: a policy must not require a
+  // path the default signing set would skip as git-ignored.
+  const detected = guardInternals.resolveFiles(targetDir);
   return {
     version: 1,
     requiredFiles: detected,
@@ -222,5 +214,4 @@ export const _internals = {
   loadGuardPolicy, saveGuardPolicy, generateDefaultPolicy, checkPolicyCompliance,
   disableHeartbeat, isHeartbeatDisabled, enableHeartbeat, guardPolicy, emitEvent,
   GUARD_DIR, POLICY_FILE, HEARTBEAT_DISABLED_FILE, SIGNATURES_FILE,
-  DEFAULT_CONFIG_FILES,
 };

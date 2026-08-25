@@ -421,7 +421,7 @@ describe('Shield E2E Integration', () => {
 
       expect(sig.filePath).toBe('policy.yaml');
       expect(sig.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(sig.signedBy).toContain('@opena2a-cli');
+      expect(sig.signedBy).toMatch(/^opena2a-cli\/\d+\.\d+\.\d+/);
 
       // Step 3: Verify via verifyArtifact -- should pass
       const verifyResult = verifyArtifact(policyPath);
