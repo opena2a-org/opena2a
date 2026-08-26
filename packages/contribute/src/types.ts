@@ -1,4 +1,17 @@
 /**
+ * Identity row for a check the scan suppressed or scoped out: id-level
+ * metadata only — no path, no matched bytes, by construction.
+ */
+export interface SuppressionRow {
+  checkId: string;
+  name: string;
+  category: string;
+  severity: string;
+  count: number;
+  suppressedBy: string;
+}
+
+/**
  * Universal contribution event -- works for all OpenA2A tools:
  * HMA, ai-trust, detect, ARP, BrowserGuard, Secretless.
  */
@@ -30,6 +43,17 @@ export interface ContributionEvent {
     score: number;
     verdict: string;
     durationMs: number;
+    /**
+     * Settled-outcome extras (0.3.0, all optional): the exit code the run
+     * returned, the pre-clamp score and whether the clamp fired, and the
+     * identity rows for suppressed / out-of-scope checks. A tool that has a
+     * settled record reports these; one that does not omits them.
+     */
+    exitCode?: number;
+    rawScore?: number;
+    scoreClamped?: boolean;
+    suppressed?: SuppressionRow[];
+    outOfScope?: SuppressionRow[];
   };
 
   /** Detection summary (for detect, BrowserGuard). */

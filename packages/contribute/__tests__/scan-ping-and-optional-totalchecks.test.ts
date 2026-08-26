@@ -67,6 +67,37 @@ describe('scan_ping and optional totalChecks (0.2.0)', () => {
     expect('totalChecks' in (batch!.events[0].scanSummary as object)).toBe(false);
   });
 
+  it('the settled-outcome extras (0.3.0) queue and ride the batch unchanged, and stay absent when omitted', () => {
+    queueEvent({
+      type: 'scan_result',
+      tool: 'hackmyagent',
+      toolVersion: '0.33.0',
+      timestamp: new Date().toISOString(),
+      scanSummary: {
+        passed: 10,
+        critical: 1,
+        high: 0,
+        medium: 0,
+        low: 0,
+        score: 20,
+        verdict: 'fail',
+        durationMs: 400,
+        exitCode: 1,
+        rawScore: 55,
+        scoreClamped: true,
+        suppressed: [{ checkId: 'CONFIG-004', name: 'x', category: 'config', severity: 'high', count: 1, suppressedBy: '.hmaignore' }],
+      },
+    });
+    const [event] = getQueuedEvents();
+    expect(event.scanSummary?.exitCode).toBe(1);
+    expect(event.scanSummary?.rawScore).toBe(55);
+    expect(event.scanSummary?.scoreClamped).toBe(true);
+    expect(event.scanSummary?.suppressed?.[0].checkId).toBe('CONFIG-004');
+    expect('outOfScope' in (event.scanSummary as object)).toBe(false);
+    const batch = buildBatch();
+    expect(batch!.events[0].scanSummary?.suppressed).toHaveLength(1);
+  });
+
   it('a scanSummary carrying totalChecks keeps it (the 0.1.x shape is a subset)', () => {
     queueEvent({
       type: 'scan_result',
