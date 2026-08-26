@@ -64,12 +64,12 @@ await contribute.flush();
 | `contribute.scanResult(params)` | Queue a scan result event |
 | `contribute.detection(params)` | Queue a detection event |
 | `contribute.flush()` | Submit all queued events to the Registry |
-| `isContributeEnabled()` | Check if contribution is enabled |
+| `isContributeEnabled()` | Check if contribution is enabled (`contribute.enabled: true` in `~/.opena2a/config.json`, written by the parent tool's consent prompt; every call is a no-op until then) |
 | `queueEvent(event)` | Low-level: add an event to the local queue |
 | `getQueuedEvents()` | Low-level: read queued events |
 | `clearQueue()` | Low-level: clear the local queue |
 | `shouldFlush()` | Check if the queue has reached the flush threshold |
-| `buildBatch(events)` | Build a submission batch from queued events |
+| `buildBatch()` | Build a submission batch from the queued events; returns `null` when the queue is empty |
 | `submitBatch(batch)` | Submit a batch to the Registry API |
 | `getContributorToken()` | Get or create an anonymous contributor token |
 
