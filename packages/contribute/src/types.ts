@@ -3,7 +3,7 @@
  * HMA, ai-trust, detect, ARP, BrowserGuard, Secretless.
  */
 export interface ContributionEvent {
-  type: 'scan_result' | 'detection' | 'behavior' | 'interaction' | 'adoption';
+  type: 'scan_result' | 'scan_ping' | 'detection' | 'behavior' | 'interaction' | 'adoption';
   tool: string;
   toolVersion: string;
   timestamp: string;
@@ -15,9 +15,13 @@ export interface ContributionEvent {
     ecosystem?: string;
   };
 
-  /** Anonymized scan summary (no raw findings). */
+  /**
+   * Anonymized scan summary (no raw findings). `totalChecks` is optional
+   * since 0.2.0: a tool reports it from a measured coverage record or omits
+   * it — a derived stand-in number is worse than no number.
+   */
   scanSummary?: {
-    totalChecks: number;
+    totalChecks?: number;
     passed: number;
     critical: number;
     high: number;
