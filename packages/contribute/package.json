@@ -1,6 +1,6 @@
 {
   "name": "@opena2a/contribute",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Shared community trust data contribution client for OpenA2A tools",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

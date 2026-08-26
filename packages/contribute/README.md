@@ -32,7 +32,8 @@ await contribute.scanResult({
   packageName: 'my-mcp-server',
   packageVersion: '1.0.0',
   ecosystem: 'npm',
-  totalChecks: 42,
+  totalChecks: 42, // optional since 0.2.0: report a measured count or omit it
+
   passed: 38,
   critical: 0,
   high: 1,
