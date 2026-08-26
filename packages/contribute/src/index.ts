@@ -1,4 +1,4 @@
-export type { ContributionEvent, ContributionBatch } from './types.js';
+export type { ContributionEvent, ContributionBatch, SuppressionRow } from './types.js';
 export { getContributorToken } from './contributor.js';
 export { queueEvent, getQueuedEvents, clearQueue, shouldFlush, buildBatch } from './queue.js';
 export { submitBatch } from './client.js';
