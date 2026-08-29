@@ -1,4 +1,4 @@
-name: Claude PR Review
+name: PR Review
 
 on:
   pull_request:
@@ -42,7 +42,7 @@ jobs:
           fi
           echo "full_bytes=$FULL" >> "$GITHUB_OUTPUT"
 
-      - name: Claude review
+      - name: Automated review
         id: review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
