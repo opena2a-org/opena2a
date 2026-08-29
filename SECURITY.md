@@ -35,3 +35,10 @@ exists so a reporter can tell what we already know about from what is new. Last 
   gated this advisory now finds zero high or critical advisories in the published closure.
 - **Verify.** `npm ls adm-zip` in the tree where you installed shows `0.6.0` or later, and
   `npm audit --omit=dev` reports no adm-zip advisory. If you installed before 2026-08-25, reinstall.
+
+## Change control
+
+Changes to the automated review and release configuration (everything under
+`.github/`) require an approving review from a code owner. Automation can
+propose those changes; it cannot approve them. Ordinary pull requests are
+gated by status checks alone.
