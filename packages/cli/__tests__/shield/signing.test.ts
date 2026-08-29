@@ -59,7 +59,7 @@ describe('signArtifact', () => {
     expect(sig.filePath).toBe('test-file.json');
     expect(sig.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(sig.signedAt).toBeTruthy();
-    expect(sig.signedBy).toContain('@opena2a-cli');
+    expect(sig.signedBy).toMatch(/^opena2a-cli\/\d+\.\d+\.\d+/);
     expect(sig.fileSize).toBeGreaterThan(0);
   });
 

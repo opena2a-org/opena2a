@@ -14,22 +14,30 @@ Unified CLI for the OpenA2A security toolchain. One command finds credential lea
 ## Quick start
 
 ```bash
-npx opena2a-cli review
+npx opena2a-cli init       # 1. read-only assessment: every finding prints Verify and Fix
+npx opena2a-cli protect    # 2. apply the fixes
+npx opena2a-cli review     # 3. full report. First run downloads the NanoMind
+                           #    model files; --no-open skips the browser.
 ```
 
+What `init` prints (captured from opena2a-cli 0.10.13 on a small demo project, trimmed):
+
 ```
-  OpenA2A Security Review
+  OpenA2A Security Assessment  v0.10.13         0.1s
+
+  Project      acme-agent v2.1.0
+  Stack        Node.js + MCP server
 
   Findings
   -----------------------------------------------
-  Credential scan        3 hardcoded keys
-  Shadow AI              2 agents, 4 MCP servers
-  Config integrity       unsigned
-  Governance             no SOUL.md
-  -----------------------------------------------
-  Security Score   30 / 100  ->  85 by running opena2a protect
-
-  Run: opena2a protect    (fix all findings)
+  CRITICAL  OpenAI API Key
+            OpenAI API key hardcoded in source. Grants full API access
+            to anyone with the source code.
+            src/agent.js:1
+            Verify: sed -n '1p' src/agent.js
+            Fix:    opena2a protect
+  ...
+  Security Score: 62 / 100  (project posture: credentials, config, environment)
 ```
 
 ![opena2a review](docs/images/review-demo.gif)
@@ -39,7 +47,7 @@ npx opena2a-cli review
 ### npm
 
 ```bash
-npx opena2a-cli review          # run once, no install
+npx opena2a-cli init            # run once, no install
 npm install -g opena2a-cli      # install globally
 ```
 
@@ -105,19 +113,18 @@ There are four published CLIs in the toolchain. `opena2a` is the unified front d
 
 | You want to... | Use | Standalone install |
 |---|---|---|
-| Run one command and get a full security review of your project | `opena2a review` | (front door) |
+| Run one command and get a security assessment of your project | `opena2a init` | (front door) |
 | Scan a specific MCP server, skill, npm package, or GitHub repo | `opena2a scan <target>` or `hackmyagent check <target>` | `npm install -g hackmyagent` |
 | Wrap any subprocess with credentials injected at runtime | `opena2a secrets run --only KEY -- <cmd>` or `secretless-ai run --only KEY -- <cmd>` | `npm install -g secretless-ai` |
 | Check the trust posture of an npm or PyPI package before installing | `opena2a trust <pkg>` or `ai-trust <pkg>` | `npm install -g ai-trust` |
 | Give your agent a cryptographic identity and local audit log, no server | `opena2a identity create --name X` | (bundled in `opena2a-cli`) |
-| Benchmark a security tool against 222 standard attack scenarios | `opena2a benchmark` | (uses OASB internally) |
+| Benchmark a security tool against the OASB attack scenarios | `opena2a benchmark` | (uses OASB internally) |
 
-If you're not sure where to start, run `opena2a review` in your project root. It tells you what's wrong and which underlying tool to invoke for the fix.
+If you're not sure where to start, run `opena2a init` in your project root. It tells you what's wrong and which underlying tool to invoke for the fix.
 
 ## Built-in help
 
 ```bash
-opena2a ?                              # recommendations for THIS project
 opena2a ~shadow ai                     # semantic search ("ai" finds AI-related commands)
 opena2a "find leaked credentials"      # natural language to matched command
 opena2a                                # interactive guided wizard (no args)
@@ -131,14 +138,14 @@ Three job categories: assess, protect, operate. Run any with `--help` for full f
 
 | Command | What it does |
 |---|---|
-| `opena2a review` | Full security dashboard. 6-phase assessment, HTML report. Most common entry point. |
-| `opena2a init` | Read-only first-time security assessment with a trust score for your project. |
+| `opena2a init` | Read-only security assessment with a trust score for your project. Start here. |
+| `opena2a review` | Full security dashboard. 6-phase assessment, HTML report. First run downloads the NanoMind model files; `--no-open` skips the browser. |
 | `opena2a detect` | Shadow AI discovery. Finds undeclared agents, MCP servers, AI configs. Returns a governance score. |
-| `opena2a scan <target>` | 209 static + 29 semantic + 164 adversarial-payload checks via HackMyAgent. Targets: local repo, npm package, GitHub repo, MCP server, skill, or standalone SOUL.md. |
+| `opena2a scan <target>` | Static, semantic, and adversarial-payload checks via HackMyAgent (current counts: `hackmyagent --help`). Targets: local repo, npm package, GitHub repo, MCP server, skill, or standalone SOUL.md. |
 | `opena2a check <target>` | Pre-install trust check. Queries the OpenA2A Registry and runs HMA locally. |
-| `opena2a scan-soul <path>` | 72 governance controls across 9 domains, profile-aware. |
+| `opena2a scan-soul <path>` | Governance controls across every ABGS domain, profile-aware. |
 | `opena2a trust <pkg>` | Read-only Registry lookup for an npm or PyPI package. |
-| `opena2a benchmark` | Run the OASB 222-scenario benchmark against your security tool. |
+| `opena2a benchmark` | Run the OASB benchmark against your security tool. |
 
 ### Protect
 

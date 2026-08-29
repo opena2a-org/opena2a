@@ -1,4 +1,4 @@
-export type { ContributionEvent, ContributionBatch } from './types.js';
+export type { ContributionEvent, ContributionBatch, SuppressionRow } from './types.js';
 export { getContributorToken } from './contributor.js';
 export { queueEvent, getQueuedEvents, clearQueue, shouldFlush, buildBatch } from './queue.js';
 export { submitBatch } from './client.js';
@@ -28,7 +28,8 @@ export const contribute = {
     packageName: string;
     packageVersion?: string;
     ecosystem?: string;
-    totalChecks: number;
+    /** From a measured coverage record, or omitted — never a derived stand-in. */
+    totalChecks?: number;
     passed: number;
     critical: number;
     high: number;

@@ -81,11 +81,14 @@
  *
  * ## Why the gate is an allowlist and not a count
  *
- * The advisory above has no fix reachable from a consumer: `onnxruntime-node`
- * pins `adm-zip: ^0.5.16` and the patched `adm-zip` is `0.6.0`, outside that
- * caret. `overrides` are not published, so nothing this repo writes reaches a
- * user's resolution. A gate that can only ever be red is switched off inside a
- * release and then protects nothing.
+ * The advisory above had no fix reachable from a consumer for months:
+ * `onnxruntime-node` pinned `adm-zip: ^0.5.16` while the patched `adm-zip` was
+ * `0.6.0`, outside that caret, and `overrides` are not published, so nothing
+ * this repo writes reaches a user's resolution. A gate that can only ever be
+ * red is switched off inside a release and then protects nothing. (On
+ * 2026-08-25 `onnxruntime-node@1.29.0` declared `adm-zip: ^0.6.0`, the advisory
+ * left the consumer tree, rule 2 below failed the build, and the waiver was
+ * deleted — the lifecycle this design intends.)
  *
  * So every high/critical advisory must be NAMED in ALLOWED with a reason and a
  * review date. Anything unlisted fails, an entry that stops matching fails, and
@@ -153,163 +156,6 @@ function classifyTarget(spec) {
 // ---------------------------------------------------------------------------
 // Derivations. Each returns lines of MEASURED fact, or throws.
 // ---------------------------------------------------------------------------
-
-/**
- * Why `adm-zip` is stuck below the patched version, and where in a consumer's
- * install it is actually reached.
- *
- * Everything here is read from the installed `onnxruntime-node` tarball. In
- * particular the platform list is computed, never typed: `requirements` names
- * the manifests each platform needs, `manifests` names the files each manifest
- * provides, and `postinstall` only downloads (and therefore only unzips) when
- * one of those files is absent from the tarball. So the set of platforms that
- * genuinely parse a ZIP at install time is a function of what shipped, and it
- * changes without warning when upstream cuts a release.
- */
-function deriveAdmZipReachability(ctx) {
-  const ort = ctx.installed('onnxruntime-node');
-  const zip = ctx.installed('adm-zip');
-  const lines = [];
-
-  // 1. The trap: does the declared range admit ANY version outside the
-  //    advisory? Both halves are measured. The vulnerable range comes out of
-  //    this run's own audit report, and the set of versions the declared range
-  //    admits is resolved by npm's semver against the real published version
-  //    list — the same resolution a consumer's install performs.
-  //
-  //    An earlier version of this line interpolated the measured range and then
-  //    asserted a FIXED conclusion about it ("the advisory range is <0.6.0 and
-  //    0.6.0 is outside that caret"). That is the prose-drift failure the
-  //    derive() rule exists to prevent, relocated inside the derivation: it
-  //    would have kept printing, unchanged and in our favour, the day upstream
-  //    widened the caret.
-  const declared = ort.manifest.dependencies?.['adm-zip'];
-  if (!declared) {
-    throw new Error(
-      `onnxruntime-node@${ort.version} no longer declares an adm-zip dependency. ` +
-        'The reason this waiver exists has changed; re-read it.'
-    );
-  }
-  const vulnRange = ctx.vulnerableRange('adm-zip', 'GHSA-xcpc-8h2w-3j85');
-  const admitted = ctx.versionsSatisfying('adm-zip', declared);
-  if (admitted.length === 0) {
-    // Otherwise "every admitted version is vulnerable" is vacuously true over an
-    // empty set, and the waiver would hold on a measurement of nothing — the
-    // same defect this derivation exists to prevent.
-    throw new Error(
-      `no published adm-zip version satisfies onnxruntime-node's declared range ` +
-        `"${declared}", so the claim that none of them is patched is a conclusion about an ` +
-        'empty set. The dependency was resolved from somewhere this check cannot see. Not a pass.'
-    );
-  }
-  const vulnerable = new Set(ctx.versionsSatisfying('adm-zip', vulnRange));
-  const cleanAdmissible = admitted.filter((v) => !vulnerable.has(v));
-  if (cleanAdmissible.length > 0) {
-    throw new Error(
-      `onnxruntime-node@${ort.version} declares adm-zip "${declared}", and ` +
-        `${cleanAdmissible.length} published version(s) satisfying it now fall OUTSIDE the ` +
-        `advisory range "${vulnRange}" (${cleanAdmissible.slice(-3).join(', ')}). ` +
-        'A clean resolution is reachable, ' +
-        'so this waiver\'s premise — that no admissible version is patched — is false. ' +
-        'Raise the resolution instead of re-dating the waiver.'
-    );
-  }
-  lines.push(
-    `onnxruntime-node@${ort.version} declares adm-zip "${declared}"; the consumer tree ` +
-      `resolves adm-zip@${zip.version}. This run's audit report gives the advisory range as ` +
-      `"${vulnRange}", and all ${admitted.length} published versions satisfying "${declared}" ` +
-      `resolve inside it, so no admissible version is clean.`
-  );
-
-  // 2. Is adm-zip loaded at all, and on which platforms?
-  const utilsRel = path.join('script', 'install-utils.js');
-  const utils = path.join(ort.dir, utilsRel);
-  if (!existsSync(utils)) {
-    throw new Error(
-      `${ort.name}@${ort.version} has no ${utilsRel}; the install path this waiver ` +
-        'describes no longer exists. Re-derive the reachability claim by hand.'
-    );
-  }
-  const src = readFileSync(utils, 'utf8').split('\n');
-  // Top level == column 0. A require moved inside a function or a branch would
-  // be conditional, which is a different claim, so we do not match it.
-  const requireLine = src.findIndex((l) => /^(?:const|let|var|import)\b.*\brequire\(['"]adm-zip['"]\)/.test(l));
-  if (requireLine === -1) {
-    throw new Error(
-      `${utilsRel} no longer requires adm-zip at top level. That is a material change ` +
-        'to this waiver (the dependency may now be unreachable, or reached somewhere ' +
-        'else entirely). Re-read the install path before re-dating this entry.'
-    );
-  }
-  lines.push(
-    `${utilsRel}:${requireLine + 1} requires adm-zip at top level, so it is loaded on ` +
-      'every platform whenever postinstall runs at all.'
-  );
-
-  // 3. Which platforms actually PARSE a ZIP. Computed, not asserted.
-  const meta = readInstallMetadata(ort.dir);
-  const requirements = meta.requirements;
-  const manifests = meta.manifests ?? {};
-  if (!requirements || typeof requirements !== 'object' || Object.keys(requirements).length === 0) {
-    throw new Error(
-      'onnxruntime-node install metadata has no usable `requirements` map, so the set of ' +
-        'affected platforms cannot be measured. Not a pass.'
-    );
-  }
-  const binRoot = path.join(ort.dir, 'bin', 'napi-v6');
-  if (!existsSync(binRoot)) {
-    throw new Error(
-      `onnxruntime-node@${ort.version} has no bin/napi-v6 directory; the binary layout ` +
-        'this derivation reads has changed and the platform list would be wrong.'
-    );
-  }
-
-  const parses = [];
-  const clean = [];
-  for (const [platform, names] of Object.entries(requirements)) {
-    if (!Array.isArray(names)) {
-      throw new Error(`install metadata requirements["${platform}"] is not an array.`);
-    }
-    const missingByManifest = [];
-    for (const name of names) {
-      const manifest = manifests[`${platform}:${name}`];
-      if (!manifest || typeof manifest !== 'object') {
-        throw new Error(
-          `install metadata names manifest "${platform}:${name}" in requirements but does ` +
-            'not define it. The metadata is inconsistent; the platform list cannot be trusted.'
-        );
-      }
-      const files = Object.keys(manifest);
-      const missing = files.filter((f) => !existsSync(path.join(binRoot, platform, f)));
-      if (missing.length > 0) missingByManifest.push({ name, missing, total: files.length });
-    }
-    if (missingByManifest.length > 0) parses.push({ platform, missingByManifest });
-    else clean.push(platform);
-  }
-
-  const total = Object.keys(requirements).length;
-  if (parses.length === 0) {
-    lines.push(
-      `On all ${total} declared platforms every manifest file is already present in the ` +
-        'tarball, so postinstall exits before downloading or unzipping anything.'
-    );
-  } else {
-    for (const { platform, missingByManifest } of parses) {
-      const detail = missingByManifest
-        .map((m) => `${m.name} (${m.missing.length} of ${m.total} files absent: ${m.missing.join(', ')})`)
-        .join('; ');
-      lines.push(
-        `install-time ZIP parse IS reached on ${platform} — manifest ${detail}. postinstall ` +
-          'downloads that package and unzips it with the vulnerable adm-zip.'
-      );
-    }
-    lines.push(
-      `Not reached on ${clean.length} of ${total} declared platforms: ${clean.join(', ') || '(none)'}.`
-    );
-  }
-
-  return lines;
-}
 
 /**
  * Where the second copy of `hackmyagent` comes from, and whether bumping the
@@ -412,22 +258,7 @@ function deriveNestedHackmyagent(ctx) {
  * asking "why is my audit red because of your CLI", so it names the blocker,
  * not the severity — and it does not restate anything `derive` measures.
  */
-const ALLOWED = [
-  {
-    id: 'GHSA-xcpc-8h2w-3j85',
-    package: 'adm-zip',
-    reason:
-      'Reached only through hackmyagent -> onnxruntime-node, which the CLI needs for local ' +
-      'NanoMind inference. There is no version of this dependency chain that resolves clean: ' +
-      'the caret pin and the resolved versions are printed under `derived` below, and no ' +
-      '`overrides` we write reaches a consumer, since overrides are not published. ' +
-      'The fix has to come from upstream raising its adm-zip range; ' +
-      'when it does, this advisory leaves the consumer tree and rule 2 below fails the build ' +
-      'until this entry is deleted.',
-    reviewBy: '2026-11-01',
-    derive: deriveAdmZipReachability,
-  },
-];
+const ALLOWED = [];
 
 /**
  * Packages that must never appear in a consumer tree, at any version.

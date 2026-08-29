@@ -6,6 +6,7 @@
  */
 
 import * as fs from 'node:fs';
+import { signedByLabel } from '../util/signed-by.js';
 import * as path from 'node:path';
 
 // --- Types ---
@@ -171,7 +172,6 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
 
   const store = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
   const { createHash } = await import('node:crypto');
-  const os = await import('node:os');
 
   // Find tampered files
   interface TamperedEntry { filePath: string; sizeChange: number; sigIndex: number; }
@@ -222,7 +222,7 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
 
   // Re-sign only the changed files
   const now = new Date().toISOString();
-  const signedBy = os.userInfo().username + '@opena2a-cli';
+  const signedBy = signedByLabel();
   for (const entry of tampered) {
     const fullPath = path.join(targetDir, entry.filePath);
     const content = fs.readFileSync(fullPath);

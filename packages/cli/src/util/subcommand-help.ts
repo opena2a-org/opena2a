@@ -79,10 +79,10 @@ export function isHelpRequest(args?: ReadonlyArray<string>): boolean {
 
 export const GUARD_HELP: SubcommandHelpRegistry = {
   sign: {
-    summary: 'Sign config files for integrity verification.',
+    summary: 'Sign config files for integrity verification. Git-ignored files are skipped: the store is committed with the repository.',
     usage: '[directory]',
     options: [
-      { flag: '--files <files...>', description: 'Sign specific files (defaults to scanning the directory)' },
+      { flag: '--files <files...>', description: 'Sign specific files, git-ignored ones included (defaults to scanning the directory)' },
       { flag: '--skills', description: 'Include SKILL.md files in the signing set' },
       { flag: '--heartbeats', description: 'Include HEARTBEAT.md files in the signing set' },
     ],
