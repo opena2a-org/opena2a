@@ -199,7 +199,7 @@ The `--registry` flag queries the public Trust Registry API. Servers marked "ver
 Run a comprehensive 6-phase security assessment that combines credential scanning, config integrity, shadow AI detection, behavioral governance, advisory checks, and optional deep scanning.
 
 ```bash
-npx opena2a-cli review
+npx opena2a-cli review my-agent
 ```
 
 Expected output:
@@ -261,13 +261,13 @@ The HTML dashboard provides an interactive 6-tab view with drill-down into each 
 To generate the report without opening a browser:
 
 ```bash
-npx opena2a-cli review --no-open --report security-review.html
+npx opena2a-cli review my-agent --no-open --report security-review.html
 ```
 
 For CI/CD integration, use JSON output:
 
 ```bash
-npx opena2a-cli review --format json
+npx opena2a-cli review my-agent --format json
 ```
 
 ---

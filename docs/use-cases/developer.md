@@ -91,7 +91,7 @@ This identity is local-only. No data is sent to any server. The `.aim/` director
 Generate a `SOUL.md` file that defines behavioral boundaries for AI agents working in your project. This file is checked by `scan-soul` and used by governance-aware agents.
 
 ```bash
-npx opena2a-cli harden-soul
+npx opena2a-cli harden-soul my-agent
 ```
 
 Expected output:
@@ -124,7 +124,7 @@ The generated file uses the ABGS (Agent Behavioral Governance Specification) fra
 To verify your governance file covers all required controls:
 
 ```bash
-npx opena2a-cli scan-soul
+npx opena2a-cli scan-soul my-agent
 ```
 
 Expected output:
