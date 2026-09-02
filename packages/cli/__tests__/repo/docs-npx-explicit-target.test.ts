@@ -113,7 +113,7 @@ describe('documented npx opena2a-cli invocations name their target', () => {
     expect(checkInvocation(' review ./')).not.toBeNull();
     expect(checkInvocation(' review .')).not.toBeNull();
     expect(checkInvocation(' review "$GITHUB_WORKSPACE" --format json --ci')).toBeNull();
-    expect(checkInvocation(' scan-soul my-agent --fail-below 60')).toBeNull();
+    expect(checkInvocation(' scan-soul my-agent --strict')).toBeNull();
     expect(checkInvocation(' --version')).toBeNull();
     expect(checkInvocation('')).toBeNull(); // bare invocation
   });

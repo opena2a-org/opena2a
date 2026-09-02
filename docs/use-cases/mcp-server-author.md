@@ -303,7 +303,7 @@ jobs:
 
       - name: Governance check
         working-directory: ${{ runner.temp }}
-        run: npx opena2a-cli scan-soul "$GITHUB_WORKSPACE" --fail-below 80
+        run: npx opena2a-cli scan-soul "$GITHUB_WORKSPACE" --strict
 
       - name: Trust score gate
         run: |

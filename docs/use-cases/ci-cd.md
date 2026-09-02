@@ -149,12 +149,12 @@ All opena2a commands use consistent exit codes:
 | 1 | Critical or high findings detected | Pipeline fails |
 | 2 | Command error (invalid args, missing files) | Pipeline fails |
 
-For governance gating with a custom threshold:
+For governance gating on the critical SOUL controls:
 
 ```bash
-npx opena2a-cli scan-soul my-agent --fail-below 60
-# Exit 0 if score >= 60
-# Exit 1 if score < 60
+npx opena2a-cli scan-soul my-agent --strict
+# Exit 0 if the critical SOUL controls are present
+# Exit 1 if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)
 ```
 
 ---
@@ -244,7 +244,7 @@ jobs:
 
       - name: SOUL.md governance scan
         working-directory: ${{ runner.temp }}
-        run: npx opena2a-cli scan-soul "$GITHUB_WORKSPACE" --json --ci --fail-below 60
+        run: npx opena2a-cli scan-soul "$GITHUB_WORKSPACE" --json --ci --strict
 
   # Job 4: Credential scan
   credentials:
@@ -376,7 +376,7 @@ ai-security:
     - cd /tmp
     - npx opena2a-cli detect "$CI_PROJECT_DIR" --format json --ci > "$CI_PROJECT_DIR/detect.json"
     - npx opena2a-cli review "$CI_PROJECT_DIR" --format json --ci > "$CI_PROJECT_DIR/review.json"
-    - npx opena2a-cli scan-soul "$CI_PROJECT_DIR" --json --ci --fail-below 60
+    - npx opena2a-cli scan-soul "$CI_PROJECT_DIR" --json --ci --strict
     - |
       critical=$(cat "$CI_PROJECT_DIR/review.json" | jq '[.findings[] | select(.severity == "critical")] | length')
       if [ "$critical" -gt 0 ]; then
@@ -414,7 +414,7 @@ steps:
     displayName: Security Review
     workingDirectory: $(Agent.TempDirectory)
 
-  - script: npx opena2a-cli scan-soul "$(Build.SourcesDirectory)" --json --ci --fail-below 60
+  - script: npx opena2a-cli scan-soul "$(Build.SourcesDirectory)" --json --ci --strict
     displayName: Governance Gate
     workingDirectory: $(Agent.TempDirectory)
 
@@ -445,7 +445,7 @@ jobs:
       - run:
           name: Governance gate
           working_directory: /tmp
-          command: npx opena2a-cli scan-soul ~/project --json --ci --fail-below 60
+          command: npx opena2a-cli scan-soul ~/project --json --ci --strict
       - store_artifacts:
           path: detect.json
       - store_artifacts:
