@@ -18,10 +18,13 @@
  *    not this criterion's) — but it may never be `precondition`: a check that
  *    could not run is not a check that passed.
  *
- * Network: the closure/advisory checks read registry.npmjs.org and
- * api.github.com. In CI a precondition on the own-tarball case is a hard test
- * failure. Outside CI it downgrades to a loud console warning, because a
- * laptop without network must not train people to expect red.
+ * There is NO offline tolerance and NO CI detection anywhere in this file
+ * (OPA-04.AC3 revision 2: the own-tarball case reads neither `CI` nor
+ * `GITHUB_ACTIONS`). The tag push is the publish event and it is made on a
+ * machine where those variables are unset; a tolerance conditioned on them
+ * would exempt the publish path itself. A precondition here is a test
+ * failure in every environment — the failure message names the check, what
+ * was missing, and the command that satisfies it where one exists.
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -59,15 +62,31 @@ const NETWORK_FREE_CHECKS = [
 ];
 
 /**
- * PROVISIONAL CI clause — qgf/refs/rev2-provisional-ci-clause-note.md
- * (OPA-04 contract revision 2). The sentence "under CI=true or
- * GITHUB_ACTIONS=true a precondition in the own-tarball case is a test
- * failure, never a skip" is under CISO review because it collides with
- * hackmyagent's no-CI-reads-in-tests meta-gate (hackmyagent#696). This
- * repository carries no such meta-gate, so the CI read is kept in this ONE
- * helper with this comment, making the eventual amendment a one-line change.
+ * Commands that satisfy a check's precondition, where one exists. Used to
+ * build the AC3-mandated failure message when a check reports `precondition`
+ * on a subject where that is never acceptable.
  */
-const loudMode = (): boolean => process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+const PRECONDITION_REMEDY: Record<string, string> = {
+  'credential-scan': 'npm ci --ignore-scripts   (installs node_modules/.bin/hackmyagent at the repo root)',
+  'npm-audit': 'no single command; the registry advisory feed must be reachable from this machine',
+  'consumer-closure': 'no single command; registry.npmjs.org and api.github.com must be reachable from this machine',
+  'global-install-smoke': 'npm run build   (the packed tarball must carry a working dist/)',
+};
+
+/** The AC3 failure message for a precondition that is never tolerable. */
+function preconditionFailure(check: string, out: string): string {
+  const detail = out
+    .split('\n')
+    .filter((l) => l.trim().startsWith('check ' + check) || l.includes(check))
+    .join('\n');
+  const remedy = PRECONDITION_REMEDY[check];
+  return [
+    `${check} = precondition; a check that could not run is not a check that passed, in ANY environment.`,
+    `missing precondition, as the script reported it:\n${detail}`,
+    remedy ? `command that satisfies it: ${remedy}` : 'no known command satisfies this precondition; read the script output above',
+    `full output:\n${out}`,
+  ].join('\n');
+}
 
 interface ReviewResult {
   status: number | null;
@@ -166,8 +185,10 @@ let ownResult: ReviewResult | undefined;
 function getOwnResult(): ReviewResult {
   if (!ownResult) {
     if (!existsSync(path.join(CLI_DIR, 'dist', 'index.js'))) {
+      // Not a skip: the own-tarball case runs in every environment, and a
+      // missing build is a precondition whose satisfying command is known.
       throw new Error(
-        'packages/cli/dist is not built; run `npm run build` first. The own-tarball case reviews the tarball this tree would publish, which does not exist without dist/.'
+        'own-tarball case: packages/cli/dist/index.js is missing, so the tarball this tree would publish cannot be packed. Command that satisfies it: npm run build'
       );
     }
     const dir = mkdtempSync(path.join(scratch, 'own-pack-'));
@@ -285,18 +306,15 @@ describe('release-artifact-review: poisoned tarballs go red (OPA-04.AC3)', () =>
 
   it(
     'OPA-04.AC3 a dependency on a deprecated hackmyagent version fails consumer-closure',
-    (ctx) => {
+    () => {
       const deprecated = findDeprecatedHackmyagentVersion();
-      if (!deprecated && !loudMode()) {
-        // Offline laptop: the registry probe itself is unreachable. In CI this
-        // is a hard failure below — the red case must actually run there.
-        console.warn('[consumer-closure red] registry unreachable; skipped outside CI');
-        ctx.skip();
-        return;
-      }
+      // No offline tolerance: this red case must actually run, everywhere.
+      // Command that satisfies the precondition: none — registry.npmjs.org
+      // must be reachable, and hackmyagent's packument is measured to carry
+      // deprecated versions (128 at authoring time).
       expect(
         deprecated,
-        'no deprecated hackmyagent version discoverable on the registry; this red case cannot run without one'
+        'consumer-closure red case: no deprecated hackmyagent version discoverable via `npm view` — the registry deprecation feed must be reachable for this red case to run, and unread is not red'
       ).not.toBeNull();
       const { version, notice } = deprecated!;
       // The version this test used, named in the output as the contract asks.
@@ -388,23 +406,13 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
     'OPA-04.AC3 a clean fixture tarball exits 0 with every check pass',
     () => {
       const r = getCleanResult();
-      for (const check of NETWORK_FREE_CHECKS) {
+      for (const check of ALL_CHECKS) {
+        if (r.census[check] === 'precondition') {
+          expect.fail(preconditionFailure(check, r.out));
+        }
         expect(r.census[check], `${check} on the clean fixture\n${r.out}`).toBe('pass');
       }
-      // The two feed-reading checks: pass, with the usual offline downgrade —
-      // outside CI an unreachable registry reads as `precondition`, which the
-      // script correctly refuses to call a pass; in CI it must BE a pass.
-      for (const check of ['npm-audit', 'consumer-closure']) {
-        if (r.census[check] === 'precondition' && !loudMode()) {
-          console.warn(`[clean-fixture] ${check} = precondition (tolerated outside CI)`);
-        } else {
-          expect(r.census[check], `${check} on the clean fixture\n${r.out}`).toBe('pass');
-        }
-      }
-      // Exit 0 exactly when every check passed.
-      const allPass = ALL_CHECKS.every((c) => r.census[c] === 'pass');
-      expect(r.status === 0, `exit ${r.status} vs census ${JSON.stringify(r.census)}`).toBe(allPass);
-      if (loudMode()) expect(r.status, r.out).toBe(0);
+      expect(r.status, `every check passed, so the exit must be 0\n${r.out}`).toBe(0);
     },
     840_000
   );
@@ -430,25 +438,17 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
 
   it(
     'OPA-04.AC3 the opena2a-cli tarball packed from this tree passes every network-free check',
-    (ctx) => {
-      if (!existsSync(path.join(CLI_DIR, 'dist', 'index.js')) && !loudMode()) {
-        // ci.yml runs `npm run build` before `npm run test`, so in CI dist/
-        // always exists and this skip arm is unreachable there.
-        console.warn('[own-tarball] packages/cli/dist not built; skipped outside CI (run npm run build first)');
-        ctx.skip();
-        return;
-      }
+    () => {
+      // Never skipped, never conditioned on the environment: the tag push is
+      // the publish event and it happens where CI variables are unset, so a
+      // tolerance here would exempt the publish path itself.
       const r = getOwnResult();
 
       for (const check of NETWORK_FREE_CHECKS) {
-        expect(r.census[check], `${check} must never FAIL on our own tarball\n${r.out}`).not.toBe('fail');
-        if (r.census[check] !== 'pass') {
-          if (loudMode()) {
-            expect.fail(`${check} = ${r.census[check]} on the own tarball; in CI a check that could not run is a failure, never a skip.\n${r.out}`);
-          } else {
-            console.warn(`[own-tarball] ${check} = ${r.census[check]} (tolerated outside CI)\n${r.out}`);
-          }
+        if (r.census[check] === 'precondition') {
+          expect.fail(preconditionFailure(check, r.out));
         }
+        expect(r.census[check], `${check} on our own tarball\n${r.out}`).toBe('pass');
       }
 
       // The exit code is 0 exactly when no check is fail or precondition.
@@ -457,17 +457,13 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
 
       // consumer-closure and npm-audit may be pass or an HONEST fail (a
       // pinned dependency inside a published advisory blocks the release and
-      // is quoted below for the delivery report) — but never a precondition.
+      // is quoted below for the delivery report) — but never a precondition:
+      // unread feeds are not clean feeds.
       for (const check of ['npm-audit', 'consumer-closure']) {
         if (r.census[check] === 'precondition') {
-          if (loudMode()) {
-            expect.fail(`${check} = precondition on the own tarball; the advisory feeds were not read, and unread is not clean.\n${r.out}`);
-          } else {
-            console.warn(`[own-tarball] ${check} = precondition (tolerated outside CI)\n${r.out}`);
-          }
-        } else {
-          expect(['pass', 'fail']).toContain(r.census[check]);
+          expect.fail(preconditionFailure(check, r.out));
         }
+        expect(['pass', 'fail']).toContain(r.census[check]);
       }
 
       if (r.census['consumer-closure'] === 'fail' || r.census['npm-audit'] === 'fail') {
