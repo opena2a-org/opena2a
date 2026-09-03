@@ -47,6 +47,21 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+
+      # A tracked .npmrc / .yarnrc / .pnpmfile.cjs / .envrc can redirect the
+      # registry or inject install-time behaviour before `npm ci` runs a single
+      # dependency. Zero tracked files of this class exist today; this guard
+      # keeps that a checked fact in every job that installs. (Same step, same
+      # reason, in release.yml.)
+      - name: No tracked package-manager config
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
+            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
+            exit 1
+          fi
+          echo "No tracked package-manager config files."
+
       - run: npm ci
       - run: npm run build
       - run: npm run typecheck
@@ -60,9 +75,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # See the guard in `build` — every job that runs `npm ci` carries it.
+      - name: No tracked package-manager config
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
+            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
+            exit 1
+          fi
+          echo "No tracked package-manager config files."
+
       - run: npm ci
       - run: npm run build
+      # GH_TOKEN: the release-artifact-review tests exercise the consumer-
+      # closure check, which reads repository security advisories from
+      # api.github.com. Unauthenticated calls share a per-IP rate limit across
+      # every tenant of a hosted runner, and the review script deliberately
+      # reports a rate-limited feed as a PRECONDITION (not a pass) — which the
+      # own-tarball test then fails loudly. The token turns that flake into a
+      # 5000/hour budget.
       - run: npm run test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
     runs-on: ubuntu-latest
@@ -72,6 +107,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # See the guard in `build` — every job that runs `npm ci` carries it.
+      - name: No tracked package-manager config
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
+            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
+            exit 1
+          fi
+          echo "No tracked package-manager config files."
+
       - run: npm ci
       - run: npm run lint
 

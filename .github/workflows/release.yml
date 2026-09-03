@@ -145,6 +145,21 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      # A tracked .npmrc / .yarnrc / .pnpmfile.cjs / .envrc can redirect the
+      # registry, inject install-time config or run code the moment a shell or
+      # package manager wakes up in this checkout — upstream of every other
+      # gate in this job. There are zero tracked files of this class today;
+      # this step is what keeps that a fact rather than an assumption.
+      - name: No tracked package-manager config
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
+            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
+            exit 1
+          fi
+          echo "No tracked package-manager config files."
+
       - run: npm ci --ignore-scripts
       - run: npm run build
 
@@ -243,6 +258,98 @@ jobs:
             ${{ runner.temp }}/dist/pack-manifest.json
           if-no-files-found: error
 
+  # REVIEW -- looks INSIDE the packed bytes before anything is signed.
+  #
+  # The build job proves the tree compiled and its tests passed; the publish
+  # job proves the bytes survived transport. Neither ever inspected the
+  # tarballs themselves, so a stray dotfile, a test fixture, an install
+  # script, a floating first-party pin, a broken bin or a credential-shaped
+  # value in dist/ would ship with provenance attached. This job runs
+  # scripts/release-artifact-review.mjs over every tarball in the manifest and
+  # blocks `publish` on any non-zero exit. It holds `contents: read` only —
+  # it runs dependency-resolved code (hackmyagent, via npm ci) and therefore
+  # must never see the OIDC publish identity; that stays in `publish`, which
+  # runs no dependency code at all.
+  review:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Same guard as `build`: a tracked package-manager config file could
+      # redirect this job's npm ci before the review script even starts.
+      - name: No tracked package-manager config
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
+            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
+            exit 1
+          fi
+          echo "No tracked package-manager config files."
+
+      # The review script resolves the credential scanner from the installed
+      # tree (node_modules/.bin/hackmyagent), so the install must precede it.
+      - run: npm ci --ignore-scripts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs
+          path: ${{ runner.temp }}/dist
+
+      # Identical to the check in `publish`, and deliberately so: this job
+      # must review the same bytes `publish` will sign, chained to the
+      # `manifest_sha256` job output only the build job can write.
+      - name: Verify transport integrity (does not attest content)
+        env:
+          EXPECT_MANIFEST_SHA: ${{ needs.build.outputs.manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          echo "${EXPECT_MANIFEST_SHA}  pack-manifest.json" | sha256sum -c -
+          node -e '
+            const fs = require("fs"), cp = require("child_process");
+            const m = JSON.parse(fs.readFileSync("pack-manifest.json", "utf8"));
+            for (const e of m.entries) {
+              if (!/^[a-zA-Z0-9@._-]+\.tgz$/.test(e.file)) throw new Error("bad name " + e.file);
+              const sha = cp.execFileSync("sha256sum", [e.file]).toString().split(" ")[0];
+              if (sha !== e.sha256) throw new Error("digest mismatch for " + e.file);
+              console.log("ok " + e.pkg + "@" + e.version + "  " + e.file);
+            }
+          '
+
+      # Every tarball in the manifest, not just the CLI: all eleven get
+      # published, so all eleven get reviewed. Failures accumulate rather than
+      # short-circuit — one red run should name every bad tarball, not the
+      # first — and any non-zero review fails the job.
+      # `--advisory-states published`: draft and triage advisories of other
+      # repositories are not readable by this repository's token, so asking
+      # for them would read as an empty feed rather than as more coverage.
+      # GH_TOKEN is for the consumer-closure advisories API (api.github.com).
+      - name: Review every tarball in the manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rc=0
+          for file in $(node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/dist/pack-manifest.json", "utf8"));
+            for (const e of m.entries) console.log(e.file);
+          '); do
+            echo "=== reviewing $file"
+            if ! node scripts/release-artifact-review.mjs --tarball "$RUNNER_TEMP/dist/$file" --advisory-states published; then
+              echo "::error::release-artifact-review failed for $file"
+              rc=1
+            fi
+          done
+          exit "$rc"
+
   # PUBLISH -- holds the publish identity. Runs no dependency code.
   #
   # No checkout and no `npm ci`. `npm publish <tarball>` reads the manifest
@@ -258,7 +365,13 @@ jobs:
   # environment. Much less exposure than `npm ci`, not zero. SHA-pinning every
   # action is a separate change, not done here.
   publish:
-    needs: build
+    # `review` is the gate; `build` stays listed because the transport check
+    # below reads `needs.build.outputs.manifest_sha256`, and GitHub exposes a
+    # job's outputs only to jobs that name it in `needs`. Routing the digest
+    # through `review` instead would let a job that RUNS dependency code
+    # re-state the trust anchor, which is exactly what the anchor exists to
+    # prevent.
+    needs: [build, review]
     runs-on: ubuntu-latest
     permissions:
       id-token: write   # OIDC trusted publishing. `contents` is `none` by
