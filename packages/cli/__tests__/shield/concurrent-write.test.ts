@@ -57,10 +57,22 @@ afterEach(() => {
 /** Far enough ahead that the slowest interpreter start still lands before it. */
 const START_DELAY_MS = 1_500;
 
-function spawnChild(home: string, startAt: number, index: number): Promise<void> {
+/**
+ * Resolves with the child's collected stderr on EVERY exit code, not only
+ * inside the rejection for a non-zero one: a child that prints the documented
+ * `shield: lock-timeout` fail-open warning and then exits 0 is precisely the
+ * child whose stderr explains a later fork, and discarding it left the round
+ * assertion with nothing to say (OPA-01.AC3).
+ */
+function spawnChild(
+  home: string,
+  startAt: number,
+  index: number,
+  script: string = CHILD,
+): Promise<string> {
   const tsx = resolveTsx();
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(tsx, [CHILD, String(startAt), String(index)], {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(tsx, [script, String(startAt), String(index)], {
       env: { ...process.env, HOME: home },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -68,17 +80,25 @@ function spawnChild(home: string, startAt: number, index: number): Promise<void>
     child.stderr.on('data', chunk => { stderr += String(chunk); });
     child.on('error', reject);
     child.on('exit', code => {
-      if (code === 0) resolve();
+      if (code === 0) resolve(stderr);
       else reject(new Error(`child ${index} exited ${code}: ${stderr}`));
     });
   });
 }
 
-function runChildren(home: string, count: number): Promise<void[]> {
+function runChildren(home: string, count: number): Promise<string[]> {
   const startAt = Date.now() + START_DELAY_MS;
   return Promise.all(
     Array.from({ length: count }, (_unused, index) => spawnChild(home, startAt, index)),
   );
+}
+
+/** One line per child that wrote anything, for failure messages. */
+function describeStderr(stderrs: string[]): string {
+  const spoke = stderrs
+    .map((s, i) => (s.length > 0 ? `child ${i} stderr: ${s.trimEnd()}` : null))
+    .filter((l): l is string => l !== null);
+  return spoke.length > 0 ? spoke.join('\n') : 'no child wrote to stderr';
 }
 
 /** Block this thread until `deadline`, the way `writeEvent` waits for a lock. */
@@ -117,7 +137,7 @@ describe('concurrent writeEvent (#231)', () => {
   for (const round of Array.from({ length: ROUNDS }, (_, i) => i + 1)) {
     it(`keeps the chain intact across ${N} concurrent writer processes (round ${round})`, async () => {
       const home = makeHome();
-      await runChildren(home, N);
+      const stderrs = await runChildren(home, N);
 
       const { lines, shieldDir } = readLog(home);
 
@@ -125,7 +145,10 @@ describe('concurrent writeEvent (#231)', () => {
       expect(lines.length).toBe(N);
 
       const events = lines.map(line => JSON.parse(line));
-      expect(verifyEventChain(events)).toEqual({ valid: true, brokenAt: null });
+      expect(verifyEventChain(events), describeStderr(stderrs)).toEqual({
+        valid: true,
+        brokenAt: null,
+      });
 
       // Every child is represented exactly once.
       const targets = events.map(e => e.target).sort();
@@ -179,6 +202,16 @@ describe('concurrent writeEvent (#231)', () => {
       brokenAt: null,
     });
   }, 60_000);
+
+  it('OPA-01.AC3 keeps the stderr of a child that exits 0', async () => {
+    // Red at base 5cb201b: spawnChild surfaced stderr only inside the
+    // rejection for a non-zero exit, so a child that printed the fail-open
+    // `shield: lock-timeout` warning and exited 0 left no trace.
+    const home = makeHome();
+    const probe = path.resolve(__dirname, 'fixtures', 'stderr-probe-child.ts');
+    const captured = await spawnChild(home, Date.now(), 0, probe);
+    expect(captured).toContain('stderr-probe: retained on exit 0');
+  }, 30_000);
 });
 
 describe('event lock', () => {
