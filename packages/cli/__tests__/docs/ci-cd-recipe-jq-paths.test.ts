@@ -12,26 +12,48 @@ import * as path from 'node:path';
  * job passed with critical findings present. Anyone who copied the recipe got a
  * gate that could not fail.
  *
- * A grep for the right string would not have caught that, and would not catch
- * the next drift either: the defect is that a jq path in the doc and the JSON
- * shape the scanner emits disagreed, and only one of those two lives in this
- * repo. So the pin is measured, not restated — the paths are EXTRACTED from the
- * doc and resolved with the same `jq` the recipe runs, against the output of the
- * hackmyagent build packages/cli/package.json pins.
+ * `.counts.critical` was the next guess and is just as absent: `hackmyagent
+ * secure --ci --format json` emits no top-level count object at all. It emits
+ * `findings[]`, whose items carry a lowercase `severity` — so the counts are
+ * derived, exactly as the `opena2a review` steps elsewhere in the same document
+ * already derive theirs.
+ *
+ * A grep for the right string would not have caught either wrong guess, and
+ * would not catch the next drift either: the defect is that a jq path in the doc
+ * and the JSON shape the scanner emits disagreed, and only one of those two
+ * lives in this repo. So the pin is measured, not restated — the paths are
+ * EXTRACTED from the doc and resolved with the same `jq` the recipe runs,
+ * against the output of the hackmyagent build packages/cli/package.json pins.
  */
 
 const DOC_REL = 'docs/use-cases/ci-cd.md';
 const STEP_NAME = 'HackMyAgent security scan';
 
 /**
- * Severity counts as `hackmyagent secure --ci --format json` emits them.
+ * The severity counts as the recipe derives them: straight out of `findings[]`,
+ * naming no top-level count key, because the scanner emits none.
  *
- * This constant is the one place the shape is written down: AC1 holds the doc
- * to it, AC3 builds its stand-in scan JSON from it, and AC4 checks it against
- * what the pinned CLI actually prints. If the scanner ever moves the counts,
- * AC4 goes red first — the constant is pinned to a measurement, not trusted.
+ * This constant is the one place the expressions are written down: AC1 holds the
+ * doc to them and AC3 builds its stand-in scan reports to match. Nothing here
+ * asserts that the scanner agrees — AC4 measures that against the pinned CLI, so
+ * a shape change goes red there rather than being assumed away here.
  */
-const COUNTS = { critical: '.counts.critical', high: '.counts.high' } as const;
+const COUNT_EXPR = {
+  critical: '[.findings[] | select(.severity == "critical")] | length',
+  high: '[.findings[] | select(.severity == "high")] | length',
+} as const;
+
+/**
+ * A jq path that reads a severity count out of a top-level object — `.summary.critical`,
+ * `.counts.high`. Both spellings have shipped in this recipe and neither exists in the
+ * scanner's output, so naming one is the defect itself, not a stylistic choice.
+ *
+ * Checked against the paths the doc actually carries rather than against
+ * {@link COUNT_EXPR}, and checked before them: the way this recipe went wrong the
+ * second time was the doc and the constant agreeing with each other while both
+ * disagreed with the scanner, which an equality assertion alone stays green through.
+ */
+const TOP_LEVEL_COUNT_PATH = /^\s*\.[A-Za-z_]\w*\s*\.\s*(?:critical|high|medium|low)\b/;
 
 /** Repo root: the nearest ancestor whose package.json declares workspaces. */
 function repoRoot(): string {
@@ -95,12 +117,12 @@ function hmaScanStepBody(markdown: string): string {
   return body.join('\n');
 }
 
-/** The `<path>` of every `jq -r '<path>'` in a run body, in source order. */
+/** The `<expr>` of every `jq -r '<expr>'` in a run body, in source order. */
 function jqRawPaths(body: string): string[] {
   return [...body.matchAll(/jq\s+(?:-r|--raw-output)\s+'([^']*)'/g)].map((m) => m[1]);
 }
 
-/** `shellVar -> jq path` for every `var=$(jq -r '<path>' ...)` in a run body. */
+/** `shellVar -> jq expr` for every `var=$(jq -r '<expr>' ...)` in a run body. */
 function jqRawAssignments(body: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const m of body.matchAll(/^\s*(\w+)=\$\(\s*jq\s+(?:-r|--raw-output)\s+'([^']*)'/gm)) {
@@ -109,15 +131,9 @@ function jqRawAssignments(body: string): Record<string, string> {
   return out;
 }
 
-/** Write `value` at a dotted jq path, creating the objects on the way down. */
-function setJqPath(root: Record<string, unknown>, jqPath: string, value: unknown): void {
-  const keys = jqPath.replace(/^\./, '').split('.');
-  let cur = root;
-  for (const key of keys.slice(0, -1)) {
-    if (typeof cur[key] !== 'object' || cur[key] === null) cur[key] = {};
-    cur = cur[key] as Record<string, unknown>;
-  }
-  cur[keys[keys.length - 1]] = value;
+/** The severity literals the recipe selects on, e.g. `critical` and `high`. */
+function selectedSeverities(body: string): string[] {
+  return [...new Set([...body.matchAll(/\.severity\s*==\s*"([^"]+)"/g)].map((m) => m[1]))].sort();
 }
 
 /**
@@ -134,13 +150,27 @@ function haveJq(): boolean {
 }
 
 /**
- * Resolve a jq path against a JSON document with the real `jq`, exactly as the
- * recipe does. Returns jq's raw stdout, so a missing key comes back as the
- * literal string `null` — which is the failure this whole file exists to catch.
+ * Resolve a jq expression against a JSON document with the real `jq -r`, exactly
+ * as the recipe does. A key the document does not carry comes back as the
+ * literal string `null`; an array the document does not carry makes jq exit
+ * non-zero. Both are the failure this whole file exists to catch, so both are
+ * surfaced rather than smoothed over.
  */
 function jqResolve(json: string, jqPath: string): string {
   const r = spawnSync('jq', ['-r', jqPath], { input: json, encoding: 'utf-8' });
-  if (r.status !== 0) throw new Error(`jq -r '${jqPath}' failed: ${r.stderr?.trim()}`);
+  if (r.status !== 0) {
+    throw new Error(
+      `jq -r '${jqPath}' failed against the scan report — the recipe reads a shape the ` +
+        `scanner does not emit: ${r.stderr?.trim()}`,
+    );
+  }
+  return r.stdout.trim();
+}
+
+/** Like {@link jqResolve} but compact, for reading structure back as JSON. */
+function jqCompact(json: string, expr: string): string {
+  const r = spawnSync('jq', ['-c', expr], { input: json, encoding: 'utf-8' });
+  if (r.status !== 0) throw new Error(`jq -c '${expr}' failed: ${r.stderr?.trim()}`);
   return r.stdout.trim();
 }
 
@@ -159,28 +189,45 @@ function gateScript(body: string): string {
 }
 
 /**
- * A scan report with `critical` criticals. The findings array is held identical
- * across both AC3 fixtures on purpose: the only thing that may differ between
- * the passing and failing run is the count the gate reads, so a difference in
- * exit code is attributable to that number and nothing else.
+ * A scan report carrying `criticals` critical findings, in the shape the pinned
+ * scanner emits: a `findings[]` of items with a lowercase `severity`, and no
+ * top-level count object, because 0.30.0 emits none.
+ *
+ * Everything outside the critical entries is held identical across both AC3
+ * reports — same trailing finding, same scores, same coverage — so a difference
+ * in exit code is attributable to the critical count and nothing else. The count
+ * now *is* the findings array, which is why the array is what varies.
  */
-function scanJson(critical: number): string {
-  const json: Record<string, unknown> = {
-    score: 0,
-    maxScore: 100,
+function scanReport(criticals: number): string {
+  const critical = {
+    checkId: 'CRED-002',
+    name: 'Private Key Files',
+    category: 'credentials',
+    severity: 'critical',
+    passed: false,
+    message: 'Private key committed to the repository',
+    file: 'deploy/id_rsa',
+  };
+  return JSON.stringify({
+    hackmyagentVersion: '0.0.0-fixture',
+    projectType: 'node',
     findings: [
+      ...Array.from({ length: criticals }, () => critical),
       {
-        checkId: 'CRED-002',
-        severity: 'critical',
+        checkId: 'GIT-001',
+        name: 'Missing .gitignore',
+        category: 'git',
+        severity: 'low',
         passed: false,
-        message: 'Hardcoded API key',
-        file: 'src/config.ts',
+        message: 'Create .gitignore to protect sensitive files',
+        file: '.gitignore',
       },
     ],
-  };
-  setJqPath(json, COUNTS.critical, critical);
-  setJqPath(json, COUNTS.high, 0);
-  return JSON.stringify(json);
+    score: 71,
+    rawScore: 71,
+    maxScore: 100,
+    coverage: { checksRun: 46, checksPassed: 45 },
+  });
 }
 
 /** Run the recipe's gate over a scan report; returns its exit code. */
@@ -264,7 +311,11 @@ function scanFixture(): string {
     );
     fs.writeFileSync(
       path.join(dir, 'agent.js'),
-      "const client = createClient({ apiKey: process.env.API_KEY });\nmodule.exports = { client };\n",
+      "const cp = require('node:child_process');\n" +
+        'function run(userInput) {\n' +
+        "  return cp.exec('ls ' + userInput);\n" +
+        '}\n' +
+        'module.exports = { run };\n',
     );
     const argv = [scannerEntry(installedScannerDir()), 'secure', '--ci', '--format', 'json'];
     const r = spawnSync(process.execPath, argv, {
@@ -274,8 +325,8 @@ function scanFixture(): string {
       maxBuffer: 64 * 1024 * 1024,
     });
     if (r.error) throw r.error;
-    // A non-zero status is expected — `--ci` fails the run on findings. Only
-    // the absence of parseable JSON on stdout is a problem here.
+    // A non-zero status is allowed — `--ci` is free to fail the run on findings.
+    // Only the absence of parseable JSON on stdout is a problem here.
     const stdout = r.stdout ?? '';
     const first = stdout.indexOf('{');
     const last = stdout.lastIndexOf('}');
@@ -291,11 +342,25 @@ function scanFixture(): string {
   }
 }
 
-describe(`${DOC_REL} — the HackMyAgent gate reads the counts the scanner emits`, () => {
-  it('OPA-05.AC1 the scan step reads .counts.critical and .counts.high', () => {
+describe(`${DOC_REL} — the HackMyAgent gate counts the findings the scanner emits`, () => {
+  it('OPA-05.AC1 the scan step derives the counts from .findings[], naming no top-level count key', () => {
     const body = hmaScanStepBody(readDoc());
-    expect(jqRawPaths(body)).toEqual([COUNTS.critical, COUNTS.high]);
-    expect(jqRawAssignments(body)).toEqual({ critical: COUNTS.critical, high: COUNTS.high });
+
+    for (const jqPath of jqRawPaths(body)) {
+      expect(
+        jqPath,
+        'the step reads its counts from a top-level object; the scanner emits none, so this ' +
+          'resolves to the literal "null" and the gate stops being able to fail',
+      ).not.toMatch(TOP_LEVEL_COUNT_PATH);
+    }
+    expect(body).not.toContain('.counts');
+    expect(body).not.toContain('.summary');
+
+    expect(jqRawPaths(body)).toEqual([COUNT_EXPR.critical, COUNT_EXPR.high]);
+    expect(jqRawAssignments(body)).toEqual({
+      critical: COUNT_EXPR.critical,
+      high: COUNT_EXPR.high,
+    });
   });
 
   it('OPA-05.AC2 no .summary.critical or .summary.high anywhere in the doc', () => {
@@ -304,27 +369,29 @@ describe(`${DOC_REL} — the HackMyAgent gate reads the counts the scanner emits
     expect(markdown).not.toContain('.summary.high');
   });
 
-  it('OPA-05.AC3 the gate exits non-zero on a scan report with one critical', () => {
+  it('OPA-05.AC3 the gate exits non-zero on a scan report with one critical finding', () => {
     expect(haveJq(), JQ_REQUIRED).toBe(true);
     expect(
-      runGate(scanJson(1)),
+      runGate(scanReport(1)),
       'the gate passed a scan report carrying a critical finding — a copied recipe would ship it',
     ).not.toBe(0);
   });
 
-  it('OPA-05.AC3 the gate exits zero on the same report with no criticals', () => {
+  it('OPA-05.AC3 the gate exits zero on the same report with no critical findings', () => {
     expect(haveJq(), JQ_REQUIRED).toBe(true);
-    expect(runGate(scanJson(0))).toBe(0);
+    expect(runGate(scanReport(0))).toBe(0);
   });
 
   it(
     'OPA-05.AC4 every jq path the recipe reads resolves in the pinned scanner\'s --ci --format json output',
     () => {
       expect(haveJq(), JQ_REQUIRED).toBe(true);
-      const paths = jqRawPaths(hmaScanStepBody(readDoc()));
+      const body = hmaScanStepBody(readDoc());
+      const paths = jqRawPaths(body);
       expect(paths.length).toBeGreaterThan(0);
 
       const report = scanFixture();
+
       for (const jqPath of paths) {
         const resolved = jqResolve(report, jqPath);
         expect(
@@ -333,6 +400,28 @@ describe(`${DOC_REL} — the HackMyAgent gate reads the counts the scanner emits
             '— the recipe would read the literal "null" and the gate could not fail',
         ).not.toBe('null');
         expect(resolved).not.toBe('');
+      }
+
+      // Resolving is not enough on its own: `[…] | length` counts zero just as
+      // happily over findings whose severity is spelled some other way, which is
+      // the same gate-that-cannot-fail wearing a number instead of a `null`. So
+      // the severity vocabulary the recipe selects on is measured too.
+      const emitted: string[] = JSON.parse(
+        jqCompact(
+          report,
+          '[(.findings[]? | .severity), (.allFindings[]? | .severity)] | map(select(. != null)) | unique',
+        ),
+      );
+      expect(
+        emitted,
+        `hackmyagent@${pinnedVersion()} emitted no finding carrying a "severity" field`,
+      ).not.toHaveLength(0);
+      for (const severity of selectedSeverities(body)) {
+        expect(
+          emitted,
+          `the recipe selects findings with severity "${severity}", which hackmyagent@${pinnedVersion()} ` +
+            `never emits (it emits ${emitted.join(', ')}) — the count would sit at 0 forever`,
+        ).toContain(severity);
       }
     },
     180_000,
