@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
+    "shield:lock-trace-loop": "tsx scripts/shield-lock-trace-loop.ts",
     "release-smoke:corpus": "tsx scripts/release-smoke-corpus.ts",
     "release-smoke:init": "tsx scripts/release-smoke-init.ts",
     "release-smoke:comply": "tsx scripts/release-smoke-comply.ts",
