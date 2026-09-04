@@ -29,9 +29,12 @@
  * the #731 head). Scanning the tarball's own layout would therefore scan
  * nothing and pass, which is the worst direction to be wrong in. A control
  * file with a credential-named const (value assembled at runtime from parts;
- * no credential-shaped literal exists in this repository) is planted beside
- * the shipped files: if the installed scanner does not flag the control, the
- * scan reports `precondition: control not flagged`, never a pass.
+ * no credential-shaped literal exists in this repository) is scanned APART
+ * from the shipped files, in its own directory per batch: the scanner reports
+ * one location per check id, so a control beside a shipped credential of the
+ * same class masks one or the other. If the installed scanner does not flag
+ * the control, the scan reports `precondition: control not flagged`, never a
+ * pass.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -428,6 +431,41 @@ function checkCredentialScan(extractedRoot, scratchRoot) {
 
   const hits = new Set();
   const batches = Math.ceil(shippedFiles.length / BATCH);
+
+  // One scan of a directory yields one report; the scanner reports ONE location
+  // per check id, so a planted control scanned beside a shipped file that
+  // carries the same credential class masks it in either direction: the control
+  // wins and the shipped credential is silent, or the shipped file wins and the
+  // control reads "not flagged" (measured on the poisoned-dist fixture: census
+  // credential-scan=precondition on the very tarball that should FAIL). So two
+  // scans per batch, never one: the shipped files alone, the control alone in
+  // its own directory. The control scan still runs per batch so every batch's
+  // scanner invocation is proven to flag the class it is silent about.
+  const scanOnce = (dir, label) => {
+    const res = spawnSync(process.execPath, [scanner.bin, 'secure', '--ci', '--format', 'json'], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 300_000,
+      maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env },
+    });
+    if (res.error) {
+      return { precondition: [`hackmyagent@${scanner.version} did not run (${label}): ${res.error.message}`] };
+    }
+    // `--ci` exits non-zero when findings exist — expected on the control scan,
+    // the control IS a finding. Only an unparseable report means no scan happened.
+    try {
+      return { findings: parseScanFindings(res.stdout) };
+    } catch {
+      return {
+        precondition: [
+          `hackmyagent@${scanner.version} produced no parseable JSON report (exit ${res.status}, ${label}); the tarball was not scanned`,
+          `scanner said: ${short(res.stdout || res.stderr, 300)}`,
+        ],
+      };
+    }
+  };
+
   for (let b = 0; b < batches; b += 1) {
     const scanDir = mkdtempSync(path.join(scratchRoot, `credscan-${b}-`));
     for (const f of shippedFiles.slice(b * BATCH, (b + 1) * BATCH)) {
@@ -435,42 +473,23 @@ function checkCredentialScan(extractedRoot, scratchRoot) {
       mkdirSync(path.dirname(dest), { recursive: true });
       copyFileSync(f.abs, dest);
     }
-    writeFileSync(path.join(scanDir, CONTROL), controlSource);
+    const controlDir = mkdtempSync(path.join(scratchRoot, `credscan-${b}-control-`));
+    writeFileSync(path.join(controlDir, CONTROL), controlSource);
 
-    const res = spawnSync(process.execPath, [scanner.bin, 'secure', '--ci', '--format', 'json'], {
-      cwd: scanDir,
-      encoding: 'utf8',
-      timeout: 300_000,
-      maxBuffer: 64 * 1024 * 1024,
-      env: { ...process.env },
-    });
-    if (res.error) {
-      return { status: 'precondition', detail: [`hackmyagent@${scanner.version} did not run (batch ${b + 1}/${batches}): ${res.error.message}`] };
-    }
-    // `--ci` exits non-zero when findings exist — expected here, the control
-    // IS a finding. Only an unparseable report means the scan never happened.
-    let findings;
-    try {
-      findings = parseScanFindings(res.stdout);
-    } catch {
-      return {
-        status: 'precondition',
-        detail: [
-          `hackmyagent@${scanner.version} produced no parseable JSON report (exit ${res.status}, batch ${b + 1}/${batches}); the tarball was not scanned`,
-          `scanner said: ${short(res.stdout || res.stderr, 300)}`,
-        ],
-      };
-    }
-
-    if (!findings.some((f) => isControl(f) && credClass(f))) {
+    const control = scanOnce(controlDir, `control, batch ${b + 1}/${batches}`);
+    if (control.precondition) return { status: 'precondition', detail: control.precondition };
+    if (!control.findings.some((f) => isControl(f) && credClass(f))) {
       return {
         status: 'precondition',
         detail: [`control not flagged by hackmyagent@${scanner.version} (batch ${b + 1}/${batches}) — the credential walk did not see the planted control, so its silence about the shipped files proves nothing`],
       };
     }
+
+    const shipped = scanOnce(scanDir, `shipped files, batch ${b + 1}/${batches}`);
+    if (shipped.precondition) return { status: 'precondition', detail: shipped.precondition };
     // Findings on shipped files: named by checkId and file:line, NEVER by the
     // matched text — this log is public CI output and the finding may be real.
-    for (const f of findings) {
+    for (const f of shipped.findings) {
       if (!isControl(f) && credClass(f) && f.file != null) hits.add(`${f.checkId} at ${f.file}:${f.line ?? '?'}`);
     }
   }
@@ -480,7 +499,7 @@ function checkCredentialScan(extractedRoot, scratchRoot) {
     status: 'pass',
     detail: [
       ...detail,
-      `hackmyagent@${scanner.version} scanned ${shippedFiles.length} shipped file(s) flat in ${batches} batch(es), each with its own planted control`,
+      `hackmyagent@${scanner.version} scanned ${shippedFiles.length} shipped file(s) flat in ${batches} batch(es), the planted control scanned apart from each batch`,
       'every control flagged; zero credential-class findings on shipped files',
     ],
   };
