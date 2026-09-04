@@ -18,53 +18,53 @@ Run detection on a developer workstation to see what AI tools are active. This c
 npx opena2a-cli detect
 ```
 
-Expected output:
-
+Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
 ```
-  Shadow AI Detection  v0.7.2
+Shadow AI Agent Audit
+dev-laptop-042 | jsmith | /home/jsmith/payments-api
+2026-09-04 18:22:41 UTC
 
-  Machine    dev-laptop-042 (darwin arm64)
-  User       jsmith
-  Directory  /home/jsmith/payments-api
+Governance: 28/100 -> 100/100 by addressing 2 findings
+5 MCP servers | 4 AI configs
 
-  AI Agents (3 running)
-  -----------------------------------------------
-  claude-code          PID 41023   v1.0.12
-  cursor               PID 38291   v0.45.6
-  ollama               PID 52100   v0.3.14    local model
+What This Means
+  5 MCP servers give your AI agents additional capabilities (file access, database queries, API calls, etc.).
+  None have verified identities, so there is no tamper-evident record of which server version is installed.
 
-  MCP Servers (5 configured)
-  -----------------------------------------------
-  filesystem           claude     local
-  postgres             claude     local
-  github               claude     local
-  slack                cursor     local
-  jira                 cursor     local
+Findings (2)
 
-  AI Config Files (3 found)
-  -----------------------------------------------
-  CLAUDE.md            project    governance rules
-  .cursorrules         project    editor config
-  .copilot/config.yml  project    copilot settings
+  CRITICAL  1 project MCP server with sensitive access
+  shell-runner: can run any command on your computer
+  These MCP servers are configured in your project and grant access to sensitive operations like running commands, accessing databases, or processing payments. Verifying them confirms they are the servers you intended to install.
+  Fix: opena2a mcp audit
 
-  Governance Score     32 / 100
+  CRITICAL  AI config files contain credential references
+  .env.ai
+  API keys or tokens appear to be stored directly in these configuration files. Anyone with access to the file (or the repository) can see and use these credentials. Moving them to environment variables limits exposure.
+  Fix: opena2a protect
 
-  Findings
-  -----------------------------------------------
-  - Project not registered (no AIM identity)
-  - No SOUL.md behavioral governance file
-  - 5 MCP servers ungoverned (no capability restrictions)
-  - 3 credentials detected in source files
-  - Config files unsigned
-  - Local model (ollama) running without audit trail
+Running AI Agents
+  No AI agents detected
 
-  Run: opena2a protect    (fix all findings)
+MCP Servers (5 found)
+  Project-local (5)
+    shell-runner         -- can run any command on your computer
+    postgres             -- can read and modify your database
+    filesystem           -- can read and write files on your machine
+    github               -- can read and push code to your repositories
+    slack                -- can send messages on your behalf
+
+AI Config Files (4 found)
+  .env.ai                            AI Framework
+    Contains credential references -- these should be in environment variables
+  + 3 low-risk config(s) -- run with --verbose to see all
+
 ```
 
 Key observations for security teams:
-- **AI Agents** shows every AI coding assistant running on the machine, including local models like Ollama that bypass corporate API gateways.
-- **MCP Servers** reveals what external services AI agents can access. A postgres MCP server means Claude can execute database queries. A slack MCP server means it can send messages.
-- **Governance Score** provides a single number (0-100) for executive reporting.
+- **Running AI Agents** lists every AI coding assistant found in the machine's process table, including local model runtimes like Ollama that bypass corporate API gateways. The capture above was taken on a build machine with none running, so the section is empty; on a developer workstation each assistant appears with its identity and governance status.
+- **MCP Servers** reveals what external services AI agents can access, in plain language. `can read and modify your database` is a postgres server; `can run any command on your computer` is shell access, which is the only capability the scoring treats as critical on its own.
+- **Governance**, the first line of the report, is a single number (0-100) for executive reporting, followed by the score the machine would reach if every listed finding were addressed.
 
 ---
 
@@ -73,28 +73,17 @@ Key observations for security teams:
 Create an HTML report suitable for sharing with leadership or including in security reviews.
 
 ```bash
-npx opena2a-cli detect --report
+npx opena2a-cli detect --report shadow-ai-report.html
 ```
 
-Expected output:
+On the terminal this prints the Step 1 audit unchanged and then one more line, naming the file it wrote and opening it in your browser.
 
+Captured from opena2a-cli v0.10.13 on 2026-09-04 -- the last line of the run; everything above it is the same audit as Step 1:
 ```
-  Shadow AI Detection  v0.7.2
-
-  Scanning dev-laptop-042...
-
-  Report generated: shadow-ai-report.html
-
-  Summary
-  -----------------------------------------------
-  AI Agents          3 running
-  MCP Servers        5 configured
-  Config Files       3 found
-  Governance Score   32 / 100
-  Critical Findings  2
-
-  Opened shadow-ai-report.html in browser
+Report: shadow-ai-report.html
 ```
+
+Give `--report` a path, as above: with no argument it writes to a generated name under your temporary directory.
 
 The HTML report includes:
 - Executive summary with governance score
@@ -103,10 +92,10 @@ The HTML report includes:
 - Remediation steps ordered by severity
 - Machine metadata (hostname, OS, username, scan time) for audit trails
 
-To save the report to a specific location without opening a browser:
+Add `--ci` to write the report without opening a browser, which is also what you want on a machine you reached over SSH:
 
 ```bash
-npx opena2a-cli detect --report --no-open
+npx opena2a-cli detect --report shadow-ai-report.html --ci
 ```
 
 ---
@@ -119,42 +108,30 @@ Export the discovery results as CSV for import into your CMDB, SIEM, or asset ma
 npx opena2a-cli detect --export-csv assets.csv
 ```
 
-Expected output:
+As with `--report`, the terminal shows the Step 1 audit and then one more line:
 
+Captured from opena2a-cli v0.10.13 on 2026-09-04 -- the last line of the run; everything above it is the same audit as Step 1:
 ```
-  Shadow AI Detection  v0.7.2
-
-  Scanning dev-laptop-042...
-
-  Exported 11 assets to assets.csv
-
-  Breakdown
-  -----------------------------------------------
-  AI Agents          3
-  MCP Servers        5
-  Config Files       3
-
-  Governance Score   32 / 100
+Asset inventory: assets.csv
 ```
 
-The CSV file includes these columns:
+The file it wrote carries one row per discovered asset -- one per AI agent, one per MCP server, one per AI config file:
 
+Captured from opena2a-cli v0.10.13 on 2026-09-04; the `Hostname`, `Username`, `Scan Directory` and `Scan Timestamp` columns are replaced with fixed placeholders:
 ```csv
-hostname,username,scanDirectory,scanTimestamp,assetType,name,platform,scope,status,details
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,ai-agent,claude-code,,machine,running,PID 41023 v1.0.12
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,ai-agent,cursor,,machine,running,PID 38291 v0.45.6
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,ai-agent,ollama,,machine,running,PID 52100 v0.3.14 local model
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,mcp-server,filesystem,claude,local,configured,
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,mcp-server,postgres,claude,local,configured,
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,mcp-server,github,claude,local,configured,
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,mcp-server,slack,cursor,local,configured,
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,mcp-server,jira,cursor,local,configured,
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,config-file,CLAUDE.md,,project,found,governance rules
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,config-file,.cursorrules,,project,found,editor config
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-03-15T10:30:00Z,config-file,.copilot/config.yml,,project,found,copilot settings
+Hostname,Username,Scan Directory,Scan Timestamp,Asset Type,Name,Installed From,Transport,Capabilities,Risk
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,filesystem,This project,stdio,Can read and write files on your machine,medium
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,postgres,This project,stdio,Can read and modify your database,high
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,github,This project,stdio,Can read and push code to your repositories,medium
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,slack,This project,stdio,Can send messages on your behalf,medium
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,shell-runner,This project,stdio,Can run any command on your computer,critical
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,.cursorrules,Cursor,,Cursor configuration,low
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,CLAUDE.md,Claude Code,,Claude Code configuration,low
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,.github/copilot-instructions.md,GitHub Copilot,,GitHub Copilot configuration,low
+dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,.env.ai,AI Framework,,AI Framework config contains credential references,critical
 ```
 
-Each row includes `hostname`, `username`, `scanDirectory`, and `scanTimestamp` so you can aggregate results from multiple machines into a single spreadsheet or database.
+The columns are named for CMDB and ServiceNow import. Every row repeats `Hostname`, `Username`, `Scan Directory` and `Scan Timestamp`, so you can aggregate results from multiple machines into a single spreadsheet or database. `Asset Type` is one of `AI Agent`, `MCP Server` or `AI Config`; the machine captured above had no AI agent processes running, so it exported no `AI Agent` rows.
 
 ---
 
@@ -166,31 +143,17 @@ Cross-reference discovered MCP servers against the OpenA2A Trust Registry to see
 npx opena2a-cli detect --registry
 ```
 
-Expected output:
+The report is the same one Step 1 prints. What `--registry` changes is the `MCP Servers` section: each server row gains a trust label, and the label has exactly three forms.
 
-```
-  Shadow AI Detection  v0.7.2
+| What is known about the server | Label appended to its row |
+|---|---|
+| The registry has a record of it | `Trust: 92/100 \| 45 community scans` (the count is dropped when it is zero) |
+| No record, but a local scan ran | `Scanned: 95/100 \| 0 critical` |
+| Neither | `No trust data \| scan: opena2a detect --registry --auto-scan` |
 
-  Scanning dev-laptop-042...
-  Enriching with Trust Registry data...
+No capture of this command is pasted here: its output depends on what the live registry holds for your servers on the day you run it, and a frozen copy of that is exactly the kind of thing the rest of this page used to get wrong. Run it and read your own.
 
-  MCP Servers (5 configured)
-  -----------------------------------------------
-  filesystem           claude     local      trust: 0.92   verified
-  postgres             claude     local      trust: 0.87   verified
-  github               claude     local      trust: 0.94   verified
-  slack                cursor     local      trust: 0.78   unverified
-  jira                 cursor     local      trust: --     not in registry
-
-  Registry Findings
-  -----------------------------------------------
-  - slack: 2 known advisories (medium severity)
-  - jira: not registered in Trust Registry (unknown provenance)
-
-  Governance Score   32 / 100
-```
-
-The `--registry` flag queries the public Trust Registry API. Servers marked "verified" have had their identity cryptographically confirmed by the publisher. Servers not in the registry may be custom or internal tools -- they are not necessarily unsafe, but they lack community vetting.
+`--registry` is the only flag on this page that leaves the machine. It sends the name and asset type of each discovered MCP server and nothing else -- no file contents, no findings, no scores. Scan results are sent only if you separately opt in with `opena2a config contribute on`. A server the registry has never seen is not unsafe by that fact alone -- custom and internal servers never appear in it -- but it has had no community vetting either. Adding `--auto-scan` scans those servers locally with HackMyAgent instead, which is where the `Scanned:` label comes from.
 
 ---
 
@@ -205,7 +168,7 @@ npx opena2a-cli review
 Expected output:
 
 ```
-  OpenA2A Security Review  v0.7.2
+  OpenA2A Security Review
 
   Project      payments-api v2.1.0
   Type         Node.js + MCP server
