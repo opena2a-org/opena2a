@@ -258,7 +258,7 @@ Expected output:
   Profile URL: https://registry.opena2a.org/p/@myorg/mcp-server-tools
 
   Users can now discover your server:
-    npx opena2a-cli detect --registry
+    npx opena2a-cli detect "$HOME" --registry
     npx ai-trust check @myorg/mcp-server-tools
 ```
 

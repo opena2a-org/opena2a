@@ -15,7 +15,7 @@ You use Claude Code, Cursor, GitHub Copilot, or another AI coding assistant. You
 Start by discovering what AI tools are active in your environment and how well-governed they are.
 
 ```bash
-npx opena2a-cli detect
+npx opena2a-cli detect "$HOME"
 ```
 
 Expected output:
@@ -234,7 +234,7 @@ Address the findings based on severity. Critical and high findings should be res
 Run detection again to confirm your governance score has improved.
 
 ```bash
-npx opena2a-cli detect
+npx opena2a-cli detect "$HOME"
 ```
 
 Expected output:

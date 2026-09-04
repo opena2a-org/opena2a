@@ -15,7 +15,7 @@ You are a CISO, security engineer, or compliance analyst. Developers on your tea
 Run detection on a developer workstation to see what AI tools are active. This command is read-only and does not modify any files.
 
 ```bash
-npx opena2a-cli detect
+npx opena2a-cli detect "$HOME"
 ```
 
 Expected output:
@@ -73,7 +73,7 @@ Key observations for security teams:
 Create an HTML report suitable for sharing with leadership or including in security reviews.
 
 ```bash
-npx opena2a-cli detect --report
+npx opena2a-cli detect "$HOME" --report
 ```
 
 Expected output:
@@ -106,7 +106,7 @@ The HTML report includes:
 To save the report to a specific location without opening a browser:
 
 ```bash
-npx opena2a-cli detect --report --no-open
+npx opena2a-cli detect "$HOME" --report --no-open
 ```
 
 ---
@@ -116,7 +116,7 @@ npx opena2a-cli detect --report --no-open
 Export the discovery results as CSV for import into your CMDB, SIEM, or asset management system.
 
 ```bash
-npx opena2a-cli detect --export-csv assets.csv
+npx opena2a-cli detect "$HOME" --export-csv assets.csv
 ```
 
 Expected output:
@@ -163,7 +163,7 @@ Each row includes `hostname`, `username`, `scanDirectory`, and `scanTimestamp` s
 Cross-reference discovered MCP servers against the OpenA2A Trust Registry to see community trust scores, known vulnerabilities, and verification status.
 
 ```bash
-npx opena2a-cli detect --registry
+npx opena2a-cli detect "$HOME" --registry
 ```
 
 Expected output:
@@ -281,7 +281,7 @@ To assess AI risk across multiple developer workstations, run detection on each 
 Run on each machine:
 
 ```bash
-npx opena2a-cli detect --export-csv assets-$(hostname).csv
+npx opena2a-cli detect "$HOME" --export-csv assets-$(hostname).csv
 ```
 
 Then combine:
@@ -305,7 +305,7 @@ mkdir -p "$OUTPUT_DIR"
 
 for machine in $MACHINES; do
   echo "Scanning $machine..."
-  ssh "$machine" "npx opena2a-cli detect --export-csv /tmp/assets.csv" 2>/dev/null
+  ssh "$machine" 'npx opena2a-cli detect "$HOME" --export-csv /tmp/assets.csv' 2>/dev/null
   scp "$machine:/tmp/assets.csv" "$OUTPUT_DIR/assets-$machine.csv" 2>/dev/null
 done
 
@@ -322,7 +322,7 @@ wc -l "$OUTPUT_DIR/fleet-inventory.csv"
 Use JSON output and forward to your SIEM or log aggregation system:
 
 ```bash
-npx opena2a-cli detect --format json | curl -X POST \
+npx opena2a-cli detect "$HOME" --format json | curl -X POST \
   -H "Content-Type: application/json" \
   -d @- \
   https://your-siem.example.com/api/v1/events

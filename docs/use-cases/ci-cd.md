@@ -299,8 +299,9 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
           node-version: 20
 
       - name: HackMyAgent security scan
+        working-directory: ${{ runner.temp }}
         run: |
-          npx hackmyagent secure --ci --format json > hma.json
+          npx hackmyagent secure "$GITHUB_WORKSPACE" --ci --format json > hma.json
           critical=$(jq -r '.summary.critical' hma.json)
           high=$(jq -r '.summary.high' hma.json)
           echo "HMA: $critical critical, $high high findings"
@@ -315,7 +316,7 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
         uses: actions/upload-artifact@v4
         with:
           name: hma-report
-          path: hma.json
+          path: ${{ runner.temp }}/hma.json
 ```
 
 ---
