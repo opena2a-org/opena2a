@@ -258,7 +258,7 @@ Expected output:
   Profile URL: https://registry.opena2a.org/p/@myorg/mcp-server-tools
 
   Users can now discover your server:
-    npx opena2a-cli detect --registry
+    npx opena2a-cli detect "$HOME" --registry
     npx ai-trust check @myorg/mcp-server-tools
 ```
 
@@ -302,7 +302,8 @@ jobs:
         run: npx hackmyagent secure --ci
 
       - name: Governance check
-        run: npx opena2a-cli scan-soul --fail-below 80
+        working-directory: ${{ runner.temp }}
+        run: npx opena2a-cli scan-soul "$GITHUB_WORKSPACE" --strict
 
       - name: Trust score gate
         run: |

@@ -63,6 +63,18 @@ jobs:
           # clone cannot answer whether the tagged commit is on main.
           fetch-depth: 0
 
+      # A tracked .npmrc can carry a `node-options` line (yarn and pnpm have
+      # their own spellings, .envrc is direnv's) that executes before the
+      # first instruction of anything started through npx / npm exec /
+      # npm run in this tree -- including the build and test steps below,
+      # in the job that produces the bytes we sign. Nothing in-process can
+      # detect that, so the tree must never contain one. The `!` makes a
+      # grep MATCH fail the step; an empty grep is the passing state.
+      # Unconditional on purpose: no `if:`, no `continue-on-error`.
+      - name: No tree-local package-manager config may be tracked
+        run: |
+          ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
+
       - name: Tagged commit must be on main
         run: |
           # The tag push IS the publish event, and it publishes whatever commit

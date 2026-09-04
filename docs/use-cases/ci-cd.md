@@ -38,11 +38,13 @@ jobs:
 
       # Step 1: Detect shadow AI and check governance
       - name: Shadow AI detection
-        run: npx opena2a-cli detect --format json --ci > detect-results.json
+        working-directory: ${{ runner.temp }}
+        run: npx opena2a-cli detect "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/detect-results.json"
 
       # Step 2: Full security review
       - name: Security review
-        run: npx opena2a-cli review --format json --ci > review-results.json
+        working-directory: ${{ runner.temp }}
+        run: npx opena2a-cli review "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/review-results.json"
 
       # Step 3: Trust score gate
       - name: Trust gate
@@ -70,9 +72,9 @@ The `--ci` flag adjusts behavior for non-interactive environments:
 - Ensures deterministic exit codes
 
 ```bash
-npx opena2a-cli detect --ci           # No colors, no prompts
-npx opena2a-cli review --ci           # No browser open
-npx opena2a-cli scan-soul --ci        # Deterministic output
+npx opena2a-cli detect my-agent --ci      # No colors, no prompts
+npx opena2a-cli review my-agent --ci      # No browser open
+npx opena2a-cli scan-soul my-agent --ci   # Deterministic output
 ```
 
 ### The `--format json` Flag
@@ -80,7 +82,7 @@ npx opena2a-cli scan-soul --ci        # Deterministic output
 Returns machine-readable JSON for programmatic consumption:
 
 ```bash
-npx opena2a-cli detect --format json
+npx opena2a-cli detect my-agent --format json
 ```
 
 Example JSON output:
@@ -130,9 +132,9 @@ Example JSON output:
 Some commands use `--json` instead of `--format json` (both are accepted):
 
 ```bash
-npx opena2a-cli scan-soul --json      # SOUL.md governance scan
-npx opena2a-cli protect --dry-run --json  # Credential check
-npx opena2a-cli review --format json  # Full review
+npx opena2a-cli scan-soul my-agent --json          # SOUL.md governance scan
+npx opena2a-cli protect my-agent --dry-run --json  # Credential check
+npx opena2a-cli review my-agent --format json      # Full review
 ```
 
 ---
@@ -147,12 +149,12 @@ All opena2a commands use consistent exit codes:
 | 1 | Critical or high findings detected | Pipeline fails |
 | 2 | Command error (invalid args, missing files) | Pipeline fails |
 
-For governance gating with a custom threshold:
+For governance gating on the critical SOUL controls:
 
 ```bash
-npx opena2a-cli scan-soul --fail-below 60
-# Exit 0 if score >= 60
-# Exit 1 if score < 60
+npx opena2a-cli scan-soul my-agent --strict
+# Exit 0 if the critical SOUL controls are present
+# Exit 1 if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)
 ```
 
 ---
@@ -187,12 +189,13 @@ jobs:
 
       - name: Detect shadow AI
         id: detect
+        working-directory: ${{ runner.temp }}
         run: |
-          npx opena2a-cli detect --format json --ci > detect.json
-          score=$(jq -r '.governanceScore' detect.json)
+          npx opena2a-cli detect "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/detect.json"
+          score=$(jq -r '.governanceScore' "$GITHUB_WORKSPACE/detect.json")
           echo "score=$score" >> "$GITHUB_OUTPUT"
           echo "Governance score: $score / 100"
-          jq '.' detect.json
+          jq '.' "$GITHUB_WORKSPACE/detect.json"
 
       - name: Upload detection report
         uses: actions/upload-artifact@v4
@@ -210,8 +213,10 @@ jobs:
           node-version: 20
 
       - name: Security review
+        working-directory: ${{ runner.temp }}
         run: |
-          npx opena2a-cli review --format json --ci > review.json
+          npx opena2a-cli review "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/review.json"
+          cd "$GITHUB_WORKSPACE"
           critical=$(jq '[.findings[] | select(.severity == "critical")] | length' review.json)
           high=$(jq '[.findings[] | select(.severity == "high")] | length' review.json)
           echo "Critical: $critical, High: $high"
@@ -238,7 +243,8 @@ jobs:
           node-version: 20
 
       - name: SOUL.md governance scan
-        run: npx opena2a-cli scan-soul --json --ci --fail-below 60
+        working-directory: ${{ runner.temp }}
+        run: npx opena2a-cli scan-soul "$GITHUB_WORKSPACE" --json --ci --strict
 
   # Job 4: Credential scan
   credentials:
@@ -250,8 +256,9 @@ jobs:
           node-version: 20
 
       - name: Credential check
+        working-directory: ${{ runner.temp }}
         run: |
-          npx opena2a-cli protect --dry-run --json --ci > creds.json
+          npx opena2a-cli protect "$GITHUB_WORKSPACE" --dry-run --json --ci > creds.json
           found=$(jq -r '.totalFound' creds.json)
           echo "Credentials found: $found"
           if [ "$found" -gt 0 ]; then
@@ -292,8 +299,9 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
           node-version: 20
 
       - name: HackMyAgent security scan
+        working-directory: ${{ runner.temp }}
         run: |
-          npx hackmyagent secure --ci --format json > hma.json
+          npx hackmyagent secure "$GITHUB_WORKSPACE" --ci --format json > hma.json
           critical=$(jq -r '.summary.critical' hma.json)
           high=$(jq -r '.summary.high' hma.json)
           echo "HMA: $critical critical, $high high findings"
@@ -308,7 +316,7 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
         uses: actions/upload-artifact@v4
         with:
           name: hma-report
-          path: hma.json
+          path: ${{ runner.temp }}/hma.json
 ```
 
 ---
@@ -364,11 +372,14 @@ ai-security:
   image: node:20
   stage: test
   script:
-    - npx opena2a-cli detect --format json --ci > detect.json
-    - npx opena2a-cli review --format json --ci > review.json
-    - npx opena2a-cli scan-soul --json --ci --fail-below 60
+    # Run from outside the checkout, naming it as the operand, so a
+    # committed .npmrc in the scanned tree cannot inject into npx itself.
+    - cd /tmp
+    - npx opena2a-cli detect "$CI_PROJECT_DIR" --format json --ci > "$CI_PROJECT_DIR/detect.json"
+    - npx opena2a-cli review "$CI_PROJECT_DIR" --format json --ci > "$CI_PROJECT_DIR/review.json"
+    - npx opena2a-cli scan-soul "$CI_PROJECT_DIR" --json --ci --strict
     - |
-      critical=$(cat review.json | jq '[.findings[] | select(.severity == "critical")] | length')
+      critical=$(cat "$CI_PROJECT_DIR/review.json" | jq '[.findings[] | select(.severity == "critical")] | length')
       if [ "$critical" -gt 0 ]; then
         echo "Critical findings detected"
         exit 1
@@ -396,14 +407,17 @@ steps:
     inputs:
       versionSpec: '20.x'
 
-  - script: npx opena2a-cli detect --format json --ci > detect.json
+  - script: npx opena2a-cli detect "$(Build.SourcesDirectory)" --format json --ci > "$(Build.SourcesDirectory)/detect.json"
     displayName: Shadow AI Detection
+    workingDirectory: $(Agent.TempDirectory)
 
-  - script: npx opena2a-cli review --format json --ci > review.json
+  - script: npx opena2a-cli review "$(Build.SourcesDirectory)" --format json --ci > "$(Build.SourcesDirectory)/review.json"
     displayName: Security Review
+    workingDirectory: $(Agent.TempDirectory)
 
-  - script: npx opena2a-cli scan-soul --json --ci --fail-below 60
+  - script: npx opena2a-cli scan-soul "$(Build.SourcesDirectory)" --json --ci --strict
     displayName: Governance Gate
+    workingDirectory: $(Agent.TempDirectory)
 
   - publish: $(System.DefaultWorkingDirectory)/detect.json
     artifact: shadow-ai-report
@@ -423,13 +437,16 @@ jobs:
       - checkout
       - run:
           name: Shadow AI detection
-          command: npx opena2a-cli detect --format json --ci > detect.json
+          working_directory: /tmp
+          command: npx opena2a-cli detect ~/project --format json --ci > ~/project/detect.json
       - run:
           name: Security review
-          command: npx opena2a-cli review --format json --ci > review.json
+          working_directory: /tmp
+          command: npx opena2a-cli review ~/project --format json --ci > ~/project/review.json
       - run:
           name: Governance gate
-          command: npx opena2a-cli scan-soul --json --ci --fail-below 60
+          working_directory: /tmp
+          command: npx opena2a-cli scan-soul ~/project --json --ci --strict
       - store_artifacts:
           path: detect.json
       - store_artifacts:
@@ -449,10 +466,11 @@ Generate CSV reports in CI for compliance dashboards:
 
 ```yaml
 - name: Generate compliance report
+  working-directory: ${{ runner.temp }}
   run: |
-    npx opena2a-cli detect --export-csv assets.csv --ci
+    npx opena2a-cli detect "$GITHUB_WORKSPACE" --export-csv "$GITHUB_WORKSPACE/assets.csv" --ci
     echo "Assets discovered:"
-    wc -l assets.csv
+    wc -l "$GITHUB_WORKSPACE/assets.csv"
 
 - name: Upload compliance report
   uses: actions/upload-artifact@v4
@@ -485,9 +503,10 @@ jobs:
           node-version: 20
 
       - name: Full security review
+        working-directory: ${{ runner.temp }}
         run: |
-          npx opena2a-cli review --format json --ci > review.json
-          npx opena2a-cli detect --export-csv assets.csv --ci
+          npx opena2a-cli review "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/review.json"
+          npx opena2a-cli detect "$GITHUB_WORKSPACE" --export-csv "$GITHUB_WORKSPACE/assets.csv" --ci
 
       - name: Upload reports
         uses: actions/upload-artifact@v4
@@ -527,7 +546,8 @@ jobs:
   run: npm install -g opena2a-cli
 
 - name: Run detection
-  run: opena2a detect --format json --ci > detect.json
+  working-directory: ${{ runner.temp }}
+  run: opena2a detect "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/detect.json"
 ```
 
 ---

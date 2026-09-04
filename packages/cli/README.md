@@ -4,7 +4,7 @@
 Open-source security platform for AI agents. Installed as `opena2a-cli` on npm.
 
 ```bash
-npx opena2a-cli review
+npx opena2a-cli review my-agent
 ```
 
 ```
