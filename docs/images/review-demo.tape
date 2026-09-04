@@ -5,8 +5,8 @@
 # one maintainer's machine: the hidden setup builds docs/vhs/setup-lab.sh's demo
 # project at /tmp/vhs-demo, and `init` is given that path as its operand
 # (`init [directory]`, packages/cli/src/index.ts:444) rather than being run from
-# inside it. docs/images/review-demo.gif is still the older recording — re-record
-# it from this tape on a machine with vhs installed.
+# inside it. docs/images/review-demo.gif was recorded from this tape on 2026-09-04 against the
+# workspace CLI built at 0.10.13 (vhs, ttyd and ffmpeg on the recording host).
 
 Output docs/images/review-demo.gif
 
