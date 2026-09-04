@@ -32,7 +32,8 @@
     "ai-trust": "^0.2.23",
     "commander": "^13.1.0",
     "hackmyagent": "0.30.0",
-    "secretless-ai": "^0.14.1"
+    "secretless-ai": "^0.14.1",
+    "js-yaml": "^4.3.1"
   },
   "optionalDependencies": {
     "@opena2a/aim-core": "*"
