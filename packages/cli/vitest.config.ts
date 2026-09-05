@@ -5,20 +5,21 @@ import { defineConfig } from 'vitest/config';
 // Worker count derived from the process cap of the cgroup the run lives in. On a host with no
 // cap (a developer machine, a GitHub runner) this resolves to vitest's default and changes
 // nothing. Measured 2026-09-05 in the fleet lane (--pids-limit 512, 16 CPUs) with a 0.5 s
-// per-process census at the peak, across three runs with 16, 13 and 9 workers: the peak sat at
-// 500, 486 and 484 tasks regardless of the worker count, because the tasks are not the workers.
-// At the 484 peak: the vitest main process and its parents about 60; each worker its fork
-// (about 7 threads) plus the esbuild service it starts (about 6.5), i.e. 13.5; and the CLI child
-// processes the tests spawn, 11 to 14 threads each, with one worker holding 8 children at once
-// (a test file that runs several CLI invocations concurrently). A worker's worst case is
-// therefore 13.5 + 8 x 13 = 117.5 tasks, and that worst case, not the average, is what the cap
-// must fit, because the run only has to fail once: with the default worker count the cgroup
-// reached 500 to 508 within three seconds and the next fork failed with `spawn node EAGAIN`,
-// which vitest reports once as an unhandled pool error and then waits on without further
-// output. max(1, min(cpus, (512 - 60 - 64) / 118)) = 3 here; re-derive the constants when the
-// pool, the esbuild service or the tests' spawn fan-out changes.
-const BASE_TASKS = 60;
-const TASKS_PER_WORKER = 118;
+// per-process census at the peak, across four runs with 16, 13, 9 and 3 workers: peaks 500,
+// 486, 484 and 413. The tasks are mostly not the workers. Fixed cost about 172: the vitest
+// main process and its parents about 60 plus an esbuild service pool of 16 processes at about
+// 7 threads each, present at every worker count. Per worker: its fork (about 7 threads) plus the
+// CLI child processes the file it is running spawns, 11 to 14 threads each, up to 8 at once
+// for a test file that runs several CLI invocations concurrently, i.e. a worst case of about
+// 7 + 8 x 13 = 111. The cap fits the worst case because the run only has to fail once: with
+// the default worker count the cgroup reached 500 to 508 within three seconds and the next
+// fork failed with `spawn node EAGAIN`, which vitest reports once as an unhandled pool error
+// and then waits on without further output. max(1, min(cpus, (512 - 172 - 64) / 111)) = 2
+// here. This is a containment, not a fix: the lever is the per-file fan-out, and bounding it
+// where the tests spawn it would give the workers back. Re-derive the constants when the pool,
+// the esbuild service or the tests' spawn fan-out changes.
+const BASE_TASKS = 172;
+const TASKS_PER_WORKER = 111;
 const SPAWN_HEADROOM = 64;
 
 function cgroupPidsMax(): number | null {
