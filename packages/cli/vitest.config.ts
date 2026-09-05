@@ -5,16 +5,20 @@ import { defineConfig } from 'vitest/config';
 // Worker count derived from the process cap of the cgroup the run lives in. On a host with no
 // cap (a developer machine, a GitHub runner) this resolves to vitest's default and changes
 // nothing. Measured 2026-09-05 in the fleet lane (--pids-limit 512, 16 CPUs) with a 0.5 s
-// per-process census at the peak: the vitest main process and its parents hold about 60 tasks;
-// each forked worker costs about 33 (its own 7 threads, the esbuild service it starts, and the
-// CLI child processes the tests spawn, 11 to 14 threads each), measured as (486 - 60) / 13 at
-// 13 workers; the largest burst above that linear model was 21 tasks, so 64 is kept as headroom
-// for a test that spawns more than one child at once. With the default worker count (one per
-// CPU) the cgroup reached 500 to 508 of 512 within three seconds and the next fork failed with
-// `spawn node EAGAIN`, which vitest reports once as an unhandled pool error and then waits on
-// without further output. Re-derive the three constants when the pool or the tests change.
+// per-process census at the peak, across three runs with 16, 13 and 9 workers: the peak sat at
+// 500, 486 and 484 tasks regardless of the worker count, because the tasks are not the workers.
+// At the 484 peak: the vitest main process and its parents about 60; each worker its fork
+// (about 7 threads) plus the esbuild service it starts (about 6.5), i.e. 13.5; and the CLI child
+// processes the tests spawn, 11 to 14 threads each, with one worker holding 8 children at once
+// (a test file that runs several CLI invocations concurrently). A worker's worst case is
+// therefore 13.5 + 8 x 13 = 117.5 tasks, and that worst case, not the average, is what the cap
+// must fit, because the run only has to fail once: with the default worker count the cgroup
+// reached 500 to 508 within three seconds and the next fork failed with `spawn node EAGAIN`,
+// which vitest reports once as an unhandled pool error and then waits on without further
+// output. max(1, min(cpus, (512 - 60 - 64) / 118)) = 3 here; re-derive the constants when the
+// pool, the esbuild service or the tests' spawn fan-out changes.
 const BASE_TASKS = 60;
-const TASKS_PER_WORKER = 33;
+const TASKS_PER_WORKER = 118;
 const SPAWN_HEADROOM = 64;
 
 function cgroupPidsMax(): number | null {
