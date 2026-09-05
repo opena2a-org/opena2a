@@ -9,17 +9,18 @@ import { defineConfig } from 'vitest/config';
 // 486, 484 and 413. The tasks are mostly not the workers. Fixed cost about 172: the vitest
 // main process and its parents about 60 plus an esbuild service pool of 16 processes at about
 // 7 threads each, present at every worker count. Per worker: its fork (about 7 threads) plus the
-// CLI child processes the file it is running spawns, 11 to 14 threads each, up to 8 at once
-// for a test file that runs several CLI invocations concurrently, i.e. a worst case of about
-// 7 + 8 x 13 = 111. The cap fits the worst case because the run only has to fail once: with
+// CLI child processes the file it is running spawns: one test file starts 8 `tsx <cli>` runs at
+// once, and each tsx process runs the CLI in a child node process, so 16 processes of about
+// 11 threads, i.e. a worst case of about 7 + 16 x 11 = 183 per worker (measured: one worker
+// holding 8 tsx children and their 8 node children at the 409-task peak with 2 workers). The cap fits the worst case because the run only has to fail once: with
 // the default worker count the cgroup reached 500 to 508 within three seconds and the next
 // fork failed with `spawn node EAGAIN`, which vitest reports once as an unhandled pool error
-// and then waits on without further output. max(1, min(cpus, (512 - 172 - 64) / 111)) = 2
-// here. This is a containment, not a fix: the lever is the per-file fan-out, and bounding it
+// and then waits on without further output. max(1, min(cpus, (512 - 172 - 64) / 183)) = 1
+// here: two workers running that file at once would reach about 538. This is a containment, not a fix: the lever is the per-file fan-out, and bounding it
 // where the tests spawn it would give the workers back. Re-derive the constants when the pool,
 // the esbuild service or the tests' spawn fan-out changes.
 const BASE_TASKS = 172;
-const TASKS_PER_WORKER = 111;
+const TASKS_PER_WORKER = 183;
 const SPAWN_HEADROOM = 64;
 
 function cgroupPidsMax(): number | null {
