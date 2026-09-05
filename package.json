@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test",
+    "test": "turbo run test --concurrency=1",
     "lint": "turbo run lint",
     "lint:sast": "eslint 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
     "clean": "turbo run clean",
