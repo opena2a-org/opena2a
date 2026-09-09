@@ -1,7 +1,7 @@
 /**
  * Conformance gate: run LocalAtxVerifier against the FULL OpenA2A ATX
  * conformance suite (verbatim copies from `atx-conformance/fixtures/` pinned at
- * f4d40a4, including their PINNED Ed25519 signatures and issuer public keys —
+ * d2b8376, including their PINNED Ed25519 signatures and issuer public keys —
  * CI byte-compares the vendored copies against the pinned suite). This proves
  * the verifier accepts/rejects exactly the credentials the Go and Python
  * reference verifiers do.
@@ -43,8 +43,8 @@ interface Fixture {
   expected: { verifyResult: 'ACCEPT' | 'REJECT'; rejectCategory?: string };
 }
 
-/** The suite pinned at atx-conformance f4d40a4 has exactly 20 fixtures. */
-const PINNED_SUITE_SIZE = 20;
+/** The suite pinned at atx-conformance d2b8376 has exactly 21 fixtures. */
+const PINNED_SUITE_SIZE = 21;
 
 const FIXTURES_DIR = new URL('./__fixtures__/', import.meta.url);
 const fixtureFiles = readdirSync(FIXTURES_DIR)
@@ -68,7 +68,7 @@ function expectedCategory(suiteCategory: string): RejectCategory {
   return (suiteCategory === 'PARSE_ERROR' ? 'MALFORMED' : suiteCategory) as RejectCategory;
 }
 
-describe('conformance fixtures (atx-conformance @ f4d40a4, pinned signatures)', () => {
+describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', () => {
   it(`covers the full pinned suite (${PINNED_SUITE_SIZE} fixtures)`, () => {
     expect(fixtureFiles.length).toBe(PINNED_SUITE_SIZE);
   });
