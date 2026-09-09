@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { platform, tmpdir } from 'node:os';
+import { childEnv } from '../adapters/registry.js';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 
 /** Local structural subset of @opena2a/cli-ui types. Duplicated here
@@ -1059,7 +1060,11 @@ export function deriveHmaCounts(
   return { totalChecks: fullSet.length, passed };
 }
 
-async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
+/**
+ * Exported so the child-environment wiring tests can run the real spawn under
+ * a mocked `node:child_process` (#246); `review` is its only production caller.
+ */
+export async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
   const emptyResult: HmaPhaseData = {
     available: false, score: 0, maxScore: 100,
     totalChecks: 0, passed: 0, failed: 0,
@@ -1078,6 +1083,9 @@ async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       const proc = spawn('npx', ['hackmyagent', 'secure', '--format', 'json', targetDir], {
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 120_000,
+        // The same `hackmyagent` contract every other route to the scanner
+        // uses (#246); previously this spawn inherited the whole environment.
+        env: childEnv('hackmyagent'),
       });
       let stdout = '';
       proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });

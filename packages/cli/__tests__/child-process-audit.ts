@@ -72,4 +72,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(jq | bash | node) recipe probes',
   },
+  'shield/claude-env-contract.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(probe) once to find an executable scratch dir; then the module ' +
+      'under test runs execFileSync(which | claude) against stubs on PATH (#246)',
+  },
 };
