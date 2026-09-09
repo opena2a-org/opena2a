@@ -45,7 +45,7 @@ import { buildChildEnv } from '../util/child-env.js';
  * is on its implicit-inherit roster — which can only shrink.
  */
 
-type EnvContract = Pick<AdapterConfig, 'envAllow' | 'envAllowPrefixes' | 'envInherit'>;
+export type EnvContract = Pick<AdapterConfig, 'envAllow' | 'envAllowPrefixes' | 'envInherit'>;
 
 /** hackmyagent: classifier routing, analyst escalation, registry publish. */
 const HACKMYAGENT_ENV = {
