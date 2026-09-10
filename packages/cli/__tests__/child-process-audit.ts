@@ -7,9 +7,10 @@
  * missing here (or listed here without importing), so this table cannot
  * silently go stale.
  *
- * Measured population, correcting the roadmap unit's "other six": besides
- * shield/concurrent-write.test.ts there are FIVE real spawners, all
- * synchronous and one child at a time. Four more files only
+ * Measured population, correcting the roadmap unit's "other six": at QGF-40
+ * there were FIVE real spawners besides shield/concurrent-write.test.ts, all
+ * synchronous and one child at a time; consumer-audit-candidate-attribution
+ * .test.ts (QGF-112) makes six, on the same shape. Four more files only
  * `vi.mock('node:child_process', ...)` and spawn nothing real —
  * shield/llm.test.ts and shield/llm-backend.test.ts (the two the unit
  * counted), plus adapters/docker.test.ts and
@@ -66,6 +67,16 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     shape: 'sync',
     maxSimultaneousChildren: 1,
     spawns: 'execFileSync(git ...) fixture setup',
+  },
+  'consumer-audit-candidate-attribution.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node --input-type=module --eval <import the audit script>) with an empty ' +
+      'PATH, to measure that importing scripts/audit-consumer-resolution.mjs installs, ' +
+      'audits and spawns nothing (QGF-112.AC3); then spawnSync(node ' +
+      'scripts/audit-consumer-resolution.mjs --target) to measure that it still runs when ' +
+      'it IS the program',
   },
   'docs/ci-cd-recipe-jq-paths.test.ts': {
     shape: 'sync',
