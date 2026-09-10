@@ -114,8 +114,15 @@ jobs:
     name: Consumer resolution audit (published artifact)
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    # `issues: write` is scoped to THIS job, and it is the whole reason the two
+    # consumer jobs are separate objects rather than one job with a matrix. This
+    # one runs only on the weekly schedule, on `main`, on our own trigger. The
+    # candidate job below runs on every pull request, including from a fork, and
+    # must keep exactly `contents: read`: nothing a contributor can trigger may
+    # be able to write an issue.
     permissions:
       contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -124,8 +131,47 @@ jobs:
       # Nothing from this checkout is installed: the target is a published
       # registry spec, resolved with `--ignore-scripts`. A failure here is not
       # fixable by merging anything; it clears when a fix is RELEASED.
+      #
+      # The capture is COMBINED stdout and stderr into ONE file, because the two
+      # halves carry different halves of the incident: the resolved version is
+      # printed by console.log (audit-consumer-resolution.mjs:712-714) and the
+      # advisory ids by console.error (:811-813). Capturing stdout alone files an
+      # issue naming a version and no advisory.
+      #
+      # `set -euo pipefail` is load-bearing, not decoration: `tee` exits 0
+      # whatever the audit did, so without it the pipeline reports tee's status,
+      # the job goes green on a red audit, and the failure step below never runs.
+      # No `|| true` and no `continue-on-error` here either — a gate that cannot
+      # fail is not a gate.
       - name: Audit the tree a consumer resolves from npm today
-        run: npm run audit:consumer
+        run: |
+          set -euo pipefail
+          npm run audit:consumer 2>&1 | tee "$RUNNER_TEMP/consumer-audit-published.log"
+
+      # The scheduled failure becomes ONE issue labelled published-artifact-advisory
+      # (scripts/advisory-incident.mjs dedups; it never opens a second one while
+      # one is open). The event predicate is repeated from the job on purpose:
+      # these two are the same rule, and a later edit that widens the job's `if`
+      # must not silently hand a pull request run the ability to open an issue.
+      - name: Open or update the published-artifact advisory issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/advisory-incident.mjs open \
+            --audit-log "$RUNNER_TEMP/consumer-audit-published.log" \
+            --run-url ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # And the other half. Without it the label reads the history instead of the
+      # tree: the advisory clears in a release and the issue stays open, so the
+      # next reader cannot tell a stale incident from a live one.
+      - name: Close the advisory issue when the published closure audits clean
+        if: success() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/advisory-incident.mjs resolve \
+            --run-url ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   sast:
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
