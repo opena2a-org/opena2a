@@ -193,7 +193,6 @@ jobs:
           out="$RUNNER_TEMP/dist"
           mkdir -p "$out"
           npm pack --ignore-scripts --pack-destination "$out" \
-            --workspace=packages/cli \
             --workspace=packages/shared \
             --workspace=packages/cli-ui \
             --workspace=packages/contribute \
@@ -204,6 +203,7 @@ jobs:
             --workspace=packages/telemetry \
             --workspace=packages/credential-patterns \
             --workspace=packages/atx-verify \
+            --workspace=packages/cli \
             >/dev/null
 
           # Build the pack manifest from the workspaces themselves rather than
@@ -213,12 +213,12 @@ jobs:
             const fs = require("fs"), path = require("path"), cp = require("child_process");
             const out = process.env.RUNNER_TEMP + "/dist";
             const wss = [
-              ["packages/cli","opena2a-cli"],["packages/shared","@opena2a/shared"],
-              ["packages/cli-ui","@opena2a/cli-ui"],["packages/contribute","@opena2a/contribute"],
-              ["packages/ai-classifier","@opena2a/ai-classifier"],["packages/aim-core","@opena2a/aim-core"],
-              ["packages/registry-client","@opena2a/registry-client"],["packages/check-core","@opena2a/check-core"],
-              ["packages/telemetry","@opena2a/telemetry"],["packages/credential-patterns","@opena2a/credential-patterns"],
-              ["packages/atx-verify","@opena2a/atx-verify"],
+              ["packages/shared","@opena2a/shared"],["packages/cli-ui","@opena2a/cli-ui"],
+              ["packages/contribute","@opena2a/contribute"],["packages/ai-classifier","@opena2a/ai-classifier"],
+              ["packages/aim-core","@opena2a/aim-core"],["packages/registry-client","@opena2a/registry-client"],
+              ["packages/check-core","@opena2a/check-core"],["packages/telemetry","@opena2a/telemetry"],
+              ["packages/credential-patterns","@opena2a/credential-patterns"],["packages/atx-verify","@opena2a/atx-verify"],
+              ["packages/cli","opena2a-cli"],
             ];
             const entries = wss.map(([ws, expected]) => {
               const pj = JSON.parse(fs.readFileSync(path.join(ws, "package.json"), "utf8"));
