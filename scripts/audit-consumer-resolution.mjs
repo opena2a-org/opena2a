@@ -111,7 +111,15 @@
  * FAILS. Being unable to check a waiver is not the same as the waiver holding.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -258,7 +266,7 @@ function deriveNestedHackmyagent(ctx) {
  * asking "why is my audit red because of your CLI", so it names the blocker,
  * not the severity — and it does not restate anything `derive` measures.
  */
-const ALLOWED = [];
+export const ALLOWED = [];
 
 /**
  * Packages that must never appear in a consumer tree, at any version.
@@ -273,7 +281,7 @@ const ALLOWED = [];
  * dated, and derived. A waiver for a package that is no longer nested fails, so
  * this list cannot rot either.
  */
-const FORBIDDEN_PACKAGES = [
+export const FORBIDDEN_PACKAGES = [
   {
     name: 'opena2a-cli',
     where: 'nested',
@@ -676,6 +684,95 @@ function expired(reviewBy, today) {
   return !(typeof reviewBy === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(reviewBy) && reviewBy >= today);
 }
 
+// ---------------------------------------------------------------------------
+// What a CANDIDATE failure is allowed to say about its own cause.
+// ---------------------------------------------------------------------------
+
+/**
+ * How this run's failure compares against the artifact the branch starts from.
+ *
+ * The CANDIDATE run measures ONE tree: the tarball this branch would publish.
+ * That answers "does the tree a user resolves from this branch carry a
+ * defect". It does not answer "did this branch put it there" — that is a
+ * DIFFERENCE between two trees, and a difference needs both of them measured.
+ *
+ * The closing text used to skip the distinction and hand every CANDIDATE
+ * failure the same cause, naming the diff under review. That is wrong whenever
+ * the condition is a standing property of the base instead: a workspace
+ * version pinned ahead of what the registry serves fails this run on every
+ * branch, including one that touches no package at all. A reviewer who trusts
+ * the sentence then goes looking for a cause in a diff that does not hold one,
+ * and the real remedy — which is not a merge — never gets named.
+ *
+ * So the guidance is a function of which of these outcomes the run reached,
+ * and the sentence that blames the branch is reachable from exactly one.
+ */
+export const BASE_COMPARISON = Object.freeze({
+  /** No base artifact was resolved, so no two trees were compared. */
+  NOT_MEASURED: 'base-not-measured',
+  /** The base artifact was resolved and carries this failure too. */
+  SAME_FAILURE_ON_BASE: 'same-failure-on-base',
+  /** The base artifact was resolved and did not carry this failure. */
+  ABSENT_FROM_BASE: 'absent-from-base',
+});
+
+/** Every CANDIDATE closing text opens with what this run actually measured. */
+const CANDIDATE_MEASURED =
+  '  This is the CANDIDATE run. It measured the tarball this branch would publish.\n';
+
+/**
+ * The one sentence that attributes a failure to the branch under review.
+ *
+ * Bound to its own name and referenced once, so "which outcomes can reach this
+ * text" is answered by reading the table below rather than by tracing control
+ * flow — and so the answer can be asserted to still be one.
+ */
+const BRANCH_ATTRIBUTED_GUIDANCE =
+  CANDIDATE_MEASURED +
+  '  It also measured the base artifact, which did not carry this failure, so a\n' +
+  '  failure here is about the change under review and is fixable in this branch.\n';
+
+/**
+ * A Map rather than an object literal: a lookup on an object answers
+ * `constructor` and `toString` as well as the three keys below, and the
+ * fallthrough for an unrecognised outcome has to be a throw, not a surprise.
+ */
+const CANDIDATE_GUIDANCE = new Map([
+  [
+    BASE_COMPARISON.NOT_MEASURED,
+    CANDIDATE_MEASURED +
+      '  It did NOT measure the base artifact, so this run has not established whether\n' +
+      '  the same failure is already present without this branch. Measure the base\n' +
+      '  artifact before reading this as a defect in the diff.\n',
+  ],
+  [
+    BASE_COMPARISON.SAME_FAILURE_ON_BASE,
+    CANDIDATE_MEASURED +
+      '  It also measured the base artifact, and the same failure is present there, so\n' +
+      '  this run measured no difference between the two trees.\n',
+  ],
+  [BASE_COMPARISON.ABSENT_FROM_BASE, BRANCH_ATTRIBUTED_GUIDANCE],
+]);
+
+/**
+ * The text printed under a CANDIDATE failure banner, for the base comparison
+ * this run actually took.
+ *
+ * Throws on an outcome it does not know rather than falling back to a default.
+ * An unconditional default is exactly how the branch-attributing sentence came
+ * to be printed for runs that had measured nothing to attribute.
+ */
+export function candidateClosingGuidance(baseComparison) {
+  const text = CANDIDATE_GUIDANCE.get(baseComparison);
+  if (text === undefined) {
+    throw new Error(
+      `unknown base-comparison outcome \`${String(baseComparison)}\`. The CANDIDATE closing ` +
+        `guidance is composed from one of: ${[...CANDIDATE_GUIDANCE.keys()].join(', ')}.`
+    );
+  }
+  return text;
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const i = argv.indexOf('--target');
@@ -812,10 +909,12 @@ function main() {
     console.error(`\n[${target.mode}] Consumer-resolution audit FAILED — ${target.headline}:\n`);
     for (const f of failures) console.error(`  - ${f}\n`);
     if (target.mode === 'CANDIDATE') {
-      console.error(
-        '  This is the CANDIDATE run. It measured the tarball this branch would publish, so a\n' +
-          '  failure here is about the change under review and is fixable in this branch.\n'
-      );
+      // Nothing above resolves the base artifact: this job packs and audits
+      // THIS branch's tarball and nothing else. So the comparison that would
+      // license naming the diff as the cause was never taken, and the run says
+      // so instead of assuming it. Wiring a base pack-and-audit step is what
+      // would let this pass one of the other two outcomes.
+      console.error(candidateClosingGuidance(BASE_COMPARISON.NOT_MEASURED));
     } else {
       console.error(
         '  This is the PUBLISHED run. It measured what users can install right now, so a\n' +
@@ -827,4 +926,29 @@ function main() {
   console.log(`[${target.mode}] Consumer-resolution audit passed (${rootName}).`);
 }
 
-main();
+/**
+ * Run the audit only when this file IS the program.
+ *
+ * `main()` at module scope meant that importing this file performed the whole
+ * install-and-audit run as a side effect of the import — so what the run
+ * PRINTS could not be read by anything except a live registry and a live
+ * advisory database, and the closing text above went untested for that reason.
+ * Importing this module now runs nothing and reaches nothing.
+ *
+ * Compared through realpath because `process.argv[1]` is the path node was
+ * handed, which is the symlink rather than the file when the script is reached
+ * through one (a `node_modules/.bin` shim, a packaged install). Falling back to
+ * a plain resolve keeps a broken or unreadable entry from throwing here.
+ */
+const invokedDirectly = (() => {
+  const entry = process.argv[1];
+  if (typeof entry !== 'string' || entry === '') return false;
+  const self = fileURLToPath(import.meta.url);
+  try {
+    return realpathSync(entry) === realpathSync(self);
+  } catch {
+    return path.resolve(entry) === self;
+  }
+})();
+
+if (invokedDirectly) main();
