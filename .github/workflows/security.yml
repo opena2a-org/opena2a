@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
 
   # The job above audits this workspace: `packages/*`, devDependencies, and the
@@ -136,7 +136,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       # Prove the gate can fail before trusting that it passed. Each probe
       # plants one dynamic-evaluation primitive and asserts the lint rejects
       # it; then the probe is removed and the real tree is linted. Without
@@ -167,7 +167,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Check for problematic licenses
         run: |
           npx license-checker --production --failOn 'GPL-2.0;GPL-3.0;AGPL-1.0;AGPL-3.0;SSPL-1.0'
