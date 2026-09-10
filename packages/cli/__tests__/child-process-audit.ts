@@ -8,13 +8,13 @@
  * silently go stale.
  *
  * Measured population, correcting the roadmap unit's "other six": besides
- * shield/concurrent-write.test.ts there are FIVE real spawners, all
- * synchronous and one child at a time. Four more files only
+ * shield/concurrent-write.test.ts there are SEVEN real spawners, all
+ * synchronous and one child at a time. Five more files only
  * `vi.mock('node:child_process', ...)` and spawn nothing real —
  * shield/llm.test.ts and shield/llm-backend.test.ts (the two the unit
- * counted), plus adapters/docker.test.ts and
- * adapters/child-env-wiring.test.ts; none has the static import, so the
- * enumeration below correctly excludes them.
+ * counted), plus adapters/docker.test.ts, adapters/child-env-wiring.test.ts
+ * and adapters/child-env-contracts.test.ts; none has the static import, so
+ * the enumeration below correctly excludes them.
  *
  * Root `package.json` keeps `turbo run test --concurrency=1` (QGF-40.AC4
  * retention record): every vitest instance carries the fixed
@@ -78,5 +78,14 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     spawns:
       'spawnSync(probe) once to find an executable scratch dir; then the module ' +
       'under test runs execFileSync(which | claude) against stubs on PATH (#246)',
+  },
+  'security/advisory-incident.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node scripts/advisory-incident.mjs open --audit-log <CANDIDATE capture>) ' +
+      'once, for the one QGF-118.AC2 case that measures the COMMAND rather than the ' +
+      'exported function; the child refuses the candidate capture before it constructs ' +
+      'any gh call, so it spawns nothing of its own and the peak is one process',
   },
 };
