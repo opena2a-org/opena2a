@@ -22,7 +22,15 @@
  */
 
 import { hostname } from 'node:os';
-import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  rmdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 
 /**
  * A lock older than this is treated as abandoned.  Covers the case where the
@@ -58,6 +66,145 @@ interface LockRecord {
   at: number;
 }
 
+// ---------------------------------------------------------------------------
+// Fork trace instrument (OPA-01).
+//
+// The event lock has produced forked chains under contention that none of the
+// refuted hypotheses explain.  This channel records every operation the lock
+// performs against the lock file -- exclusive create, record read, and both
+// removals -- tagged with the file's identity (dev+ino) as seen immediately
+// before the operation, so a trace read after a fork shows which process
+// removed or created which incarnation of the lock file, in which order.
+//
+// Off unless OPENA2A_SHIELD_LOCK_TRACE holds the trace file path.  With the
+// variable unset nothing below runs: no file is written and no output is
+// emitted, and the lock's behaviour is untouched either way -- the wrappers
+// perform exactly the syscalls the untraced code performed, in the same order.
+// ---------------------------------------------------------------------------
+
+/** Environment variable holding the trace file path; tracing is off without it. */
+export const LOCK_TRACE_ENV = 'OPENA2A_SHIELD_LOCK_TRACE';
+
+function traceTarget(): string | null {
+  const p = process.env[LOCK_TRACE_ENV];
+  return p === undefined || p === '' ? null : p;
+}
+
+/** dev+ino of the lock path immediately before an operation, or 'absent'. */
+function statForTrace(lockPath: string): { dev: number | 'absent'; ino: number | 'absent' } {
+  try {
+    const s = statSync(lockPath);
+    return { dev: s.dev, ino: s.ino };
+  } catch {
+    return { dev: 'absent', ino: 'absent' };
+  }
+}
+
+/**
+ * Append one trace line under a cross-process mutex, carrying a sequence
+ * number that is a strictly increasing total order over every process that
+ * appends to the same trace file.
+ *
+ * The number is assigned at the event from a counter file, not from a clock:
+ * two hosts' clocks (and even one host's `process.hrtime` across processes)
+ * order nothing.  Assignment and append share one critical section, so line
+ * order in the file and sequence order are the same order.  The mutex is a
+ * `mkdir` spinlock -- atomic on the same class of filesystems as the lock's
+ * own O_EXCL create, and deliberately NOT the event lock itself, which is the
+ * subject under observation.
+ */
+function appendTraceLine(
+  target: string,
+  op: string,
+  before: { dev: number | 'absent'; ino: number | 'absent' },
+  outcome: string,
+): void {
+  const mutexDir = target + '.seqlock';
+  const seqFile = target + '.seq';
+  let stealAt = Date.now() + 10_000;
+  for (;;) {
+    try {
+      mkdirSync(mutexDir);
+      break;
+    } catch {
+      if (Date.now() > stealAt) {
+        // A holder died between mkdir and rmdir.  The instrument must not
+        // deadlock the suite it observes; steal and retry.
+        try { rmdirSync(mutexDir); } catch { /* already stolen */ }
+        stealAt = Date.now() + 10_000;
+      }
+      sleepSync(1);
+    }
+  }
+  try {
+    let seq = 0;
+    try {
+      seq = Number(readFileSync(seqFile, 'utf-8'));
+      if (!Number.isFinite(seq)) seq = 0;
+    } catch {
+      // First line: counter starts at zero.
+    }
+    seq += 1;
+    writeFileSync(seqFile, String(seq));
+    appendFileSync(
+      target,
+      JSON.stringify({
+        seq,
+        op,
+        dev: before.dev,
+        ino: before.ino,
+        outcome,
+        pid: process.pid,
+        host: hostname(),
+      }) + '\n',
+    );
+  } finally {
+    try { rmdirSync(mutexDir); } catch { /* nothing to release */ }
+  }
+}
+
+/** The exclusive create at the heart of the lock, traced when enabled. */
+function exclusiveCreate(lockPath: string, payload: string): void {
+  const target = traceTarget();
+  if (target === null) {
+    writeFileSync(lockPath, payload, { flag: 'wx', mode: 0o600 });
+    return;
+  }
+  const before = statForTrace(lockPath);
+  try {
+    writeFileSync(lockPath, payload, { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    appendTraceLine(target, 'create', before, (err as NodeJS.ErrnoException).code ?? 'unknown');
+    throw err;
+  }
+  appendTraceLine(target, 'create', before, 'created');
+}
+
+/**
+ * Both `rmSync` sites, traced when enabled.  `site` names which one.
+ *
+ * With `force: true` the call itself cannot distinguish "removed a file" from
+ * "nothing was there", so the outcome is read off the stat taken immediately
+ * before: a path present before a successful call was removed by it or by a
+ * racing process inside the same instant -- exactly the ambiguity the dev+ino
+ * pair exists to resolve across lines.
+ */
+function tracedRmSync(lockPath: string, site: 'rm-stale' | 'rm-release'): void {
+  const target = traceTarget();
+  if (target === null) {
+    rmSync(lockPath, { force: true });
+    return;
+  }
+  const before = statForTrace(lockPath);
+  try {
+    rmSync(lockPath, { force: true });
+  } catch (err) {
+    appendTraceLine(target, site, before, (err as NodeJS.ErrnoException).code ?? 'unknown');
+    throw err;
+  }
+  appendTraceLine(target, site, before, before.dev === 'absent' ? 'enoent' : 'removed');
+}
+
 /**
  * Timing overrides.  Production callers use the module constants; tests
  * exercise the same code paths at millisecond scale instead of parking a
@@ -74,16 +221,31 @@ export function getEventLockPath(eventsPath: string): string {
 }
 
 function readLock(lockPath: string): LockRecord | null {
+  const target = traceTarget();
+  const before = target === null ? null : statForTrace(lockPath);
+  let record: LockRecord | null = null;
   try {
     const parsed: unknown = JSON.parse(readFileSync(lockPath, 'utf-8'));
-    if (parsed === null || typeof parsed !== 'object') return null;
-    const record = parsed as Partial<LockRecord>;
-    if (typeof record.pid !== 'number' || typeof record.host !== 'string') return null;
-    return { pid: record.pid, host: record.host, at: typeof record.at === 'number' ? record.at : 0 };
+    if (parsed !== null && typeof parsed === 'object') {
+      const partial = parsed as Partial<LockRecord>;
+      if (typeof partial.pid === 'number' && typeof partial.host === 'string') {
+        record = {
+          pid: partial.pid,
+          host: partial.host,
+          at: typeof partial.at === 'number' ? partial.at : 0,
+        };
+      }
+    }
   } catch {
     // Missing, truncated, or written by a process that died mid-write.
-    return null;
   }
+  if (target !== null && before !== null) {
+    appendTraceLine(
+      target, 'read', before,
+      record === null ? 'null' : `pid=${record.pid} host=${record.host} at=${record.at}`,
+    );
+  }
+  return record;
 }
 
 /** Age of the lock file on disk, or Infinity when it cannot be stat'd. */
@@ -163,7 +325,7 @@ function acquire(lockPath: string, self: LockRecord, options: EventLockOptions):
   for (;;) {
     self.at = Date.now();
     try {
-      writeFileSync(lockPath, JSON.stringify(self), { flag: 'wx', mode: 0o600 });
+      exclusiveCreate(lockPath, JSON.stringify(self));
       return true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
@@ -181,7 +343,7 @@ function acquire(lockPath: string, self: LockRecord, options: EventLockOptions):
         // Remove and retry.  Two processes may both reach this point; the
         // exclusive create on the next pass decides which one wins.
         try {
-          rmSync(lockPath, { force: true });
+          tracedRmSync(lockPath, 'rm-stale');
         } catch {
           // Someone else already removed it; the retry settles ownership.
         }
@@ -207,7 +369,7 @@ function release(lockPath: string, self: LockRecord): void {
     return;
   }
   try {
-    rmSync(lockPath, { force: true });
+    tracedRmSync(lockPath, 'rm-release');
   } catch {
     // Already gone.
   }
