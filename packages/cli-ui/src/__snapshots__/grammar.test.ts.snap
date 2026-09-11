@@ -1,0 +1,73 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderError golden 1`] = `
+"✖ Scan failed: registry unreachable (ETIMEDOUT)
+  Not changed: no files were modified
+  Next: hackmyagent secure . --offline"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderFinding golden 1`] = `
+"HIGH  Hardcoded API key  src/config.ts:42
+  A committed credential lets anyone with repo read access impersonate the service.
+  Verify: grep -n "sk-" src/config.ts
+  Fix: hackmyagent secure --rotate src/config.ts
+  https://docs.opena2a.org/findings/hardcoded-secret"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderNextSteps golden 1`] = `
+"Next:
+  → hackmyagent secure .
+  • hackmyagent report"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderProgress golden 1`] = `
+"[2/5] scanning src/config.ts
+"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderScore golden 1`] = `
+"72/100 -> 100 by hackmyagent secure .
+━━━━━━━━━━━━━━──────"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderScore golden 2`] = `
+"100/100
+━━━━━━━━━━━━━━━━━━━━"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderScore golden 3`] = `
+"0/100
+────────────────────"
+`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderVerdict golden 1`] = `"⚠ WARNING — 2 findings"`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderVerdict golden 2`] = `"✔ SAFE"`;
+
+exports[`golden snapshots, plain form (OPA-03.AC1) > OPA-03.AC1 renderVerdict golden 3`] = `"✖ BLOCKED — 1 critical finding"`;
+
+exports[`grammar exports (OPA-03.AC1) > OPA-03.AC1 envelope builds exactly the eight camelCase top-level keys in order 1`] = `
+"{
+  "schemaVersion": "1",
+  "tool": "hackmyagent",
+  "version": "1.2.3",
+  "verdict": "warning",
+  "score": 72,
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Hardcoded API key",
+      "file": "src/config.ts",
+      "line": 42,
+      "why": "A committed credential lets anyone with repo read access impersonate the service.",
+      "verify": "grep -n \\"sk-\\" src/config.ts",
+      "fix": "hackmyagent secure --rotate src/config.ts",
+      "url": "https://docs.opena2a.org/findings/hardcoded-secret"
+    }
+  ],
+  "nextSteps": [
+    "hackmyagent secure ."
+  ],
+  "exitCode": 1
+}"
+`;

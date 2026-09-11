@@ -148,3 +148,16 @@ export {
   sanitizeArray,
   sanitizeForTerminal,
 } from "./terminal-safe.js";
+// Terminal grammar primitives (0.6.0). The star export carries renderVerdict,
+// renderScore, renderFinding, renderProgress, renderError and envelope; the
+// explicit renderNextSteps export above (CTA objects, 0.3.0) keeps the barrel
+// binding for that name per the ES ambiguity rule, so the base surface is
+// untouched — the grammar variant stays importable from ./grammar.js.
+export * from "./grammar.js";
+export {
+  frontDoorConformance,
+  type ConformanceProperty,
+  type ConformancePropertyResult,
+  type FrontDoorConformanceResult,
+  type FrontDoorTarget,
+} from "./conformance.js";

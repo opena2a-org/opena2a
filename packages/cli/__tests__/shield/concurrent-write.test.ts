@@ -57,10 +57,22 @@ afterEach(() => {
 /** Far enough ahead that the slowest interpreter start still lands before it. */
 const START_DELAY_MS = 1_500;
 
-function spawnChild(home: string, startAt: number, index: number): Promise<void> {
+/**
+ * Resolves with the child's collected stderr on EVERY exit code, not only
+ * inside the rejection for a non-zero one: a child that prints the documented
+ * `shield: lock-timeout` fail-open warning and then exits 0 is precisely the
+ * child whose stderr explains a later fork, and discarding it left the round
+ * assertion with nothing to say (OPA-01.AC3).
+ */
+function spawnChild(
+  home: string,
+  startAt: number,
+  index: number,
+  script: string = CHILD,
+): Promise<string> {
   const tsx = resolveTsx();
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(tsx, [CHILD, String(startAt), String(index)], {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(tsx, [script, String(startAt), String(index)], {
       env: { ...process.env, HOME: home },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -68,17 +80,81 @@ function spawnChild(home: string, startAt: number, index: number): Promise<void>
     child.stderr.on('data', chunk => { stderr += String(chunk); });
     child.on('error', reject);
     child.on('exit', code => {
-      if (code === 0) resolve();
+      if (code === 0) resolve(stderr);
       else reject(new Error(`child ${index} exited ${code}: ${stderr}`));
     });
   });
 }
 
-function runChildren(home: string, count: number): Promise<void[]> {
+/**
+ * Ceiling on SIMULTANEOUSLY LIVE spawned children (QGF-40.AC1). Each live
+ * child is a tsx process running the CLI in its own child node process —
+ * about 22 tasks per live child — so an unbounded fan-out at N writers holds
+ * 2N processes at once; at the default N=8 that fan-out was the measured
+ * per-worker worst case that cost the packages/cli suite fifteen of its
+ * sixteen vitest workers under a 512-pid cgroup (see ../../vitest.workers.ts).
+ *
+ * QGF-40.AC2 — the concurrency level still exercised, and why it suffices:
+ * up to MAX_LIVE_CHILDREN = 4 writer processes are spawned in the same tick
+ * and spin until the same `startAt` instant, so four writers enter
+ * `writeEvent` simultaneously and contend for the event lock in the same
+ * window. The #231 hash-chain fork is a PAIRWISE race — it needs exactly two
+ * writers to read the same last line for their prevHash before either
+ * appends — so four barrier-aligned writers offer six racing pairs per
+ * round, and at the base (pre-lock) the fork reproduced 5/5 at every
+ * contention level measured. Writers beyond the ceiling queue for a free
+ * slot and start after `startAt`, arriving while earlier writers still hold
+ * and release the lock, which keeps exercising the acquire/release handoff.
+ *
+ * QGF-40.AC3 — this is a literal constant on purpose: the ceiling is raised
+ * by editing this line, never by an environment variable, so the
+ * SHIELD_CONCURRENT_WRITERS override raises the TOTAL writer count only,
+ * never the number simultaneously live.
+ */
+const MAX_LIVE_CHILDREN = 4;
+
+/**
+ * Runs `count` writer children against one home, never holding more than
+ * MAX_LIVE_CHILDREN live at once, and reports the peak liveness it counted:
+ * `peakLive` increments before each spawn and decrements when that child's
+ * exit settles, so a slot never starts a new child before its previous one
+ * is gone.
+ */
+async function runChildren(
+  home: string,
+  count: number,
+): Promise<{ stderrs: string[]; peakLive: number }> {
   const startAt = Date.now() + START_DELAY_MS;
-  return Promise.all(
-    Array.from({ length: count }, (_unused, index) => spawnChild(home, startAt, index)),
+  const stderrs: string[] = new Array<string>(count);
+  let next = 0;
+  let live = 0;
+  let peakLive = 0;
+
+  async function slot(): Promise<void> {
+    while (next < count) {
+      const index = next++;
+      live += 1;
+      if (live > peakLive) peakLive = live;
+      try {
+        stderrs[index] = await spawnChild(home, startAt, index);
+      } finally {
+        live -= 1;
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(MAX_LIVE_CHILDREN, count) }, () => slot()),
   );
+  return { stderrs, peakLive };
+}
+
+/** One line per child that wrote anything, for failure messages. */
+function describeStderr(stderrs: string[]): string {
+  const spoke = stderrs
+    .map((s, i) => (s.length > 0 ? `child ${i} stderr: ${s.trimEnd()}` : null))
+    .filter((l): l is string => l !== null);
+  return spoke.length > 0 ? spoke.join('\n') : 'no child wrote to stderr';
 }
 
 /** Block this thread until `deadline`, the way `writeEvent` waits for a lock. */
@@ -117,15 +193,21 @@ describe('concurrent writeEvent (#231)', () => {
   for (const round of Array.from({ length: ROUNDS }, (_, i) => i + 1)) {
     it(`keeps the chain intact across ${N} concurrent writer processes (round ${round})`, async () => {
       const home = makeHome();
-      await runChildren(home, N);
+      const { stderrs, peakLive } = await runChildren(home, N);
 
       const { lines, shieldDir } = readLog(home);
+
+      // The fan-out bound holds on every round, whatever N the override set.
+      expect(peakLive).toBeLessThanOrEqual(MAX_LIVE_CHILDREN);
 
       // No write may be lost: the lock serialises writers, it does not drop them.
       expect(lines.length).toBe(N);
 
       const events = lines.map(line => JSON.parse(line));
-      expect(verifyEventChain(events)).toEqual({ valid: true, brokenAt: null });
+      expect(verifyEventChain(events), describeStderr(stderrs)).toEqual({
+        valid: true,
+        brokenAt: null,
+      });
 
       // Every child is represented exactly once.
       const targets = events.map(e => e.target).sort();
@@ -138,6 +220,60 @@ describe('concurrent writeEvent (#231)', () => {
       expect(leftover).toEqual([]);
     }, 60_000);
   }
+
+  // One writer count deliberately above the ceiling, independent of the env
+  // overrides so the stress matrix (writers: 2) cannot turn these three
+  // criteria tests vacuous. The run happens once and each criterion asserts
+  // its own facet of the recorded result; the log is read before the home is
+  // cleaned up by afterEach.
+  const OVER_CEILING_WRITERS = MAX_LIVE_CHILDREN + 2;
+  let overCeilingRun:
+    | Promise<{ stderrs: string[]; peakLive: number; lines: string[] }>
+    | null = null;
+  function runOverCeiling(): Promise<{ stderrs: string[]; peakLive: number; lines: string[] }> {
+    overCeilingRun ??= (async () => {
+      const home = makeHome();
+      const { stderrs, peakLive } = await runChildren(home, OVER_CEILING_WRITERS);
+      return { stderrs, peakLive, lines: readLog(home).lines };
+    })();
+    return overCeilingRun;
+  }
+
+  it(`QGF-40.AC1 never holds more than MAX_LIVE_CHILDREN=${MAX_LIVE_CHILDREN} spawned children live at once`, async () => {
+    const { peakLive } = await runOverCeiling();
+    // Counted by the runner itself: peakLive is the high-water mark of
+    // children spawned and not yet exited.
+    expect(peakLive).toBeLessThanOrEqual(MAX_LIVE_CHILDREN);
+  }, 60_000);
+
+  it('QGF-40.AC2 keeps at least two writers simultaneously live and contending in the same startAt window', async () => {
+    const { peakLive, lines, stderrs } = await runOverCeiling();
+    // The whole first batch spawns in one tick and every child in it spins
+    // until the shared startAt instant, so the ceiling itself is the
+    // simultaneous contention level — well above the two writers a
+    // hash-chain fork needs.
+    expect(peakLive).toBeGreaterThanOrEqual(Math.min(OVER_CEILING_WRITERS, MAX_LIVE_CHILDREN));
+    expect(peakLive).toBeGreaterThanOrEqual(2);
+    // And the contended chain is still a single unforked one.
+    expect(
+      verifyEventChain(lines.map(line => JSON.parse(line))),
+      describeStderr(stderrs),
+    ).toEqual({ valid: true, brokenAt: null });
+  }, 60_000);
+
+  it('QGF-40.AC3 queues writers above the ceiling instead of spawning them concurrently', async () => {
+    const { peakLive, lines } = await runOverCeiling();
+    // The total writer count rose past the ceiling and nobody was dropped...
+    expect(OVER_CEILING_WRITERS).toBeGreaterThan(MAX_LIVE_CHILDREN);
+    expect(lines.length).toBe(OVER_CEILING_WRITERS);
+    const targets = lines.map(line => JSON.parse(line).target).sort();
+    expect(targets).toEqual(
+      Array.from({ length: OVER_CEILING_WRITERS }, (_u, i) => `child-${i}`).sort(),
+    );
+    // ...but the excess writers queued rather than spawned concurrently.
+    expect(peakLive).toBeLessThanOrEqual(MAX_LIVE_CHILDREN);
+    expect(peakLive).toBeLessThan(OVER_CEILING_WRITERS);
+  }, 60_000);
 
   it('rotates an oversized log only while holding the lock', async () => {
     // Rotation renames events.jsonl out from under anyone who has already
@@ -179,6 +315,16 @@ describe('concurrent writeEvent (#231)', () => {
       brokenAt: null,
     });
   }, 60_000);
+
+  it('OPA-01.AC3 keeps the stderr of a child that exits 0', async () => {
+    // Red at base 5cb201b: spawnChild surfaced stderr only inside the
+    // rejection for a non-zero exit, so a child that printed the fail-open
+    // `shield: lock-timeout` warning and exited 0 left no trace.
+    const home = makeHome();
+    const probe = path.resolve(__dirname, 'fixtures', 'stderr-probe-child.ts');
+    const captured = await spawnChild(home, Date.now(), 0, probe);
+    expect(captured).toContain('stderr-probe: retained on exit 0');
+  }, 30_000);
 });
 
 describe('event lock', () => {

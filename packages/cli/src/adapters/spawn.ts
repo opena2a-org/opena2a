@@ -2,16 +2,17 @@ import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
 import { createLineRebrander } from '../util/rebrand.js';
 import { buildChildEnv, probeEnv } from '../util/child-env.js';
+import { inheritEnv } from './registry.js';
 
 /**
  * Build the child environment for a delegated tool from its registry entry.
  *
- * `envInherit` tools get the parent environment in full — see the
- * justification at their ADAPTER_REGISTRY declaration. Everything else gets
- * the allowlist.
+ * `envInherit` tools get the parent environment through `inheritEnv()` —
+ * verbatim minus the `OPENA2A_CHILD_ENV_ALLOW` hatch; see the justification
+ * at their ADAPTER_REGISTRY declaration. Everything else gets the allowlist.
  */
 function toolEnv(config: AdapterConfig): NodeJS.ProcessEnv {
-  if (config.envInherit) return { ...process.env };
+  if (config.envInherit) return inheritEnv();
   return buildChildEnv(
     { allow: config.envAllow, allowPrefixes: config.envAllowPrefixes },
     process.env,

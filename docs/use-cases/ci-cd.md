@@ -302,8 +302,8 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
         working-directory: ${{ runner.temp }}
         run: |
           npx hackmyagent secure "$GITHUB_WORKSPACE" --ci --format json > hma.json
-          critical=$(jq -r '.summary.critical' hma.json)
-          high=$(jq -r '.summary.high' hma.json)
+          critical=$(jq -r '[.findings[] | select(.severity == "critical")] | length' hma.json)
+          high=$(jq -r '[.findings[] | select(.severity == "high")] | length' hma.json)
           echo "HMA: $critical critical, $high high findings"
           if [ "$critical" -gt 0 ]; then
             echo "Critical vulnerabilities detected"
