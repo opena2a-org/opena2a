@@ -2,19 +2,26 @@
  * Audit of every packages/cli test file that spawns child processes
  * (QGF-40.AC5): each file under __tests__ with a static
  * `import ... from 'node:child_process'`, its spawn shape and the maximum
- * number of children it holds live at once. child-process-audit.test.ts
- * enumerates those imports from the tree and fails when an importing file is
- * missing here (or listed here without importing), so this table cannot
- * silently go stale.
+ * number of children it holds live at once. The test beside this file
+ * enumerates those imports from the tree and fails when a file that imports
+ * the module is missing here (or listed here without the import), so this
+ * table cannot silently go stale.
  *
- * Measured population, correcting the roadmap unit's "other six": besides
- * shield/concurrent-write.test.ts there are FIVE real spawners, all
- * synchronous and one child at a time. Four more files only
- * `vi.mock('node:child_process', ...)` and spawn nothing real —
- * shield/llm.test.ts and shield/llm-backend.test.ts (the two the unit
- * counted), plus adapters/docker.test.ts and
- * adapters/child-env-wiring.test.ts; none has the static import, so the
- * enumeration below correctly excludes them.
+ * The audited population is the table below and is written down nowhere
+ * else. A test file that gains the static import becomes a new entry here,
+ * a file that loses it drops out, and either way the edit is local: a
+ * delivery adds its own row and rewrites no line another delivery needs.
+ * Files that merely `vi.mock('node:child_process', ...)` spawn nothing real
+ * and carry no static import, so the enumeration excludes them.
+ *
+ * A prose tally of the same set used to sit here, and it was wrong on main
+ * without a single assertion turning red — nothing reads a docstring. Worse,
+ * keeping it right meant every delivery that changed the set had to rewrite
+ * the same sentence, so deliveries that landed together collided on it
+ * (opena2a #339 and #340) while their table rows merged cleanly.
+ * child-process-audit.test.ts now fails if a count comes back into this
+ * comment, and child-process-audit-merge.test.ts pins the difference in
+ * merge behaviour that is the reason for keeping it out (QGF-146).
  *
  * Root `package.json` keeps `turbo run test --concurrency=1` (QGF-40.AC4
  * retention record): every vitest instance carries the fixed
@@ -78,5 +85,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     spawns:
       'spawnSync(probe) once to find an executable scratch dir; then the module ' +
       'under test runs execFileSync(which | claude) against stubs on PATH (#246)',
+  },
+  'child-process-audit-merge.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git init | add | commit | checkout | merge-tree) over throwaway ' +
+      'repositories built from this file (QGF-146.AC4)',
   },
 };
