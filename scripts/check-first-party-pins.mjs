@@ -435,6 +435,13 @@ function parseArgs(argv) {
   if (opts.coherence && (!opts.skipped || !opts.published)) {
     throw new Error('--coherence needs both --skipped <file> and --published <file>.');
   }
+  // Refused rather than silently ordered, because the two modes run on opposite
+  // sides of the publish loop: one asks the registry BEFORE anything is
+  // published, the other reads what the loop DID. A single invocation claiming
+  // both would answer one of them against the wrong moment.
+  if (opts.coherence && opts.resolve) {
+    throw new Error('--resolve and --coherence are separate steps; pass one or the other.');
+  }
   return opts;
 }
 
