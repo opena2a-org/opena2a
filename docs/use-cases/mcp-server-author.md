@@ -19,52 +19,29 @@ Before users install your MCP server, they may run an audit to check its securit
 npx opena2a-cli mcp audit
 ```
 
-Expected output:
-
+Captured from opena2a-cli v0.10.13 on 2026-09-04; the config file path is replaced with a fixed placeholder:
 ```
-  MCP Server Audit  v0.7.2
+MCP Server Audit
+==================================================
 
-  Scanning MCP configurations...
+Source: /home/dev/mcp-server-tools/.mcp.json (project-local)
+  my-server            stdio    node ./dist/index.js                           not signed  no trust score
+  filesystem           stdio    npx @modelcontextprotocol/server-filesystem .  not signed  no trust score
+  postgres             stdio    npx @modelcontextprotocol/server-postgres      not signed  no trust score
+  github               stdio    npx @modelcontextprotocol/server-github        not signed  no trust score
 
-  Servers Found (4)
-  -----------------------------------------------
-  my-server            claude     local
-  filesystem           claude     local
-  postgres             claude     local
-  github               cursor     local
+Summary
+  Servers found:     4
+  Signed:            0 / 4
+  Verified:          0 / 4
+  Trust scores:      0 / 4
 
-  Detailed Audit: my-server
-  -----------------------------------------------
-  Package          @myorg/mcp-server-tools
-  Version          1.2.0
-  Source           npm
-  Signature        unsigned
-  Trust Score      --  (not registered)
-
-  Capabilities Declared
-  -----------------------------------------------
-  tools            3 tools exposed
-  resources        1 resource type
-  prompts          0
-
-  Security Checks
-  -----------------------------------------------
-  PASS   No known CVEs for dependencies
-  PASS   Package checksum matches npm registry
-  WARN   Server binary not signed
-  WARN   No capability restrictions defined
-  WARN   Not registered in Trust Registry
-  FAIL   No SOUL.md governance file
-
-  Audit Score      55 / 100
-
-  To improve:
-    1. Sign your server:     opena2a mcp sign my-server
-    2. Add governance:       opena2a harden-soul
-    3. Register publicly:    opena2a self-register
+Next Steps
+  opena2a mcp sign <name>       Sign an MCP server with AIM identity
+  opena2a mcp verify <name>     Verify server signature and trust score
 ```
 
-The audit checks what users see when they evaluate your server: whether it is signed, whether it has known vulnerabilities, whether its capabilities are declared and restricted, and whether it appears in the Trust Registry.
+Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists under `.opena2a/mcp-identities/`, and its registry trust score. `no trust score` means the registry held no record of that server when the audit ran -- which is what every unregistered server looks like, yours included, until Step 5. `Verified` in the summary counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
 
 ---
 
@@ -101,7 +78,7 @@ npx opena2a-cli mcp sign my-server
 Expected output:
 
 ```
-  MCP Server Signing  v0.7.2
+  MCP Server Signing
 
   Server       my-server
   Package      @myorg/mcp-server-tools@1.2.0
@@ -179,45 +156,17 @@ For MCP servers specifically, pay attention to:
 
 ---
 
-## Step 4: Check Your Trust Score
+## Step 4: Check Your Trust Rating
 
-The trust score is a composite metric that reflects your server's security posture, community standing, and verification status.
+The trust rating is a composite metric that reflects your server's security posture, community standing, and verification status.
 
 ```bash
 npx ai-trust check my-server
 ```
 
-Expected output:
+It reports one number between 0 and 1, the six factors that add up to it, and what each factor would need to go higher. No sample run is pasted here: `ai-trust` ships from its own repository on its own release cadence, so a copy of its output frozen into this page ages the moment it publishes.
 
-```
-  AI Trust  v0.4.2
-
-  Package    @myorg/mcp-server-tools@1.2.0
-
-  Trust Score    0.72 / 1.00
-
-  Factor Breakdown
-  -----------------------------------------------
-  Identity           0.15 / 0.20    Ed25519 identity present
-  Signature          0.15 / 0.20    Package signed
-  Governance         0.10 / 0.15    SOUL.md present, 48/54 controls
-  Vulnerability      0.12 / 0.15    No critical/high CVEs
-  Community          0.05 / 0.15    12 weekly downloads, 3 dependents
-  Provenance         0.15 / 0.15    npm publish attestation verified
-
-  Recommendations
-  -----------------------------------------------
-  +0.05   Complete remaining 6 SOUL.md controls
-  +0.10   Increase adoption (community factor is usage-weighted)
-
-  History
-  -----------------------------------------------
-  v1.0.0   0.45   initial publish
-  v1.1.0   0.58   added identity + signature
-  v1.2.0   0.72   added governance
-```
-
-The trust score is calculated locally using publicly available signals. No data is uploaded. The factors are:
+The trust rating is calculated locally using publicly available signals. No data is uploaded. The factors are:
 
 | Factor | Weight | What It Measures |
 |--------|--------|------------------|
@@ -232,39 +181,47 @@ The trust score is calculated locally using publicly available signals. No data 
 
 ## Step 5: Register with the Community
 
-Publish your server's trust profile to the OpenA2A Trust Registry so users can look you up before installing.
+To claim your own package in the OpenA2A Trust Registry, use `opena2a claim`. It proves ownership through npm package maintainership or GitHub repository access, which is what stops anyone else from registering your name:
 
 ```bash
-npx opena2a-cli self-register
+npx opena2a-cli claim @myorg/mcp-server-tools
+npx opena2a-cli claim @myorg/mcp-server-tools --source github
 ```
 
-Expected output:
+`self-register` is a different command, and a common mix-up. It does not take a package argument and it will not register your server: it publishes the OpenA2A project's own tools -- a fixed list of eleven, compiled into the CLI -- along with their security scan results. It is a maintainer command for this repository. Run it with `--dry-run` to see the list without writing anything to the registry:
 
-```
-  Trust Registry Self-Registration  v0.7.2
-
-  Package      @myorg/mcp-server-tools@1.2.0
-  Identity     agent:ed25519:k1_b7c4...9f1a
-  Trust Score  0.72
-
-  Verification Method
-  -----------------------------------------------
-  Checking npm ownership...
-  Verified: you are a maintainer of @myorg/mcp-server-tools on npm
-
-  Registration
-  -----------------------------------------------
-  Published trust profile to registry.opena2a.org
-  Profile URL: https://registry.opena2a.org/p/@myorg/mcp-server-tools
-
-  Users can now discover your server:
-    npx opena2a-cli detect --registry
-    npx ai-trust check @myorg/mcp-server-tools
+```bash
+npx opena2a-cli self-register --dry-run
 ```
 
-Registration requires proving ownership through npm package maintainership or GitHub repository access. This prevents impersonation.
+Captured from opena2a-cli v0.10.13 on 2026-09-04:
+```
+Registering 11 OpenA2A tool(s) at https://api.oa2a.org
 
-After registration, your server appears in `detect --registry` results with its trust score and verification status. Users see "verified" next to your server name instead of "not in registry."
+[DRY RUN] No HTTP requests will be made.
+
+
+Tool                       Status  Scan     Crit  High  Med  Low  Published
+-------------------------  ------  -------  ----  ----  ---  ---  ---------
+HackMyAgent                new     skipped  -     -     -    -    dry-run  
+Secretless AI              new     skipped  -     -     -    -    dry-run  
+Agent Runtime Protection   new     skipped  -     -     -    -    dry-run  
+OASB Benchmark             new     skipped  -     -     -    -    dry-run  
+BrowserGuard               new     skipped  -     -     -    -    dry-run  
+AI Trust                   new     skipped  -     -     -    -    dry-run  
+OpenA2A Registry           new     skipped  -     -     -    -    dry-run  
+Agent Identity Management  new     skipped  -     -     -    -    dry-run  
+Damn Vulnerable AI Agent   new     skipped  -     -     -    -    dry-run  
+CryptoServe                new     skipped  -     -     -    -    dry-run  
+Trust Gate                 new     skipped  -     -     -    -    dry-run  
+
+Summary: 11 tools, 0 scanned, 5 metadata-only, 0 errors
+Registry: https://api.oa2a.org
+```
+
+Without `--dry-run` the command asks before it writes, because the registry is public and the CLI cannot undo a publish. Each row is one tool: `Scan` is the HackMyAgent result behind the published record (`skipped` under `--dry-run`, which runs no scans), and `Published` says whether the record went out with scan findings or as metadata only.
+
+After a successful claim, your server appears in `detect --registry` results with its trust score, and its row carries `Trust: <score>/100` instead of `No trust data`.
 
 ---
 

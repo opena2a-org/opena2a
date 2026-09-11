@@ -18,44 +18,55 @@ Start by discovering what AI tools are active in your environment and how well-g
 npx opena2a-cli detect
 ```
 
-Expected output:
+Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
+```
+Shadow AI Agent Audit
+macbook-pro | dev | /home/dev/my-project
+2026-09-04 18:22:41 UTC
+
+Governance: 63/100 -> 100/100 by addressing 3 findings
+3 MCP servers | 3 AI configs
+
+What This Means
+  3 MCP servers give your AI agents additional capabilities (file access, database queries, API calls, etc.).
+  None have verified identities, so there is no tamper-evident record of which server version is installed.
+
+Findings (3)
+
+  HIGH  AI config files grant broad permissions
+  .claude/settings.json
+  These configs allow AI agents to perform a wide range of actions without restrictions. Broad permissions increase the surface area if an agent behaves unexpectedly or if the config is modified by a third party.
+  Fix: opena2a scan-soul
+
+  MEDIUM  3 project MCP servers without verified identity
+  These servers are configured in your project but have not been signed.
+  Unverified servers could be modified or replaced without detection. Signing creates a tamper-evident record of exactly which server version is in use.
+  Fix: opena2a mcp audit
+
+  LOW  3 project MCP servers without signed identity
+  Signing creates a tamper-evident record of each server's configuration.
+  Without signing, you cannot detect if an MCP server configuration was modified by an attacker or by another agent. Signing lets you verify that the server you are using is the exact version you approved.
+  Fix: opena2a mcp sign
+
+Running AI Agents
+  No AI agents detected
+
+MCP Servers (3 found)
+  Project-local (3)
+    postgres             -- can read and modify your database
+    filesystem           -- can read and write files on your machine
+    slack                -- can send messages on your behalf
+
+AI Config Files (3 found)
+  .claude/settings.json              Claude Code
+    Grants broad permissions to AI agents in this project
+  + 2 low-risk config(s) -- run with --verbose to see all
 
 ```
-  Shadow AI Detection  v0.7.2
 
-  Machine    macbook-pro (darwin arm64)
-  User       dev
-  Directory  /home/dev/my-project
+The governance score tells you how well-managed your AI environment is: 100 is fully governed, and every point it deducts is attached to a finding with a fix. A score of 63 means several gaps need attention.
 
-  AI Agents (2 running)
-  -----------------------------------------------
-  claude-code          PID 41023   v1.0.12
-  cursor               PID 38291   v0.45.6
-
-  MCP Servers (3 configured)
-  -----------------------------------------------
-  filesystem           claude     local
-  postgres             claude     local
-  slack                cursor     local
-
-  AI Config Files (2 found)
-  -----------------------------------------------
-  CLAUDE.md            project    governance rules
-  .cursorrules         project    editor config
-
-  Governance Score     45 / 100
-
-  Findings
-  -----------------------------------------------
-  - Project not registered (no AIM identity)
-  - No SOUL.md behavioral governance file
-  - MCP servers unsigned
-  - 2 credentials detected in source files
-
-  Run: opena2a protect    (fix all findings)
-```
-
-The governance score tells you how well-managed your AI environment is. A score of 45 means several gaps need attention.
+`Running AI Agents` lists the AI assistants it finds in the machine's process table. The capture above was taken on a build machine with none running; on a workstation with Claude Code or Cursor open, each one appears here with its identity and governance status, and an ungoverned agent costs the score more than any single MCP server does.
 
 ---
 
@@ -231,45 +242,38 @@ Address the findings based on severity. Critical and high findings should be res
 
 ## Step 6: Verify
 
-Run detection again to confirm your governance score has improved.
+The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one `.opena2a/mcp-identities/<name>.json` per server. Then run detection again:
 
 ```bash
 npx opena2a-cli detect
 ```
 
-Expected output:
+Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
+```
+Shadow AI Agent Audit
+macbook-pro | dev | /home/dev/my-project
+2026-09-04 18:22:41 UTC
+
+Governance: 100/100 -- fully governed
+3 MCP servers | 2 AI configs
+
+What This Means
+  3 MCP servers give your AI agents additional capabilities (file access, database queries, API calls, etc.).
+
+All detected AI tools have governance in place. No findings.
+
+Running AI Agents
+  No AI agents detected
+
+MCP Servers (3 found)
+  Project-local (3)
+    filesystem           verified -- can read and write files on your machine
+    postgres             verified -- can read and modify your database
+    slack                verified -- can send messages on your behalf
 
 ```
-  Shadow AI Detection  v0.7.2
 
-  Machine    macbook-pro (darwin arm64)
-  User       dev
-  Directory  /home/dev/my-project
-
-  AI Agents (2 running)
-  -----------------------------------------------
-  claude-code          PID 41023   v1.0.12    governed
-  cursor               PID 38291   v0.45.6    governed
-
-  MCP Servers (3 configured)
-  -----------------------------------------------
-  filesystem           claude     local      signed
-  postgres             claude     local      signed
-  slack                cursor     local      signed
-
-  AI Config Files (4 found)
-  -----------------------------------------------
-  CLAUDE.md            project    governance rules    signed
-  .cursorrules         project    editor config       signed
-  SOUL.md              project    behavioral rules
-  .aim/identity.json   project    agent identity
-
-  Governance Score     100 / 100
-
-  All checks passed. This project is fully governed.
-```
-
-Every AI agent is now tracked, credentials are protected, behavioral governance is defined, and config files are signed for tamper detection.
+Signed servers are the ones marked `verified`; an unsigned project server is what the score deducts for. Credentials are in the environment, behavioral governance is defined in `SOUL.md`, and every project MCP server has a signature to check against.
 
 ---
 
