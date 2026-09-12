@@ -43,9 +43,9 @@
   byte-identical to the plain form (zero `\x1b`).
 - The barrel keeps the existing `renderNextSteps` (CTA objects, 0.3.0)
   binding; the grammar's command-list `renderNextSteps` is reachable from
-  `./grammar.js`. Everything else about the export surface is additive —
-  no export was removed or renamed, and `chalk` remains the only runtime
-  dependency.
+  `dist/grammar.js` (imported as `@opena2a/cli-ui/dist/grammar.js`).
+  Everything else about the export surface is additive — no export was
+  removed or renamed, and `chalk` remains the only runtime dependency.
 
 ### Fixed
 - `runTelemetryCommand` no longer prints a toggle hint that cannot work. When
