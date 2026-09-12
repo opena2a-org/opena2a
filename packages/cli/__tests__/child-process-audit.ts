@@ -79,6 +79,14 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(jq | bash | node) recipe probes',
   },
+  'release-first-party-pins.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node scripts/check-first-party-pins.mjs) once per case; two of ' +
+      'those cases put an `npm` stub on PATH, which the script then runs as a ' +
+      'grandchild, still one at a time (QGF-145)',
+  },
   'shield/claude-env-contract.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,

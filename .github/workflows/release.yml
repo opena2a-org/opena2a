@@ -275,6 +275,9 @@ jobs:
     permissions:
       id-token: write   # OIDC trusted publishing. `contents` is `none` by
                         # replacement -- the publish path needs no repo write.
+      contents: read    # the first-party pins gate below reads the roster and
+                        # the eleven manifests out of git at the tagged commit.
+                        # Read only; the publish path still needs no repo write.
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -322,6 +325,42 @@ jobs:
             }
           '
 
+      # The pins gate below reads the roster out of THIS file and the pins out
+      # of the eleven workspace manifests, so those bytes have to be on disk. It
+      # takes them from git at the tagged commit -- which the build job already
+      # proved is an ancestor of main -- and NOT from this run's artifact: any
+      # job in a run can upload an artifact, so artifact bytes are the wrong
+      # provenance for code that executes in the job holding the publish
+      # identity. `sparse-checkout` keeps it to the three input paths and
+      # nothing else, and `persist-credentials: false` leaves no token on disk.
+      # This narrows the "no checkout" note above rather than abandoning it:
+      # still no `npm ci`, no dependency code, no build.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/check-first-party-pins.mjs
+            .github/workflows/release.yml
+            packages/*/package.json
+
+      # BEFORE the first irreversible publish, and it has to be before: roster
+      # ORDER makes a same-run pin safe, but six workspaces here are pinned at
+      # an exact version by another workspace, and two of those pins name a
+      # version this run does not produce (`opena2a-cli` -> `@opena2a/contribute
+      # 0.1.0` against an in-tree 0.3.0; `@opena2a/check-core` ->
+      # `@opena2a/registry-client 0.1.0` against an in-tree 0.2.0). Whether
+      # those resolve is a fact about the registry that no reordering can
+      # change, and `npm publish` cannot be taken back -- so it is asked here,
+      # once, and it fails closed. Nothing on this step or in the script it runs
+      # softens a non-zero exit, and a pin whose answer could not be measured is
+      # refused too, because unknown is not a pass.
+      - name: Every first-party pin must already resolve on npm
+        run: |
+          set -euo pipefail
+          node scripts/check-first-party-pins.mjs --resolve \
+            --registry https://registry.npmjs.org/
+
       # Idempotent, and it has to be: a green publish followed by a red later
       # step must leave a re-run able to reach the remaining steps. npm refuses
       # to republish a version unconditionally, so without this a partial
@@ -354,6 +393,26 @@ jobs:
           done
           echo "=== Published this run ==="; cat /tmp/published.txt
           echo "=== Skipped (already on npm) ==="; cat /tmp/skipped.txt
+
+      # The two lists the loop just wrote have to describe ONE tree.
+      #
+      # The skip above is idempotence working as intended only while nothing the
+      # skipped package depends on moved underneath it. If `opena2a-cli@0.10.13`
+      # is already on npm -- published from a different tree, carrying a
+      # different dependency set -- then this run skips `opena2a-cli` entirely,
+      # publishes `@opena2a/cli-ui@0.6.0` that the skipped cli pins, and goes
+      # green while the cli change in this tree never ships. To the loop that is
+      # indistinguishable from a completed partial release; to this step it is
+      # not, because the publish list distinguishes them. Every entry skipped and
+      # nothing published is the partial-release completion, and stays green.
+      #
+      # Runs before the provenance poll so an incoherent release is reported in
+      # seconds rather than after five minutes of attestation retries.
+      - name: Publish list and skip list must describe one tree
+        run: |
+          set -euo pipefail
+          node scripts/check-first-party-pins.mjs --coherence \
+            --skipped /tmp/skipped.txt --published /tmp/published.txt
 
       # This gate was previously incapable of failing, twice over. It captured
       # stderr into the variable it tested (`2>&1`), so an E404 -- exactly what
