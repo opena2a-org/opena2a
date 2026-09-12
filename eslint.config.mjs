@@ -62,29 +62,4 @@ export default [
       'no-new-func': 'error',
     },
   },
-
-  // The one exception in the tree, stated here rather than as an inline
-  // comment, so that it appears in a diff and has to be re-approved if the
-  // file's use of it changes.
-  //
-  // review.test.ts renders the HTML report and then executes the script the
-  // report embeds, in order to assert that the nav handler it registers
-  // actually works. There is no way to test emitted script behaviour without
-  // evaluating it. The evaluated string is the report our own code just
-  // generated, not input, and it runs against a stub document inside the test.
-  //
-  // Scoped to no-new-func only: no-eval and no-implied-eval stay ERROR in this
-  // file. Verified maintainer-authored (`git blame -w -L 105,106 d3fc6de --
-  // packages/cli/__tests__/commands/review.test.ts` -> 454bd9a8), not part of
-  // the externally contributed surface.
-  //
-  // Reopen if: this file evaluates anything that is not output of our own
-  // report generator, or a second file needs the same exemption — two sites
-  // means the pattern needs a test helper, not a second waiver.
-  {
-    files: ['packages/cli/__tests__/commands/review.test.ts'],
-    rules: {
-      'no-new-func': 'off',
-    },
-  },
 ];
