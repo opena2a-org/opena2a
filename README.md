@@ -14,10 +14,10 @@ Unified CLI for the OpenA2A security toolchain. One command finds credential lea
 ## Quick start
 
 ```bash
-npx opena2a-cli init       # 1. read-only assessment: every finding prints Verify and Fix
-npx opena2a-cli protect    # 2. apply the fixes
-npx opena2a-cli review     # 3. full report. First run downloads the NanoMind
-                           #    model files; --no-open skips the browser.
+npx opena2a-cli init my-agent      # 1. read-only assessment: every finding prints Verify and Fix
+npx opena2a-cli protect my-agent   # 2. apply the fixes
+npx opena2a-cli review my-agent    # 3. full report. First run downloads the NanoMind
+                                   #    model files; --no-open skips the browser.
 ```
 
 What `init` prints (captured from opena2a-cli 0.10.13 on a small demo project, trimmed):
@@ -47,7 +47,7 @@ What `init` prints (captured from opena2a-cli 0.10.13 on a small demo project, t
 ### npm
 
 ```bash
-npx opena2a-cli init            # run once, no install
+npx opena2a-cli init my-agent   # run once, no install
 npm install -g opena2a-cli      # install globally
 ```
 
