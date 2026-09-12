@@ -1,3 +1,4 @@
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa';
 import { describe, it, expect } from 'vitest';
 import {
   firstDuplicateMember,
@@ -6,7 +7,7 @@ import {
   StrictParseError,
   MAX_SCAN_DEPTH,
 } from './strict-parse.js';
-import { LocalAtxVerifier, type AtxTrustAnchors } from './atx.js';
+import { LocalAtxVerifier, canonicalPayload, type AtxTrustAnchors } from './atx.js';
 
 const emptyAnchors: AtxTrustAnchors = { trustedIssuers: [], publicKeys: [] };
 
@@ -243,9 +244,13 @@ describe('LocalAtxVerifier.verify (object overload, plain-JS runtime inputs)', (
     expect(r.reason).toContain('atcVersion');
   });
 
-  it('mldsaPresent is set when an ML-DSA-only credential fails Ed25519 verification', () => {
-    const anchors: AtxTrustAnchors = { trustedIssuers: ['did:x:issuer'], publicKeys: [] };
-    const r = new LocalAtxVerifier(anchors).verify({
+  it('an ML-DSA-only credential rejects for want of an Ed25519 entry, even when its ML-DSA-65 signature verifies', () => {
+    // AAP §9.4: a credential declaring an ML-DSA-65 entry MUST also carry a
+    // verifying Ed25519 entry. The post-quantum half is genuinely signed and
+    // anchored here, so the rejection can only be the missing classical entry —
+    // previously this passed because the ML-DSA half was never verified at all.
+    const { publicKey, secretKey } = ml_dsa65.keygen();
+    const atx = {
       atcVersion: '1.0',
       agentId: 'a',
       agentDid: 'did:x:a',
@@ -256,8 +261,27 @@ describe('LocalAtxVerifier.verify (object overload, plain-JS runtime inputs)', (
       trustScore: 0.5,
       issuedAt: '2026-01-01T00:00:00Z',
       expiresAt: '2999-01-01T00:00:00Z',
-      signatures: [{ algorithm: 'ML-DSA-65', value: 'AA==' }],
-    } as never);
+      signatures: [] as unknown[],
+    };
+    const sig = ml_dsa65.sign(secretKey, new Uint8Array(canonicalPayload(atx as never)));
+    atx.signatures = [
+      {
+        keyId: 'did:x:issuer#pqc',
+        algorithm: 'ML-DSA-65',
+        value: Buffer.from(sig).toString('base64'),
+      },
+    ];
+    const anchors: AtxTrustAnchors = {
+      trustedIssuers: ['did:x:issuer'],
+      publicKeys: [
+        {
+          keyId: 'did:x:issuer#pqc',
+          algorithm: 'ML-DSA-65',
+          publicKeyHex: Buffer.from(publicKey).toString('hex'),
+        },
+      ],
+    };
+    const r = new LocalAtxVerifier(anchors).verify(atx as never);
     expect(r.valid).toBe(false);
     expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
     expect(r.reason).toContain('no Ed25519 signature verified');
