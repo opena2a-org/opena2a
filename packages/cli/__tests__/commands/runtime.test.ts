@@ -73,7 +73,7 @@ describe('runtime', () => {
     expect(configContent).toContain('interceptors:');
   });
 
-  it('init enables MCP monitoring when MCP config detected', async () => {
+  it('init notes MCP detection using the key the engine reads', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'mcp-server' }));
     fs.writeFileSync(path.join(tempDir, 'mcp.json'), '{}');
 
@@ -85,7 +85,13 @@ describe('runtime', () => {
 
     expect(exitCode).toBe(0);
     const configContent = fs.readFileSync(path.join(tempDir, 'arp.yaml'), 'utf-8');
-    expect(configContent).toContain('mcp-protocol: true');
+    // The engine reads aiLayer.mcp.enabled. This assertion used to require
+    // `mcp-protocol: true`, a key AILayerConfig does not have — so it passed
+    // while the generated config built no MCP scanner at all. See
+    // __tests__/runtime/init-config-shape.test.ts for the engine-level pin.
+    expect(configContent).toContain('mcp: { enabled:');
+    expect(configContent).not.toContain('mcp-protocol:');
+    expect(configContent).toContain('MCP detected in this project');
   });
 
   it('status returns JSON with expected fields', async () => {
