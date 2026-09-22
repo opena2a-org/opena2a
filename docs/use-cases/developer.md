@@ -15,7 +15,7 @@ You use Claude Code, Cursor, GitHub Copilot, or another AI coding assistant. You
 Start by discovering what AI tools are active in your environment and how well-governed they are.
 
 ```bash
-npx opena2a-cli detect
+npx opena2a-cli detect "$HOME"
 ```
 
 Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
@@ -102,7 +102,7 @@ This identity is local-only. No data is sent to any server. The `.aim/` director
 Generate a `SOUL.md` file that defines behavioral boundaries for AI agents working in your project. This file is checked by `scan-soul` and used by governance-aware agents.
 
 ```bash
-npx opena2a-cli harden-soul
+npx opena2a-cli harden-soul my-agent
 ```
 
 Expected output:
@@ -135,7 +135,7 @@ The generated file uses the ABGS (Agent Behavioral Governance Specification) fra
 To verify your governance file covers all required controls:
 
 ```bash
-npx opena2a-cli scan-soul
+npx opena2a-cli scan-soul my-agent
 ```
 
 Expected output:
@@ -245,7 +245,7 @@ Address the findings based on severity. Critical and high findings should be res
 The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one `.opena2a/mcp-identities/<name>.json` per server. Then run detection again:
 
 ```bash
-npx opena2a-cli detect
+npx opena2a-cli detect "$HOME"
 ```
 
 Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:

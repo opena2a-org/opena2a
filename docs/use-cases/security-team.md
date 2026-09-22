@@ -15,7 +15,7 @@ You are a CISO, security engineer, or compliance analyst. Developers on your tea
 Run detection on a developer workstation to see what AI tools are active. This command is read-only and does not modify any files.
 
 ```bash
-npx opena2a-cli detect
+npx opena2a-cli detect "$HOME"
 ```
 
 Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
@@ -73,7 +73,7 @@ Key observations for security teams:
 Create an HTML report suitable for sharing with leadership or including in security reviews.
 
 ```bash
-npx opena2a-cli detect --report shadow-ai-report.html
+npx opena2a-cli detect "$HOME" --report shadow-ai-report.html
 ```
 
 On the terminal this prints the Step 1 audit unchanged and then one more line, naming the file it wrote and opening it in your browser.
@@ -95,7 +95,7 @@ The HTML report includes:
 Add `--ci` to write the report without opening a browser, which is also what you want on a machine you reached over SSH:
 
 ```bash
-npx opena2a-cli detect --report shadow-ai-report.html --ci
+npx opena2a-cli detect "$HOME" --report shadow-ai-report.html --ci
 ```
 
 ---
@@ -105,7 +105,7 @@ npx opena2a-cli detect --report shadow-ai-report.html --ci
 Export the discovery results as CSV for import into your CMDB, SIEM, or asset management system.
 
 ```bash
-npx opena2a-cli detect --export-csv assets.csv
+npx opena2a-cli detect "$HOME" --export-csv assets.csv
 ```
 
 As with `--report`, the terminal shows the Step 1 audit and then one more line:
@@ -140,7 +140,7 @@ The columns are named for CMDB and ServiceNow import. Every row repeats `Hostnam
 Cross-reference discovered MCP servers against the OpenA2A Trust Registry to see community trust scores, known vulnerabilities, and verification status.
 
 ```bash
-npx opena2a-cli detect --registry
+npx opena2a-cli detect "$HOME" --registry
 ```
 
 The report is the same one Step 1 prints. What `--registry` changes is the `MCP Servers` section: each server row gains a trust label, and the label has exactly three forms.
@@ -162,7 +162,7 @@ No capture of this command is pasted here: its output depends on what the live r
 Run a comprehensive 6-phase security assessment that combines credential scanning, config integrity, shadow AI detection, behavioral governance, advisory checks, and optional deep scanning.
 
 ```bash
-npx opena2a-cli review
+npx opena2a-cli review my-agent
 ```
 
 Expected output:
@@ -224,13 +224,13 @@ The HTML dashboard provides an interactive 6-tab view with drill-down into each 
 To generate the report without opening a browser:
 
 ```bash
-npx opena2a-cli review --no-open --report security-review.html
+npx opena2a-cli review my-agent --no-open --report security-review.html
 ```
 
 For CI/CD integration, use JSON output:
 
 ```bash
-npx opena2a-cli review --format json
+npx opena2a-cli review my-agent --format json
 ```
 
 ---
@@ -244,7 +244,7 @@ To assess AI risk across multiple developer workstations, run detection on each 
 Run on each machine:
 
 ```bash
-npx opena2a-cli detect --export-csv assets-$(hostname).csv
+npx opena2a-cli detect "$HOME" --export-csv assets-$(hostname).csv
 ```
 
 Then combine:
@@ -268,7 +268,7 @@ mkdir -p "$OUTPUT_DIR"
 
 for machine in $MACHINES; do
   echo "Scanning $machine..."
-  ssh "$machine" "npx opena2a-cli detect --export-csv /tmp/assets.csv" 2>/dev/null
+  ssh "$machine" 'npx opena2a-cli detect "$HOME" --export-csv /tmp/assets.csv' 2>/dev/null
   scp "$machine:/tmp/assets.csv" "$OUTPUT_DIR/assets-$machine.csv" 2>/dev/null
 done
 
@@ -285,7 +285,7 @@ wc -l "$OUTPUT_DIR/fleet-inventory.csv"
 Use JSON output and forward to your SIEM or log aggregation system:
 
 ```bash
-npx opena2a-cli detect --format json | curl -X POST \
+npx opena2a-cli detect "$HOME" --format json | curl -X POST \
   -H "Content-Type: application/json" \
   -d @- \
   https://your-siem.example.com/api/v1/events
