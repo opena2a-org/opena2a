@@ -1,6 +1,51 @@
 # Changelog — @opena2a/cli-ui
 
-## Unreleased
+## 0.6.0
+
+### Added
+- Terminal grammar primitives (`src/grammar.ts`, CDO design-function ruling,
+  COUNCIL_LEDGER 56558 decision 2) — seven exports, pinned by golden
+  snapshots in `src/grammar.test.ts`:
+  - `renderVerdict({ verdict, summary })` — the verdict line, always first:
+    one line, no leading blank.
+  - `renderScore({ score, pathTo100 })` — `72/100 -> 100 by <cmd>` plus a
+    meter. The first line is always plain text matching
+    `^\d{1,3}/100( -> 100 by .+)?$`; the grammar never renders a score
+    delta (`-5`) or a letter grade (`B+`) — only the path up.
+  - `renderFinding(finding)` — severity, title, `file:line`, one sentence
+    of why, a `Verify:` command, a `Fix:` command, at most one URL.
+  - `renderNextSteps(commands)` — one to three runnable commands (throws
+    `RangeError` outside that range), first one primary.
+  - `renderProgress(input, sink)` — writes only to the caller-supplied
+    stderr sink and scrubs the home directory (`os.homedir()` / `$HOME`)
+    to `~` before anything is emitted.
+  - `renderError({ what, unchanged, next })` — what happened, what was not
+    changed, and the one command to run next.
+  - `envelope(input)` — builds the one `--json` object every front door
+    prints: exactly `schemaVersion`, `tool`, `version`, `verdict`, `score`,
+    `findings[]`, `nextSteps[]` (1-3 commands), `exitCode`, camelCase, no
+    other top-level key.
+- `frontDoorConformance(target)` (`src/conformance.ts`) — spawns a built
+  CLI binary with a fresh temporary `HOME`, `NO_COLOR=1` and stdin closed,
+  and reports pass/fail with the observed value for the five front-door
+  properties: verdict line first; `--json` envelope parity with the human
+  view (verdict, score, findings, nextSteps); process exit code equals
+  `envelope.exitCode`; zero `\x1b` bytes under `NO_COLOR` + non-TTY; every
+  cited `nextSteps` / `Verify:` / `Fix:` command parses against the
+  binary's own `--help`. CLIs adopt it as `cli-grammar-conformance.test.ts`
+  against their built front door; self-tested here against two committed
+  fixture binaries (`test-fixtures/`, plain Node scripts), one conforming
+  and one violating every property.
+
+### Behaviour
+- Color discipline for all grammar primitives: a non-empty `NO_COLOR` or a
+  non-TTY sink always wins over any `color: true` option — output is then
+  byte-identical to the plain form (zero `\x1b`).
+- The barrel keeps the existing `renderNextSteps` (CTA objects, 0.3.0)
+  binding; the grammar's command-list `renderNextSteps` is reachable from
+  `./grammar.js`. Everything else about the export surface is additive —
+  no export was removed or renamed, and `chalk` remains the only runtime
+  dependency.
 
 ### Fixed
 - `runTelemetryCommand` no longer prints a toggle hint that cannot work. When
