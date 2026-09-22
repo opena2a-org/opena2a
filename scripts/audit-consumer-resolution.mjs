@@ -79,6 +79,39 @@
  * `dependency-audit` job in the same workflow does `npm ci` on the PR branch;
  * that is tracked separately and deliberately untouched here.)
  *
+ * ## Why the CANDIDATE run packs the branch's own siblings
+ *
+ * `opena2a-cli` pins its `@opena2a/*` siblings at exact versions, and a branch
+ * that bumps one of them pins a version the registry does not serve — that is
+ * what "not released yet" means. Resolving the candidate tarball straight from
+ * the registry therefore died before it measured anything:
+ *
+ *   npm error code ETARGET
+ *   npm error notarget No matching version found for @opena2a/shared@0.1.2.
+ *
+ * That is a fact about npm, not about the change under review, and a gate that
+ * can only answer for branches which touch no sibling is answering for the
+ * wrong branches — the ones that change a sibling are exactly the ones whose
+ * consumer tree moved.
+ *
+ * So before the install, every `@opena2a/<dir>` production dependency of the
+ * PACKED manifest that has a `packages/<dir>` on this branch is asked of the
+ * registry, and the ones it does not serve are built here with
+ * `npm pack -w packages/<dir>` and pointed at through the probe's `overrides`.
+ * What a user would resolve from npm still comes from npm: a sibling whose
+ * pinned version IS published is left alone, and a scoped dependency with no
+ * `packages/<dir>` — nothing on this branch can build it — is left alone too.
+ *
+ * The substitution is never silent. If the registry does not serve the pinned
+ * version AND `packages/<dir>` carries a different one, packing would measure a
+ * tree at a version this manifest does not pin — a different artifact again, in
+ * the direction that flatters us — so the run fails naming both versions
+ * instead of quietly measuring the wrong tree.
+ *
+ * CANDIDATE only. The PUBLISHED run asks what users can install right now;
+ * there is no branch in that question, and packing one into it would answer a
+ * question nobody asked.
+ *
  * ## Why the gate is an allowlist and not a count
  *
  * The advisory above had no fix reachable from a consumer for months:
@@ -111,10 +144,19 @@
  * FAILS. Being unable to check a waiver is not the same as the waiver holding.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SELF = path.relative(REPO_ROOT, fileURLToPath(import.meta.url));
@@ -315,6 +357,200 @@ function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
 }
 
+// ---------------------------------------------------------------------------
+// The branch's own siblings. See "Why the CANDIDATE run packs the branch's own
+// siblings" in the header.
+// ---------------------------------------------------------------------------
+
+const WORKSPACE_SCOPE = '@opena2a/';
+
+/**
+ * The entries of a tar archive, as `{ name, type, data }`.
+ *
+ * Hand-rolled because this script installs nothing from this repo (the
+ * CANDIDATE job runs no `npm ci`, see the workflow), so the `tar` package is
+ * not importable here — and shelling out to the `tar` binary would trade thirty
+ * lines for a dependency on somebody's flag dialect. Only what an npm tarball
+ * uses is handled: 512-byte records, octal sizes, ustar names.
+ */
+function tarEntries(buf) {
+  const entries = [];
+  for (let offset = 0; offset + 512 <= buf.length; ) {
+    const header = buf.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break; // the end-of-archive marker
+    const text = (start, end) =>
+      header.subarray(start, end).toString('utf8').replace(/\0[\s\S]*$/, '');
+    const name = text(0, 100);
+    const field = text(124, 136).trim();
+    const size = parseInt(field, 8);
+    if (!Number.isInteger(size) || size < 0) {
+      throw new Error(`unreadable tar header at byte ${offset}: "${field}" is not an octal size.`);
+    }
+    const body = offset + 512;
+    entries.push({
+      name,
+      type: String.fromCharCode(header[156]),
+      data: buf.subarray(body, body + size),
+    });
+    offset = body + Math.ceil(size / 512) * 512;
+  }
+  return entries;
+}
+
+/**
+ * The manifest inside a packed tarball.
+ *
+ * Read before anything is installed, because the install is the step that
+ * cannot resolve this manifest's dependencies and the whole point is to fix
+ * that first. `npm pack` always writes its files under `package/`.
+ */
+function readPackedManifest(tarballPath) {
+  let entries;
+  try {
+    entries = tarEntries(gunzipSync(readFileSync(tarballPath)));
+  } catch (e) {
+    throw new Error(
+      `could not read the packed artifact at ${tarballPath}, so the dependencies it would ship ` +
+        `are unknown: ${e?.message ?? e}. Not a pass.`
+    );
+  }
+  const entry = entries.find(
+    (e) =>
+      (e.type === '0' || e.type === '\0') &&
+      e.name.replace(/^\.\//, '') === 'package/package.json'
+  );
+  if (!entry) {
+    throw new Error(
+      `${tarballPath} carries no package/package.json, so it is not an npm tarball and the tree ` +
+        'a consumer would resolve from it cannot be read. Not a pass.'
+    );
+  }
+  try {
+    return JSON.parse(entry.data.toString('utf8'));
+  } catch (e) {
+    throw new Error(`the manifest inside ${tarballPath} is not JSON: ${e?.message ?? e}. Not a pass.`);
+  }
+}
+
+/**
+ * Does the registry serve this exact spec today?
+ *
+ * "No" is a real answer and the interesting one — it is what an unreleased
+ * sibling says, and it is the reason this step exists. Anything else is not an
+ * answer at all: an outage, a proxy, an auth failure or a rate limit must fail
+ * the run rather than read as "unpublished", because reading them that way
+ * would swap a branch build in for a package the registry serves perfectly
+ * well, and the gate would quietly stop measuring what users resolve.
+ */
+function registryServes(spec) {
+  let said;
+  try {
+    said = run('npm', ['view', spec, 'version']);
+  } catch (e) {
+    const printed = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    if (/E404|No match found for version|is not in this registry/.test(printed)) return false;
+    throw new Error(
+      `could not ask the registry whether ${spec} is published, so it is unknown whether a user ` +
+        `could resolve it: ${printed.trim().slice(0, 200)}`
+    );
+  }
+  if (said.trim().length === 0) {
+    throw new Error(
+      `npm view ${spec} version exited cleanly and printed no version, so whether the registry ` +
+        'serves it is unknown. Not a pass — reading that as "unpublished" would swap a branch ' +
+        'build in for a package users resolve from npm.'
+    );
+  }
+  return true;
+}
+
+/**
+ * Build `packages/<dir>` the way publishing it would, and return the tarball.
+ *
+ * `--ignore-scripts` because a `prepack` in a workspace of the branch under
+ * test is exactly the arbitrary code the CANDIDATE job refuses to run (see the
+ * header). Each pack gets its own destination so the tarball is found by
+ * looking rather than by parsing npm's output.
+ */
+function packWorkspaceSibling(dir, packRoot) {
+  const dest = path.join(packRoot, dir);
+  mkdirSync(dest, { recursive: true });
+  try {
+    run('npm', ['pack', '--ignore-scripts', '-w', `packages/${dir}`, '--pack-destination', dest], {
+      cwd: REPO_ROOT,
+    });
+  } catch (e) {
+    throw new Error(
+      `npm pack -w packages/${dir} failed, so the tree a user would resolve from this branch ` +
+        `could not be built: ${(e.stderr || e.message || '').toString().trim().slice(0, 300)}`
+    );
+  }
+  const produced = readdirSync(dest).filter((f) => f.endsWith('.tgz'));
+  if (produced.length !== 1) {
+    throw new Error(
+      `npm pack -w packages/${dir} produced ${produced.length} tarballs where exactly one was ` +
+        'expected, so which one a consumer would get is unknown. Not a pass.'
+    );
+  }
+  return path.join(dest, produced[0]);
+}
+
+/**
+ * Which of the packed manifest's scoped dependencies this branch has to supply,
+ * as the `overrides` the probe installs with.
+ *
+ * Every decision is printed. A gate that silently swaps one artifact for
+ * another is the failure this whole file is written against, so the log says
+ * which of the two registries — npm, or this branch — each sibling came from.
+ */
+function resolveWorkspaceSiblings(manifest, packRoot) {
+  const toPack = [];
+  const substitutions = [];
+
+  for (const [name, pinned] of Object.entries(manifest.dependencies ?? {})) {
+    if (!name.startsWith(WORKSPACE_SCOPE)) continue;
+    const dir = name.slice(WORKSPACE_SCOPE.length);
+    const siblingManifest = path.join(REPO_ROOT, 'packages', dir, 'package.json');
+    if (!existsSync(siblingManifest)) {
+      // Nothing on this branch builds it, so there is nothing to substitute:
+      // the consumer resolves it from the registry and so does this probe.
+      console.log(`  registry  ${name}@${pinned}  — no packages/${dir} on this branch`);
+      continue;
+    }
+    if (registryServes(`${name}@${pinned}`)) {
+      console.log(`  registry  ${name}@${pinned}  — published, a user resolves this from npm`);
+      continue;
+    }
+    const version = JSON.parse(readFileSync(siblingManifest, 'utf8')).version;
+    if (version !== pinned) {
+      substitutions.push(
+        `${name} is pinned ${pinned} by the packed manifest, the registry does not serve that ` +
+          `version, and packages/${dir}/package.json on this branch is ${version}. Packing it ` +
+          `would measure ${name}@${version}, which is not the artifact this manifest pins.`
+      );
+      continue;
+    }
+    console.log(`  branch    ${name}@${pinned}  — unpublished, packing packages/${dir}`);
+    toPack.push({ name, dir });
+  }
+
+  // Every sibling is classified before anything is packed, so a run that cannot
+  // be measured honestly packs nothing at all.
+  if (substitutions.length > 0) {
+    throw new Error(
+      'this branch pins a workspace sibling at a version neither the registry nor this branch ' +
+        'can produce, so there is no consumer tree here to measure:\n' +
+        substitutions.map((s) => `      - ${s}`).join('\n') +
+        '\n    Publish the pinned version, or move the pin to the version the workspace carries. ' +
+        'Measuring the workspace version instead would report on a tree no user can resolve.'
+    );
+  }
+
+  const overrides = {};
+  for (const { name, dir } of toPack) overrides[name] = `file:${packWorkspaceSibling(dir, packRoot)}`;
+  return overrides;
+}
+
 /**
  * Read `onnxruntime-node`'s install metadata.
  *
@@ -443,11 +679,14 @@ function assertTreeResolved(lock, probe) {
 }
 
 /** Install `spec` the way a consumer does, and return npm's audit report. */
-function auditConsumerTree(spec, probe) {
-  writeFileSync(
-    path.join(probe, 'package.json'),
-    JSON.stringify({ name: 'consumer-resolution-probe', version: '1.0.0', private: true }) + '\n'
-  );
+function auditConsumerTree(spec, probe, overrides = {}) {
+  const manifest = { name: 'consumer-resolution-probe', version: '1.0.0', private: true };
+  // One `file:` tarball per workspace sibling the registry cannot serve. An
+  // `overrides` entry rather than a dependency of the probe, because these are
+  // the CLI's dependencies and not this probe's: `overrides` is what npm
+  // applies to the tree BELOW the package it is installing.
+  if (Object.keys(overrides).length > 0) manifest.overrides = overrides;
+  writeFileSync(path.join(probe, 'package.json'), JSON.stringify(manifest) + '\n');
   // `--omit=dev`: a consumer never installs our devDependencies.
   // `--ignore-scripts`: no dependency's postinstall runs. See the header.
   run('npm', ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', spec], {
@@ -701,7 +940,19 @@ function main() {
     console.log(`[${target.mode}] ${target.question}`);
     console.log(`[${target.mode}] Target: ${spec}\n`);
 
-    const { report, lock, counts, liveness } = auditConsumerTree(spec, probe);
+    // The candidate is this branch's own tarball, and the siblings it pins may
+    // not be published yet. Resolve those from the branch before installing, or
+    // the run fails on npm rather than on the change under review.
+    let overrides = {};
+    if (target.mode === 'CANDIDATE') {
+      const packRoot = path.join(scratch, 'siblings');
+      mkdirSync(packRoot, { recursive: true });
+      console.log(`[${target.mode}] Workspace siblings of the packed manifest:`);
+      overrides = resolveWorkspaceSiblings(readPackedManifest(spec), packRoot);
+      console.log('');
+    }
+
+    const { report, lock, counts, liveness } = auditConsumerTree(spec, probe, overrides);
     const ctx = makeContext(probe, lock, report);
     rootName = liveness.rootName;
 
