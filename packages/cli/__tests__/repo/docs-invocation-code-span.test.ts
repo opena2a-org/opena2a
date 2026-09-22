@@ -39,7 +39,7 @@ import * as path from 'node:path';
  * `process.cwd()`.
  *
  * The cwd this suite runs under is `packages/cli`, not the root: ci.yml:65 runs
- * `npm run test` -> root package.json:11 `turbo run test` -> this package's
+ * `npm run test` -> root package.json `... && turbo run test` -> this package's
  * package.json:12 `vitest run`, and turbo runs each package script in that
  * package's own directory. A cwd-relative `packages/cli/README.md` would
  * resolve to `packages/cli/packages/cli/README.md`, which does not exist, and
@@ -241,7 +241,7 @@ const OCCURRENCES_PER_FILE: Readonly<Record<string, number>> = {
 /** The only two code-span occurrences: the npx-hangs troubleshooting row. */
 const CODE_SPAN_ROW = {
   file: 'docs/use-cases/ci-cd.md',
-  line: 510,
+  line: 529,
   text: '| `npx opena2a-cli` hangs | npm prompting for install confirmation | Use `npx -y opena2a-cli` |',
 } as const;
 
@@ -311,9 +311,14 @@ const DISCRIMINATION: ReadonlyArray<{
  * made the placement check green by editing the docs cannot also keep this
  * green. Updating it is a deliberate act: recompute only alongside a docs
  * change that is itself the point of the commit.
+ *
+ * Recomputed once, on the merge of main after opena2a #312 made every documented detect
+ * invocation name its target: that docs change was the point of #312, and this branch
+ * edits no documentation (git diff origin/main -- docs README.md packages/cli/README.md
+ * is empty on it).
  */
 const OCCURRENCE_LINES_SHA256 =
-  'deddea35340cd2c7bb51971e9182754b9c342b0055ce64a2ca62e75a4f6b3f12';
+  '054a95cc5362550c55ee8af0cd8b411bd4fda89fa8218dd812f03ee840e67dfa';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];
@@ -379,7 +384,9 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     const rootPkg = JSON.parse(
       fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf-8'),
     ) as { scripts?: Record<string, string> };
-    expect(rootPkg.scripts?.test).toBe('turbo run test');
+    // #335 put `npm run test:scripts &&` ahead of turbo; the hop that collects this file is
+    // still the root script's `turbo run test`
+    expect(rootPkg.scripts?.test).toMatch(/(^|&& )turbo run test( |$)/);
 
     const ci = fs.readFileSync(path.join(REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'utf-8');
     expect(ci.split(/\r?\n/).map((l) => l.trim())).toContain('- run: npm run test');
@@ -448,7 +455,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(perFile).toEqual(OCCURRENCES_PER_FILE);
   });
 
-  it('OPA-06.AC3 both code-span occurrences are the ci-cd.md:510 npx-hangs row', () => {
+  it('OPA-06.AC3 both code-span occurrences are the ci-cd.md:529 npx-hangs row', () => {
     const { codeSpan } = classify(readWalkedSet());
     expect(codeSpan).toEqual([
       { file: CODE_SPAN_ROW.file, line: CODE_SPAN_ROW.line, text: CODE_SPAN_ROW.text },
