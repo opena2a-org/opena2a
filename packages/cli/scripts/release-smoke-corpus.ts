@@ -135,6 +135,13 @@ interface ScanResult {
 }
 
 function runScan(cli: 'opena2a' | 'hma', target: string): ScanResult {
+  // Both sides of the parity run receive the identical environment by design:
+  // this harness measures the opena2a WRAPPER against the reference scanner,
+  // so the environment must be a held-constant input, not a variable. The
+  // wrapper's own child-environment policy is exercised inside the `opena2a
+  // scan` side (it narrows what hackmyagent sees); a narrowing applied here
+  // as well would make the two sides differ by construction. Not shipped
+  // (npm `files` is dist/ and README.md), and the declared dev-script site.
   const env = { ...process.env, OPENA2A_CORPUS_DETERMINISTIC: '1' };
   const args =
     cli === 'opena2a'

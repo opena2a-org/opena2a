@@ -43,6 +43,17 @@ jobs:
         node-version: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
+      # A tracked .npmrc can carry a `node-options` line (yarn and pnpm have
+      # their own spellings, .envrc is direnv's) that executes before the
+      # first instruction of anything started through npx / npm exec /
+      # npm run in this tree. Nothing in-process can detect that, so the
+      # tree itself must never contain one, and every job that installs
+      # refuses to proceed if one is tracked. The `!` makes a grep MATCH
+      # fail the step; an empty grep is the passing state. Unconditional on
+      # purpose: no `if:`, no `continue-on-error`.
+      - name: No tree-local package-manager config may be tracked
+        run: |
+          ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
@@ -56,6 +67,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Same guard as the build job; see the comment there.
+      - name: No tree-local package-manager config may be tracked
+        run: |
+          ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -68,6 +83,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Same guard as the build job; see the comment there.
+      - name: No tree-local package-manager config may be tracked
+        run: |
+          ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -82,7 +101,7 @@ jobs:
       # grows; the vendored copies under packages/atx-verify/src/__fixtures__
       # must be refreshed in the same PR or the byte-compare below fails.
       # Same gate pattern as agent-identity-management's Java SDK fixtures.
-      ATX_CONFORMANCE_REF: f4d40a4e33ac15946e90683ad1f1c59122559407
+      ATX_CONFORMANCE_REF: d2b8376daaec47046e54a3035178d706a5edec1d
     steps:
       - uses: actions/checkout@v4
 

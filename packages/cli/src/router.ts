@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createAdapter } from './adapters/index.js';
+import { childEnv } from './adapters/registry.js';
 import type { AdapterConfig, RunOptions } from './adapters/types.js';
 import { protect } from './commands/protect.js';
 import { isContributeEnabled, getRegistryUrl, submitScanReport, normalizeGovernanceReport, recordScanAndMaybePrompt } from './util/report-submission.js';
@@ -540,10 +541,35 @@ function isNpmTarget(target: string): boolean {
   return true;
 }
 
+// Citation contract with hackmyagent >= 0.16.6, set on top of the
+// `hackmyagent` environment contract (CHILD_ENV_CONTRACTS, adapters/registry.ts):
+//   HMA_CLI_PREFIX     — binary-level prefix (used for messages that append
+//                        a verb, e.g. "${prefix} rollback <dir>"). Set to
+//                        "opena2a" so any such message reads naturally for
+//                        opena2a users. Messages referring to verbs opena2a
+//                        does not expose (e.g. "opena2a secure") are not
+//                        reached via the check-delegation path and so do
+//                        not surface to users.
+//   HMA_CHECK_COMMAND  — full command string for "run a single-target
+//                        check" hints. Avoids the duplicated-verb bug that
+//                        results from using HMA_CLI_PREFIX="opena2a check".
+//   HMA_FULL_SCAN_HINT — full command string shown in place of HMA's
+//                        default "hackmyagent secure <dir>" recommendation,
+//                        so opena2a users are pointed at `opena2a review`.
+const HMA_CITATION_ENV = {
+  HMA_CLI_PREFIX: 'opena2a',
+  HMA_CHECK_COMMAND: 'opena2a check',
+  HMA_FULL_SCAN_HINT: 'opena2a review',
+} as const;
+
 /**
  * Spawn hackmyagent check from the router path.
+ *
+ * Exported so the child-environment wiring tests can run the real spawn
+ * under a mocked `node:child_process` (#246); dispatchCommand is its only
+ * production caller.
  */
-function spawnHmaCheckFromRouter(
+export function spawnHmaCheckFromRouter(
   packageName: string,
   extraArgs: string[],
   globalOptions: Record<string, unknown>,
@@ -562,38 +588,19 @@ function spawnHmaCheckFromRouter(
       args.push('--ci');
     }
 
-    // Environment contract with hackmyagent >= 0.16.6:
-    //   HMA_CLI_PREFIX     — binary-level prefix (used for messages that append
-    //                        a verb, e.g. "${prefix} rollback <dir>"). Set to
-    //                        "opena2a" so any such message reads naturally for
-    //                        opena2a users. Messages referring to verbs opena2a
-    //                        does not expose (e.g. "opena2a secure") are not
-    //                        reached via the check-delegation path and so do
-    //                        not surface to users.
-    //   HMA_CHECK_COMMAND  — full command string for "run a single-target
-    //                        check" hints. Avoids the duplicated-verb bug that
-    //                        results from using HMA_CLI_PREFIX="opena2a check".
-    //   HMA_FULL_SCAN_HINT — full command string shown in place of HMA's
-    //                        default "hackmyagent secure <dir>" recommendation,
-    //                        so opena2a users are pointed at `opena2a review`.
-    const hmaEnv = {
-      ...process.env,
-      HMA_CLI_PREFIX: 'opena2a',
-      HMA_CHECK_COMMAND: 'opena2a check',
-      HMA_FULL_SCAN_HINT: 'opena2a review',
-    };
-
+    // The `hackmyagent` contract plus the citation names — the same
+    // environment the scan adapter, index.ts and review hand the scanner (#246).
     const child = spawn('hackmyagent', args, {
       cwd: (globalOptions.cwd as string) ?? process.cwd(),
       stdio: 'inherit',
-      env: hmaEnv,
+      env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
     });
 
     child.on('error', () => {
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: (globalOptions.cwd as string) ?? process.cwd(),
         stdio: 'inherit',
-        env: hmaEnv,
+        env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
       });
       npxChild.on('error', () => {
         process.stderr.write(`hackmyagent is not installed.\n`);
