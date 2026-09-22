@@ -1,8 +1,11 @@
 /**
  * Conformance gate: run LocalAtxVerifier against the FULL OpenA2A ATX
- * conformance suite (verbatim copies from `atx-conformance/fixtures/` pinned at
- * d2b8376, including their PINNED Ed25519 signatures and issuer public keys —
- * CI byte-compares the vendored copies against the pinned suite). This proves
+ * conformance suite (verbatim copies from `atx-conformance/fixtures/` at the
+ * ref `ATX_CONFORMANCE_REF` in `.github/workflows/ci.yml`, including their
+ * PINNED Ed25519 signatures and issuer public keys — CI byte-compares the
+ * vendored copies against the suite at that ref, in both directions). The ref
+ * is deliberately not restated here: a sha in a comment has nothing enforcing
+ * it and goes stale the moment the pin moves. This proves
  * the verifier accepts/rejects exactly the credentials the Go and Python
  * reference verifiers do.
  *
@@ -43,8 +46,8 @@ interface Fixture {
   expected: { verifyResult: 'ACCEPT' | 'REJECT'; rejectCategory?: string };
 }
 
-/** The suite pinned at atx-conformance d2b8376 has exactly 21 fixtures. */
-const PINNED_SUITE_SIZE = 21;
+/** Fixture count of the vendored suite; CI fails if the vendored set differs. */
+const PINNED_SUITE_SIZE = 23;
 
 const FIXTURES_DIR = new URL('./__fixtures__/', import.meta.url);
 const fixtureFiles = readdirSync(FIXTURES_DIR)
@@ -68,7 +71,7 @@ function expectedCategory(suiteCategory: string): RejectCategory {
   return (suiteCategory === 'PARSE_ERROR' ? 'MALFORMED' : suiteCategory) as RejectCategory;
 }
 
-describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', () => {
+describe('conformance fixtures (vendored atx-conformance suite, pinned signatures)', () => {
   it(`covers the full pinned suite (${PINNED_SUITE_SIZE} fixtures)`, () => {
     expect(fixtureFiles.length).toBe(PINNED_SUITE_SIZE);
   });

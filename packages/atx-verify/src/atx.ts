@@ -2,19 +2,22 @@
  * ATX (Agent Trust eXtension) verification — the signed, portable credential
  * defined by ATP/ATX that states what an agent *is*.
  *
- * This verifier mirrors the OpenA2A reference verifiers
- * (`opena2a-registry/pkg/atcverify/verify.go canonicalPayload()` and the Python
- * port at `atx-conformance/verifiers/python/verify.py`) VERBATIM so a consumer
- * accepts exactly the credentials the conformance suite accepts. Byte agreement
- * across Go == Python == TS is pinned by `atx-conformance/jcs-vectors`.
+ * This verifier reproduces the canonicalization of the OpenA2A reference
+ * verifiers (`opena2a-registry/pkg/atcverify/verify.go canonicalPayload()` and
+ * the Python port at `atx-conformance/verifiers/python/verify.py`). Byte
+ * agreement across Go == Python == TS is pinned by
+ * `atx-conformance/jcs-vectors`; whole-verifier equivalence is asserted by the
+ * conformance fixtures, not by this comment.
  *
  * (ATX is the current name for the credential formerly called ATC; fixtures use
  * the `atcVersion` field. This verifier dual-supports both signing forms.)
  *
- * Scope: Ed25519 is verified fully. ML-DSA-65 presence is recorded but
- * verification is delegated — Node's stdlib has no ML-DSA, exactly as the Python
- * reference verifier skips it. A production deployment wires the post-quantum
- * half + the live trusted-issuer/CRL anchors via the {@link AtxVerifier} seam.
+ * Both declared suites are verified: Ed25519 via `node:crypto`, ML-DSA-65
+ * (FIPS 204) via `@noble/post-quantum`. Every signature entry the credential
+ * declares must verify, per atx-spec §13 and AAP §9.4; a declared entry that
+ * does not verify, or for which no eligible anchor is configured, is
+ * `SIGNATURE_INVALID`. The live trusted-issuer/CRL anchors are still wired
+ * through the {@link AtxVerifier} seam.
  *
  * SECURITY — signature coverage depends on atcVersion:
  *  - v1.0 (canonicalPayload): the pipe-delimited string covers identity, issuer,
@@ -40,6 +43,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa';
 import { createRequire } from 'node:module';
 import { firstDuplicateMember } from './strict-parse.js';
 
@@ -178,7 +182,11 @@ export interface AtxVerificationResult {
   /** Present when invalid. */
   rejectCategory?: RejectCategory;
   reason?: string;
-  /** Whether an ML-DSA-65 signature was present (and therefore delegated, not skipped silently). */
+  /**
+   * Whether the credential declared an ML-DSA-65 signature entry. On a
+   * `valid: true` result that entry also verified — a declared entry that
+   * does not verify is `SIGNATURE_INVALID`, never an accept.
+   */
   mldsaPresent?: boolean;
 }
 
@@ -409,6 +417,14 @@ export class LocalAtxVerifier implements AtxVerifier {
     const edKeys = eligibleEd
       .map((k) => ed25519FromRawHex(k.publicKeyHex))
       .filter((k): k is crypto.KeyObject => k !== null);
+    // Same three-stage shape for the post-quantum anchors: a PQ key is not
+    // exempt from key-to-issuer binding, and an anchor-config fault must not
+    // read as bad signature bytes here either.
+    const configuredPq = this.anchors.publicKeys.filter((k) => k.algorithm === 'ML-DSA-65');
+    const eligiblePq = configuredPq.filter((k) => keyEligible(k.keyId, authoritySet));
+    const pqKeys = eligiblePq
+      .map((k) => mldsa65FromRawHex(k.publicKeyHex))
+      .filter((k): k is Uint8Array => k !== null);
 
     let edVerified = false;
     let mldsaPresent = false;
@@ -451,16 +467,60 @@ export class LocalAtxVerifier implements AtxVerifier {
         }
         edVerified = true;
       } else if (sig.algorithm === 'ML-DSA-65') {
-        // Presence recorded; PQC verification delegated (see module docstring). Not silently skipped.
         mldsaPresent = true;
+        if (pqKeys.length === 0) {
+          if (configuredPq.length === 0) {
+            return {
+              ...reject('SIGNATURE_INVALID', 'no ML-DSA-65 trust anchors configured'),
+              mldsaPresent,
+            };
+          }
+          if (eligiblePq.length === 0) {
+            return {
+              ...reject(
+                'SIGNATURE_INVALID',
+                `key-to-issuer binding: none of the ${configuredPq.length} configured ML-DSA-65 key(s) ` +
+                  `is controlled by an authority of this credential (issuer ${atx.issuerDid})`,
+              ),
+              mldsaPresent,
+            };
+          }
+          return {
+            ...reject(
+              'SIGNATURE_INVALID',
+              'configured ML-DSA-65 key(s) for this issuer failed to parse (expected 1952-byte raw public key hex)',
+            ),
+            mldsaPresent,
+          };
+        }
+        let pqSigBytes: Buffer;
+        try {
+          pqSigBytes = Buffer.from(sig.value, 'base64');
+        } catch {
+          return reject('SIGNATURE_INVALID', `${sigLabel(sig.keyId)} has invalid base64`);
+        }
+        const pqOk = pqKeys.some((key) => {
+          try {
+            // Empty context, no pre-hash variant (AAP §8.2).
+            return ml_dsa65.verify(key, payload, new Uint8Array(pqSigBytes));
+          } catch {
+            return false;
+          }
+        });
+        if (!pqOk) {
+          return {
+            ...reject('SIGNATURE_INVALID', `ML-DSA-65 ${sigLabel(sig.keyId)} did not verify`),
+            mldsaPresent,
+          };
+        }
       }
     }
 
     if (!edVerified) {
-      // Keep mldsaPresent on this rejection: an ML-DSA-only credential fails
-      // here precisely because its PQC half is delegated, and the flag is how
-      // a caller distinguishes "delegated, bring your own ML-DSA verifier"
-      // from "carried no usable signature at all".
+      // A credential declaring an ML-DSA-65 entry must also carry a verifying
+      // Ed25519 entry (AAP §9.4), so an ML-DSA-only credential rejects here even
+      // though its post-quantum entry verified. mldsaPresent is carried so a
+      // caller can tell that case from "carried no usable signature at all".
       return { ...reject('SIGNATURE_INVALID', 'no Ed25519 signature verified'), mldsaPresent };
     }
 
@@ -633,6 +693,20 @@ export function normalizeRfc3339(s: string): string {
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
 /** Build a Node KeyObject from a raw 32-byte Ed25519 public key (hex). */
+/**
+ * Raw 1952-byte FIPS 204 ML-DSA-65 public key from hex, or null when the hex is
+ * malformed or the wrong length. Null means "unparseable anchor", which the
+ * caller reports separately from "no anchor configured".
+ */
+function mldsa65FromRawHex(hex: string): Uint8Array | null {
+  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length !== 3904) return null;
+  try {
+    return new Uint8Array(Buffer.from(hex, 'hex'));
+  } catch {
+    return null;
+  }
+}
+
 function ed25519FromRawHex(hex: string): crypto.KeyObject | null {
   const raw = Buffer.from(hex, 'hex');
   if (raw.length !== 32) return null;
