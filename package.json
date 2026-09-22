@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test --concurrency=1",
+    "test": "npm run test:scripts && turbo run test --concurrency=1",
+    "test:scripts": "node --test 'scripts/__tests__/**/*.test.mjs'",
     "lint": "turbo run lint",
     "lint:sast": "eslint 'packages/*/src/**/*.ts' 'packages/*/__tests__/**/*.ts'",
     "clean": "turbo run clean",
