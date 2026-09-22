@@ -242,5 +242,7 @@ describe('child-process audit: a row merges, a count sentence does not', () => {
           'rewrites collide on it in both directions — the defect this contract removes',
       ).toEqual([AUDIT_PATH]);
     }
-  });
+    // Three scratch repositories and about thirty git spawns: the same class
+    // as the shield/concurrent-write cases, which carry the same bound.
+  }, 60_000);
 });
