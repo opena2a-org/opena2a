@@ -189,7 +189,7 @@ function isRealDate(iso: string): boolean {
  * the first time a paragraph above it grows.
  */
 function requiredCaptures(): { what: string; block: Fence | undefined }[] {
-  const bareDetect = /^npx opena2a-cli detect$/;
+  const bareDetect = /^npx opena2a-cli detect "\$HOME"$/;
   const dev = blocksFor(DEV, bareDetect);
   const sec = blocksFor(SEC, bareDetect);
   const csv = fences(SEC).filter((f) => f.info === 'csv');
@@ -264,7 +264,7 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     expect(detectSrc).not.toContain('Shadow AI Detection');
     expect(detectSrc).not.toContain('Governance Score');
 
-    const audits = [...blocksFor(DEV, /^npx opena2a-cli detect$/), ...blocksFor(SEC, /^npx opena2a-cli detect$/)];
+    const audits = [...blocksFor(DEV, /^npx opena2a-cli detect "\$HOME"$/), ...blocksFor(SEC, /^npx opena2a-cli detect "\$HOME"$/)];
     expect(audits, 'expected two detect audits in developer.md and one in security-team.md').toHaveLength(3);
 
     for (const block of audits) {
