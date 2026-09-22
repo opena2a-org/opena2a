@@ -89,7 +89,7 @@
  *   npm error code ETARGET
  *   npm error notarget No matching version found for @opena2a/shared@0.1.2.
  *
- * That is a fact about npm, not about the change under review, and a gate that
+ * That is a fact about npm, not about the diff being reviewed, and a gate that
  * can only answer for branches which touch no sibling is answering for the
  * wrong branches — the ones that change a sibling are exactly the ones whose
  * consumer tree moved.
