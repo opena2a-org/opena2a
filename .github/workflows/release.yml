@@ -158,20 +158,6 @@ jobs:
           node-version: 24
           cache: npm
 
-      # A tracked .npmrc / .yarnrc / .pnpmfile.cjs / .envrc can redirect the
-      # registry, inject install-time config or run code the moment a shell or
-      # package manager wakes up in this checkout — upstream of every other
-      # gate in this job. There are zero tracked files of this class today;
-      # this step is what keeps that a fact rather than an assumption.
-      - name: No tracked package-manager config
-        run: |
-          set -euo pipefail
-          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
-            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
-            exit 1
-          fi
-          echo "No tracked package-manager config files."
-
       - run: npm ci --ignore-scripts
       - run: npm run build
 
@@ -294,16 +280,13 @@ jobs:
           node-version: 24
           cache: npm
 
-      # Same guard as `build`: a tracked package-manager config file could
-      # redirect this job's npm ci before the review script even starts.
-      - name: No tracked package-manager config
+      # Same guard as `build`, in the form ci.yml uses: a tracked
+      # package-manager config file could redirect this job's npm ci before
+      # the review script even starts. The `!` makes a grep MATCH fail the
+      # step. Unconditional on purpose: no `if:`, no `continue-on-error`.
+      - name: No tree-local package-manager config may be tracked
         run: |
-          set -euo pipefail
-          if git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'; then
-            echo "::error::A tracked package-manager config file was found (listed above). It can redirect or poison this job's npm ci; remove it from version control."
-            exit 1
-          fi
-          echo "No tracked package-manager config files."
+          ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
 
       # The review script resolves the credential scanner from the installed
       # tree (node_modules/.bin/hackmyagent), so the install must precede it.

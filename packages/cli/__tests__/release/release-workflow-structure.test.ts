@@ -161,8 +161,16 @@ describe('package-manager-config guard (OPA-04.AC4)', () => {
         expect(guardIdx, `${label}: the guard must run BEFORE npm ci`).toBeLessThan(firstInstall);
 
         const guard = jobSteps[guardIdx];
-        // The guard fails the job when the grep prints anything...
-        expect(guard.run, `${label}: the guard must fail on a match`).toMatch(/exit 1/);
+        // The guard fails the job when the grep prints anything: either an
+        // explicit `exit 1`, or the negated form ci.yml carries since #312
+        // (`! <grep>`), which fails the step only as its LAST command — bash
+        // -e does not stop on a negated pipeline mid-script.
+        const lines = (guard.run ?? '')
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l && !l.startsWith('#'));
+        const failsOnMatch = /exit 1/.test(guard.run ?? '') || lines.at(-1) === `! ${GUARD_CMD}`;
+        expect(failsOnMatch, `${label}: the guard must fail on a match\n${guard.run}`).toBe(true);
         // ...and nothing may make that failure skippable or advisory.
         expect(guard.if, `${label}: the guard must not carry an if:`).toBeUndefined();
         expect(
