@@ -109,6 +109,21 @@ describe('child-process audit: a row merges, a count sentence does not', () => {
       savedEnv[key] = process.env[key];
       process.env[key] = '/dev/null';
     }
+    // Inside a git hook (pre-push, pre-commit) git exports the enclosing
+    // repository's location. Inherited, it overrides `-C <scratch>` and the
+    // fixture commits target that repository instead of the scratch one.
+    for (const key of [
+      'GIT_DIR',
+      'GIT_WORK_TREE',
+      'GIT_INDEX_FILE',
+      'GIT_COMMON_DIR',
+      'GIT_OBJECT_DIRECTORY',
+      'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+      'GIT_PREFIX',
+    ]) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
