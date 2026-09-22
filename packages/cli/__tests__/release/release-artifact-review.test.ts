@@ -28,7 +28,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -192,12 +192,31 @@ function getOwnResult(): ReviewResult {
       );
     }
     const dir = mkdtempSync(path.join(scratch, 'own-pack-'));
-    execFileSync('npm', ['pack', '--ignore-scripts', `--pack-destination=${dir}`], {
-      cwd: CLI_DIR,
-      encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    const tgz = readdirSync(dir).find((f) => f.endsWith('.tgz'));
+    const pack = (cwd: string) =>
+      execFileSync('npm', ['pack', '--ignore-scripts', `--pack-destination=${dir}`], {
+        cwd,
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    // The workspace siblings the CLI pins go beside it, packed from this tree,
+    // as release.yml's build job lays them out: a pinned sibling version may not
+    // be on the registry until publish runs (measured 2026-09-22:
+    // @opena2a/cli-ui@0.6.0, pinned by opena2a-cli 0.10.13, while npm served up
+    // to 0.5.2), and the review installs it from beside the target.
+    const cliDeps =
+      (JSON.parse(readFileSync(path.join(CLI_DIR, 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>;
+      }).dependencies ?? {};
+    const packagesDir = path.dirname(CLI_DIR);
+    for (const entry of readdirSync(packagesDir).sort()) {
+      const manifest = path.join(packagesDir, entry, 'package.json');
+      if (path.join(packagesDir, entry) === CLI_DIR || !existsSync(manifest)) continue;
+      const name = (JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string }).name;
+      if (name && name in cliDeps) pack(path.join(packagesDir, entry));
+    }
+    const before = new Set(readdirSync(dir));
+    pack(CLI_DIR);
+    const tgz = readdirSync(dir).find((f) => f.endsWith('.tgz') && !before.has(f));
     if (!tgz) throw new Error('npm pack produced no tarball');
     ownResult = runReview(path.join(dir, tgz));
   }
@@ -275,6 +294,22 @@ const POISON_CASES: PoisonCase[] = [
       version: '0.0.0-qgf-smokefail',
       manifestExtra: { bin: { opena2a: 'dist/index.js' } },
       files: { 'dist/index.js': '#!/usr/bin/env node\nprocess.exit(1);\n', 'README.md': '# broken\n' },
+    },
+  },
+  {
+    title:
+      'OPA-04.AC3 a first-party pin that neither the registry nor a tarball beside the target serves fails global-install-smoke',
+    check: 'global-install-smoke',
+    spec: {
+      // A well-behaved bin, so the pin alone is what fires. The fixture sits
+      // alone in its directory, so nothing beside it can stand in for the pin.
+      name: 'opena2a-cli',
+      version: '0.0.0-qgf-unserved-pin',
+      manifestExtra: {
+        bin: { opena2a: 'dist/index.js' },
+        dependencies: { '@opena2a/cli-ui': '0.0.0-qgf-never-published' },
+      },
+      files: { 'dist/index.js': WELL_BEHAVED_BIN, 'README.md': '# unserved pin\n' },
     },
   },
   {

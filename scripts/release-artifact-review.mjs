@@ -239,6 +239,91 @@ function checkPinnedFirstPartyDeps(manifest) {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace siblings the registry cannot serve yet.
+//
+// release.yml packs every workspace into one directory and reviews each
+// tarball before any of them is published, so a pin like opena2a-cli's
+// `@opena2a/cli-ui: 0.6.0` can name a version npm does not serve until the
+// publish job runs (measured 2026-09-22: npm served cli-ui up to 0.5.2). The
+// tarball beside the target at exactly that version is the copy that will be
+// published, so the installs below take it through `overrides` of a `file:`
+// tarball, the way audit-consumer-resolution.mjs does for its candidate run.
+// `overrides` and not `npm install -g <sibling>.tgz`: a global install gives
+// each package its own nested tree, so the CLI's pin still went to the
+// registry and the install stopped at ETARGET.
+//
+// A pin the registry serves stays on the registry, because that is what a
+// user resolves. A pin neither the registry nor the tarballs beside the target
+// carry is refused, naming both, rather than measured against some other
+// version. Every decision is printed.
+// ---------------------------------------------------------------------------
+
+function readTarballManifest(tgz) {
+  try {
+    return JSON.parse(run('tar', ['-xzOf', tgz, 'package/package.json']));
+  } catch {
+    return null;
+  }
+}
+
+function resolveWorkspaceSiblings(tarball, manifest) {
+  const dir = path.dirname(tarball);
+  const beside = new Map();
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.tgz')).sort()) {
+    const file = path.join(dir, f);
+    if (file === tarball) continue;
+    const m = readTarballManifest(file);
+    if (m?.name && m?.version) beside.set(`${m.name}@${m.version}`, { file, manifest: m });
+  }
+
+  const overrides = {};
+  const log = [];
+  const refused = [];
+  const unreadable = [];
+  const seen = new Set();
+  const queue = [manifest];
+  while (queue.length > 0) {
+    const m = queue.shift();
+    for (const [name, pinned] of Object.entries(m.dependencies ?? {})) {
+      if (!name.startsWith(ROSTER_SCOPE)) continue;
+      const spec = `${name}@${pinned}`;
+      if (seen.has(spec)) continue;
+      seen.add(spec);
+
+      const served = npmView(spec, 'version');
+      if (!served.error && served.value) {
+        log.push(`registry  ${spec}: published, a user resolves it from npm`);
+        continue;
+      }
+      if (served.error && !served.error.notFound) {
+        unreadable.push(served.error.message);
+        continue;
+      }
+      const sibling = beside.get(spec);
+      if (sibling && (!overrides[name] || overrides[name] === `file:${sibling.file}`)) {
+        overrides[name] = `file:${sibling.file}`;
+        log.push(`beside    ${spec}: unpublished, installed from ${path.basename(sibling.file)}`);
+        // Its own first-party pins may be unpublished too.
+        queue.push(sibling.manifest);
+        continue;
+      }
+      if (sibling) {
+        refused.push(`${spec} is pinned by ${m.name}, and ${overrides[name]} already stands in for ${name}; one override cannot serve two unpublished versions`);
+        continue;
+      }
+      const others = [...beside.keys()].filter((k) => k.startsWith(`${name}@`));
+      refused.push(
+        `${spec} is pinned by ${m.name}; the registry does not serve that version and ` +
+          (others.length > 0
+            ? `the tarballs beside the target carry ${others.join(', ')}, not ${pinned}`
+            : 'no tarball beside the target carries it')
+      );
+    }
+  }
+  return { overrides, log, refused, unreadable };
+}
+
+// ---------------------------------------------------------------------------
 // global-install-smoke — install the CLI the way a user does, then run it in
 // a world with nothing in it: empty HOME, empty cwd, proxies pointing at a
 // closed port so any accidental network call fails instead of quietly
@@ -246,67 +331,61 @@ function checkPinnedFirstPartyDeps(manifest) {
 // directory is broken for exactly the user who just installed it.
 // ---------------------------------------------------------------------------
 
-function checkGlobalInstallSmoke(tarball, manifest, scratchRoot) {
+function checkGlobalInstallSmoke(tarball, manifest, siblings, scratchRoot) {
   if (!manifest) {
     return { status: 'precondition', detail: ['the tarball carries no package/package.json; nothing to install'] };
   }
   if (manifest.name !== 'opena2a-cli') {
     return { status: 'skip', detail: [`packed name is ${manifest.name}; only the opena2a-cli tarball carries the bin this check exercises`] };
   }
+  if (siblings.unreadable.length > 0) {
+    return {
+      status: 'precondition',
+      detail: [...siblings.unreadable.map((m) => `could not ask the registry for a first-party pin, so the CLI was never exercised: ${m}`)],
+    };
+  }
+  if (siblings.refused.length > 0) {
+    return {
+      status: 'fail',
+      detail: [
+        ...siblings.refused.map((r) => `no user can install this: ${r}`),
+        'Publish the pinned version, or pack it beside the target at exactly the pinned version.',
+      ],
+    };
+  }
 
+  // The install a user's `npm install -g` performs, rooted at a probe prefix
+  // so the overrides above apply: npm reads `overrides` only from the root
+  // package.json, and a global install has none.
   const prefix = mkdtempSync(path.join(scratchRoot, 'smoke-prefix-'));
   const cache = mkdtempSync(path.join(scratchRoot, 'smoke-cache-'));
   const installHome = mkdtempSync(path.join(scratchRoot, 'smoke-install-home-'));
-  const detail = [];
+  const detail = [...siblings.log];
+  const probeManifest = { name: 'release-artifact-review-smoke', version: '1.0.0', private: true };
+  if (Object.keys(siblings.overrides).length > 0) probeManifest.overrides = siblings.overrides;
+  writeFileSync(path.join(prefix, 'package.json'), JSON.stringify(probeManifest) + '\n');
 
-  const npmInstallGlobal = (tarballs) =>
+  try {
     run('npm', [
       'install',
-      '-g',
+      '--omit=dev',
       '--ignore-scripts',
       '--no-audit',
       '--no-fund',
       '--loglevel=error',
-      `--prefix=${prefix}`,
       `--cache=${cache}`,
-      ...tarballs,
-    ], { env: { ...process.env, HOME: installHome } });
-
-  // The sibling workspace tarballs first, from the same directory: at review
-  // time the exact versions this tarball pins may not be on the registry yet
-  // (publish has not run), so the local packed bytes are the only copy that
-  // can satisfy those pins without the registry.
-  const dir = path.dirname(tarball);
-  const siblings = readdirSync(dir)
-    .filter((f) => f.endsWith('.tgz') && path.join(dir, f) !== tarball)
-    .sort()
-    .map((f) => path.join(dir, f));
-  try {
-    if (siblings.length > 0) {
-      npmInstallGlobal(siblings);
-      detail.push(`installed ${siblings.length} sibling workspace tarball(s) first, from ${dir}`);
-    } else {
-      detail.push('no sibling tarballs found beside the target; first-party pins resolve from the registry');
-    }
+      tarball,
+    ], { cwd: prefix, env: { ...process.env, HOME: installHome } });
   } catch (e) {
     return {
       status: 'precondition',
-      detail: [`sibling tarball install did not complete, so the CLI was never exercised: ${short(e.stderr || e.message)}`],
+      detail: [...detail, `npm install of the tarball did not complete, so the CLI was never exercised: ${short(e.stderr || e.message)}`],
     };
   }
 
-  try {
-    npmInstallGlobal([tarball]);
-  } catch (e) {
-    return {
-      status: 'precondition',
-      detail: [`npm install -g of the tarball did not complete, so the CLI was never exercised: ${short(e.stderr || e.message)}`],
-    };
-  }
-
-  const bin = path.join(prefix, 'bin', 'opena2a');
+  const bin = path.join(prefix, 'node_modules', '.bin', 'opena2a');
   if (!existsSync(bin)) {
-    return { status: 'fail', detail: ['global install completed but produced no bin/opena2a — the packed bin map does not ship a working entry point'] };
+    return { status: 'fail', detail: [...detail, 'install completed but produced no .bin/opena2a — the packed bin map does not ship a working entry point'] };
   }
   const binReal = realpathSync(bin);
 
@@ -323,7 +402,7 @@ function checkGlobalInstallSmoke(tarball, manifest, scratchRoot) {
         // Deliberately NOT process.env: an empty HOME and a dead proxy are the
         // point. A closed local port makes any network attempt fail fast and
         // visibly rather than hang or quietly succeed.
-        PATH: `${path.join(prefix, 'bin')}:${path.dirname(process.execPath)}`,
+        PATH: `${path.join(prefix, 'node_modules', '.bin')}:${path.dirname(process.execPath)}`,
         HOME: emptyHome,
         TERM: 'dumb',
         HTTP_PROXY: 'http://127.0.0.1:9',
@@ -528,12 +607,16 @@ function parseScanFindings(stdout) {
 // deprecations, which npm audit does not check for unpublished-yet closures).
 // ---------------------------------------------------------------------------
 
-function resolveClosure(tarball, scratchRoot) {
+function resolveClosure(tarball, siblings, scratchRoot) {
+  // The same sibling decisions as global-install-smoke: without them an
+  // unpublished first-party pin stops resolution at ETARGET, and both checks
+  // fed from here report precondition on a tarball set that is fine.
+  if (siblings.unreadable.length > 0) throw new Error(siblings.unreadable.join('; '));
+  if (siblings.refused.length > 0) throw new Error(`no closure to resolve: ${siblings.refused.join('; ')}`);
   const probe = mkdtempSync(path.join(scratchRoot, 'closure-'));
-  writeFileSync(
-    path.join(probe, 'package.json'),
-    JSON.stringify({ name: 'release-artifact-review-probe', version: '1.0.0', private: true }) + '\n'
-  );
+  const probeManifest = { name: 'release-artifact-review-probe', version: '1.0.0', private: true };
+  if (Object.keys(siblings.overrides).length > 0) probeManifest.overrides = siblings.overrides;
+  writeFileSync(path.join(probe, 'package.json'), JSON.stringify(probeManifest) + '\n');
   // --package-lock-only: resolution without reification — nothing lands in an
   // executable position. --ignore-scripts belt-and-braces on top.
   run('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund', tarball], { cwd: probe });
@@ -836,12 +919,15 @@ async function main() {
     record('no-test-material', checkNoTestMaterial(entries));
     record('no-install-scripts', checkNoInstallScripts(manifest));
     record('pinned-first-party-deps', checkPinnedFirstPartyDeps(manifest));
-    record('global-install-smoke', checkGlobalInstallSmoke(tarball, manifest, scratchRoot));
+    const siblings = manifest
+      ? resolveWorkspaceSiblings(tarball, manifest)
+      : { overrides: {}, log: [], refused: [], unreadable: [] };
+    record('global-install-smoke', checkGlobalInstallSmoke(tarball, manifest, siblings, scratchRoot));
     record('credential-scan', checkCredentialScan(extracted, scratchRoot));
 
     let closure;
     try {
-      closure = resolveClosure(tarball, scratchRoot);
+      closure = resolveClosure(tarball, siblings, scratchRoot);
     } catch (e) {
       closure = { error: short(e.stderr || e.message) };
     }
