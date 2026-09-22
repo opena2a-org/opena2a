@@ -12,7 +12,7 @@ import { handleContext } from './contextual/index.js';
 import { handleNaturalLanguage, matchIntent, formatClassifierBlock } from './natural/index.js';
 import type { NaturalLanguageBlock } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
-import { ADAPTER_REGISTRY } from './adapters/registry.js';
+import { ADAPTER_REGISTRY, childEnv } from './adapters/registry.js';
 import { CORE_COMMAND_NAMES } from './natural/known-commands.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
@@ -1452,9 +1452,23 @@ function isNpmPackageName(target: string): boolean {
 }
 
 /**
- * Spawn `hackmyagent check <package>` with the correct env vars and flags.
+ * Command-citation names every direct hackmyagent spawn sets, on top of the
+ * `hackmyagent` contract (CHILD_ENV_CONTRACTS in adapters/registry.ts). See
+ * router.ts:spawnHmaCheckFromRouter for what each name does.
  */
-function spawnHmaCheck(
+const HMA_CITATION_ENV = {
+  HMA_CLI_PREFIX: 'opena2a',
+  HMA_CHECK_COMMAND: 'opena2a check',
+  HMA_FULL_SCAN_HINT: 'opena2a review',
+} as const;
+
+/**
+ * Spawn `hackmyagent check <package>` with the correct env vars and flags.
+ *
+ * Exported so the child-environment wiring tests can run the real spawn
+ * under a mocked `node:child_process` (#246); `check` is its only caller.
+ */
+export function spawnHmaCheck(
   packageName: string,
   extraArgs: string[],
   globalOpts: Record<string, unknown>,
@@ -1476,18 +1490,12 @@ function spawnHmaCheck(
       args.push('--ci');
     }
 
-    // See router.ts:spawnHmaCheckFromRouter for the env var contract docs.
-    const hmaEnv = {
-      ...process.env,
-      HMA_CLI_PREFIX: 'opena2a',
-      HMA_CHECK_COMMAND: 'opena2a check',
-      HMA_FULL_SCAN_HINT: 'opena2a review',
-    };
-
+    // The `hackmyagent` contract plus the citation names — the same
+    // environment the scan adapter, router and review hand the scanner (#246).
     const child = spawn('hackmyagent', args, {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: hmaEnv,
+      env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
     });
 
     child.on('error', (err) => {
@@ -1495,7 +1503,7 @@ function spawnHmaCheck(
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: process.cwd(),
         stdio: 'inherit',
-        env: hmaEnv,
+        env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
       });
       npxChild.on('error', () => {
         process.stderr.write(`hackmyagent is not installed.\n`);
@@ -1514,24 +1522,18 @@ function spawnHmaCheck(
  * does not implement directly. Used for `scan-soul --explain` which is a
  * CLI-level concept explainer (not exposed on the SoulScanner programmatic API).
  */
-function spawnHackmyagent(args: string[]): Promise<number> {
+export function spawnHackmyagent(args: string[]): Promise<number> {
   return new Promise<number>((resolve) => {
-    const hmaEnv = {
-      ...process.env,
-      HMA_CLI_PREFIX: 'opena2a',
-      HMA_CHECK_COMMAND: 'opena2a check',
-      HMA_FULL_SCAN_HINT: 'opena2a review',
-    };
     const child = spawn('hackmyagent', args, {
       cwd: process.cwd(),
       stdio: 'inherit',
-      env: hmaEnv,
+      env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
     });
     child.on('error', () => {
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: process.cwd(),
         stdio: 'inherit',
-        env: hmaEnv,
+        env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
       });
       npxChild.on('error', () => {
         process.stderr.write('hackmyagent is not installed.\n');
@@ -1544,7 +1546,13 @@ function spawnHackmyagent(args: string[]): Promise<number> {
   });
 }
 
-main().catch((err) => {
-  process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
-  process.exitCode = 1;
-});
+// Start the CLI only when this file is the entry point (`opena2a`, `node
+// dist/index.js`). Importing it — the child-environment wiring tests do, to
+// run spawnHmaCheck / spawnHackmyagent under a mocked `node:child_process`
+// (#246) — must not parse argv or dispatch a command.
+if (typeof module !== 'undefined' && require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exitCode = 1;
+  });
+}

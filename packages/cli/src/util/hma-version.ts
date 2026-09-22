@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { CHILD_ENV_CONTRACTS } from '../adapters/registry.js';
+import { probeEnv } from './child-env.js';
 
 // MIN_HMA_VERSION is the oldest hackmyagent ON THE USER'S PATH whose `check`
 // output opena2a-cli is willing to vouch for. Scope, deliberately narrow:
@@ -65,6 +67,8 @@ export function checkMinHmaVersion(): void {
     const raw = execFileSync('hackmyagent', ['--version'], {
       timeout: 5000,
       encoding: 'utf8',
+      // A version probe: the contract's prefixes only, no credentials (#246).
+      env: probeEnv(CHILD_ENV_CONTRACTS.hackmyagent.envAllowPrefixes),
     }).trim();
     const match = raw.match(/(\d+\.\d+\.\d+)/);
     if (!match) return;
