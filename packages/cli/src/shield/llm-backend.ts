@@ -10,6 +10,8 @@
 
 import { execFileSync } from 'node:child_process';
 import type { LlmBackend, LlmResponse } from './types.js';
+import { CHILD_ENV_CONTRACTS, childEnv } from '../adapters/registry.js';
+import { probeEnv } from '../util/child-env.js';
 
 const CLAUDE_CODE_TIMEOUT_MS = 30_000;
 
@@ -38,6 +40,10 @@ export function isClaudeCodeAvailable(): boolean {
       encoding: 'utf-8',
       timeout: 5_000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Discovery only: the probe environment carries the contract's
+      // prefixes under the credential-name guard and none of its exact
+      // entries, so `which` never sees ANTHROPIC_API_KEY (#246).
+      env: probeEnv(CHILD_ENV_CONTRACTS.claude.envAllowPrefixes),
     });
     return result.trim().length > 0;
   } catch {
@@ -102,7 +108,9 @@ export function callClaudeCode(
       encoding: 'utf-8',
       timeout: CLAUDE_CODE_TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
+      // The `claude` contract (CHILD_ENV_CONTRACTS.claude): model credentials
+      // and endpoint selection, not the operator's whole environment (#246).
+      env: childEnv('claude'),
     });
 
     // Parse JSON output from claude --print --output-format json
