@@ -93,4 +93,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git init | add | commit | checkout | merge-tree) over throwaway ' +
       'repositories built from this file (QGF-146.AC4)',
   },
+  'security/advisory-incident.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node scripts/advisory-incident.mjs open --audit-log <CANDIDATE capture>) ' +
+      'once, for the one QGF-118.AC2 case that measures the COMMAND rather than the ' +
+      'exported function; the child refuses the candidate capture before it constructs ' +
+      'any gh call, so it spawns nothing of its own and the peak is one process',
+  },
 };
