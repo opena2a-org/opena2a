@@ -452,8 +452,11 @@ export function encodeMarker(data) {
   return `<!-- ${MARKER_PREFIX} ${Buffer.from(JSON.stringify(data), 'utf8').toString('base64')} -->`;
 }
 
+// Only a marker that ends the comment counts. Model-written prose sits above
+// it and is escaped (`safe`), so a diff that talks the model into echoing a
+// marker cannot plant a round.
 export function decodeMarker(body) {
-  const m = new RegExp(`<!-- ${MARKER_PREFIX} ([A-Za-z0-9+/=]+) -->`).exec(body ?? '');
+  const m = new RegExp(`<!-- ${MARKER_PREFIX} ([A-Za-z0-9+/=]+) -->\\s*$`).exec(body ?? '');
   if (!m) return null;
   try {
     return JSON.parse(Buffer.from(m[1], 'base64').toString('utf8'));
@@ -545,29 +548,32 @@ export function evaluateSubstitution({ headSha, comments, reviews, approvers }) 
 // ---------------------------------------------------------------------------
 // Comment rendering
 
-const loc = (f) => `\`${f.file}:${f.line}\``;
+// Text that came from the model (or a reviewer) cannot open or close an HTML
+// comment, so it can never carry or hide a marker.
+export const safe = (s) => String(s).replace(/<!--/g, '&lt;!--').replace(/-->/g, '--&gt;');
+const loc = (f) => `\`${safe(f.file)}:${f.line}\``;
 
 export function renderRound({ headSha, verdict, reason, result, review, runId }) {
   const blocking = result?.blocking ?? (verdict === 'INCONCLUSIVE' ? [{ id: 'I1', severity: 'INCONCLUSIVE', file: '-', line: 0, title: reason }] : []);
   const out = [`**Automated review: ${verdict}**`, '', `Head \`${headSha}\`.`];
   if (verdict === 'INCONCLUSIVE') {
-    out.push('', `No automated verdict: ${reason}. A human review is required.`);
+    out.push('', `No automated verdict: ${safe(reason)}. A human review is required.`);
   }
-  if (review) out.push('', oneLine(review.summary));
+  if (review) out.push('', safe(oneLine(review.summary)));
   if (result?.blocking.length) {
     out.push('', '### Blocking', '', 'Each is HIGH or CRITICAL, pinned to a line of this diff, and confirmed by a separate check that named its trigger.');
     for (const b of result.blocking) {
-      out.push('', `**${b.id}** [${b.severity}] ${loc(b)} ${oneLine(b.title)}`, '', b.detail.trim());
-      if (b.trigger) out.push('', `Trigger (confirmed by the check): ${oneLine(b.trigger)}`);
+      out.push('', `**${b.id}** [${b.severity}] ${loc(b)} ${safe(oneLine(b.title))}`, '', safe(b.detail.trim()));
+      if (b.trigger) out.push('', `Trigger (confirmed by the check): ${safe(oneLine(b.trigger))}`);
     }
   }
   if (review?.priorDispositions.length) {
     out.push('', '### Previous round');
-    for (const d of review.priorDispositions) out.push(`- ${d.priorId}: ${d.disposition}. ${oneLine(d.reason)}`);
+    for (const d of review.priorDispositions) out.push(`- ${safe(d.priorId)}: ${d.disposition}. ${safe(oneLine(d.reason))}`);
   }
   if (result?.notes.length) {
     out.push('', '### Notes (not blocking)');
-    for (const n of result.notes) out.push(`- [${n.severity}, ${n.whyNotBlocking}] ${loc(n)} ${oneLine(n.title)}: ${oneLine(n.detail)}`);
+    for (const n of result.notes) out.push(`- [${n.severity}, ${safe(n.whyNotBlocking)}] ${loc(n)} ${safe(oneLine(n.title))}: ${safe(oneLine(n.detail))}`);
   }
   if (verdict !== 'APPROVE') {
     const ids = blocking.map((b) => b.id).join(', ');
@@ -600,7 +606,7 @@ export function renderSubstitution({ headSha, sub }) {
   const out = [`**Automated review: APPROVE (approver substitution)**`, ''];
   out.push(`Head \`${headSha}\`. The model round on this head returned ${sub.round.verdict}. @${sub.reviewer} approved this exact head at ${sub.submittedAt} and disposed of every blocking item:`);
   out.push('');
-  for (const [id, text] of Object.entries(sub.dispositions)) out.push(`- ${id}: ${oneLine(text)}`);
+  for (const [id, text] of Object.entries(sub.dispositions)) out.push(`- ${id}: ${safe(oneLine(text))}`);
   out.push('', encodeMarker({ source: 'human', headSha, verdict: 'APPROVE', reviewer: sub.reviewer, items: Object.keys(sub.dispositions) }));
   return out.join('\n');
 }
