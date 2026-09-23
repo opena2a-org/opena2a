@@ -560,6 +560,17 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
     let localId = null;
     if (mod) {
       const aim = new mod.AIMCore({ agentName: name });
+      // aim-core keeps one identity per machine. An API-key registration binds the
+      // server agent to that identity's key, so registering it under a second name
+      // would put one key on two server agents.
+      if (!useOAuth && fs.existsSync(path.join(aim.getDataDir(), 'identity.json'))) {
+        const existing = aim.getIdentity();
+        if (existing.agentName !== name) {
+          process.stderr.write(`This machine's local identity is "${existing.agentName}", and an API-key registration uses its key.\n`);
+          process.stderr.write(`Register that identity instead: opena2a identity connect ${serverUrl} --api-key <key>\n`);
+          return 1;
+        }
+      }
       localId = aim.getIdentity();
     }
     if (!useOAuth && !localId) {
