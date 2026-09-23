@@ -56,8 +56,8 @@ describe('pr-review workflow shape', () => {
     }
   });
 
-  it('9908.AC5 permissions are exactly pull-requests: write and contents: read, with no job-level widening', () => {
-    expect(doc.permissions).toEqual({ 'pull-requests': 'write', contents: 'read' });
+  it('9908.AC5 permissions are exactly pull-requests: write, contents: read and actions: read, with no job-level widening', () => {
+    expect(doc.permissions).toEqual({ 'pull-requests': 'write', contents: 'read', actions: 'read' });
     expect(job.permissions).toBeUndefined();
   });
 

@@ -500,6 +500,7 @@ export function validMarker(d) {
   if (!d || typeof d !== 'object') return false;
   if (!/^[0-9a-f]{40}$/.test(d.headSha ?? '')) return false;
   if (!VERDICTS.includes(d.verdict) || !['model', 'human'].includes(d.source)) return false;
+  if (d.retryable !== undefined && typeof d.retryable !== 'boolean') return false;
   const blocking = d.blocking ?? [];
   const items = d.items ?? [];
   if (!Array.isArray(blocking) || !Array.isArray(items)) return false;
@@ -532,20 +533,31 @@ export function roundsFrom(comments) {
   return rounds;
 }
 
+const decisive = (r) => r.verdict === 'APPROVE' || r.verdict === 'REQUEST_CHANGES';
+
+// Carry-forward reads the latest DECISIVE model round (or pre-change round
+// text): an INCONCLUSIVE round carries no findings, and letting one stand in
+// would drop the last real round's blocking items and the replies before it.
 export function priorRound(comments) {
-  const rounds = roundsFrom(comments).filter((r) => !r.tampered && (!r.structured || r.source === 'model'));
+  const rounds = roundsFrom(comments).filter(
+    (r) => !r.tampered && ((r.structured && r.source === 'model' && decisive(r)) || (!r.structured && /^\*\*Automated review: (APPROVE|REQUEST_CHANGES)\*\*/.test(r.text ?? ''))),
+  );
   return rounds.length ? rounds[rounds.length - 1] : null;
 }
 
-// The head's own model round. An edited round comment later than the head's
-// latest genuine round means the thread cannot say what this head's round
-// was, whatever head it names now: no fall-through to an older round.
+// The head's own model round. A decisive round is final for its head: a later
+// INCONCLUSIVE round for the same head never displaces it. An INCONCLUSIVE
+// round counts only when the head has no decisive one. An edited round
+// comment later than the chosen round means the thread cannot say what this
+// head's round was, whatever head it names now: no fall-through.
 export function headRound(comments, headSha) {
-  const rel = roundsFrom(comments).filter((r) => r.tampered || (r.structured && r.source === 'model' && r.headSha === headSha));
-  const last = rel.length ? rel[rel.length - 1] : null;
-  if (!last) return { round: null };
-  if (last.tampered) return { round: null, tampered: true };
-  return { round: last };
+  const rounds = roundsFrom(comments);
+  const forHead = rounds.filter((r) => !r.tampered && r.structured && r.source === 'model' && r.headSha === headSha);
+  const decided = forHead.filter(decisive);
+  const chosen = decided.length ? decided[decided.length - 1] : forHead.length ? forHead[forHead.length - 1] : null;
+  const tamperedAfter = rounds.some((r) => r.tampered && (!chosen || r.createdAt > chosen.createdAt));
+  if (tamperedAfter) return { round: null, tampered: true };
+  return { round: chosen };
 }
 
 // Replies carried into the next round: the pull request author's and the
@@ -612,35 +624,42 @@ export function evaluateSubstitution({ headSha, comments, reviews, approvers }) 
   return { verdict: round.verdict, reason: `no approver review on ${headSha} after the round`, round };
 }
 
-// Whether a pull_request run may call the model. A head is reviewed once: a
-// head that already has a decisive round re-asserts it (with any approver
-// substitution) and never calls the model again, so a reply plus a re-run or
-// a reopen cannot turn REQUEST_CHANGES into APPROVE on an unchanged sha. The
-// model is called only for a head with no round on attempt 1 of opened or
-// synchronize, or for a head whose latest round is INCONCLUSIVE.
-export function decideModelRound({ headSha, comments, reviews, approvers, runAttempt, action, runId }) {
+// Whether a pull_request run may call the model. A head sha is reviewed once
+// in the repository:
+// - a head with a decisive round in this thread re-asserts it (with any
+//   approver substitution) and never calls the model again;
+// - an INCONCLUSIVE round from an infrastructure failure (`retryable`) is
+//   retried only by the next attempt of the run that produced it;
+// - otherwise the model is called only on attempt 1 of opened/synchronize,
+//   for a head no genuine round names;
+// - and never when another pr-review pull_request run exists for the sha
+//   (`otherRuns`: a second pull request on an already-reviewed sha, or a
+//   reopen), whatever this thread holds.
+// Refusals are INCONCLUSIVE rounds that are posted (so an approver can
+// dispose of I1) and are not retryable.
+export function decideModelRound({ headSha, comments, reviews, approvers, runAttempt, action, runId, otherRuns }) {
   const hr = headRound(comments, headSha);
-  if (hr.round && hr.round.verdict !== 'INCONCLUSIVE') {
+  if (hr.round && decisive(hr.round)) {
     const sub = evaluateSubstitution({ headSha, comments, reviews, approvers });
-    return { kind: 'verdict', verdict: sub.verdict, reason: `this head already has a ${hr.round.verdict} round; re-asserted without a model call (${sub.reason})` };
+    return { kind: 'verdict', verdict: sub.verdict, post: false, reason: `this head already has a ${hr.round.verdict} round; re-asserted without a model call (${sub.reason})` };
   }
-  if (hr.round) {
-    // An INCONCLUSIVE round is retried only by the next attempt of the run
-    // that produced it (an infrastructure failure, re-run). Anything else,
-    // such as a reopen after a later decisive round was deleted, would be a
-    // second model call on an unchanged sha.
-    if (hr.round.runId && String(hr.round.runId) === String(runId) && Number(hr.round.runAttempt) === Number(runAttempt) - 1) return { kind: 'review' };
-    return { kind: 'verdict', verdict: 'INCONCLUSIVE', reason: 'this head\'s latest round is INCONCLUSIVE and this run is not the next attempt of the run that produced it; re-run that run, push a new commit, or an approver disposes of I1' };
-  }
+  const refuse = (reason) => ({ kind: 'verdict', verdict: 'INCONCLUSIVE', post: true, reason });
   // attempt 1 of opened/synchronize is itself evidence of a head this pull
-  // request has not had: review it if no genuine round names it, even when an
-  // edited comment from an earlier head is in the thread, or one edit would
-  // block the pull request for good.
+  // request has not had: an edited comment from an earlier head must not
+  // block it, or one edit would block the pull request for good.
   const fresh = Number(runAttempt) === 1 && (action === 'opened' || action === 'synchronize');
   const genuine = roundsFrom(comments).some((r) => !r.tampered && r.structured && r.source === 'model' && r.headSha === headSha);
-  if (fresh && !genuine) return { kind: 'review' };
-  if (hr.tampered) return { kind: 'verdict', verdict: 'INCONCLUSIVE', reason: 'a round comment on this pull request was edited after it was posted; push a new commit for a fresh round' };
-  return { kind: 'verdict', verdict: 'INCONCLUSIVE', reason: 'this head has no round and this run is a re-run or a reopen; push a new commit for a fresh round' };
+  if (hr.tampered && !(fresh && !genuine)) return refuse('a round comment on this pull request was edited after it was posted; push a new commit for a fresh round, or an approver disposes of I1');
+  if (!Array.isArray(otherRuns)) return refuse('the other review runs for this head could not be listed');
+  if (otherRuns.length > 0) {
+    return refuse(`this head has already been reviewed by run ${otherRuns[0]}; a head is reviewed once, so push a new commit, or an approver disposes of I1`);
+  }
+  if (hr.round) {
+    if (hr.round.retryable === true && String(hr.round.runId) === String(runId) && Number(hr.round.runAttempt) === Number(runAttempt) - 1) return { kind: 'review' };
+    return refuse('this head\'s latest round is INCONCLUSIVE and this run is not the next attempt of the run whose infrastructure failure produced it; push a new commit, or an approver disposes of I1');
+  }
+  if (fresh) return { kind: 'review' };
+  return refuse('this head has no round and this run is a re-run or a reopen; push a new commit, or an approver disposes of I1');
 }
 
 // ---------------------------------------------------------------------------
@@ -651,7 +670,7 @@ export function decideModelRound({ headSha, comments, reviews, approvers, runAtt
 export const safe = (s) => String(s).replace(/<!--/g, '&lt;!--').replace(/-->/g, '--&gt;');
 const loc = (f) => `\`${safe(f.file)}:${f.line}\``;
 
-export function renderRound({ headSha, verdict, reason, result, review, runId, runAttempt }) {
+export function renderRound({ headSha, verdict, reason, result, review, runId, runAttempt, retryable }) {
   const blocking = result?.blocking ?? (verdict === 'INCONCLUSIVE' ? [{ id: 'I1', severity: 'INCONCLUSIVE', file: '-', line: 0, title: reason }] : []);
   const out = [`**Automated review: ${verdict}**`, '', `Head \`${headSha}\`.`];
   if (verdict === 'INCONCLUSIVE') {
@@ -687,6 +706,7 @@ export function renderRound({ headSha, verdict, reason, result, review, runId, r
     verdict,
     runId: runId ?? null,
     runAttempt: runAttempt === undefined ? null : Number(runAttempt),
+    ...(verdict === 'INCONCLUSIVE' ? { retryable: retryable === true } : {}),
     blocking: blocking.map(({ id, severity, file, line, title }) => ({ id, severity, file, line, title: oneLine(title) })),
   };
   return capBody(out.join('\n'), encodeMarker(marker));
@@ -743,6 +763,21 @@ export async function fetchThread({ repo, pr, token }) {
     gh(`/repos/${repo}/pulls/${pr}/comments`, token),
   ]);
   return { comments, reviews, reviewComments };
+}
+
+// Every pr-review pull_request run for this sha except this run (its own
+// attempts are one run). Needs `actions: read`. A list that cannot be read
+// in full throws, and the caller reads that as INCONCLUSIVE.
+export async function otherRunsForSha({ repo, headSha, runId, token }) {
+  const url = `https://api.github.com/repos/${repo}/actions/workflows/pr-review.yml/runs?head_sha=${headSha}&event=pull_request&per_page=100`;
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+  });
+  if (!res.ok) throw new Error(`workflow runs: HTTP ${res.status}`);
+  const body = await res.json();
+  const runs = body.workflow_runs ?? [];
+  if (!Number.isInteger(body.total_count) || body.total_count > runs.length) throw new Error('workflow runs: incomplete list');
+  return runs.filter((r) => String(r.id) !== String(runId)).map((r) => r.id);
 }
 
 export async function callModel(request, apiKey) {
@@ -802,12 +837,21 @@ async function modelRound(env) {
   const headSha = env.HEAD_SHA;
   const outDir = env.OUT_DIR;
   const approvers = (env.APPROVERS ?? '').split(/[\s,]+/).filter(Boolean);
-  const inconclusive = (reason) => emit(outDir, 'INCONCLUSIVE', renderRound({ headSha, verdict: 'INCONCLUSIVE', reason, runId: env.RUN_ID, runAttempt: env.RUN_ATTEMPT }));
+  const round = (reason, retryable) =>
+    emit(outDir, 'INCONCLUSIVE', renderRound({ headSha, verdict: 'INCONCLUSIVE', reason, runId: env.RUN_ID, runAttempt: env.RUN_ATTEMPT, retryable }));
+  // An infrastructure failure: the next attempt of this run may retry it.
+  const failed = (reason) => round(reason, true);
   let thread = null;
   try {
     thread = await fetchThread({ repo: env.REPO, pr: env.PR_NUMBER, token: env.GH_TOKEN });
   } catch (e) {
-    return inconclusive(`the previous rounds could not be read (${e.message})`);
+    return failed(`the previous rounds could not be read (${e.message})`);
+  }
+  let otherRuns = null;
+  try {
+    otherRuns = await otherRunsForSha({ repo: env.REPO, headSha, runId: env.RUN_ID, token: env.GH_TOKEN });
+  } catch (e) {
+    console.log(`model-round: ${e.message}`);
   }
   const decision = decideModelRound({
     headSha,
@@ -817,15 +861,18 @@ async function modelRound(env) {
     runAttempt: env.RUN_ATTEMPT,
     action: env.EVENT_ACTION,
     runId: env.RUN_ID,
+    otherRuns,
   });
   if (decision.kind === 'verdict') {
-    // No comment: this run made no round. The existing round stays the record.
     console.log(`model-round: ${decision.verdict} without a model call (${decision.reason})`);
-    return emit(outDir, decision.verdict, '');
+    // A re-assertion posts nothing: the head's round stays the record. A
+    // refusal posts a round that is not retryable, so an approver can
+    // dispose of I1 and a re-run cannot turn it into a model call.
+    return decision.post ? round(decision.reason, false) : emit(outDir, decision.verdict, '');
   }
-  if (env.FETCHED !== 'true') return inconclusive(`the diff for head ${headSha} against base ${env.BASE_SHA} could not be fetched`);
-  if (env.TRUNCATED === 'true') return inconclusive(`the diff is ${env.FULL_BYTES} bytes, over the review cap, so only part of it could be examined`);
-  if (!env.ANTHROPIC_API_KEY) return inconclusive('ANTHROPIC_API_KEY is unavailable to this run');
+  if (env.FETCHED !== 'true') return failed(`the diff for head ${headSha} against base ${env.BASE_SHA} could not be fetched`);
+  if (env.TRUNCATED === 'true') return round(`the diff is ${env.FULL_BYTES} bytes, over the review cap, so only part of it could be examined`, false);
+  if (!env.ANTHROPIC_API_KEY) return round('ANTHROPIC_API_KEY is unavailable to this run', false);
   const r = await reviewDiff({
     diffText: readFileSync(env.DIFF_FILE, 'utf8'),
     thread,
@@ -834,24 +881,25 @@ async function modelRound(env) {
     approvers,
     expectedFiles: Number(env.FILE_COUNT),
   });
-  if (r.verdict === 'INCONCLUSIVE') return inconclusive(r.reason);
+  if (r.verdict === 'INCONCLUSIVE') return failed(r.reason);
   emit(outDir, r.verdict, renderRound({ headSha, verdict: r.verdict, result: r.result, review: r.review, runId: env.RUN_ID, runAttempt: env.RUN_ATTEMPT }));
 }
 
 async function humanRound(env) {
   const headSha = env.HEAD_SHA;
   const approvers = (env.APPROVERS ?? '').split(/[\s,]+/).filter(Boolean);
+  const byApprover = approvers.includes(env.REVIEW_AUTHOR);
   let thread;
   try {
     thread = await fetchThread({ repo: env.REPO, pr: env.PR_NUMBER, token: env.GH_TOKEN });
   } catch (e) {
-    return emit(env.OUT_DIR, 'INCONCLUSIVE', humanNote(headSha, 'INCONCLUSIVE', `The review thread could not be read (${e.message}).`));
+    const note = byApprover ? humanNote(headSha, 'INCONCLUSIVE', `The review thread could not be read (${e.message}).`) : '';
+    return emit(env.OUT_DIR, 'INCONCLUSIVE', note);
   }
   const sub = evaluateSubstitution({ headSha, comments: thread.comments, reviews: thread.reviews, approvers });
   console.log(`human-round: ${sub.verdict} (${sub.reason})`);
   // Only an approver's own review event posts; anyone else's review
   // re-asserts the round silently, so a review cannot be used to spam the PR.
-  const byApprover = approvers.includes(env.REVIEW_AUTHOR);
   let body = '';
   if (sub.reviewer) body = renderSubstitution({ headSha, sub });
   else if (byApprover) body = humanNote(headSha, sub.verdict, `No substitution: ${safe(sub.reason)}.`);

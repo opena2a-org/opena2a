@@ -26,6 +26,9 @@ concurrency:
 permissions:
   pull-requests: write
   contents: read
+  # Read-only: lists the other pr-review runs for a head sha, so a head is
+  # reviewed once in the repository, not once per pull request.
+  actions: read
 
 jobs:
   # No job-level `if`: a skipped job reports success to a required check, so

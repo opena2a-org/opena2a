@@ -412,7 +412,7 @@ describe('round integrity', () => {
     ...over,
   });
   const decide = (comments: unknown[], over: Record<string, unknown> = {}) =>
-    m.decideModelRound({ headSha: HEAD, comments, reviews: [], approvers: ['thebenignhacker'], runAttempt: '1', action: 'synchronize', ...over });
+    m.decideModelRound({ headSha: HEAD, comments, reviews: [], approvers: ['thebenignhacker'], runAttempt: '1', action: 'synchronize', runId: '77', otherRuns: [], ...over });
 
   it('9908.AC4 an edited round comment is never read: the head reads INCONCLUSIVE, with no fall-through', () => {
     const genuine = posted('REQUEST_CHANGES', ['B1'], '2026-09-23T04:00:00Z');
@@ -424,7 +424,8 @@ describe('round integrity', () => {
     const older = posted('INCONCLUSIVE', ['I1'], '2026-09-23T03:00:00Z');
     expect(m.evaluateSubstitution({ headSha: HEAD, comments: [older, edited], reviews: [], approvers: [] }).verdict).toBe('INCONCLUSIVE');
     expect(decide([older, edited])).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
-    expect(m.priorRound([older, edited])).toMatchObject({ verdict: 'INCONCLUSIVE' });
+    // An INCONCLUSIVE round is never the carried-forward round.
+    expect(m.priorRound([older, edited])).toBeNull();
   });
 
   it.each([
@@ -459,12 +460,15 @@ describe('round integrity', () => {
     expect(decide([])).toEqual({ kind: 'review' });
     expect(decide([], { action: 'opened' })).toEqual({ kind: 'review' });
     const inc = posted('INCONCLUSIVE', ['I1'], '2026-09-23T04:00:00Z');
-    inc.body = `**Automated review: INCONCLUSIVE**\n\n${m.encodeMarker({ source: 'model', headSha: HEAD, verdict: 'INCONCLUSIVE', runId: '77', runAttempt: 1, blocking: [{ id: 'I1' }] })}`;
+    inc.body = `**Automated review: INCONCLUSIVE**\n\n${m.encodeMarker({ source: 'model', headSha: HEAD, verdict: 'INCONCLUSIVE', runId: '77', runAttempt: 1, retryable: true, blocking: [{ id: 'I1' }] })}`;
     expect(decide([inc], { runAttempt: '2', runId: '77' })).toEqual({ kind: 'review' });
     // Not the next attempt of that run: a reopen, a later attempt, another run.
     expect(decide([inc], { runAttempt: '1', runId: '78', action: 'reopened' })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
     expect(decide([inc], { runAttempt: '3', runId: '77' })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
     expect(decide([inc], { runAttempt: '2', runId: '78' })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
+    // A refusal round (not retryable) is never retried, even by the next attempt.
+    const refusal = { ...inc, body: inc.body.replace(m.encodeMarker({ source: 'model', headSha: HEAD, verdict: 'INCONCLUSIVE', runId: '77', runAttempt: 1, retryable: true, blocking: [{ id: 'I1' }] }), m.encodeMarker({ source: 'model', headSha: HEAD, verdict: 'INCONCLUSIVE', runId: '77', runAttempt: 1, retryable: false, blocking: [{ id: 'I1' }] })) };
+    expect(decide([refusal], { runAttempt: '2', runId: '77' })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE', post: true });
     expect(decide([], { runAttempt: '2' })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
     expect(decide([], { action: 'reopened' })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
   });
@@ -521,5 +525,74 @@ describe('round integrity', () => {
     expect(r.verdict).toBe('REQUEST_CHANGES');
     expect(r.blocking).toHaveLength(2);
     expect(r.blocking.every((b: { unchecked: boolean }) => b.unchecked)).toBe(true);
+  });
+});
+
+describe('a head is reviewed once in the repository', () => {
+  const HEAD = 'd'.repeat(40);
+  const H2 = 'e'.repeat(40);
+  const round = (verdict: string, ids: string[], at: string, extra: Record<string, unknown> = {}, headSha = HEAD) => ({
+    user: { login: m.BOT_LOGIN },
+    created_at: at,
+    updated_at: at,
+    body: `**Automated review: ${verdict}**\n\n${m.encodeMarker({
+      source: 'model',
+      headSha,
+      verdict,
+      blocking: ids.map((id) => ({ id, severity: 'HIGH', file: 'f', line: 1, title: 't' })),
+      ...extra,
+    })}`,
+  });
+  const decide = (comments: unknown[], over: Record<string, unknown> = {}) =>
+    m.decideModelRound({ headSha: HEAD, comments, reviews: [], approvers: ['thebenignhacker'], runAttempt: '1', action: 'opened', runId: '500', otherRuns: [], ...over });
+
+  it('9908.AC2 a second pull request on an already-reviewed sha is INCONCLUSIVE with no model call, and posts a round an approver can clear', () => {
+    expect(decide([], { otherRuns: [400] })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE', post: true });
+    expect(decide([], { otherRuns: [400] }).reason).toContain('run 400');
+    // Control: the first review of the sha.
+    expect(decide([])).toEqual({ kind: 'review' });
+  });
+
+  it('9908.AC2 a run list that could not be read is INCONCLUSIVE', () => {
+    expect(decide([], { otherRuns: null })).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
+  });
+
+  it('9908.AC2 a decisive round in this thread is re-asserted even when other runs exist', () => {
+    expect(decide([round('REQUEST_CHANGES', ['B1'], '2026-09-23T04:00:00Z')], { otherRuns: [400], action: 'reopened' })).toMatchObject({
+      verdict: 'REQUEST_CHANGES',
+      post: false,
+    });
+  });
+
+  it('9908.AC2 a later INCONCLUSIVE round never displaces the head\'s decisive round', () => {
+    const rc = round('REQUEST_CHANGES', ['B1'], '2026-09-23T04:00:00Z', { runId: '500', runAttempt: 1 });
+    const inc = round('INCONCLUSIVE', ['I1'], '2026-09-23T04:10:00Z', { runId: '500', runAttempt: 2, retryable: true });
+    expect(decide([rc, inc], { runAttempt: '3', action: 'synchronize' })).toMatchObject({ kind: 'verdict', verdict: 'REQUEST_CHANGES' });
+    const approve = (body: string) => [{ user: { login: 'thebenignhacker' }, state: 'APPROVED', commit_id: HEAD, submitted_at: '2026-09-23T04:20:00Z', body }];
+    const sub = (body: string) => m.evaluateSubstitution({ headSha: HEAD, comments: [rc, inc], reviews: approve(body), approvers: ['thebenignhacker'] });
+    expect(sub('I1: infrastructure failure').verdict).toBe('REQUEST_CHANGES');
+    expect(sub('B1: not a defect because the flag is refused').verdict).toBe('APPROVE');
+  });
+
+  it('9908.AC3 carry-forward reads the latest decisive round, not a later INCONCLUSIVE one', () => {
+    const rc = round('REQUEST_CHANGES', ['B1'], '2026-09-23T04:00:00Z', {}, H2);
+    const inc = round('INCONCLUSIVE', ['I1'], '2026-09-23T04:10:00Z');
+    expect(m.priorRound([rc])).toMatchObject({ verdict: 'REQUEST_CHANGES', blocking: [{ id: 'B1' }] });
+    expect(m.priorRound([rc, inc])).toMatchObject({ verdict: 'REQUEST_CHANGES', blocking: [{ id: 'B1' }] });
+  });
+
+  it('9908.AC2 the run lookup excludes this run and fails closed on an incomplete list', async () => {
+    const real = globalThis.fetch;
+    const reply = (body: unknown, status = 200) => async () => new Response(JSON.stringify(body), { status });
+    try {
+      globalThis.fetch = reply({ total_count: 2, workflow_runs: [{ id: 500 }, { id: 400 }] }) as typeof fetch;
+      expect(await m.otherRunsForSha({ repo: 'o/r', headSha: HEAD, runId: '500', token: 't' })).toEqual([400]);
+      globalThis.fetch = reply({ total_count: 3, workflow_runs: [{ id: 500 }] }) as typeof fetch;
+      await expect(m.otherRunsForSha({ repo: 'o/r', headSha: HEAD, runId: '500', token: 't' })).rejects.toThrow(/incomplete/);
+      globalThis.fetch = reply({}, 403) as typeof fetch;
+      await expect(m.otherRunsForSha({ repo: 'o/r', headSha: HEAD, runId: '500', token: 't' })).rejects.toThrow(/403/);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });
