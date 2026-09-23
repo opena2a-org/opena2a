@@ -13,8 +13,10 @@
 //                    as demonstrated by the changed code, whose file:line lies
 //                    inside this pull request's diff hunks and whose quoted
 //                    evidence is the text on that line, AND a separate
-//                    adversarial check call confirms it as an in-diff HIGH or
-//                    CRITICAL with a concrete trigger.
+//                    adversarial check does not clear it: the check is sampled
+//                    CHECK_SAMPLES times, and the finding stops blocking only
+//                    when every sample clears it (refuted, not in-diff, or
+//                    below HIGH).
 //   APPROVE          otherwise.
 //   INCONCLUSIVE     when no review could be obtained (diff over the cap, no
 //                    API key, an API error, a reply or check that is not a
@@ -43,6 +45,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 export const MODEL = 'claude-sonnet-4-5-20250929';
@@ -65,6 +68,13 @@ export const PRIOR_TEXT_CAP = 12000;
 // At most this many blocking candidates get a check call per round. Any beyond
 // it stay blocking, unchecked: the cap bounds cost and never turns into a pass.
 export const MAX_CHECKS = 8;
+// Independent check calls per blocking candidate. At temperature 0 the same
+// check on the same bytes still differed: on the planted key-on-argv control
+// one sample in six labelled a confirmed CRITICAL speculative and cleared it
+// (2026-09-23). A candidate therefore stops blocking only when every sample
+// clears it. One sample that confirms it keeps it blocking: a false block has
+// the approver path, a false pass has none.
+export const CHECK_SAMPLES = 3;
 
 // ---------------------------------------------------------------------------
 // Diff index
@@ -451,23 +461,31 @@ export function parseCheck(body) {
   return { ok: true, check: c };
 }
 
-// Folds the checks into the mechanical result. `checks[i]` belongs to
-// `candidates.blocking[i]`. Blocking ids are renumbered so B1..Bn stay dense.
+const confirms = (c) => c.holds && c.basis === 'in-diff' && BLOCKING_SEVERITIES.has(c.severity);
+
+// Folds the checks into the mechanical result. `checks[i]` is the array of
+// check samples for `candidates.blocking[i]`. A candidate becomes a note only
+// when it has all CHECK_SAMPLES samples and none of them confirms it; anything
+// less (no samples, too few, not an array) keeps it blocking. Blocking ids are
+// renumbered so B1..Bn stay dense.
 export function applyChecks(candidates, checks) {
   const blocking = [];
   const notes = [...candidates.notes];
   candidates.blocking.forEach((b, i) => {
-    const c = checks[i];
+    const samples = checks[i];
     const { id: _id, ...f } = b;
-    if (c === undefined) {
+    if (!Array.isArray(samples) || samples.length < CHECK_SAMPLES) {
       blocking.push({ ...f, unchecked: true, id: `B${blocking.length + 1}` });
       return;
     }
-    const confirmed = c.holds && c.basis === 'in-diff' && BLOCKING_SEVERITIES.has(c.severity);
-    if (confirmed) blocking.push({ ...f, severity: c.severity, trigger: c.trigger, id: `B${blocking.length + 1}` });
-    else {
+    const confirming = samples.filter(confirms);
+    if (confirming.length > 0) {
+      const c = confirming[0];
+      blocking.push({ ...f, severity: c.severity, trigger: c.trigger, confirmedBy: confirming.length, samples: samples.length, id: `B${blocking.length + 1}` });
+    } else {
+      const c = samples[0];
       const why = !c.holds ? 'refuted by the check' : c.basis !== 'in-diff' ? `check: ${c.basis}` : `check: severity ${c.severity}`;
-      notes.push({ ...f, whyNotBlocking: `${why}: ${oneLine(c.reason)}` });
+      notes.push({ ...f, whyNotBlocking: `${why}, all ${samples.length} checks agree: ${oneLine(c.reason)}` });
     }
   });
   return { verdict: blocking.length > 0 ? 'REQUEST_CHANGES' : 'APPROVE', blocking, notes };
@@ -692,10 +710,10 @@ export function renderRound({ headSha, verdict, reason, result, review, runId, r
   }
   if (review) out.push('', safe(oneLine(review.summary)));
   if (result?.blocking.length) {
-    out.push('', '### Blocking', '', 'Each is HIGH or CRITICAL, pinned to a line of this diff, and confirmed by a separate check that named its trigger.');
+    out.push('', '### Blocking', '', `Each is HIGH or CRITICAL and pinned to a line of this diff. A separate check, sampled ${CHECK_SAMPLES} times, did not clear it: at least one sample confirmed it and named its trigger.`);
     for (const b of result.blocking) {
       out.push('', `**${b.id}** [${b.severity}] ${loc(b)} ${safe(oneLine(b.title))}`, '', safe(b.detail.trim()));
-      if (b.trigger) out.push('', `Trigger (confirmed by the check): ${safe(oneLine(b.trigger))}`);
+      if (b.trigger) out.push('', `Trigger (confirmed by ${b.confirmedBy} of ${b.samples} checks): ${safe(oneLine(b.trigger))}`);
       if (b.unchecked) out.push('', `Not checked: this round had more than ${MAX_CHECKS} blocking candidates.`);
     }
   }
@@ -829,11 +847,17 @@ export async function reviewDiff({ diffText, thread, apiKey, author, approvers, 
   const candidates = computeVerdict(parsed.review, index);
   const checks = [];
   for (const finding of candidates.blocking.slice(0, MAX_CHECKS)) {
-    const cr = await callModel(buildCheckRequest({ annotated: annotateDiff(index), finding, replies }), apiKey);
-    if (!cr.ok) return { verdict: 'INCONCLUSIVE', reason: `checking ${finding.id}: ${cr.reason}`, request, response: call.body };
-    const pc = parseCheck(cr.body);
-    if (!pc.ok) return { verdict: 'INCONCLUSIVE', reason: `checking ${finding.id}: ${pc.reason}`, request, response: call.body };
-    checks.push(pc.check);
+    const checkRequest = buildCheckRequest({ annotated: annotateDiff(index), finding, replies });
+    const calls = await Promise.all(Array.from({ length: CHECK_SAMPLES }, () => callModel(checkRequest, apiKey)));
+    const samples = [];
+    for (const [s, cr] of calls.entries()) {
+      const at = `checking ${finding.id} (sample ${s + 1} of ${CHECK_SAMPLES})`;
+      if (!cr.ok) return { verdict: 'INCONCLUSIVE', reason: `${at}: ${cr.reason}`, request, response: call.body };
+      const pc = parseCheck(cr.body);
+      if (!pc.ok) return { verdict: 'INCONCLUSIVE', reason: `${at}: ${pc.reason}`, request, response: call.body };
+      samples.push(pc.check);
+    }
+    checks.push(samples);
   }
   const result = applyChecks(candidates, checks);
   return { verdict: result.verdict, review: parsed.review, result, candidates, checks, request, response: call.body };
@@ -925,10 +949,20 @@ async function replay(argv) {
     const i = argv.indexOf(`--${name}`);
     return i >= 0 ? argv[i + 1] : undefined;
   };
-  const diffText = readFileSync(arg('diff'), 'utf8');
+  const startedAt = new Date().toISOString();
+  const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+  const diffBytes = readFileSync(arg('diff'));
+  const diffText = diffBytes.toString('utf8');
   const out = arg('out');
   let thread = null;
-  if (arg('thread')) thread = JSON.parse(readFileSync(arg('thread'), 'utf8'));
+  let threadBytes = null;
+  if (arg('thread')) {
+    threadBytes = readFileSync(arg('thread'));
+    thread = JSON.parse(threadBytes.toString('utf8'));
+  }
+  // The git blob id of this script, so a record names the code that produced it.
+  const self = readFileSync(new URL(import.meta.url));
+  const scriptBlob = createHash('sha1').update(`blob ${self.length}\0`).update(self).digest('hex');
   const r = await reviewDiff({
     diffText,
     thread,
@@ -938,6 +972,12 @@ async function replay(argv) {
   });
   const index = parseDiff(diffText);
   const record = {
+    scriptBlob,
+    diffSha256: sha256(diffBytes),
+    threadSha256: threadBytes ? sha256(threadBytes) : null,
+    node: process.version,
+    startedAt,
+    finishedAt: new Date().toISOString(),
     // What the model was shown: every file, and its header-only lines.
     files: [...index.entries()].map(([file, lines]) => ({ file, lines: lines.length, meta: lines.filter((l) => l.kind === 'meta').map((l) => l.text) })),
     verdict: r.verdict,

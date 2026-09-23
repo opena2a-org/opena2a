@@ -156,15 +156,95 @@ describe('check pass', () => {
     reason: 'the key is an argv element',
     ...over,
   });
+  // Every candidate is checked CHECK_SAMPLES times; `all` gives each sample the same answer.
+  const all = (c: Record<string, unknown>) => Array.from({ length: m.CHECK_SAMPLES }, () => c);
 
   it('9908.AC1 a candidate blocks only when the check confirms an in-diff HIGH or CRITICAL', () => {
     const cands = m.computeVerdict(review([finding(), finding({ line: 11, evidence: 'const key = opts.apiKey ?? process.env.AIM_API_KEY;' })]), idx());
     expect(cands.blocking).toHaveLength(2);
-    const r = m.applyChecks(cands, [check({ holds: false, reason: 'the regex rejects it' }), check({ severity: 'CRITICAL' })]);
+    const r = m.applyChecks(cands, [all(check({ holds: false, reason: 'the regex rejects it' })), all(check({ severity: 'CRITICAL' }))]);
     expect(r.verdict).toBe('REQUEST_CHANGES');
     expect(r.blocking).toHaveLength(1);
-    expect(r.blocking[0]).toMatchObject({ id: 'B1', line: 11, severity: 'CRITICAL', trigger: 'run `ps -ef` while the command runs' });
-    expect(r.notes[0].whyNotBlocking).toMatch(/^refuted by the check: the regex rejects it/);
+    expect(r.blocking[0]).toMatchObject({ id: 'B1', line: 11, severity: 'CRITICAL', trigger: 'run `ps -ef` while the command runs', confirmedBy: 3, samples: 3 });
+    expect(r.notes[0].whyNotBlocking).toMatch(/^refuted by the check, all 3 checks agree: the regex rejects it/);
+  });
+
+  it('9908.AC2 the check is sampled three times and one confirming sample keeps a candidate blocking', () => {
+    expect(m.CHECK_SAMPLES).toBe(3);
+    const cands = () => m.computeVerdict(review([finding()]), idx());
+    // The 2026-09-23 replay miss: one sample re-labels a confirmed CRITICAL speculative for want of a caller.
+    const miss = check({ basis: 'speculative', reason: 'no code in this diff calls it' });
+    for (const samples of [
+      [check({ severity: 'CRITICAL' }), miss, check({ severity: 'CRITICAL' })],
+      [miss, miss, check()],
+      [check({ holds: false }), check({ severity: 'LOW' }), check()],
+    ]) {
+      const r = m.applyChecks(cands(), [samples]);
+      expect(r.verdict).toBe('REQUEST_CHANGES');
+      expect(r.blocking[0].confirmedBy).toBe(samples.filter((c) => c.holds && c.basis === 'in-diff' && ['HIGH', 'CRITICAL'].includes(c.severity as string)).length);
+    }
+    // Only unanimous clearing makes it a note, whatever mix of reasons clears it.
+    const r = m.applyChecks(cands(), [[miss, check({ holds: false }), check({ severity: 'LOW' })]]);
+    expect(r.verdict).toBe('APPROVE');
+    expect(r.notes[0].whyNotBlocking).toMatch(/^check: speculative, all 3 checks agree/);
+  });
+
+  it.each([
+    ['no samples', []],
+    ['two samples that both clear it', [{ holds: false }, { holds: false }]],
+    ['one bare check object instead of samples', { holds: false }],
+  ])('9908.AC2 a candidate with %s stays blocking, unchecked', (_label, samples) => {
+    const r = m.applyChecks(m.computeVerdict(review([finding()]), idx()), [samples]);
+    expect(r.verdict).toBe('REQUEST_CHANGES');
+    expect(r.blocking[0].unchecked).toBe(true);
+  });
+
+  it('9908.AC2 reviewDiff makes CHECK_SAMPLES independent check calls and blocks on one confirming sample', async () => {
+    const tool = (name: string, input: unknown) => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', name, input }] });
+    const replies = [
+      tool('submit_review', review([finding()])),
+      tool('submit_check', check({ basis: 'speculative' })),
+      tool('submit_check', check({ holds: false })),
+      tool('submit_check', check({ severity: 'CRITICAL' })),
+    ];
+    const bodies: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, init: { body: string }) => {
+      bodies.push(init.body);
+      return new Response(JSON.stringify(replies.shift()), { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      const r = await m.reviewDiff({ diffText: DIFF, thread: null, apiKey: 'unused' });
+      expect(bodies).toHaveLength(1 + m.CHECK_SAMPLES);
+      expect(new Set(bodies.slice(1)).size).toBe(1); // the same check request, sent three times
+      expect(r.verdict).toBe('REQUEST_CHANGES');
+      expect(r.checks[0]).toHaveLength(3);
+      expect(r.result.blocking[0]).toMatchObject({ severity: 'CRITICAL', confirmedBy: 1, samples: 3 });
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
+  it('9908.AC2 a failed check sample makes the round INCONCLUSIVE, never a pass', async () => {
+    const tool = (name: string, input: unknown) => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', name, input }] });
+    const replies: Array<[unknown, number]> = [
+      [tool('submit_review', review([finding()])), 200],
+      [tool('submit_check', check({ holds: false })), 200],
+      [{}, 529],
+      [tool('submit_check', check({ holds: false })), 200],
+    ];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      const [body, status] = replies.shift()!;
+      return new Response(JSON.stringify(body), { status });
+    }) as unknown as typeof fetch;
+    try {
+      const r = await m.reviewDiff({ diffText: DIFF, thread: null, apiKey: 'unused' });
+      expect(r.verdict).toBe('INCONCLUSIVE');
+      expect(r.reason).toMatch(/sample 2 of 3/);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 
   it.each([
@@ -172,7 +252,7 @@ describe('check pass', () => {
     ['re-labelled speculative', { basis: 'speculative' }, /check: speculative/],
     ['downgraded to LOW', { severity: 'LOW' }, /check: severity LOW/],
   ])('9908.AC1 a candidate the check %s is a note', (_label, over, why) => {
-    const r = m.applyChecks(m.computeVerdict(review([finding()]), idx()), [check(over)]);
+    const r = m.applyChecks(m.computeVerdict(review([finding()]), idx()), [all(check(over))]);
     expect(r.verdict).toBe('APPROVE');
     expect(r.notes[0].whyNotBlocking).toMatch(why);
   });
@@ -526,7 +606,7 @@ describe('round integrity', () => {
   it('9908.AC1 candidates past the check cap stay blocking, unchecked', () => {
     const many = Array.from({ length: m.MAX_CHECKS + 2 }, () => finding());
     const cands = m.computeVerdict(review(many), m.parseDiff(DIFF));
-    const checks = Array.from({ length: m.MAX_CHECKS }, () => ({ holds: false, basis: 'in-diff', severity: 'LOW', trigger: 'none', reason: 'no' }));
+    const checks = Array.from({ length: m.MAX_CHECKS }, () => Array.from({ length: m.CHECK_SAMPLES }, () => ({ holds: false, basis: 'in-diff', severity: 'LOW', trigger: 'none', reason: 'no' })));
     const r = m.applyChecks(cands, checks);
     expect(r.verdict).toBe('REQUEST_CHANGES');
     expect(r.blocking).toHaveLength(2);
