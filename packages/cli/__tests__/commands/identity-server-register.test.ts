@@ -17,6 +17,7 @@ type IdentityOptions = Parameters<IdentityFn>[0];
 
 const SERVER = 'http://localhost:8080';
 // The shape the backend mints: aim_live_ + URL-safe base64 of 32 bytes.
+// TEST-ONLY synthetic key (32 bytes of 0x09), never a real credential: real keys never go in tests.
 const API_KEY = `aim_live_${Buffer.alloc(32, 9).toString('base64url')}=`;
 
 const mockFetch = vi.fn();

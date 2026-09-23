@@ -34,6 +34,7 @@ afterEach(() => {
 
 const PUBLIC_KEY = Buffer.alloc(32, 7).toString('base64');
 // The shape api_key_service.go mints: aim_live_ + URL-safe base64 of 32 bytes (53 chars).
+// TEST-ONLY synthetic key (32 bytes of 0x09), never a real credential: real keys never go in tests.
 const API_KEY = `aim_live_${Buffer.alloc(32, 9).toString('base64url')}=`;
 
 describe('AimClient.register', () => {
