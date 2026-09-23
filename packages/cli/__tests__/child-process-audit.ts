@@ -74,6 +74,16 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'execFileSync(git ...) fixture setup',
   },
+  'consumer-audit-candidate-attribution.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node --input-type=module --eval <import the audit script>) with an empty ' +
+      'PATH, to measure that importing scripts/audit-consumer-resolution.mjs installs, ' +
+      'audits and spawns nothing (QGF-112.AC3); then spawnSync(node ' +
+      'scripts/audit-consumer-resolution.mjs --target) to measure that it still runs when ' +
+      'it IS the program',
+  },
   'docs/ci-cd-recipe-jq-paths.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
