@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync } from 'node:child_process';
 import * as yaml from 'js-yaml';
 
 // Pins the shape of the required `review` check (.github/workflows/pr-review.yml)
@@ -113,6 +113,24 @@ describe('pr-review workflow shape', () => {
     });
     // The human round must not be able to reach the model.
     expect(JSON.stringify(step('Human round'))).not.toContain('ANTHROPIC');
+  });
+
+  it('9908.AC5 the reviewed diff is fetched for the event head sha, never for "the pull request"', () => {
+    const run = step('Get PR diff').run as string;
+    expect(run).toContain('compare/$BASE_SHA...$HEAD_SHA');
+    expect(run).not.toContain('gh pr diff');
+    expect(job.env.BASE_SHA).toBe('${{ github.event.pull_request.base.sha }}');
+    expect(step('Model round').env).toMatchObject({
+      FETCHED: '${{ steps.diff.outputs.fetched }}',
+      FILE_COUNT: '${{ steps.diff.outputs.file_count }}',
+      RUN_ATTEMPT: '${{ github.run_attempt }}',
+      EVENT_ACTION: '${{ github.event.action }}',
+      PR_AUTHOR: '${{ github.event.pull_request.user.login }}',
+    });
+  });
+
+  it('9908.AC5 the job has a timeout', () => {
+    expect((job as unknown as { 'timeout-minutes': number })['timeout-minutes']).toBe(15);
   });
 
   it('9908.AC5 no step interpolates an expression into a shell script', () => {

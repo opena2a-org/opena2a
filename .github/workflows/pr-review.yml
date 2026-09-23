@@ -32,10 +32,12 @@ jobs:
   # every event that starts this job must end in the Enforce verdict step.
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       REPO: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
       RUN_ID: ${{ github.run_id }}
       OUT_DIR: /tmp/pr-review
       # The same approver set as gate-file-approval.yml; a test pins them equal.
@@ -53,10 +55,24 @@ jobs:
         run: |
           CAP=122880
 
+          # The diff of exactly the head this run reviews: the event's base and
+          # head shas, three-dot, which is what the pull request shows. Asking
+          # for "the pull request's diff" reads whatever the head is by the
+          # time the request lands. The file count is read from the same
+          # comparison so a diff that silently lost files is caught.
+          if gh api -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" > /tmp/pr-diff-full.txt \
+             && COUNT=$(gh api "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" --jq '.files | length') \
+             && [ "$COUNT" -lt 300 ]; then
+            echo "fetched=true" >> "$GITHUB_OUTPUT"
+            echo "file_count=$COUNT" >> "$GITHUB_OUTPUT"
+          else
+            echo "fetched=false" >> "$GITHUB_OUTPUT"
+            : > /tmp/pr-diff-full.txt
+          fi
+
           # Capture the full diff, then decide separately whether it fits, so
           # an over-cap diff is never reviewed as if its first 120KB were the
           # whole change.
-          gh pr diff "$PR_NUMBER" > /tmp/pr-diff-full.txt
           FULL=$(wc -c < /tmp/pr-diff-full.txt)
           head -c "$CAP" /tmp/pr-diff-full.txt > /tmp/pr-diff.txt
 
@@ -74,8 +90,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DIFF_FILE: /tmp/pr-diff.txt
+          FETCHED: ${{ steps.diff.outputs.fetched }}
+          FILE_COUNT: ${{ steps.diff.outputs.file_count }}
           TRUNCATED: ${{ steps.diff.outputs.truncated }}
           FULL_BYTES: ${{ steps.diff.outputs.full_bytes }}
+          # A head is reviewed once: a re-run or a reopen re-asserts its round.
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_ACTION: ${{ github.event.action }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: node .github/scripts/pr-review.mjs model-round
 
       - name: Human round

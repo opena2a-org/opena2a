@@ -103,4 +103,9 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git init | add | commit | checkout | merge-tree) over throwaway ' +
       'repositories built from this file (QGF-146.AC4)',
   },
+  'repo/pr-review-workflow.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'execFileSync(bash -c <Enforce verdict step>) once per verdict value (9908)',
+  },
 };
