@@ -283,7 +283,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
           'ai-trust': '^0.2.23',
           commander: '^13.1.0',
           hackmyagent: '0.30.0',
-          'secretless-ai': '^0.14.1',
+          'secretless-ai': '0.23.0',
         },
         devDependencies: {
           '@types/js-yaml': '^4.0.9',

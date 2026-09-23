@@ -108,4 +108,14 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'execFileSync(bash -c <Enforce verdict step>) once per verdict value (9908)',
   },
+  'release/release-artifact-review.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(npm pack | tar -czf) to build the own, sibling and poisoned tarballs, ' +
+      'spawnSync(node scripts/release-artifact-review.mjs --tarball) per case (the script ' +
+      'runs npm view, npm install into a probe prefix and the installed bin as its own ' +
+      'children, one at a time), and execFileSync(npm view hackmyagent) for the ' +
+      'deprecation fixture (OPA-04)',
+  },
 };
