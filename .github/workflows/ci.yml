@@ -77,7 +77,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # GH_TOKEN: the release-artifact-review tests exercise the consumer-
+      # closure check, which reads repository security advisories from
+      # api.github.com. Unauthenticated calls share a per-IP rate limit across
+      # every tenant of a hosted runner, and the review script deliberately
+      # reports a rate-limited feed as a PRECONDITION (not a pass) — which the
+      # own-tarball test then fails loudly. The token turns that flake into a
+      # 5000/hour budget.
       - run: npm run test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
     runs-on: ubuntu-latest
