@@ -119,9 +119,28 @@ export interface DeviceTokenError {
 /**
  * The header the AIM backend reads for an agent API key (its API-key
  * middleware, after "Authorization: Bearer"). The Python and TypeScript SDKs
- * send the same name.
+ * send the same name. Pinned on the backend side by
+ * agent-identity-management apps/backend/cmd/server/sdk_api_key_registration_contract_test.go;
+ * no backend route reads the header name this client sent before this change.
  */
 export const API_KEY_HEADER = 'X-API-Key';
+
+/**
+ * An agent API key as the backend mints it: "aim_live_" followed by the
+ * URL-safe base64 of 32 random bytes (apps/backend/internal/application/api_key_service.go).
+ */
+const AGENT_API_KEY_PATTERN = /^aim_live_[A-Za-z0-9_-]{43}=?$/;
+
+export function isAgentApiKey(key: string): boolean {
+  return AGENT_API_KEY_PATTERN.test(key);
+}
+
+/** Base64 of a raw 32-byte Ed25519 public key: 43 characters and one pad. */
+const PUBLIC_KEY_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
+
+export function isEd25519PublicKey(publicKey: string): boolean {
+  return PUBLIC_KEY_PATTERN.test(publicKey) && Buffer.from(publicKey, 'base64').length === 32;
+}
 
 // ---------------------------------------------------------------------------
 // Error
@@ -182,6 +201,18 @@ export class AimClient {
         0,
       );
     }
+    if (!isEd25519PublicKey(body.publicKey)) {
+      throw new AimServerError(
+        'The public key is not the base64 of a 32-byte Ed25519 key; nothing was sent.',
+        0,
+      );
+    }
+    if (!isAgentApiKey(apiKey)) {
+      throw new AimServerError(
+        'The API key is not an AIM agent API key (aim_live_ followed by 44 characters); nothing was sent.',
+        0,
+      );
+    }
     const serverBody = {
       name: body.name,
       displayName: body.displayName ?? body.name,
@@ -189,10 +220,17 @@ export class AimClient {
       agentType: body.agentType ?? 'custom',
       publicKey: body.publicKey,
     };
-    const resp = await this.post<any>('/api/v1/agents', serverBody, {
+    const resp = await this.post<Record<string, unknown>>('/api/v1/agents', serverBody, {
       [API_KEY_HEADER]: apiKey,
     });
-    return { ...resp, agentId: resp.agentId ?? resp.id };
+    const agentId = resp.agentId ?? resp.id;
+    if (typeof agentId !== 'string' || agentId === '') {
+      throw new AimServerError(
+        'The AIM server answered the registration without an agent id; nothing was stored.',
+        0,
+      );
+    }
+    return { ...(resp as unknown as RegisterResponse), agentId };
   }
 
   // ---- Login -------------------------------------------------------------

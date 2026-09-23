@@ -104,8 +104,10 @@ const USAGE = [
   '',
   'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate, revoke):',
   '  --server <url>           AIM server URL (e.g. localhost:8080, cloud); required to register',
-  '  --api-key <key>          Agent API key (aim_live_...) issued for an existing agent in your',
-  '                           organization; create and connect register the new agent there',
+  '  AIM_API_KEY              Agent API key (aim_live_...) issued for an existing agent in your',
+  '                           organization. With --server, create registers the new agent in',
+  '                           that organization; connect registers this machine\'s identity there.',
+  '  --api-key <key>          The same key as a flag (visible in shell history; prefer AIM_API_KEY)',
   '',
 ].join('\n');
 
@@ -149,6 +151,14 @@ export async function identity(options: IdentityOptions): Promise<number> {
   // Normalize --json flag to format
   if (options.json) {
     options.format = 'json';
+  }
+
+  // The agent API key comes from AIM_API_KEY. --api-key still works, but a value on the
+  // command line is readable in the process list and the shell history, so it says so.
+  if (options.apiKey) {
+    process.stderr.write(yellow('Note: --api-key puts the key in your shell history and the process list; set AIM_API_KEY instead.') + '\n');
+  } else if (process.env.AIM_API_KEY) {
+    options.apiKey = process.env.AIM_API_KEY;
   }
 
   // Auto-refresh expired OAuth tokens before dispatching subcommands
@@ -308,7 +318,7 @@ function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string; s
 function formatServerError(err: unknown): string {
   if (err instanceof AimServerError) {
     if (err.statusCode === 401) {
-      return 'Authentication failed. Check your --api-key or run: opena2a identity connect <url>';
+      return 'Authentication failed. Check AIM_API_KEY (an agent API key for an existing agent in your organization) or run: opena2a login';
     }
     if (err.statusCode === 403) {
       return 'Access denied. Your API key may lack required permissions.';
@@ -537,7 +547,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
 
   if (!apiKey && !hasOAuth) {
     process.stderr.write('Authentication required.\n');
-    process.stderr.write('Run "opena2a login" first, or use --api-key <key>.\n');
+    process.stderr.write('Run "opena2a login" first, or set AIM_API_KEY to an agent API key.\n');
     return 1;
   }
 
@@ -567,7 +577,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
         const existing = aim.getIdentity();
         if (existing.agentName !== name) {
           process.stderr.write(`This machine's local identity is "${existing.agentName}", and an API-key registration uses its key.\n`);
-          process.stderr.write(`Register that identity instead: opena2a identity connect ${serverUrl} --api-key <key>\n`);
+          process.stderr.write(`Register that identity instead: opena2a identity connect ${serverUrl}\n`);
           return 1;
         }
       }
@@ -592,6 +602,10 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
     // Normalize response - server may return different shapes
     const agentId = resp.agentId ?? resp.id ?? resp.agent?.id;
     const agentName = resp.name ?? resp.agent?.name ?? name;
+    if (!agentId) {
+      process.stderr.write('The AIM server answered the registration without an agent id; nothing was stored.\n');
+      return 1;
+    }
 
     // 4. Store server config locally
     const config: ServerConfig = {
@@ -982,14 +996,14 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
   const rawUrl = options.args?.[0] ?? options.server;
   if (!rawUrl) {
     process.stderr.write('Missing server URL.\n');
-    process.stderr.write('Usage: opena2a identity connect <url> --api-key <key>\n');
-    process.stderr.write('       opena2a identity connect localhost:8080 --api-key <key>\n');
+    process.stderr.write('Usage: AIM_API_KEY=<key> opena2a identity connect <url>\n');
+    process.stderr.write('       AIM_API_KEY=<key> opena2a identity connect localhost:8080\n');
     return 1;
   }
 
   const apiKey = options.apiKey;
   if (!apiKey) {
-    process.stderr.write('Missing required option: --api-key <key>\n');
+    process.stderr.write('Missing agent API key: set AIM_API_KEY (or pass --api-key <key>).\n');
     process.stderr.write('Use an agent API key (aim_live_...) issued for an existing agent in your organization\n');
     process.stderr.write('(dashboard: API keys). The new agent is registered in that organization.\n');
     return 1;

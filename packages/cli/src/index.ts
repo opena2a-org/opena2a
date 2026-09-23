@@ -629,7 +629,7 @@ analysis runs and results can be shared with the community.
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
     .option('--server <url>', 'AIM server URL (e.g. localhost:8080, cloud)')
-    .option('--api-key <key>', 'Agent API key (aim_live_...) issued for an existing agent in your organization; requires --server')
+    .option('--api-key <key>', 'Agent API key (aim_live_...) for an existing agent in your organization; prefer the AIM_API_KEY env var (a flag value is visible in shell history)')
     .option('--json', 'Output as JSON (alias for --format json)')
     .option('--action <action>', 'Audit event action (for log)')
     .option('--target <target>', 'Audit event target (for log)')
