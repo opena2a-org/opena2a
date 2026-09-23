@@ -123,7 +123,7 @@ export interface DeviceTokenError {
  * agent-identity-management apps/backend/cmd/server/sdk_api_key_registration_contract_test.go;
  * no backend route reads the header name this client sent before this change.
  */
-export const API_KEY_HEADER = 'X-API-Key';
+export const API_KEY_HEADER = 'X-API-Key' as const;
 
 /**
  * An agent API key as the backend mints it: "aim_live_" followed by the
@@ -132,6 +132,11 @@ export const API_KEY_HEADER = 'X-API-Key';
  */
 const AGENT_API_KEY_PATTERN = /^aim_live_[A-Za-z0-9_-]{43}=$/;
 
+/**
+ * True when `key` has the shape of an agent API key. A shape check against a public format,
+ * run before any request so a malformed key never leaves the machine; it compares against no
+ * stored secret, and the server remains the authority on whether the key is valid.
+ */
 export function isAgentApiKey(key: string): boolean {
   return AGENT_API_KEY_PATTERN.test(key);
 }
@@ -139,6 +144,10 @@ export function isAgentApiKey(key: string): boolean {
 /** Base64 of a raw 32-byte Ed25519 public key: 43 characters and one pad. */
 const PUBLIC_KEY_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
 
+/**
+ * True when `publicKey` is strict base64 (43 characters and one pad) that decodes to the
+ * 32 bytes of a raw Ed25519 public key. Anything longer is refused before it is sent.
+ */
 export function isEd25519PublicKey(publicKey: string): boolean {
   return PUBLIC_KEY_PATTERN.test(publicKey) && Buffer.from(publicKey, 'base64').length === 32;
 }
@@ -231,7 +240,14 @@ export class AimClient {
         0,
       );
     }
-    return { ...(resp as unknown as RegisterResponse), agentId };
+    return {
+      agentId,
+      name: typeof resp.name === 'string' ? resp.name : body.name,
+      displayName: typeof resp.displayName === 'string' ? resp.displayName : serverBody.displayName,
+      publicKey: typeof resp.publicKey === 'string' ? resp.publicKey : body.publicKey,
+      status: typeof resp.status === 'string' ? resp.status : '',
+      trustScore: typeof resp.trustScore === 'number' ? resp.trustScore : 0,
+    };
   }
 
   // ---- Login -------------------------------------------------------------

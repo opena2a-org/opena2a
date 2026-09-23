@@ -242,8 +242,9 @@ export async function identity(options: IdentityOptions): Promise<number> {
 async function loadAimCore(): Promise<typeof import('@opena2a/aim-core') | null> {
   try {
     return await import('@opena2a/aim-core');
-  } catch {
-    process.stderr.write('aim-core is not available.\n');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    process.stderr.write(`aim-core is not available (${reason}).\n`);
     process.stderr.write('Install: npm install @opena2a/aim-core\n');
     return null;
   }
