@@ -227,6 +227,12 @@ describe('request', () => {
     expect(chk.tools.map((t: { name: string }) => t.name)).toEqual([m.CHECK_TOOL_NAME]);
     expect(chk.messages[0].content).toContain(ARGV_LINE);
     expect(chk.system).toMatch(/untrusted input/);
+    // Measured: a check that read "depends on a caller the diff does not show"
+    // as speculative refuted a planted key-on-argv function because nothing
+    // called it yet. A new function defective as written is in-diff.
+    expect(chk.system).toContain('whether a caller exists is not the question');
+    expect(req.system).toContain('is in-diff even when nothing in the diff calls it yet');
+    expect(chk.system).toContain('its trigger is a hostile argument');
   });
 
   it('9908.AC3 the previous round and every reply since go into the request', () => {
