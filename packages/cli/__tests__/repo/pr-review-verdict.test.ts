@@ -294,7 +294,7 @@ describe('response parsing', () => {
 });
 
 describe('request', () => {
-  it('9908.AC2 temperature is pinned to 0 for the review and for every check, each offered exactly one tool', () => {
+  it('9908.AC2 temperature is 0 for the review and 1 for every check sample, each offered exactly one tool', () => {
     const req = m.buildRequest({ annotated: 'x', prior: null, replies: [] });
     expect(req.temperature).toBe(0);
     expect(req.tools.map((t: { name: string }) => t.name)).toEqual([m.TOOL_NAME]);
@@ -303,7 +303,9 @@ describe('request', () => {
     expect(req.tool_choice).toEqual({ type: 'auto' });
     expect(req.system).toMatch(/untrusted input/);
     const chk = m.buildCheckRequest({ annotated: 'x', finding: finding(), replies: [] });
-    expect(chk.temperature).toBe(0);
+    // Check samples vote, so each must be an independent draw (CISO 2026-09-23T18:10:03Z).
+    expect(m.CHECK_TEMPERATURE).toBe(1);
+    expect(chk.temperature).toBe(1);
     expect(chk.tools.map((t: { name: string }) => t.name)).toEqual([m.CHECK_TOOL_NAME]);
     expect(chk.messages[0].content).toContain(ARGV_LINE);
     expect(chk.system).toMatch(/untrusted input/);

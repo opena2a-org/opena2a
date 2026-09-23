@@ -75,6 +75,12 @@ export const MAX_CHECKS = 8;
 // clears it. One sample that confirms it keeps it blocking: a false block has
 // the approver path, a false pass has none.
 export const CHECK_SAMPLES = 3;
+// The samples are drawn at a non-zero temperature, because at temperature 0
+// they are not independent: three concurrent copies of one check request came
+// back with byte-identical reasons, and all three cleared the planted control
+// together. Temperature 0 never made the check deterministic either (one
+// request sent ten times confirmed eight). The review call stays at 0.
+export const CHECK_TEMPERATURE = 1;
 
 // ---------------------------------------------------------------------------
 // Diff index
@@ -437,7 +443,7 @@ export function buildCheckRequest({ annotated, finding, replies }) {
   return {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    temperature: 0,
+    temperature: CHECK_TEMPERATURE,
     system: CHECK_SYSTEM_PROMPT,
     tools: [checkTool()],
     tool_choice: { type: 'auto' },
@@ -846,6 +852,7 @@ export async function reviewDiff({ diffText, thread, apiKey, author, approvers, 
   if (!parsed.ok) return { verdict: 'INCONCLUSIVE', reason: parsed.reason, request, response: call.body };
   const candidates = computeVerdict(parsed.review, index);
   const checks = [];
+  const checkUsage = [];
   for (const finding of candidates.blocking.slice(0, MAX_CHECKS)) {
     const checkRequest = buildCheckRequest({ annotated: annotateDiff(index), finding, replies });
     const calls = await Promise.all(Array.from({ length: CHECK_SAMPLES }, () => callModel(checkRequest, apiKey)));
@@ -858,9 +865,10 @@ export async function reviewDiff({ diffText, thread, apiKey, author, approvers, 
       samples.push(pc.check);
     }
     checks.push(samples);
+    checkUsage.push(calls.map((cr) => cr.body?.usage ?? null));
   }
   const result = applyChecks(candidates, checks);
-  return { verdict: result.verdict, review: parsed.review, result, candidates, checks, request, response: call.body };
+  return { verdict: result.verdict, review: parsed.review, result, candidates, checks, checkUsage, checkTemperature: CHECK_TEMPERATURE, request, response: call.body };
 }
 
 function emit(outDir, verdict, body) {
@@ -990,7 +998,9 @@ async function replay(argv) {
     checks: r.checks ?? [],
     model: r.request?.model ?? null,
     temperature: r.request?.temperature ?? null,
+    checkTemperature: r.checkTemperature ?? null,
     usage: r.response?.usage ?? null,
+    checkUsage: r.checkUsage ?? [],
   };
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'result.json'), `${JSON.stringify(record, null, 2)}\n`);
