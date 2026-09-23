@@ -87,6 +87,7 @@ describe('AimClient.register', () => {
     ['31 bytes', Buffer.alloc(31, 7).toString('base64')],
     ['33 bytes', Buffer.alloc(33, 7).toString('base64')],
     ['not base64', '!'.repeat(43) + '='],
+    ['oversized', Buffer.alloc(4096, 7).toString('base64')],
   ])('refuses a public key that is not 32 bytes of base64 (%s), before any request', async (_label, key) => {
     const client = new AimClient('http://localhost:8080');
     await expect(client.register({ name: 'my-agent', publicKey: key }, API_KEY))
@@ -98,6 +99,7 @@ describe('AimClient.register', () => {
     ['empty', ''],
     ['wrong prefix', API_KEY.replace('aim_live_', 'aim_test_')],
     ['truncated', API_KEY.slice(0, 30)],
+    ['unpadded (the backend always pads)', API_KEY.slice(0, -1)],
     ['whitespace inside', API_KEY.slice(0, 20) + ' ' + API_KEY.slice(21)],
   ])('refuses an API key that is not an agent API key (%s), before any request', async (_label, key) => {
     const client = new AimClient('http://localhost:8080');
@@ -137,6 +139,16 @@ describe('AimClient.register', () => {
     const client = new AimClient('http://localhost:8080');
     await expect(client.register({ name: 'my-agent', publicKey: PUBLIC_KEY }, API_KEY))
       .rejects.toThrow(/without an agent id/);
+  });
+
+  it('surfaces a connection failure as AimServerError without echoing the key', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+    const client = new AimClient('http://localhost:8080');
+    const err = await client.register({ name: 'my-agent', publicKey: PUBLIC_KEY }, API_KEY)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AimServerError);
+    expect((err as AimServerError).message).toMatch(/Cannot connect to AIM server/);
+    expect((err as AimServerError).message).not.toContain(API_KEY);
   });
 
   it('refuses a 201 answer that is not JSON', async () => {

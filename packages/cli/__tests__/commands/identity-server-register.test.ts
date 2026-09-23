@@ -3,11 +3,14 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+const stdinKey = vi.hoisted(() => ({ value: '' }));
+vi.mock('../../src/util/stdin-secret.js', () => ({ readSecretFromStdin: () => stdinKey.value }));
+
 // `identity create --server` and `identity connect` register with an agent API key
 // through POST /api/v1/agents with the public key of this machine's aim-core identity.
 // aim-core keeps ONE identity per data directory, so a registration under a second name
 // would bind the same key to two server agents; the CLI refuses it. The key comes from
-// AIM_API_KEY; --api-key still works and says it is visible in shell history.
+// AIM_API_KEY or standard input (--api-key-stdin); a key on the command line is refused.
 
 type IdentityFn = typeof import('../../src/commands/identity.js')['identity'];
 type IdentityOptions = Parameters<IdentityFn>[0];
@@ -101,16 +104,35 @@ describe('identity create --server with an agent API key', () => {
     expect(regs).toHaveLength(1);
     expect(regs[0].headers['X-API-Key']).toBe(API_KEY);
     expect(regs[0].body.publicKey).toBe(localPublicKey());
-    expect(stderr()).not.toMatch(/shell history/);
+    expect(stderr()).not.toMatch(/process list/);
   });
 
-  it('still takes --api-key, and says the value is visible in shell history', async () => {
+  it('refuses --api-key, names AIM_API_KEY and --api-key-stdin, and sends nothing', async () => {
     const identity = await loadIdentity();
     const opts: IdentityOptions = { subcommand: 'create', name: 'agent-one', server: 'localhost:8080', apiKey: API_KEY, format: 'json' };
-    expect(await identity(opts)).toBe(0);
-    expect(registrations()).toHaveLength(1);
-    expect(stderr()).toMatch(/shell history.*AIM_API_KEY/);
+    expect(await identity(opts)).toBe(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(stderr()).toMatch(/process list/);
+    expect(stderr()).toMatch(/AIM_API_KEY/);
+    expect(stderr()).toMatch(/--api-key-stdin/);
     expect(stderr()).not.toContain(API_KEY);
+  });
+
+  it('reads the key from standard input with --api-key-stdin', async () => {
+    stdinKey.value = API_KEY;
+    const identity = await loadIdentity();
+    const opts: IdentityOptions = { subcommand: 'create', name: 'agent-one', server: 'localhost:8080', apiKeyStdin: true, format: 'json' };
+    expect(await identity(opts)).toBe(0);
+    const regs = registrations();
+    expect(regs).toHaveLength(1);
+    expect(regs[0].headers['X-API-Key']).toBe(API_KEY);
+  });
+
+  it('refuses an empty standard input', async () => {
+    stdinKey.value = '';
+    const identity = await loadIdentity();
+    expect(await identity({ subcommand: 'create', name: 'agent-one', server: 'localhost:8080', apiKeyStdin: true })).toBe(1);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('refuses a second name, which would put one key on two server agents', async () => {

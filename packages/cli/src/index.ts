@@ -629,7 +629,8 @@ analysis runs and results can be shared with the community.
     .option('--limit <n>', 'Number of audit events to show')
     .option('--dir <path>', 'Target directory')
     .option('--server <url>', 'AIM server URL (e.g. localhost:8080, cloud)')
-    .option('--api-key <key>', 'Agent API key (aim_live_...) for an existing agent in your organization; prefer the AIM_API_KEY env var (a flag value is visible in shell history)')
+    .option('--api-key <key>', 'Not accepted: a key on the command line is visible in the process list; set AIM_API_KEY or use --api-key-stdin')
+    .option('--api-key-stdin', 'Read the agent API key (aim_live_..., issued for an existing agent in your organization) from standard input')
     .option('--json', 'Output as JSON (alias for --format json)')
     .option('--action <action>', 'Audit event action (for log)')
     .option('--target <target>', 'Audit event target (for log)')
@@ -680,6 +681,7 @@ analysis runs and results can be shared with the community.
         autoSync: opts.autoSync,
         server: opts.server,
         apiKey: opts.apiKey,
+        apiKeyStdin: opts.apiKeyStdin,
         json: opts.json,
         args,
       });

@@ -11,6 +11,7 @@ import {
   type ServerConfig,
 } from '../util/aim-client.js';
 import { loadAuth, saveAuth, isAuthValid } from '../util/auth.js';
+import { readSecretFromStdin } from '../util/stdin-secret.js';
 
 interface PolicyRule {
   capability: string;
@@ -46,6 +47,8 @@ interface IdentityOptions {
   autoSync?: boolean;
   server?: string;
   apiKey?: string;
+  /** Read the agent API key from standard input (`--api-key-stdin`). */
+  apiKeyStdin?: boolean;
   json?: boolean;
   /** Positional args passed from Commander (e.g. connect <url>) */
   args?: string[];
@@ -107,7 +110,7 @@ const USAGE = [
   '  AIM_API_KEY              Agent API key (aim_live_...) issued for an existing agent in your',
   '                           organization. With --server, create registers the new agent in',
   '                           that organization; connect registers this machine\'s identity there.',
-  '  --api-key <key>          The same key as a flag (visible in shell history; prefer AIM_API_KEY)',
+  '  --api-key-stdin          Read that key from standard input instead of AIM_API_KEY',
   '',
 ].join('\n');
 
@@ -153,10 +156,19 @@ export async function identity(options: IdentityOptions): Promise<number> {
     options.format = 'json';
   }
 
-  // The agent API key comes from AIM_API_KEY. --api-key still works, but a value on the
-  // command line is readable in the process list and the shell history, so it says so.
+  // The agent API key comes from AIM_API_KEY or standard input, never the command line: a
+  // value there is readable by every user in the process list and stays in shell history.
   if (options.apiKey) {
-    process.stderr.write(yellow('Note: --api-key puts the key in your shell history and the process list; set AIM_API_KEY instead.') + '\n');
+    process.stderr.write('--api-key is not accepted: a key on the command line is visible in the process list and your shell history.\n');
+    process.stderr.write('Set AIM_API_KEY, or pipe the key in with --api-key-stdin.\n');
+    return 1;
+  }
+  if (options.apiKeyStdin) {
+    options.apiKey = readSecretFromStdin();
+    if (!options.apiKey) {
+      process.stderr.write('--api-key-stdin read nothing from standard input.\n');
+      return 1;
+    }
   } else if (process.env.AIM_API_KEY) {
     options.apiKey = process.env.AIM_API_KEY;
   }
@@ -573,15 +585,14 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
       // aim-core keeps one identity per machine. An API-key registration binds the
       // server agent to that identity's key, so registering it under a second name
       // would put one key on two server agents.
-      if (!useOAuth && fs.existsSync(path.join(aim.getDataDir(), 'identity.json'))) {
-        const existing = aim.getIdentity();
-        if (existing.agentName !== name) {
-          process.stderr.write(`This machine's local identity is "${existing.agentName}", and an API-key registration uses its key.\n`);
-          process.stderr.write(`Register that identity instead: opena2a identity connect ${serverUrl}\n`);
-          return 1;
-        }
-      }
+      const hadIdentity = fs.existsSync(path.join(aim.getDataDir(), 'identity.json'));
       localId = aim.getIdentity();
+      if (!useOAuth && hadIdentity && localId.agentName !== name) {
+        const shown = localId.agentName.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?');
+        process.stderr.write(`This machine's local identity is "${shown}", and an API-key registration uses its key.\n`);
+        process.stderr.write(`Register that identity instead: opena2a identity connect ${serverUrl}\n`);
+        return 1;
+      }
     }
     if (!useOAuth && !localId) {
       process.stderr.write('Registering with an API key needs a local keypair from aim-core.\n');
@@ -1003,7 +1014,7 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
 
   const apiKey = options.apiKey;
   if (!apiKey) {
-    process.stderr.write('Missing agent API key: set AIM_API_KEY (or pass --api-key <key>).\n');
+    process.stderr.write('Missing agent API key: set AIM_API_KEY, or pipe it in with --api-key-stdin.\n');
     process.stderr.write('Use an agent API key (aim_live_...) issued for an existing agent in your organization\n');
     process.stderr.write('(dashboard: API keys). The new agent is registered in that organization.\n');
     return 1;

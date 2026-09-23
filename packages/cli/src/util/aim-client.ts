@@ -127,9 +127,10 @@ export const API_KEY_HEADER = 'X-API-Key';
 
 /**
  * An agent API key as the backend mints it: "aim_live_" followed by the
- * URL-safe base64 of 32 random bytes (apps/backend/internal/application/api_key_service.go).
+ * padded URL-safe base64 of 32 random bytes, 44 characters ending in "="
+ * (apps/backend/internal/application/api_key_service.go: base64.URLEncoding).
  */
-const AGENT_API_KEY_PATTERN = /^aim_live_[A-Za-z0-9_-]{43}=?$/;
+const AGENT_API_KEY_PATTERN = /^aim_live_[A-Za-z0-9_-]{43}=$/;
 
 export function isAgentApiKey(key: string): boolean {
   return AGENT_API_KEY_PATTERN.test(key);
