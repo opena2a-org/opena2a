@@ -181,9 +181,9 @@ function getCleanResult(): ReviewResult {
   return cleanResult;
 }
 
-let ownResult: ReviewResult | undefined;
-function getOwnResult(): ReviewResult {
-  if (!ownResult) {
+let ownTarball: string | undefined;
+function packOwn(): string {
+  if (!ownTarball) {
     if (!existsSync(path.join(CLI_DIR, 'dist', 'index.js'))) {
       // Not a skip: the own-tarball case runs in every environment, and a
       // missing build is a precondition whose satisfying command is known.
@@ -218,10 +218,45 @@ function getOwnResult(): ReviewResult {
     pack(CLI_DIR);
     const tgz = readdirSync(dir).find((f) => f.endsWith('.tgz') && !before.has(f));
     if (!tgz) throw new Error('npm pack produced no tarball');
-    ownResult = runReview(path.join(dir, tgz));
+    ownTarball = path.join(dir, tgz);
   }
+  return ownTarball;
+}
+
+let ownResult: ReviewResult | undefined;
+function getOwnResult(): ReviewResult {
+  ownResult ??= runReview(packOwn());
   return ownResult;
 }
+
+/** The review exactly as release.yml's `review` job runs it. */
+let ownPublishedResult: ReviewResult | undefined;
+function getOwnPublishedResult(): ReviewResult {
+  ownPublishedResult ??= runReview(packOwn(), ['--advisory-states', 'published']);
+  return ownPublishedResult;
+}
+
+/**
+ * consumer-closure findings on our own tarball that nothing in this repository
+ * can clear, each held on an owner card rather than silently tolerated. Any
+ * FAIL row not matched here blocks the release job, and so fails this file.
+ *   - hackmyagent in GHSA-ccp3-g7fv-9cqr: published critical, range
+ *     `>= 0.17.11` with no patched version, so every release matches.
+ *   - hackmyagent@0.17.11 deprecated: reached only through ai-trust, whose
+ *     latest release still pins a deprecated hackmyagent; `overrides` are not
+ *     published, so no edit here reaches a consumer.
+ *   - @opena2a/aim-sdk@1.0.2 (GHSA-m735, GHSA-r2hq), pinned by hackmyagent
+ *     0.30.0-0.32.0. hackmyagent 0.33.x pins aim-sdk 1.3.1 but fires DEP-001
+ *     on every tree without a package.json (benchmark rates a clean project
+ *     "Needs Improvement"); the fix (hackmyagent#756) is on main, unpublished.
+ *     Moving the pin waits for the release that carries both.
+ * Card: todo decisions, unit 9899 (opena2a-cli consumer closure).
+ */
+const OWNER_RETAINED_CLOSURE_ROWS = [
+  /^FAIL hackmyagent@\S+ inside GHSA-ccp3-g7fv-9cqr \(critical, ">= 0\.17\.11"\)$/,
+  /^FAIL hackmyagent@0\.17\.11 is deprecated on the registry: /,
+  /^FAIL @opena2a\/aim-sdk@1\.0\.2 inside GHSA-r2hq-x5w4-5v63 \(low, [^)]*\) and GHSA-m735-6r63-9h7q \(high, [^)]*\)$/,
+];
 
 // ---------------------------------------------------------------------------
 // AC3 — red, one poisoned tarball per check.
@@ -509,6 +544,24 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
           if (line.startsWith('census: ') || line.includes('FAIL')) console.log(line);
         }
       }
+    },
+    840_000
+  );
+
+  it(
+    'unit 9899 the release job\'s consumer-closure on our own tarball fails only on owner-retained rows',
+    () => {
+      const r = getOwnPublishedResult();
+      if (r.census['consumer-closure'] === 'precondition') {
+        expect.fail(preconditionFailure('consumer-closure', r.out));
+      }
+      const section = r.out.split('check consumer-closure:')[1]?.split('\ncensus: ')[0] ?? '';
+      const unretained = section
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith('FAIL '))
+        .filter((l) => !OWNER_RETAINED_CLOSURE_ROWS.some((re) => re.test(l)));
+      expect(unretained, `consumer-closure rows no card holds\n${r.out}`).toEqual([]);
     },
     840_000
   );
