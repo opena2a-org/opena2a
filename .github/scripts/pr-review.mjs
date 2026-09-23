@@ -26,7 +26,10 @@
 // A head is reviewed once. A head that already has a decisive round re-asserts
 // it without calling the model, so a reply plus a re-run or a reopen cannot
 // turn REQUEST_CHANGES into APPROVE on an unchanged sha. A round comment is
-// read only as posted: an edited one is never trusted.
+// read only as posted: an edited one is never trusted. The one way around
+// "reviewed once" is deleting the workflow runs that reviewed a sha, which
+// write access allows and this job cannot see from read scope; it is history
+// destruction, and a round naming a run that no longer resolves shows it.
 //
 // Two entry points run in CI (see .github/workflows/pr-review.yml):
 //   model-round  on pull_request: review the head, post the round.
@@ -655,8 +658,19 @@ export function decideModelRound({ headSha, comments, reviews, approvers, runAtt
     return refuse(`this head has already been reviewed by run ${otherRuns[0]}; a head is reviewed once, so push a new commit, or an approver disposes of I1`);
   }
   if (hr.round) {
-    if (hr.round.retryable === true && String(hr.round.runId) === String(runId) && Number(hr.round.runAttempt) === Number(runAttempt) - 1) return { kind: 'review' };
-    return refuse('this head\'s latest round is INCONCLUSIVE and this run is not the next attempt of the run whose infrastructure failure produced it; push a new commit, or an approver disposes of I1');
+    // Every earlier attempt of this run must be accounted for by its own
+    // posted, unedited, retryable INCONCLUSIVE round for this head. "No
+    // decisive round is visible" is not "no decisive round exists": a round
+    // can be edited or deleted, so a gap in the chain is a refusal.
+    const n = Number(runAttempt);
+    const seen = new Set(
+      roundsFrom(comments)
+        .filter((r) => !r.tampered && r.structured && r.source === 'model' && r.headSha === headSha && r.verdict === 'INCONCLUSIVE' && r.retryable === true && String(r.runId) === String(runId))
+        .map((r) => Number(r.runAttempt)),
+    );
+    const chain = n > 1 && Array.from({ length: n - 1 }, (_, i) => i + 1).every((a) => seen.has(a));
+    if (chain) return { kind: 'review' };
+    return refuse('this head\'s latest round is INCONCLUSIVE and the earlier attempts of this run are not all accounted for by their own retryable rounds; push a new commit, or an approver disposes of I1');
   }
   if (fresh) return { kind: 'review' };
   return refuse('this head has no round and this run is a re-run or a reopen; push a new commit, or an approver disposes of I1');

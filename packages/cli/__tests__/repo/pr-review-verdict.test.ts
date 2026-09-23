@@ -596,3 +596,39 @@ describe('a head is reviewed once in the repository', () => {
     }
   });
 });
+
+describe('a re-run retries only a fully accounted chain of failed attempts', () => {
+  const HEAD = 'f'.repeat(40);
+  const round = (verdict: string, ids: string[], at: string, extra: Record<string, unknown> = {}, over: Record<string, unknown> = {}) => ({
+    user: { login: m.BOT_LOGIN },
+    created_at: at,
+    updated_at: at,
+    body: `**Automated review: ${verdict}**\n\n${m.encodeMarker({
+      source: 'model',
+      headSha: HEAD,
+      verdict,
+      blocking: ids.map((id) => ({ id, severity: 'HIGH', file: 'f', line: 1, title: 't' })),
+      ...extra,
+    })}`,
+    ...over,
+  });
+  const inc = (attempt: number, at: string) => round('INCONCLUSIVE', ['I1'], at, { runId: '900', runAttempt: attempt, retryable: true });
+  const decide = (comments: unknown[], runAttempt: string) =>
+    m.decideModelRound({ headSha: HEAD, comments, reviews: [], approvers: [], runAttempt, action: 'synchronize', runId: '900', otherRuns: [] });
+
+  it('9908.AC2 a decisive round that was edited away does not let a later attempt reach the model', () => {
+    const rc = round('REQUEST_CHANGES', ['B1'], '2026-09-23T04:00:00Z', { runId: '900', runAttempt: 1 }, { updated_at: '2026-09-23T04:30:00Z' });
+    expect(decide([rc, inc(2, '2026-09-23T04:20:00Z')], '3')).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
+  });
+
+  it('9908.AC2 a decisive round that was deleted does not let a later attempt reach the model', () => {
+    expect(decide([inc(2, '2026-09-23T04:20:00Z')], '3')).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
+    const rebuttal = { user: { login: 'writer' }, created_at: '2026-09-23T04:25:00Z', updated_at: '2026-09-23T04:25:00Z', body: 'B1 is not a defect.' };
+    expect(decide([inc(2, '2026-09-23T04:20:00Z'), rebuttal], '3')).toMatchObject({ kind: 'verdict', verdict: 'INCONCLUSIVE' });
+  });
+
+  it('9908.AC2 honest failures are still retried: attempt 2 after a failed attempt 1, attempt 3 after two', () => {
+    expect(decide([inc(1, '2026-09-23T04:00:00Z')], '2')).toEqual({ kind: 'review' });
+    expect(decide([inc(1, '2026-09-23T04:00:00Z'), inc(2, '2026-09-23T04:10:00Z')], '3')).toEqual({ kind: 'review' });
+  });
+});
