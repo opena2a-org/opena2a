@@ -31,16 +31,25 @@ export interface RegisterRequest {
   agentType?: string;
 }
 
+/**
+ * An API-key registration carries the public half of a keypair the client
+ * generated; the route never returns a private key.
+ */
+export interface ApiKeyRegisterRequest extends RegisterRequest {
+  /** Base64 of the raw 32-byte Ed25519 public key. */
+  publicKey: string;
+}
+
 export interface RegisterResponse {
   agentId: string;
   name: string;
   displayName: string;
   publicKey: string;
-  privateKey: string;
-  aimUrl: string;
+  privateKey?: string;
+  aimUrl?: string;
   status: string;
   trustScore: number;
-  message: string;
+  message?: string;
 }
 
 export interface LoginResponse {
@@ -104,6 +113,17 @@ export interface DeviceTokenError {
 }
 
 // ---------------------------------------------------------------------------
+// Headers
+// ---------------------------------------------------------------------------
+
+/**
+ * The header the AIM backend reads for an agent API key (its API-key
+ * middleware, after "Authorization: Bearer"). The Python and TypeScript SDKs
+ * send the same name.
+ */
+export const API_KEY_HEADER = 'X-API-Key';
+
+// ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
 
@@ -146,18 +166,33 @@ export class AimClient {
     return this.get('/api/v1/status');
   }
 
-  // ---- Registration (public, requires API key header) --------------------
+  // ---- Registration with an agent API key --------------------------------
 
-  async register(body: RegisterRequest, apiKey: string): Promise<RegisterResponse> {
+  /**
+   * Register an agent with an agent API key: POST /api/v1/agents, the key in
+   * X-API-Key. The key is one issued for an agent that already exists in the
+   * organization, and the new agent joins that organization. The route returns
+   * no private key, so the caller supplies the public half of a keypair it
+   * generated and keeps the private half.
+   */
+  async register(body: ApiKeyRegisterRequest, apiKey: string): Promise<RegisterResponse> {
+    if (!body.publicKey) {
+      throw new AimServerError(
+        'Registration needs the public key of a locally generated Ed25519 keypair; the server never returns a private key.',
+        0,
+      );
+    }
     const serverBody = {
       name: body.name,
       displayName: body.displayName ?? body.name,
       description: body.description ?? '',
       agentType: body.agentType ?? 'custom',
+      publicKey: body.publicKey,
     };
-    return this.post('/api/v1/public/agents/register', serverBody, {
-      'X-AIM-API-Key': apiKey,
+    const resp = await this.post<any>('/api/v1/agents', serverBody, {
+      [API_KEY_HEADER]: apiKey,
     });
+    return { ...resp, agentId: resp.agentId ?? resp.id };
   }
 
   // ---- Login -------------------------------------------------------------
@@ -223,7 +258,7 @@ export class AimClient {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    // The device token route reads no API key (it is rate-limited, not authenticated).
 
     const response = await this.fetch('/api/v1/oauth/device/token', {
       method: 'POST',
@@ -362,7 +397,7 @@ export class AimClient {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     else if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
 
     const response = await this.fetch(path, { method: 'GET', headers });
     return this.parseResponse<T>(response);
@@ -374,7 +409,7 @@ export class AimClient {
       'Content-Type': 'application/json',
     };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
     Object.assign(headers, extraHeaders);
 
     const response = await this.fetch(path, {
@@ -391,7 +426,7 @@ export class AimClient {
       'Content-Type': 'application/json',
     };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
 
     const response = await this.fetch(path, {
       method: 'PUT',
@@ -404,7 +439,7 @@ export class AimClient {
   private async del<T>(path: string): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
 
     const response = await this.fetch(path, { method: 'DELETE', headers });
     return this.parseResponse<T>(response);

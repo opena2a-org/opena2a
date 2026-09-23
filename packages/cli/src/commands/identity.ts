@@ -103,8 +103,9 @@ const USAGE = [
   '  activity [--limit N]     View recent agent activity events',
   '',
   'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate, revoke):',
-  '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
-  '  --api-key <key>          AIM API key for authentication',
+  '  --server <url>           AIM server URL (e.g. localhost:8080, cloud); required to register',
+  '  --api-key <key>          Agent API key (aim_live_...) issued for an existing agent in your',
+  '                           organization; create and connect register the new agent there',
   '',
 ].join('\n');
 
@@ -550,26 +551,36 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
     return 1;
   }
 
+  const useOAuth = hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl);
+
   try {
-    // 2. Register on server (use authenticated endpoint if OAuth, public endpoint if API key)
-    let resp: any;
-    if (hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl)) {
-      resp = await client.createAgent({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` });
-    } else {
-      resp = await client.register({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` }, apiKey!);
-    }
-
-    // Normalize response - server may return different shapes
-    const agentId = resp.agentId ?? resp.id ?? resp.agent?.id;
-    const agentName = resp.name ?? resp.agent?.name ?? name;
-
-    // 3. Also create local identity via aim-core
+    // 2. Create the local identity via aim-core first: an API-key registration
+    //    sends its public key, because the server never returns a private key.
     const mod = await loadAimCore();
     let localId = null;
     if (mod) {
       const aim = new mod.AIMCore({ agentName: name });
       localId = aim.getIdentity();
     }
+    if (!useOAuth && !localId) {
+      process.stderr.write('Registering with an API key needs a local keypair from aim-core.\n');
+      return 1;
+    }
+
+    // 3. Register on server (OAuth: the member route; API key: the same route in X-API-Key)
+    let resp: any;
+    if (useOAuth) {
+      resp = await client.createAgent({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` });
+    } else {
+      resp = await client.register(
+        { name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI`, publicKey: localId!.publicKey },
+        apiKey!,
+      );
+    }
+
+    // Normalize response - server may return different shapes
+    const agentId = resp.agentId ?? resp.id ?? resp.agent?.id;
+    const agentName = resp.name ?? resp.agent?.name ?? name;
 
     // 4. Store server config locally
     const config: ServerConfig = {
@@ -968,7 +979,8 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
   const apiKey = options.apiKey;
   if (!apiKey) {
     process.stderr.write('Missing required option: --api-key <key>\n');
-    process.stderr.write('The AIM server requires an API key for agent registration.\n');
+    process.stderr.write('Use an agent API key (aim_live_...) issued for an existing agent in your organization\n');
+    process.stderr.write('(dashboard: API keys). The new agent is registered in that organization.\n');
     return 1;
   }
 
@@ -993,7 +1005,12 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
 
     // 3. Register on server
     const resp = await client.register(
-      { name: id.agentName, displayName: id.agentName, description: `Agent ${id.agentName} registered via OpenA2A CLI` },
+      {
+        name: id.agentName,
+        displayName: id.agentName,
+        description: `Agent ${id.agentName} registered via OpenA2A CLI`,
+        publicKey: id.publicKey,
+      },
       apiKey,
     );
 
