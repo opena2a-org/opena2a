@@ -245,11 +245,17 @@ function getOwnPublishedResult(): ReviewResult {
  *   - hackmyagent@0.17.11 deprecated: reached only through ai-trust, whose
  *     latest release still pins a deprecated hackmyagent; `overrides` are not
  *     published, so no edit here reaches a consumer.
+ *   - @opena2a/aim-sdk@1.0.2 (GHSA-m735, GHSA-r2hq), pinned by hackmyagent
+ *     0.30.0-0.32.0. hackmyagent 0.33.x pins aim-sdk 1.3.1 but fires DEP-001
+ *     on every tree without a package.json (benchmark rates a clean project
+ *     "Needs Improvement"); the fix (hackmyagent#756) is on main, unpublished.
+ *     Moving the pin waits for the release that carries both.
  * Card: todo decisions, unit 9899 (opena2a-cli consumer closure).
  */
 const OWNER_RETAINED_CLOSURE_ROWS = [
   /^FAIL hackmyagent@\S+ inside GHSA-ccp3-g7fv-9cqr \(critical, ">= 0\.17\.11"\)$/,
   /^FAIL hackmyagent@0\.17\.11 is deprecated on the registry: /,
+  /^FAIL @opena2a\/aim-sdk@1\.0\.2 inside GHSA-r2hq-x5w4-5v63 \(low, [^)]*\) and GHSA-m735-6r63-9h7q \(high, [^)]*\)$/,
 ];
 
 // ---------------------------------------------------------------------------
