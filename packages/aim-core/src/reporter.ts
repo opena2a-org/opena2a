@@ -22,6 +22,8 @@ export interface ReporterOptions {
   flushIntervalMs?: number;
   /** Max events per batch (default: 50) */
   maxBatchSize?: number;
+  /** Max events kept in the offline queue; the oldest are dropped past it (default: 1000) */
+  maxQueueSize?: number;
 }
 
 /**
@@ -34,6 +36,7 @@ export class AIMServerReporter {
   private readonly dataDir: string;
   private readonly apiToken: string;
   private readonly maxBatchSize: number;
+  private readonly maxQueueSize: number;
   private readonly flushIntervalMs: number;
 
   private queue: AuditEvent[] = [];
@@ -46,6 +49,7 @@ export class AIMServerReporter {
     this.dataDir = options.dataDir;
     this.apiToken = options.apiToken ?? '';
     this.maxBatchSize = options.maxBatchSize ?? MAX_BATCH_SIZE;
+    this.maxQueueSize = options.maxQueueSize ?? MAX_QUEUE_SIZE;
     this.flushIntervalMs = options.flushIntervalMs ?? FLUSH_INTERVAL_MS;
 
     // Load any persisted queue
@@ -57,8 +61,8 @@ export class AIMServerReporter {
     this.queue.push(event);
 
     // Trim queue if it exceeds max size (drop oldest)
-    if (this.queue.length > MAX_QUEUE_SIZE) {
-      this.queue = this.queue.slice(-MAX_QUEUE_SIZE);
+    if (this.queue.length > this.maxQueueSize) {
+      this.queue = this.queue.slice(-this.maxQueueSize);
     }
 
     this.persistQueue();
