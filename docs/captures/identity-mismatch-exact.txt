@@ -1,0 +1,4 @@
+hackmyagent@0.33.2
+Flag --new-bundle-format has been deprecated, this will be the only supported format in future versions
+Error: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com/opena2a-org/secretless-ai/.github/workflows/release.yml@refs/tags/v0.33.2", got "https://github.com/opena2a-org/hackmyagent/.github/workflows/release.yml@refs/tags/v0.33.2"
+error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com/opena2a-org/secretless-ai/.github/workflows/release.yml@refs/tags/v0.33.2", got "https://github.com/opena2a-org/hackmyagent/.github/workflows/release.yml@refs/tags/v0.33.2"

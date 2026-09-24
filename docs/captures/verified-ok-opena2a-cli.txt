@@ -1,0 +1,3 @@
+opena2a-cli@0.10.13
+Flag --new-bundle-format has been deprecated, this will be the only supported format in future versions
+Verified OK

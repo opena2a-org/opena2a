@@ -1,0 +1,4 @@
+opena2a-cli@0.10.13
+Flag --new-bundle-format has been deprecated, this will be the only supported format in future versions
+Error: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value to match regex "^https://github\.com/opena2a-org/hackmyagent/\.github/workflows/release\.yml@refs/tags/(cli-)?v0\.10\.13$", got "https://github.com/opena2a-org/opena2a/.github/workflows/release.yml@refs/tags/cli-v0.10.13"
+error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value to match regex "^https://github\.com/opena2a-org/hackmyagent/\.github/workflows/release\.yml@refs/tags/(cli-)?v0\.10\.13$", got "https://github.com/opena2a-org/opena2a/.github/workflows/release.yml@refs/tags/cli-v0.10.13"
