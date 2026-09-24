@@ -76,11 +76,14 @@ while IFS='|' read -r pkg var first tgzp att; do
   run_cell "$pkg" "$latest" G1 ok "$blk"
   # G2: every published version from the first attested one
   if [ "$MODE" = all ]; then
+    g2=0
     for v in $("$REAL_NPM" view "$pkg" versions --json | jq -r '.[]' | awk -v f="$first" '
         function cmp(a,b,  x,y,i){split(a,x,".");split(b,y,".");for(i=1;i<=3;i++){if(x[i]+0<y[i]+0)return -1;if(x[i]+0>y[i]+0)return 1}return 0}
         $0 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ && cmp($0,f)>=0'); do
-      run_cell "$pkg" "$v" G2 ok "$blk" "$var=$v"
+      run_cell "$pkg" "$v" G2 ok "$blk" "$var=$v"; g2=$((g2+1))
     done
+    # an empty version list (a failed lookup) is a failure, never a pass with no cells
+    [ $g2 -gt 0 ] || { echo "no G2 versions listed for $pkg" >&2; FAILS=$((FAILS+1)); }
   fi
   # T: one byte appended to the packed tarball
   run_cell "$pkg" "$latest" T "fail:provided artifact digest does not match" "$blk" PATH="$SHIMS/tamper:$PATH"
