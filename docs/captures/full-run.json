@@ -3,8 +3,8 @@
   "doc": "docs/verifying-npm-packages.md",
   "docBlob": "5c670cca0a6e96415379bcdfeec511fb836395c7",
   "runner": "scripts/verify-npm-packages-doc.sh",
-  "runnerBlob": "613d9622d5c3a6952fcecdfe59c054583e6b028b",
-  "commit": "defb73ae0d40e4d5b7e6c3c0fd5a79acf3181777",
+  "runnerBlob": "dd492234d145c8e3f0f9e405ea820c713c13fcc4",
+  "commit": "70afaccd2ff5f72f9685c2fba491dcf1b2066b91",
   "mode": "all",
   "invocation": "bash scripts/verify-npm-packages-doc.sh docs/verifying-npm-packages.md <out> all (SHELL_UNDER_TEST=zsh for the zsh run)",
   "cosign": {
@@ -26,14 +26,14 @@
     {
       "shell": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
       "table": "full-run-bash-cells.tsv",
-      "finishedAt": "2026-09-24T20:20:27Z",
+      "finishedAt": "2026-09-24T20:28:09Z",
       "cells": 95,
       "failures": 0
     },
     {
       "shell": "zsh 5.9 (arm64-apple-darwin25.0)",
       "table": "full-run-zsh-cells.tsv",
-      "finishedAt": "2026-09-24T20:22:42Z",
+      "finishedAt": "2026-09-24T20:31:10Z",
       "cells": 95,
       "failures": 0
     }
