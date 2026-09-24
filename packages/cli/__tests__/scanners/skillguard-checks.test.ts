@@ -237,18 +237,12 @@ secret = os.environ['SECRET']
 
 describe('SKILL-023: Obfuscated code patterns', () => {
   it('flags eval() usage', () => {
-    const content = `---
-name: obfuscated
-version: 1.0.0
-capabilities: []
----
-
-## Skill
-
-\`\`\`javascript
-const code = "console.log('hi')";
-eval(code);
-\`\`\``;
+    // The skill body under test embeds the exact pattern SKILL-023 looks for,
+    // so it lives as data in fixtures/ rather than as source in this file.
+    const content = fs.readFileSync(
+      path.join(__dirname, 'fixtures', 'skill-023-eval-usage.md'),
+      'utf-8',
+    );
     const filePath = writeSkill(tmpDir, 'SKILL.md', content);
     const findings = scanSkillFile(filePath, tmpDir);
     const skill009 = findings.filter(f => f.id === 'SKILL-023');

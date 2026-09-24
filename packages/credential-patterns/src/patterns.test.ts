@@ -11,11 +11,17 @@ import { CONFIG_FILES, CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from
 // Build test tokens dynamically to avoid triggering GitHub Push Protection
 const slackTestToken = ['xox', 'b-1234567890-1234567890-', 'abcdefghijklmnopqrstuvwx'].join('');
 const discordBotToken = ['MTIzNDU2Nzg5MDEyMzQ1Njc4OQ', '.GabcDE.', 'abcdefghijklmnopqrstuvwxyz01234'].join('');
+const anthropicTestKey = ['sk-ant-api03-', 'abc123def456abc123def456abc123'].join('');
+const awsAccessTestKey = ['AKIA', 'IOSFODNN7EXAMPLE'].join('');
+const awsStsTestKey = ['ASIA', 'IOSFODNN7EXAMPLE'].join('');
+const githubPatTestToken = ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('');
+const mongodbSrvTestUri = ['mongodb+srv://', 'user:pass', '@cluster.mongodb.net/db'].join('');
+const googleTestKey = ['AIza', 'SyB-abc_def123456789012345678901234'].join('');
 
 const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }> = {
   // AI/ML
   'anthropic': {
-    valid: ['sk-ant-api03-abc123def456abc123def456abc123'],
+    valid: [anthropicTestKey],
     invalid: ['sk-ant-wrong', 'sk-ant-api-tooshort'],
   },
   'openai-proj': {
@@ -53,11 +59,11 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
 
   // Cloud
   'aws-access': {
-    valid: ['AKIAIOSFODNN7EXAMPLE'],
+    valid: [awsAccessTestKey],
     invalid: ['AKIA123', 'BKIAIOSFODNN7EXAMPLE'],
   },
   'aws-sts': {
-    valid: ['ASIAIOSFODNN7EXAMPLE'],
+    valid: [awsStsTestKey],
     invalid: ['ASIA123', 'BSIAIOSFODNN7EXAMPLE'],
   },
   'aws-secret': {
@@ -141,7 +147,7 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
 
   // Developer
   'github-pat': {
-    valid: ['ghp_abcdefghijklmnopqrstuvwxyz0123456789'],
+    valid: [githubPatTestToken],
     invalid: ['ghp_short', 'ghp_'],
   },
   'github-fine': {
@@ -218,7 +224,7 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
   // cross JSON string boundaries on minified content.
   'mongodb': {
     valid: [
-      'mongodb+srv://user:pass@cluster.mongodb.net/db',
+      mongodbSrvTestUri,
       'mongodb://admin:hunter2@mongo1:27017,mongo2:27017/db',
     ],
     invalid: ['mongodb://lo', 'mongo+srv://x', 'mongodb+srv://cluster.mongodb.net/db'],
@@ -272,7 +278,7 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
 
   // Auth & Crypto
   'google': {
-    valid: ['AIzaSyB-abc_def123456789012345678901234'],
+    valid: [googleTestKey],
     invalid: ['AIzaShort', 'BIzaSyBabc1234567890123456789012345'],
   },
   'google-oauth': {
@@ -443,7 +449,7 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
   it('matches known credential prefixes', () => {
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('sk-ant-api03-xxx')).toBe(true);
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('sk-proj-xxx')).toBe(true);
-    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('AKIA1234567890123456')).toBe(true);
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test(['AKIA', '1234567890123456'].join(''))).toBe(true);
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('ghp_abc')).toBe(true);
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('xoxb-123')).toBe(true);
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('gsk_abc')).toBe(true);
@@ -460,6 +466,32 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
     // A 'rediss' prefix would make consumers' ${VAR}-skip drop plain
     // redis:// lines before the real pattern runs — a silent miss.
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('redis://x')).toBe(true);
+  });
+});
+
+describe('OPA-12 detection preserved for assembled fixtures', () => {
+  // The families whose fixtures were whole in-source literals before being
+  // assembled from parts; the live catalog must still see the assembled values.
+  const AFFECTED_FAMILIES = ['anthropic', 'aws-access', 'aws-sts', 'github-pat', 'mongodb', 'google'];
+
+  it('OPA-12.AC3 each affected family keeps a valid fixture matching the live catalog pattern, and assembled quick-check probes still pass', () => {
+    for (const id of AFFECTED_FAMILIES) {
+      const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id);
+      expect(pattern, `catalog pattern ${id}`).toBeDefined();
+      const matched = PATTERN_TEST_CASES[id].valid.some(v => pattern!.regex.test(v));
+      expect(matched, `family ${id} keeps a valid fixture matching the live pattern`).toBe(true);
+    }
+    expect(/^sk-ant-api\d{2}-/.test(anthropicTestKey)).toBe(true);
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test(['AKIA', '1234567890123456'].join(''))).toBe(true);
+  });
+
+  it('OPA-12.AC4 affected-family invalid fixtures still do not match — no detector weakened', () => {
+    for (const id of AFFECTED_FAMILIES) {
+      const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id)!;
+      for (const invalid of PATTERN_TEST_CASES[id].invalid) {
+        expect(pattern.regex.test(invalid), `family ${id} still rejects: ${invalid}`).toBe(false);
+      }
+    }
   });
 });
 
