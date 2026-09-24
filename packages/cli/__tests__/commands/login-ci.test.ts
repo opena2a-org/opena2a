@@ -45,7 +45,7 @@ describe('login --ci', () => {
     expect(code).toBe(1);
     const text = errs.join('\n');
     expect(text).toMatch(/--ci/);
-    expect(text).toMatch(/--api-key/);
+    expect(text).toMatch(/AIM_API_KEY/);
     // Must NOT have entered the device-code poll.
     expect(text).not.toMatch(/Waiting for authentication/);
   });

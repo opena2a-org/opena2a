@@ -31,16 +31,25 @@ export interface RegisterRequest {
   agentType?: string;
 }
 
+/**
+ * An API-key registration carries the public half of a keypair the client
+ * generated; the route never returns a private key.
+ */
+export interface ApiKeyRegisterRequest extends RegisterRequest {
+  /** Base64 of the raw 32-byte Ed25519 public key. */
+  publicKey: string;
+}
+
 export interface RegisterResponse {
   agentId: string;
   name: string;
   displayName: string;
   publicKey: string;
-  privateKey: string;
-  aimUrl: string;
+  privateKey?: string;
+  aimUrl?: string;
   status: string;
   trustScore: number;
-  message: string;
+  message?: string;
 }
 
 export interface LoginResponse {
@@ -104,6 +113,46 @@ export interface DeviceTokenError {
 }
 
 // ---------------------------------------------------------------------------
+// Headers
+// ---------------------------------------------------------------------------
+
+/**
+ * The header the AIM backend reads for an agent API key (its API-key
+ * middleware, after "Authorization: Bearer"). The Python and TypeScript SDKs
+ * send the same name. Pinned on the backend side by
+ * agent-identity-management apps/backend/cmd/server/sdk_api_key_registration_contract_test.go;
+ * no backend route reads the header name this client sent before this change.
+ */
+export const API_KEY_HEADER = 'X-API-Key' as const;
+
+/**
+ * An agent API key as the backend mints it: "aim_live_" followed by the
+ * padded URL-safe base64 of 32 random bytes, 44 characters ending in "="
+ * (apps/backend/internal/application/api_key_service.go: base64.URLEncoding).
+ */
+const AGENT_API_KEY_PATTERN = /^aim_live_[A-Za-z0-9_-]{43}=$/;
+
+/**
+ * True when `key` has the shape of an agent API key. A shape check against a public format,
+ * run before any request so a malformed key never leaves the machine; it compares against no
+ * stored secret, and the server remains the authority on whether the key is valid.
+ */
+export function isAgentApiKey(key: string): boolean {
+  return AGENT_API_KEY_PATTERN.test(key);
+}
+
+/** Base64 of a raw 32-byte Ed25519 public key: 43 characters and one pad. */
+const PUBLIC_KEY_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
+
+/**
+ * True when `publicKey` is strict base64 (43 characters and one pad) that decodes to the
+ * 32 bytes of a raw Ed25519 public key. Anything longer is refused before it is sent.
+ */
+export function isEd25519PublicKey(publicKey: string): boolean {
+  return PUBLIC_KEY_PATTERN.test(publicKey) && Buffer.from(publicKey, 'base64').length === 32;
+}
+
+// ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
 
@@ -146,18 +195,59 @@ export class AimClient {
     return this.get('/api/v1/status');
   }
 
-  // ---- Registration (public, requires API key header) --------------------
+  // ---- Registration with an agent API key --------------------------------
 
-  async register(body: RegisterRequest, apiKey: string): Promise<RegisterResponse> {
+  /**
+   * Register an agent with an agent API key: POST /api/v1/agents, the key in
+   * X-API-Key. The key is one issued for an agent that already exists in the
+   * organization, and the new agent joins that organization. The route returns
+   * no private key, so the caller supplies the public half of a keypair it
+   * generated and keeps the private half.
+   */
+  async register(body: ApiKeyRegisterRequest, apiKey: string): Promise<RegisterResponse> {
+    if (!body.publicKey) {
+      throw new AimServerError(
+        'Registration needs the public key of a locally generated Ed25519 keypair; the server never returns a private key.',
+        0,
+      );
+    }
+    if (!isEd25519PublicKey(body.publicKey)) {
+      throw new AimServerError(
+        'The public key is not the base64 of a 32-byte Ed25519 key; nothing was sent.',
+        0,
+      );
+    }
+    if (!isAgentApiKey(apiKey)) {
+      throw new AimServerError(
+        'The API key is not an AIM agent API key (aim_live_ followed by 44 characters); nothing was sent.',
+        0,
+      );
+    }
     const serverBody = {
       name: body.name,
       displayName: body.displayName ?? body.name,
       description: body.description ?? '',
       agentType: body.agentType ?? 'custom',
+      publicKey: body.publicKey,
     };
-    return this.post('/api/v1/public/agents/register', serverBody, {
-      'X-AIM-API-Key': apiKey,
+    const resp = await this.post<Record<string, unknown>>('/api/v1/agents', serverBody, {
+      [API_KEY_HEADER]: apiKey,
     });
+    const agentId = resp.agentId ?? resp.id;
+    if (typeof agentId !== 'string' || agentId === '') {
+      throw new AimServerError(
+        'The AIM server answered the registration without an agent id; nothing was stored.',
+        0,
+      );
+    }
+    return {
+      agentId,
+      name: typeof resp.name === 'string' ? resp.name : body.name,
+      displayName: typeof resp.displayName === 'string' ? resp.displayName : serverBody.displayName,
+      publicKey: typeof resp.publicKey === 'string' ? resp.publicKey : body.publicKey,
+      status: typeof resp.status === 'string' ? resp.status : '',
+      trustScore: typeof resp.trustScore === 'number' ? resp.trustScore : 0,
+    };
   }
 
   // ---- Login -------------------------------------------------------------
@@ -223,7 +313,7 @@ export class AimClient {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    // The device token route reads no API key (it is rate-limited, not authenticated).
 
     const response = await this.fetch('/api/v1/oauth/device/token', {
       method: 'POST',
@@ -362,7 +452,7 @@ export class AimClient {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     else if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
 
     const response = await this.fetch(path, { method: 'GET', headers });
     return this.parseResponse<T>(response);
@@ -374,7 +464,7 @@ export class AimClient {
       'Content-Type': 'application/json',
     };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
     Object.assign(headers, extraHeaders);
 
     const response = await this.fetch(path, {
@@ -391,7 +481,7 @@ export class AimClient {
       'Content-Type': 'application/json',
     };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
 
     const response = await this.fetch(path, {
       method: 'PUT',
@@ -404,7 +494,7 @@ export class AimClient {
   private async del<T>(path: string): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    if (this.apiKey) headers[API_KEY_HEADER] = this.apiKey;
 
     const response = await this.fetch(path, { method: 'DELETE', headers });
     return this.parseResponse<T>(response);
