@@ -49,7 +49,8 @@ export class AIMServerReporter {
     this.dataDir = options.dataDir;
     this.apiToken = options.apiToken ?? '';
     this.maxBatchSize = options.maxBatchSize ?? MAX_BATCH_SIZE;
-    this.maxQueueSize = options.maxQueueSize ?? MAX_QUEUE_SIZE;
+    // At least 1: slice(-0) returns the whole array, so a cap of 0 would never trim.
+    this.maxQueueSize = Math.max(1, Math.floor(options.maxQueueSize ?? MAX_QUEUE_SIZE));
     this.flushIntervalMs = options.flushIntervalMs ?? FLUSH_INTERVAL_MS;
 
     // Load any persisted queue

@@ -105,6 +105,23 @@ describe('AIMServerReporter', () => {
     expect((JSON.parse(persisted[9]) as AuditEvent).action).toBe('action-11');
   });
 
+  it('treats a queue cap below 1 as 1, so the queue is still bounded', () => {
+    // slice(-0) returns the whole array, so a cap of 0 taken as given would
+    // never trim.
+    for (const maxQueueSize of [0, -5]) {
+      const reporter = new AIMServerReporter({
+        serverUrl: 'https://aim.example.com',
+        agentId: 'aim_test123',
+        dataDir: fs.mkdtempSync(path.join(dir, 'cap-')),
+        maxQueueSize,
+        maxBatchSize: 1000,
+      });
+      reporter.enqueue(makeEvent('test', 'a'));
+      reporter.enqueue(makeEvent('test', 'b'));
+      expect(reporter.getQueueLength()).toBe(1);
+    }
+  });
+
   it('keeps 1000 queued events by default', () => {
     // The default cap, proven with one write: a persisted queue of 1000
     // events plus one more enqueue trims back to 1000, oldest first.
