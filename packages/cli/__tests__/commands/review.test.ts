@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { runInNewContext } from 'node:vm';
 
 // ---------------------------------------------------------------------------
 // Hermetic homedir for the review-command tests.
@@ -102,8 +103,10 @@ function renderReportPage(html: string, page: string): string {
     execCommand: () => {},
   };
 
-  // eslint-disable-next-line no-new-func
-  new Function('document', 'window', script)(documentStub, {});
+  // The evaluated string is the report our own generator just produced, run
+  // against the stub document above. runInNewContext gives it a fresh global
+  // scope; it is not a sandbox and is not relied on as one.
+  runInNewContext(script, { document: documentStub, window: {} });
 
   const onNavClick = handlers.get('main-nav:click');
   if (!onNavClick) throw new Error('report script did not register the nav listener');
