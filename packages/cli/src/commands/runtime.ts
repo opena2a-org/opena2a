@@ -12,7 +12,71 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bold, green, yellow, red, dim, gray, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
+import * as yaml from 'js-yaml';
 import { detectProject } from '../util/detect.js';
+
+// --- ARP config shape ---
+//
+// These predicates MUST mirror how the ARP engine constructs monitors in
+// @opena2a/aim-sdk/arp (AgentRuntimeProtection constructor): polling monitors
+// run unless `enabled` is explicitly false; interceptors and AI-layer scanners
+// run only when `enabled` is exactly true. `status` applies the same predicates
+// to the same file, so the two cannot disagree about what a given config asks
+// for. It is not a report on a live process: a running engine may have been
+// started from a different path, or from an object passed in code.
+
+interface EnabledBlock { enabled?: boolean }
+
+function monitorOn(block: unknown): boolean {
+  return !isRecord(block) || block.enabled !== false;
+}
+
+function interceptorOn(block: unknown): boolean {
+  return isRecord(block) && block.enabled === true;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> & EnabledBlock {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * The arp.yaml `init` writes. Emitted in the exact shape the engine consumes:
+ * every interceptor and aiLayer entry is an object with an `enabled` field,
+ * and the aiLayer keys are `prompt`, `mcp`, `a2a`. A bare boolean or a
+ * `mcp-protocol` key parses fine and then silently builds no interceptor.
+ *
+ * Both groups are in-process, though differently: the interceptors patch the
+ * Node module registry of the process ARP starts in, and the AI-layer classes
+ * expose scan methods the host application calls. Either way the CLI can only
+ * reach the CLI process, so init ships them off with a pointer to the library
+ * path rather than writing a detector that cannot see the agent.
+ */
+function buildInitConfig(agentName: string, hasMcp: boolean): string {
+  return [
+    `agentName: ${agentName}`,
+    '',
+    '# Polling monitors. Active unless enabled is false.',
+    'monitors:',
+    '  process: { enabled: true, intervalMs: 5000 }',
+    '  network: { enabled: true, intervalMs: 10000 }',
+    '  filesystem: { enabled: true }',
+    '',
+    '# In-process hooks. Only cover the process ARP is started in, so they are',
+    '# off for CLI use. Turn on when embedding ARP in the agent as a library:',
+    '#   https://opena2a.org/docs/arp',
+    'interceptors:',
+    '  process: { enabled: false }',
+    '  network: { enabled: false }',
+    '  filesystem: { enabled: false }',
+    '',
+    '# AI-layer scanning. Also in-process; see the note above.',
+    'aiLayer:',
+    '  prompt: { enabled: false }',
+    `  mcp: { enabled: false }${hasMcp ? '  # MCP detected in this project' : ''}`,
+    '  a2a: { enabled: false }',
+    '',
+  ].join('\n');
+}
 
 // --- Types ---
 
@@ -169,59 +233,33 @@ async function runtimeStatus(targetDir: string, options: RuntimeOptions): Promis
   const monitors: string[] = [];
   const interceptors: string[] = [];
 
-  // Read config to determine active monitors
+  // Read config through the same predicates the engine uses, so status can
+  // not list a detector AgentRuntimeProtection would not build from this file.
   if (configPath) {
     try {
       const raw = fs.readFileSync(configPath, 'utf-8');
+      const cfg: unknown = configPath.endsWith('.json')
+        ? JSON.parse(raw)
+        : yaml.load(raw);
 
-      if (configPath.endsWith('.json')) {
-        // Parse JSON config
-        const cfg = JSON.parse(raw);
-        if (cfg.monitors?.process?.enabled !== false) monitors.push('process');
-        if (cfg.monitors?.network?.enabled !== false) monitors.push('network');
-        if (cfg.monitors?.filesystem?.enabled !== false) monitors.push('filesystem');
-        if (cfg.aiLayer?.prompt) interceptors.push('prompt');
-        if (cfg.aiLayer?.['mcp-protocol'] || cfg.aiLayer?.mcp) interceptors.push('mcp-protocol');
-        if (cfg.aiLayer?.['a2a-protocol'] || cfg.aiLayer?.a2a) interceptors.push('a2a-protocol');
-      } else {
-        // YAML: parse section-aware to avoid false positives from unrelated "enabled: true"
-        const lines = raw.split('\n');
-        let currentSection = '';
-        let currentSubSection = '';
-        for (const line of lines) {
-          const trimmed = line.trimStart();
-          const indent = line.length - trimmed.length;
-
-          if (indent === 0 && trimmed.endsWith(':')) {
-            currentSection = trimmed.slice(0, -1);
-            currentSubSection = '';
-          } else if (indent <= 2 && trimmed.includes(':')) {
-            currentSubSection = trimmed.split(':')[0].trim();
-          }
-
-          if (currentSection === 'monitors' && trimmed.includes('enabled: true')) {
-            if (currentSubSection === 'process' || trimmed.startsWith('process:')) monitors.push('process');
-            if (currentSubSection === 'network' || trimmed.startsWith('network:')) monitors.push('network');
-            if (currentSubSection === 'filesystem' || trimmed.startsWith('filesystem:')) monitors.push('filesystem');
-          }
-
-          if (currentSection === 'aiLayer') {
-            if (currentSubSection === 'prompt' && (trimmed === 'prompt: true' || trimmed.includes('enabled: true'))) interceptors.push('prompt');
-            if ((currentSubSection === 'mcp-protocol' || currentSubSection === 'mcp') && (trimmed.includes(': true') || trimmed.includes('enabled: true'))) interceptors.push('mcp-protocol');
-            if ((currentSubSection === 'a2a-protocol' || currentSubSection === 'a2a') && (trimmed.includes(': true') || trimmed.includes('enabled: true'))) interceptors.push('a2a-protocol');
-          }
+      if (isRecord(cfg)) {
+        const mc = isRecord(cfg.monitors) ? cfg.monitors : {};
+        for (const name of ['process', 'network', 'filesystem'] as const) {
+          if (monitorOn(mc[name])) monitors.push(name);
         }
 
-        // Deduplicate in case of inline YAML like { enabled: true }
-        const dedupMonitors = [...new Set(monitors)];
-        const dedupInterceptors = [...new Set(interceptors)];
-        monitors.length = 0;
-        interceptors.length = 0;
-        monitors.push(...dedupMonitors);
-        interceptors.push(...dedupInterceptors);
+        const ic = isRecord(cfg.interceptors) ? cfg.interceptors : {};
+        for (const name of ['process', 'network', 'filesystem'] as const) {
+          if (interceptorOn(ic[name])) interceptors.push(`${name} (hook)`);
+        }
+
+        const al = isRecord(cfg.aiLayer) ? cfg.aiLayer : {};
+        for (const name of ['prompt', 'mcp', 'a2a'] as const) {
+          if (interceptorOn(al[name])) interceptors.push(name);
+        }
       }
     } catch {
-      // Config unreadable
+      // Config unreadable or not parseable: report nothing rather than guess.
     }
   }
 
@@ -327,22 +365,7 @@ async function runtimeInit(targetDir: string, options: RuntimeOptions): Promise<
   const agentName = project.name ?? path.basename(targetDir);
   const hasMcp = project.hasMcp;
 
-  const config = [
-    `agentName: ${agentName}`,
-    'monitors:',
-    '  process: { enabled: true, intervalMs: 5000 }',
-    '  network: { enabled: true, intervalMs: 10000 }',
-    '  filesystem: { enabled: true }',
-    'interceptors:',
-    '  process: true',
-    '  network: true',
-    '  filesystem: true',
-    'aiLayer:',
-    '  prompt: true',
-    hasMcp ? '  mcp-protocol: true' : '  mcp-protocol: false',
-    '  a2a-protocol: true',
-    '',
-  ].join('\n');
+  const config = buildInitConfig(agentName, hasMcp);
 
   fs.writeFileSync(configPath, config, 'utf-8');
 
@@ -378,22 +401,7 @@ export async function runtimeInitSilent(targetDir: string): Promise<{ created: b
   const agentName = project.name ?? path.basename(targetDir);
   const hasMcp = project.hasMcp;
 
-  const config = [
-    `agentName: ${agentName}`,
-    'monitors:',
-    '  process: { enabled: true, intervalMs: 5000 }',
-    '  network: { enabled: true, intervalMs: 10000 }',
-    '  filesystem: { enabled: true }',
-    'interceptors:',
-    '  process: true',
-    '  network: true',
-    '  filesystem: true',
-    'aiLayer:',
-    '  prompt: true',
-    hasMcp ? '  mcp-protocol: true' : '  mcp-protocol: false',
-    '  a2a-protocol: true',
-    '',
-  ].join('\n');
+  const config = buildInitConfig(agentName, hasMcp);
 
   fs.writeFileSync(configPath, config, 'utf-8');
 
