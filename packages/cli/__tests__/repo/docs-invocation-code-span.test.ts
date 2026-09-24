@@ -30,7 +30,7 @@ import * as path from 'node:path';
  * there is nothing to import; if it lands later the two may share a walker, but
  * the literal set stays, because the set is what this criterion pins.
  *
- * The corpus is clean today: 58 occurrences over 8 walked files, 55 in fences,
+ * The corpus is clean today: 58 occurrences over 9 walked files, 55 in fences,
  * 3 in code spans, 0 in bare prose. This suite is what keeps it that way.
  */
 
@@ -49,7 +49,7 @@ import * as path from 'node:path';
  */
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
-/** The two literal roots; `docs/**\/*.md` is walked. Together: 8 files today. */
+/** The two literal roots; `docs/**\/*.md` is walked. Together: 9 files today. */
 const LITERAL_FILES = ['README.md', 'packages/cli/README.md'] as const;
 const DOCS_DIR = 'docs';
 
@@ -71,7 +71,7 @@ const INVOCATION_ONCE = new RegExp(INVOCATION.source);
  * A fence delimiter: optional leading whitespace, then three backticks or three
  * tildes. Tracking is a toggle, so a file with an odd number of these lines
  * would leave the walker "inside" a fence to EOF and swallow every later
- * violation. That the count is even in all 8 files is measured below rather
+ * violation. That the count is even in all 9 files is measured below rather
  * than assumed.
  */
 const FENCE_LINE = /^\s*(?:`{3}|~{3})/;
@@ -212,9 +212,10 @@ const WALKED_SET = [
   'docs/use-cases/developer.md',
   'docs/use-cases/mcp-server-author.md',
   'docs/use-cases/security-team.md',
+  'docs/verifying-npm-packages.md',
 ] as const;
 
-/** Fence delimiter lines per walked file. Every count is even; total 172. */
+/** Fence delimiter lines per walked file. Every count is even; total 180. */
 const FENCE_LINES_PER_FILE: Readonly<Record<string, number>> = {
   'README.md': 22,
   'packages/cli/README.md': 8,
@@ -224,9 +225,10 @@ const FENCE_LINES_PER_FILE: Readonly<Record<string, number>> = {
   'docs/use-cases/developer.md': 30,
   'docs/use-cases/mcp-server-author.md': 26,
   'docs/use-cases/security-team.md': 34,
+  'docs/verifying-npm-packages.md': 8,
 };
 
-/** Occurrences per walked file. 58 in total, on 57 lines, in 6 of the 8 files. */
+/** Occurrences per walked file. 58 in total, on 57 lines, in 6 of the 9 files. */
 const OCCURRENCES_PER_FILE: Readonly<Record<string, number>> = {
   'README.md': 4,
   'packages/cli/README.md': 1,
@@ -236,6 +238,7 @@ const OCCURRENCES_PER_FILE: Readonly<Record<string, number>> = {
   'docs/use-cases/developer.md': 6,
   'docs/use-cases/mcp-server-author.md': 8,
   'docs/use-cases/security-team.md': 11,
+  'docs/verifying-npm-packages.md': 0,
 };
 
 /** Two of the three code-span occurrences: the npx-hangs troubleshooting row. */
@@ -372,7 +375,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
 
   it('OPA-06.AC1 walks exactly README.md, packages/cli/README.md and every docs/**/*.md', () => {
     expect(walkedFiles()).toEqual([...WALKED_SET]);
-    expect(walkedFiles()).toHaveLength(8);
+    expect(walkedFiles()).toHaveLength(9);
   });
 
   it('OPA-06.AC1 is collected by the required check with no workflow edit', () => {
@@ -475,7 +478,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     ]);
   });
 
-  it('OPA-06.AC3 fence tracking closes in every walked file: an even count, 172 in total', () => {
+  it('OPA-06.AC3 fence tracking closes in every walked file: an even count, 180 in total', () => {
     const { fenceLines } = classify(readWalkedSet());
 
     expect(Object.fromEntries(fenceLines)).toEqual(FENCE_LINES_PER_FILE);
@@ -484,7 +487,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
         0,
       );
     }
-    expect([...fenceLines.values()].reduce((a, b) => a + b, 0)).toBe(172);
+    expect([...fenceLines.values()].reduce((a, b) => a + b, 0)).toBe(180);
   });
 
   it('OPA-06.AC3 no tilde fence and no indented fence line in the walked set', () => {
@@ -499,7 +502,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     const fences = lineKeys(sources, (l) => FENCE_LINE.test(l));
 
     expect(doubles).toEqual(fences);
-    expect(doubles).toHaveLength(172);
+    expect(doubles).toHaveLength(180);
   });
 
   it('OPA-06.AC3 the admit rule discriminates on backtick parity before the match', () => {
