@@ -1,0 +1,22 @@
+# .hmaignore — opena2a HackMyAgent self-scan scope exclusions.
+#
+# Exactly two single-file rules, each a triaged false positive on dev-only
+# code outside the published npm `files` set (`dist`, `README.md`). Every
+# rule must be a single existing file, preceded by comment lines naming the
+# check id and a public issue; packages/cli/__tests__/hmaignore-scope.test.ts
+# enforces that shape and refuses additions, negations, directory rules, and
+# anything under packages/cli/src/. Fix real findings in source instead.
+
+# NEMO-007 (full process.env passthrough to subprocess): dev-only lock-trace
+# instrument, not published. Its measured purpose is spawning this repo's own
+# vitest in the full inherited environment to reproduce lock contention;
+# narrowing the env spread would change what the instrument measures.
+# Triaged as a false positive: github.com/opena2a-org/opena2a/issues/188
+packages/cli/scripts/shield-lock-trace-loop.ts
+
+# NEMO-008 (TOCTOU race between verify and apply): the matcher pairs an
+# integrity-check token in this test file's dynamic import with a spawn()
+# in the unrelated concurrent-write test. No artifact is verified and then
+# executed anywhere on that path; the two files share no artifact at all.
+# Triaged as a false positive: github.com/opena2a-org/opena2a/issues/188
+packages/cli/__tests__/shield/events.test.ts
