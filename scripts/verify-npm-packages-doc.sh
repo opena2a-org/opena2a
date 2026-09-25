@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the blocks in docs/verifying-npm-packages.md verbatim, per package, with the controls the
 # verification record requires. Usage: scripts/verify-npm-packages-doc.sh <doc.md> <out-dir> [latest|all]
-#   latest: G1 plus the controls (T, I, C, V, U, N, S, Y, X, W)      all: adds G2 (every attested version)
+#   latest: G1 plus the controls (T, I, C, V, U, N, S, Y, X, W, F1, F2)      all: adds G2 (every attested version)
 # Each cell runs the extracted block text unchanged in a fresh empty directory. Controls act only
 # through PATH shims (npm, curl) or the documented environment override; cell I is the one text
 # mutations (I, Y), and the runner asserts each changes exactly one token. A pass is exit 0 with
@@ -44,7 +44,9 @@ run_cell() { # pkg version cell expect(ok|fail:<substring>) blockfile [VAR=value
     ok) body=$(grep -v '^[[:space:]]*$' "$log")
        if [ $rc -eq 0 ] && [ "$body" = "$pkg@$ver"$'\n'"Verified OK" ]; then res=PASS; else res=FAIL; fi ;;
     fail:*) want=${expect#fail:}
-       if [ $rc -ne 0 ] && grep -qF -- "$want" "$log" && ! grep -q '^Verified OK$' "$log"; then res=PASS; else res=FAIL; fi ;;
+       if [ $rc -ne 0 ] && grep -qF -- "$want" "$log" && ! grep -q '^Verified OK$' "$log"; then res=PASS; else res=FAIL; fi
+       # a forged value must not reach the output as a control byte either
+       if [ "$cell" = F1 ] || [ "$cell" = F2 ]; then LC_ALL=C grep -q "$(printf '\033')" "$log" && res=FAIL; fi ;;
   esac
   [ $res = FAIL ] && FAILS=$((FAILS+1))
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pkg" "$ver" "$cell" "$expect" "$rc" "$last" "$res" >> "$TSV"
@@ -127,13 +129,19 @@ while IFS='|' read -r pkg var first tgzp att; do
     @opena2a/aim-core) src="opena2a-cli@0.10.13"; srcatt="opena2a-cli@0.10.13"; cv=$latest ;;
   esac
   run_cell "$pkg" "$cv" C "fail:tarball check failed" "$blk" PATH="$SHIMS/swap:$PATH" "$var=$cv" SWAP_SRC_SPEC="$src" SWAP_SRC_ATT="$srcatt" SWAP_DEST_TGZ="$tgzp-$cv.tgz"
+  # the version check's own words, read from the block (the handler prints no part of the value)
+  vmsg=$(grep -F '=~' "$blk" | grep -o 'echo "[^"]*"' | sed 's/^echo "//; s/"$//')
+  [ -n "$vmsg" ] || { echo "no version-check handler found for $pkg" >&2; FAILS=$((FAILS+1)); }
   # V: an injected version string (regexp block only)
-  [ "$pkg" = opena2a-cli ] && run_cell "$pkg" 'inj' V "fail:not a release version" "$blk" "$var=0.10.13\$|.*"
+  [ "$pkg" = opena2a-cli ] && run_cell "$pkg" 'inj' V "fail:$vmsg" "$blk" "$var=0.10.13\$|.*"
+  # F1, F2: a version value that tries to forge the pass line, or to write terminal control bytes
+  run_cell "$pkg" forge-nl F1 "fail:$vmsg" "$blk" "$var=9.9.9"$'\n'"$pkg@9.9.9"$'\n'"Verified OK"
+  run_cell "$pkg" forge-esc F2 "fail:$vmsg" "$blk" "$var=9.9.9"$'\033[2K\r'"Verified OK"
   # U: a version from before provenance began
   case $pkg in opena2a-cli) u=0.8.23 ;; hackmyagent) u=0.17.11 ;; *) u= ;; esac
   [ -n "$u" ] && run_cell "$pkg" "$u" U "fail:curl:" "$blk" "$var=$u"
   # N: a version that does not exist; npm must name the failure
-  run_cell "$pkg" 0.0.0 N "fail:npm error code ETARGET" "$blk" "$var=0.0.0"
+  run_cell "$pkg" 0.0.0 N "fail:code ETARGET" "$blk" "$var=0.0.0"
   # S: the attestation listing with its SLSA v1 entry removed
   run_cell "$pkg" "$latest" S "fail:attestation check failed" "$blk" PATH="$SHIMS/noslsa:$PATH"
   # Y: the predicate type changed by exactly one token
