@@ -1,12 +1,12 @@
 {
   "record": "full run of the blocks in docs/verifying-npm-packages.md, every attested version plus the controls",
   "doc": "docs/verifying-npm-packages.md",
-  "docBlob": "5c670cca0a6e96415379bcdfeec511fb836395c7",
+  "docBlob": "c814fda44eddf787165b7d22526481c0ea5e4432",
   "runner": "scripts/verify-npm-packages-doc.sh",
-  "runnerBlob": "dd492234d145c8e3f0f9e405ea820c713c13fcc4",
-  "commit": "70afaccd2ff5f72f9685c2fba491dcf1b2066b91",
+  "runnerBlob": "103d325df75ab3bf02fe2dc885525760a6959e27",
+  "commit": "09435efb545594f8404a0f3d563e90f404a4b91e",
   "mode": "all",
-  "invocation": "bash scripts/verify-npm-packages-doc.sh docs/verifying-npm-packages.md <out> all (SHELL_UNDER_TEST=zsh for the zsh run)",
+  "invocation": "bash scripts/verify-npm-packages-doc.sh docs/verifying-npm-packages.md <out> all (SHELL_UNDER_TEST=zsh for the zsh run), with npm's update notice turned off",
   "cosign": {
     "version": "v3.1.3",
     "gitCommit": "11926fa5bbbbde47e88fc006b625a17769b743b2",
@@ -26,28 +26,35 @@
     {
       "shell": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
       "table": "full-run-bash-cells.tsv",
-      "finishedAt": "2026-09-24T20:28:09Z",
-      "cells": 95,
+      "finishedAt": "2026-09-25T07:53:32Z",
+      "cells": 123,
       "failures": 0
     },
     {
       "shell": "zsh 5.9 (arm64-apple-darwin25.0)",
       "table": "full-run-zsh-cells.tsv",
-      "finishedAt": "2026-09-24T20:31:10Z",
-      "cells": 95,
+      "finishedAt": "2026-09-25T07:53:36Z",
+      "cells": 123,
       "failures": 0
     }
   ],
   "cellKey": {
-    "G1": "latest version, block as written: exit 0, last line Verified OK",
-    "G2": "every published version from the first attested one, version variable set: exit 0, last line Verified OK",
+    "G1": "latest version, block as written: exit 0, and the output is exactly <package>@<version> then Verified OK",
+    "G2": "every published version from the first attested one, prereleases included, version variable set: exit 0, and the output is exactly <package>@<version> then Verified OK",
     "T": "one byte appended to the packed tarball by an npm shim: non-zero with the digest error",
     "I": "identity changed by one token (the repository): non-zero with the identity error",
     "C": "another genuine tarball and bundle served under the requested name: non-zero with the tarball check message",
     "V": "an injected version string (regexp block only): non-zero with the version check message",
-    "U": "a version from before provenance began: non-zero with the curl error; cosign never runs"
+    "U": "a version from before provenance began: non-zero with the curl error; cosign never runs",
+    "N": "a version that does not exist (0.0.0): non-zero with npm's code ETARGET",
+    "S": "the attestation listing with its SLSA v1 entry removed by a curl shim: non-zero with the attestation check message",
+    "Y": "the predicate type changed by one token (slsaprovenance1 to spdxjson): non-zero with cosign's invalid predicate type",
+    "X": "one character of the SLSA v1 envelope signature flipped by a curl shim: non-zero with cosign's log inclusion error",
+    "W": "the SLSA v1 bundle's log entries removed by a curl shim: non-zero with cosign's log inclusion error",
+    "F1": "a version value carrying a newline and Verified OK: non-zero with the version check message, no Verified OK line",
+    "F2": "a version value carrying an escape sequence and a carriage return: non-zero with the version check message, no escape byte"
   },
   "ciRun": null,
   "ciRunNote": "local run on macOS; the CI workflow records Linux bash and macOS zsh runs once it lands",
-  "docSha256": "ce5620c4eb62fe7818146d590462a5bbd550415808916bcd5570abbdb7102380"
+  "docSha256": "e20a59d64557304997bff29c56de18a497d4557881d20eba0b4b9147b86e6dbc"
 }

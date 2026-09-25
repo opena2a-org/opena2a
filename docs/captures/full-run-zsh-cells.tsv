@@ -38,7 +38,14 @@ hackmyagent	0.33.2	G2	ok	0	Verified OK	PASS
 hackmyagent	0.33.2	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
 hackmyagent	0.33.2	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com	PASS
 hackmyagent	0.33.2	C	fail:tarball check failed	1	tarball check failed: expected hackmyagent@0.33.2	PASS
+hackmyagent	forge-nl	F1	fail:version check failed: expected a release version of hackmyagent, three numbers separated by dots	1	version check failed: expected a release version of hackmyagent, three numbers separated by dots	PASS
+hackmyagent	forge-esc	F2	fail:version check failed: expected a release version of hackmyagent, three numbers separated by dots	1	version check failed: expected a release version of hackmyagent, three numbers separated by dots	PASS
 hackmyagent	0.17.11	U	fail:curl:	56	curl: (56) The requested URL returned error: 404	PASS
+hackmyagent	0.0.0	N	fail:code ETARGET	1	npm error A complete log of this run can be found in: /var/folders/ff/wky4w21960x3mrhdxf3t35vm0000gp/T/vcell.rcCdUi/home/.npm/_logs/2026-09-25T07_50_53_441Z-deb	PASS
+hackmyagent	0.33.2	S	fail:attestation check failed	1	attestation check failed: expected SLSA v1 provenance for hackmyagent@0.33.2	PASS
+hackmyagent	0.33.2	Y	fail:invalid predicate type	1	error during command execution: invalid predicate type, expected spdxjson got https://slsa.dev/provenance/v1	PASS
+hackmyagent	0.33.2	X	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: transparency log signature does not match	PASS
+hackmyagent	0.33.2	W	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: not enough verified log entries from transparency log: 0 < 1	PASS
 secretless-ai	0.23.0	G1	ok	0	Verified OK	PASS
 secretless-ai	0.15.1	G2	ok	0	Verified OK	PASS
 secretless-ai	0.16.1	G2	ok	0	Verified OK	PASS
@@ -64,6 +71,13 @@ secretless-ai	0.23.0	G2	ok	0	Verified OK	PASS
 secretless-ai	0.23.0	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
 secretless-ai	0.23.0	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com	PASS
 secretless-ai	0.23.0	C	fail:tarball check failed	1	tarball check failed: expected secretless-ai@0.23.0	PASS
+secretless-ai	forge-nl	F1	fail:version check failed: expected a release version of secretless-ai, three numbers separated by dots	1	version check failed: expected a release version of secretless-ai, three numbers separated by dots	PASS
+secretless-ai	forge-esc	F2	fail:version check failed: expected a release version of secretless-ai, three numbers separated by dots	1	version check failed: expected a release version of secretless-ai, three numbers separated by dots	PASS
+secretless-ai	0.0.0	N	fail:code ETARGET	1	npm error A complete log of this run can be found in: /var/folders/ff/wky4w21960x3mrhdxf3t35vm0000gp/T/vcell.MuQGUc/home/.npm/_logs/2026-09-25T07_51_34_006Z-deb	PASS
+secretless-ai	0.23.0	S	fail:attestation check failed	1	attestation check failed: expected SLSA v1 provenance for secretless-ai@0.23.0	PASS
+secretless-ai	0.23.0	Y	fail:invalid predicate type	1	error during command execution: invalid predicate type, expected spdxjson got https://slsa.dev/provenance/v1	PASS
+secretless-ai	0.23.0	X	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: transparency log signature does not match	PASS
+secretless-ai	0.23.0	W	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: not enough verified log entries from transparency log: 0 < 1	PASS
 opena2a-cli	0.10.13	G1	ok	0	Verified OK	PASS
 opena2a-cli	0.8.24	G2	ok	0	Verified OK	PASS
 opena2a-cli	0.8.25	G2	ok	0	Verified OK	PASS
@@ -87,10 +101,24 @@ opena2a-cli	0.10.13	G2	ok	0	Verified OK	PASS
 opena2a-cli	0.10.13	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
 opena2a-cli	0.10.13	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value to match regex "^ht	PASS
 opena2a-cli	0.8.24	C	fail:tarball check failed	1	tarball check failed: expected opena2a-cli@0.8.24	PASS
-opena2a-cli	inj	V	fail:not a release version	1	not a release version: 0.10.13$|.*	PASS
+opena2a-cli	inj	V	fail:version check failed: expected a release version of opena2a-cli, three numbers separated by dots	1	version check failed: expected a release version of opena2a-cli, three numbers separated by dots	PASS
+opena2a-cli	forge-nl	F1	fail:version check failed: expected a release version of opena2a-cli, three numbers separated by dots	1	version check failed: expected a release version of opena2a-cli, three numbers separated by dots	PASS
+opena2a-cli	forge-esc	F2	fail:version check failed: expected a release version of opena2a-cli, three numbers separated by dots	1	version check failed: expected a release version of opena2a-cli, three numbers separated by dots	PASS
 opena2a-cli	0.8.23	U	fail:curl:	56	curl: (56) The requested URL returned error: 404	PASS
+opena2a-cli	0.0.0	N	fail:code ETARGET	1	npm error A complete log of this run can be found in: /var/folders/ff/wky4w21960x3mrhdxf3t35vm0000gp/T/vcell.vp3phm/home/.npm/_logs/2026-09-25T07_52_59_641Z-deb	PASS
+opena2a-cli	0.10.13	S	fail:attestation check failed	1	attestation check failed: expected SLSA v1 provenance for opena2a-cli@0.10.13	PASS
+opena2a-cli	0.10.13	Y	fail:invalid predicate type	1	error during command execution: invalid predicate type, expected spdxjson got https://slsa.dev/provenance/v1	PASS
+opena2a-cli	0.10.13	X	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: transparency log signature does not match	PASS
+opena2a-cli	0.10.13	W	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: not enough verified log entries from transparency log: 0 < 1	PASS
 @opena2a/aim-core	0.2.0	G1	ok	0	Verified OK	PASS
 @opena2a/aim-core	0.2.0	G2	ok	0	Verified OK	PASS
 @opena2a/aim-core	0.2.0	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
 @opena2a/aim-core	0.2.0	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com	PASS
 @opena2a/aim-core	0.2.0	C	fail:tarball check failed	1	tarball check failed: expected @opena2a/aim-core@0.2.0	PASS
+@opena2a/aim-core	forge-nl	F1	fail:version check failed: expected a release version of @opena2a/aim-core, three numbers separated by dots	1	version check failed: expected a release version of @opena2a/aim-core, three numbers separated by dots	PASS
+@opena2a/aim-core	forge-esc	F2	fail:version check failed: expected a release version of @opena2a/aim-core, three numbers separated by dots	1	version check failed: expected a release version of @opena2a/aim-core, three numbers separated by dots	PASS
+@opena2a/aim-core	0.0.0	N	fail:code ETARGET	1	npm error A complete log of this run can be found in: /var/folders/ff/wky4w21960x3mrhdxf3t35vm0000gp/T/vcell.xtafXF/home/.npm/_logs/2026-09-25T07_53_18_379Z-deb	PASS
+@opena2a/aim-core	0.2.0	S	fail:attestation check failed	1	attestation check failed: expected SLSA v1 provenance for @opena2a/aim-core@0.2.0	PASS
+@opena2a/aim-core	0.2.0	Y	fail:invalid predicate type	1	error during command execution: invalid predicate type, expected spdxjson got https://slsa.dev/provenance/v1	PASS
+@opena2a/aim-core	0.2.0	X	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: transparency log signature does not match	PASS
+@opena2a/aim-core	0.2.0	W	fail:failed to verify log inclusion	1	error during command execution: failed to verify log inclusion: not enough verified log entries from transparency log: 0 < 1	PASS
