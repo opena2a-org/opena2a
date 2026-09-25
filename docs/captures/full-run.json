@@ -1,0 +1,53 @@
+{
+  "record": "full run of the blocks in docs/verifying-npm-packages.md, every attested version plus the controls",
+  "doc": "docs/verifying-npm-packages.md",
+  "docBlob": "5c670cca0a6e96415379bcdfeec511fb836395c7",
+  "runner": "scripts/verify-npm-packages-doc.sh",
+  "runnerBlob": "dd492234d145c8e3f0f9e405ea820c713c13fcc4",
+  "commit": "70afaccd2ff5f72f9685c2fba491dcf1b2066b91",
+  "mode": "all",
+  "invocation": "bash scripts/verify-npm-packages-doc.sh docs/verifying-npm-packages.md <out> all (SHELL_UNDER_TEST=zsh for the zsh run)",
+  "cosign": {
+    "version": "v3.1.3",
+    "gitCommit": "11926fa5bbbbde47e88fc006b625a17769b743b2",
+    "platform": "darwin/arm64",
+    "asset": "cosign-darwin-arm64 from https://github.com/sigstore/cosign/releases/tag/v3.1.3",
+    "sha256": "5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76"
+  },
+  "tools": {
+    "npm": "10.9.3",
+    "jq": "jq-1.6",
+    "openssl": "OpenSSL 3.6.0",
+    "curl": "curl 8.7.1",
+    "os": "macOS 26.4 arm64"
+  },
+  "g2VersionsPerPackage": "@opena2a/aim-core=1,hackmyagent=35,opena2a-cli=19,secretless-ai=21",
+  "runs": [
+    {
+      "shell": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
+      "table": "full-run-bash-cells.tsv",
+      "finishedAt": "2026-09-24T20:28:09Z",
+      "cells": 95,
+      "failures": 0
+    },
+    {
+      "shell": "zsh 5.9 (arm64-apple-darwin25.0)",
+      "table": "full-run-zsh-cells.tsv",
+      "finishedAt": "2026-09-24T20:31:10Z",
+      "cells": 95,
+      "failures": 0
+    }
+  ],
+  "cellKey": {
+    "G1": "latest version, block as written: exit 0, last line Verified OK",
+    "G2": "every published version from the first attested one, version variable set: exit 0, last line Verified OK",
+    "T": "one byte appended to the packed tarball by an npm shim: non-zero with the digest error",
+    "I": "identity changed by one token (the repository): non-zero with the identity error",
+    "C": "another genuine tarball and bundle served under the requested name: non-zero with the tarball check message",
+    "V": "an injected version string (regexp block only): non-zero with the version check message",
+    "U": "a version from before provenance began: non-zero with the curl error; cosign never runs"
+  },
+  "ciRun": null,
+  "ciRunNote": "local run on macOS; the CI workflow records Linux bash and macOS zsh runs once it lands",
+  "docSha256": "ce5620c4eb62fe7818146d590462a5bbd550415808916bcd5570abbdb7102380"
+}
