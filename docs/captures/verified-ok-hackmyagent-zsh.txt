@@ -1,0 +1,3 @@
+hackmyagent@0.33.2
+Flag --new-bundle-format has been deprecated, this will be the only supported format in future versions
+Verified OK

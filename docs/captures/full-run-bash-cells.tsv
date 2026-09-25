@@ -1,0 +1,96 @@
+package	version	cell	expect	exit	last_line	result
+hackmyagent	0.33.2	G1	ok	0	Verified OK	PASS
+hackmyagent	0.18.2	G2	ok	0	Verified OK	PASS
+hackmyagent	0.18.3	G2	ok	0	Verified OK	PASS
+hackmyagent	0.19.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.20.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.21.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.21.1	G2	ok	0	Verified OK	PASS
+hackmyagent	0.22.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.22.1	G2	ok	0	Verified OK	PASS
+hackmyagent	0.22.2	G2	ok	0	Verified OK	PASS
+hackmyagent	0.22.3	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.1	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.2	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.3	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.4	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.6	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.7	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.8	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.9	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.10	G2	ok	0	Verified OK	PASS
+hackmyagent	0.23.11	G2	ok	0	Verified OK	PASS
+hackmyagent	0.24.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.25.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.25.1	G2	ok	0	Verified OK	PASS
+hackmyagent	0.25.2	G2	ok	0	Verified OK	PASS
+hackmyagent	0.26.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.26.1	G2	ok	0	Verified OK	PASS
+hackmyagent	0.27.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.28.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.29.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.30.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.31.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.32.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.33.0	G2	ok	0	Verified OK	PASS
+hackmyagent	0.33.2	G2	ok	0	Verified OK	PASS
+hackmyagent	0.33.2	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
+hackmyagent	0.33.2	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com	PASS
+hackmyagent	0.33.2	C	fail:tarball check failed	1	tarball check failed: expected hackmyagent@0.33.2	PASS
+hackmyagent	0.17.11	U	fail:curl:	56	curl: (56) The requested URL returned error: 404	PASS
+secretless-ai	0.23.0	G1	ok	0	Verified OK	PASS
+secretless-ai	0.15.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.16.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.16.2	G2	ok	0	Verified OK	PASS
+secretless-ai	0.16.3	G2	ok	0	Verified OK	PASS
+secretless-ai	0.16.4	G2	ok	0	Verified OK	PASS
+secretless-ai	0.17.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.17.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.18.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.18.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.18.2	G2	ok	0	Verified OK	PASS
+secretless-ai	0.18.3	G2	ok	0	Verified OK	PASS
+secretless-ai	0.19.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.19.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.20.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.21.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.21.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.21.2	G2	ok	0	Verified OK	PASS
+secretless-ai	0.21.3	G2	ok	0	Verified OK	PASS
+secretless-ai	0.22.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.22.1	G2	ok	0	Verified OK	PASS
+secretless-ai	0.23.0	G2	ok	0	Verified OK	PASS
+secretless-ai	0.23.0	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
+secretless-ai	0.23.0	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com	PASS
+secretless-ai	0.23.0	C	fail:tarball check failed	1	tarball check failed: expected secretless-ai@0.23.0	PASS
+opena2a-cli	0.10.13	G1	ok	0	Verified OK	PASS
+opena2a-cli	0.8.24	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.8.25	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.8.26	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.9.0	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.9.1	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.0	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.1	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.2	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.3	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.4	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.5	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.6	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.7	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.8	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.9	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.10	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.11	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.12	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.13	G2	ok	0	Verified OK	PASS
+opena2a-cli	0.10.13	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
+opena2a-cli	0.10.13	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value to match regex "^ht	PASS
+opena2a-cli	0.8.24	C	fail:tarball check failed	1	tarball check failed: expected opena2a-cli@0.8.24	PASS
+opena2a-cli	inj	V	fail:not a release version	1	not a release version: 0.10.13$|.*	PASS
+opena2a-cli	0.8.23	U	fail:curl:	56	curl: (56) The requested URL returned error: 404	PASS
+@opena2a/aim-core	0.2.0	G1	ok	0	Verified OK	PASS
+@opena2a/aim-core	0.2.0	G2	ok	0	Verified OK	PASS
+@opena2a/aim-core	0.2.0	T	fail:provided artifact digest does not match	1	error during command execution: failed to verify signature: provided artifact digest does not match any digest in statement	PASS
+@opena2a/aim-core	0.2.0	I	fail:no matching CertificateIdentity	1	error during command execution: failed to verify certificate identity: no matching CertificateIdentity found, last error: expected SAN value "https://github.com	PASS
+@opena2a/aim-core	0.2.0	C	fail:tarball check failed	1	tarball check failed: expected @opena2a/aim-core@0.2.0	PASS
