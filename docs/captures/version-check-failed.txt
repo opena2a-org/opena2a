@@ -1,0 +1,1 @@
+version check failed: expected a release version of hackmyagent, three numbers separated by dots

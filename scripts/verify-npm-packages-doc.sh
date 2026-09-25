@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Runs the blocks in docs/verifying-npm-packages.md verbatim, per package, with the controls the
 # verification record requires. Usage: scripts/verify-npm-packages-doc.sh <doc.md> <out-dir> [latest|all]
-#   latest: G1 plus the controls (T, I, C, V, U)      all: adds G2 (every attested version)
+#   latest: G1 plus the controls (T, I, C, V, U, N, S, Y, X, W, F1, F2)      all: adds G2 (every attested version)
 # Each cell runs the extracted block text unchanged in a fresh empty directory. Controls act only
 # through PATH shims (npm, curl) or the documented environment override; cell I is the one text
-# mutation, and the runner asserts it changes exactly one token. Needs: bash, npm, jq, openssl,
+# mutations (I, Y), and the runner asserts each changes exactly one token. A pass is exit 0 with
+# exactly two non-blank lines of output: <pkg>@<version>, then Verified OK. Needs: bash, npm, jq, openssl,
 # tar, curl, cosign >= 3.0.6 on PATH. Writes <out-dir>/cells.tsv and one log per cell.
 set -u
 DOC=$1; OUT=$2; MODE=${3:-latest}
@@ -19,6 +20,11 @@ PKGS='hackmyagent|HACKMYAGENT_VERSION|0.18.2|hackmyagent|hackmyagent
 secretless-ai|SECRETLESS_AI_VERSION|0.15.1|secretless-ai|secretless-ai
 opena2a-cli|OPENA2A_CLI_VERSION|0.8.24|opena2a-cli|opena2a-cli
 @opena2a/aim-core|AIM_CORE_VERSION|0.2.0|opena2a-aim-core|@opena2a%2faim-core'
+
+onetoken() { # cell original mutated: the mutation must change exactly one token
+  local n; n=$(diff <(tr -s ' /' '\n' < "$2") <(tr -s ' /' '\n' < "$3") | grep -c '^[<>]')
+  if [ "$n" -ne 2 ]; then echo "cell $1 for $pkg changed $n token lines, want exactly one token" >&2; FAILS=$((FAILS+1)); fi
+}
 
 extract() { # the first fenced block after the heading whose text is exactly the package name
   awk -v pkg="$1" '
@@ -35,9 +41,12 @@ run_cell() { # pkg version cell expect(ok|fail:<substring>) blockfile [VAR=value
       "$SHELL_UNDER_TEST" "$block" ) > "$log" 2>&1
   rc=$?; last=$(grep -v '^[[:space:]]*$' "$log" | tail -1 | tr '\t' ' ' | cut -c1-160)
   case $expect in
-    ok) if [ $rc -eq 0 ] && [ "$last" = "Verified OK" ]; then res=PASS; else res=FAIL; fi ;;
+    ok) body=$(grep -v '^[[:space:]]*$' "$log")
+       if [ $rc -eq 0 ] && [ "$body" = "$pkg@$ver"$'\n'"Verified OK" ]; then res=PASS; else res=FAIL; fi ;;
     fail:*) want=${expect#fail:}
-       if [ $rc -ne 0 ] && grep -qF -- "$want" "$log" && ! grep -q '^Verified OK$' "$log"; then res=PASS; else res=FAIL; fi ;;
+       if [ $rc -ne 0 ] && grep -qF -- "$want" "$log" && ! grep -q '^Verified OK$' "$log"; then res=PASS; else res=FAIL; fi
+       # a forged value must not reach the output as a control byte either
+       if [ "$cell" = F1 ] || [ "$cell" = F2 ]; then LC_ALL=C grep -q "$(printf '\033')" "$log" && res=FAIL; fi ;;
   esac
   [ $res = FAIL ] && FAILS=$((FAILS+1))
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pkg" "$ver" "$cell" "$expect" "$rc" "$last" "$res" >> "$TSV"
@@ -66,7 +75,23 @@ EOF
 exec "$REAL_CURL" -sSf "https://registry.npmjs.org/-/npm/v1/attestations/\$SWAP_SRC_ATT"
 EOF
   chmod +x "$dir/npm" "$dir/curl"; }
-mkshim_tamper; mkshim_swap swap
+mkshim_noslsa() { # the real attestation listing with its SLSA v1 entry removed
+  mkdir -p "$SHIMS/noslsa"; cat > "$SHIMS/noslsa/curl" <<EOF
+#!/usr/bin/env bash
+out=\$("$REAL_CURL" "\$@") || exit \$?
+printf '%s' "\$out" | jq -c '.attestations |= map(select(.predicateType != "https://slsa.dev/provenance/v1"))'
+EOF
+  chmod +x "$SHIMS/noslsa/curl"; }
+mkshim_bundle() { # dir name, jq filter applied to the SLSA v1 bundle in the real listing
+  mkdir -p "$SHIMS/$1"; cat > "$SHIMS/$1/curl" <<EOF
+#!/usr/bin/env bash
+out=\$("$REAL_CURL" "\$@") || exit \$?
+printf '%s' "\$out" | jq -c '(.attestations[] | select(.predicateType=="https://slsa.dev/provenance/v1") | .bundle) |= ($2)'
+EOF
+  chmod +x "$SHIMS/$1/curl"; }
+mkshim_tamper; mkshim_swap swap; mkshim_noslsa
+mkshim_bundle badsig '.dsseEnvelope.signatures[0].sig |= (explode | .[10] = (if .[10] == 65 then 66 else 65 end) | implode)'
+mkshim_bundle notlog '.verificationMaterial.tlogEntries = []'
 
 while IFS='|' read -r pkg var first tgzp att; do
   blk=$OUT/.block-$(echo "$pkg" | tr '/@' '__').sh; extract "$pkg" > "$blk"
@@ -79,7 +104,7 @@ while IFS='|' read -r pkg var first tgzp att; do
     g2=0
     for v in $("$REAL_NPM" view "$pkg" versions --json | jq -r '.[]' | awk -v f="$first" '
         function cmp(a,b,  x,y,i){split(a,x,".");split(b,y,".");for(i=1;i<=3;i++){if(x[i]+0<y[i]+0)return -1;if(x[i]+0>y[i]+0)return 1}return 0}
-        $0 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ && cmp($0,f)>=0'); do
+        cmp($0,f)>=0'); do
       run_cell "$pkg" "$v" G2 ok "$blk" "$var=$v"; g2=$((g2+1))
     done
     # an empty version list (a failed lookup) is a failure, never a pass with no cells
@@ -94,8 +119,7 @@ while IFS='|' read -r pkg var first tgzp att; do
     secretless-ai)     sed 's#opena2a-org/secretless-ai/#opena2a-org/hackmyagent/#' "$blk" > "$mut" ;;
     *)                 sed 's#opena2a-org/opena2a/#opena2a-org/hackmyagent/#' "$blk" > "$mut" ;;
   esac
-  ntok=$(diff <(tr -s ' /' '\n' < "$blk") <(tr -s ' /' '\n' < "$mut") | grep -c '^[<>]')
-  if [ "$ntok" -ne 2 ]; then echo "cell I for $pkg changed $ntok token lines, want exactly one token" >&2; FAILS=$((FAILS+1)); fi
+  onetoken I "$blk" "$mut"
   run_cell "$pkg" "$latest" I "fail:no matching CertificateIdentity" "$mut"
   # C: another genuine tarball and bundle served under the requested name
   case $pkg in
@@ -105,11 +129,29 @@ while IFS='|' read -r pkg var first tgzp att; do
     @opena2a/aim-core) src="opena2a-cli@0.10.13"; srcatt="opena2a-cli@0.10.13"; cv=$latest ;;
   esac
   run_cell "$pkg" "$cv" C "fail:tarball check failed" "$blk" PATH="$SHIMS/swap:$PATH" "$var=$cv" SWAP_SRC_SPEC="$src" SWAP_SRC_ATT="$srcatt" SWAP_DEST_TGZ="$tgzp-$cv.tgz"
+  # the version check's own words, read from the block (the handler prints no part of the value)
+  vmsg=$(grep -F '=~' "$blk" | grep -o 'echo "[^"]*"' | sed 's/^echo "//; s/"$//')
+  [ -n "$vmsg" ] || { echo "no version-check handler found for $pkg" >&2; FAILS=$((FAILS+1)); }
   # V: an injected version string (regexp block only)
-  [ "$pkg" = opena2a-cli ] && run_cell "$pkg" 'inj' V "fail:not a release version" "$blk" "$var=0.10.13\$|.*"
+  [ "$pkg" = opena2a-cli ] && run_cell "$pkg" 'inj' V "fail:$vmsg" "$blk" "$var=0.10.13\$|.*"
+  # F1, F2: a version value that tries to forge the pass line, or to write terminal control bytes
+  run_cell "$pkg" forge-nl F1 "fail:$vmsg" "$blk" "$var=9.9.9"$'\n'"$pkg@9.9.9"$'\n'"Verified OK"
+  run_cell "$pkg" forge-esc F2 "fail:$vmsg" "$blk" "$var=9.9.9"$'\033[2K\r'"Verified OK"
   # U: a version from before provenance began
   case $pkg in opena2a-cli) u=0.8.23 ;; hackmyagent) u=0.17.11 ;; *) u= ;; esac
   [ -n "$u" ] && run_cell "$pkg" "$u" U "fail:curl:" "$blk" "$var=$u"
+  # N: a version that does not exist; npm must name the failure
+  run_cell "$pkg" 0.0.0 N "fail:code ETARGET" "$blk" "$var=0.0.0"
+  # S: the attestation listing with its SLSA v1 entry removed
+  run_cell "$pkg" "$latest" S "fail:attestation check failed" "$blk" PATH="$SHIMS/noslsa:$PATH"
+  # Y: the predicate type changed by exactly one token
+  wty=$OUT/.wtype-$(echo "$pkg" | tr '/@' '__').sh
+  sed 's#--type slsaprovenance1 #--type spdxjson #' "$blk" > "$wty"; onetoken Y "$blk" "$wty"
+  run_cell "$pkg" "$latest" Y "fail:invalid predicate type" "$wty"
+  # X: one character of the SLSA v1 envelope signature flipped
+  run_cell "$pkg" "$latest" X "fail:failed to verify log inclusion" "$blk" PATH="$SHIMS/badsig:$PATH"
+  # W: the SLSA v1 bundle's log entries removed
+  run_cell "$pkg" "$latest" W "fail:failed to verify log inclusion" "$blk" PATH="$SHIMS/notlog:$PATH"
 done <<< "$PKGS"
 
 echo "cells: $(($(wc -l < "$TSV")-1)), failures: $FAILS (table: $TSV)"

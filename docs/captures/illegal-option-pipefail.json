@@ -1,12 +1,12 @@
 {
   "capture": "illegal-option-pipefail.txt",
   "doc": "docs/verifying-npm-packages.md",
-  "docBlob": "5c670cca0a6e96415379bcdfeec511fb836395c7",
-  "commit": "defb73ae0d40e4d5b7e6c3c0fd5a79acf3181777",
+  "docBlob": "c814fda44eddf787165b7d22526481c0ea5e4432",
+  "commit": "09435efb545594f8404a0f3d563e90f404a4b91e",
   "section": "hackmyagent",
-  "blockSha256": "fc4b8d56e7d3bc015d503cc4342517c68e34be49e56439d191129783d01faac1",
+  "blockSha256": "6e75d1e88c8fdb49aa84701c4ad6469275a6f1cabe114f6c4cb3c796be467bd3",
   "shell": "dash (macOS /bin/dash)",
-  "invocation": "block text fed on stdin to the shell, from an empty working directory, with a new empty HOME and npm cache and the npm update notice turned off",
+  "invocation": "block text fed on stdin to the shell, from an empty working directory, with a new empty HOME and npm cache, the npm update notice turned off, and npm_config_logs_max=0 so npm prints no local log path",
   "setup": "the block run in dash, a shell other than bash or zsh",
   "environment": [],
   "tools": {
@@ -18,7 +18,7 @@
     "curl": "curl 8.7.1",
     "os": "macOS 26.4 arm64"
   },
-  "capturedAt": "2026-09-24T20:19:26Z",
+  "capturedAt": "2026-09-25T07:49:34Z",
   "exitCode": 2,
   "expectedMessage": "Illegal option -o pipefail",
   "messageFound": true,
