@@ -356,9 +356,12 @@ jobs:
   # fired on a probe package defining all four.
   #
   # HONEST RESIDUE: `setup-node` and `download-artifact` are still third-party
-  # JavaScript from mutable tags, running with the OIDC token in the
-  # environment. Much less exposure than `npm ci`, not zero. SHA-pinning every
-  # action is a separate change, not done here.
+  # JavaScript running with the OIDC token in the environment (any action in a
+  # job can request that job's token). Both are pinned by full commit sha, so
+  # the code that runs is the code that was reviewed, not whatever a tag points
+  # at on the day. Much less exposure than `npm ci`, not zero.
+  # `release-write-jobs-sha-pinned.test.ts` holds every write-scoped job to
+  # full-sha pins.
   publish:
     # `review` is the gate; `build` stays listed because the transport check
     # below reads `needs.build.outputs.manifest_sha256`, and GitHub exposes a
@@ -372,7 +375,7 @@ jobs:
       id-token: write   # OIDC trusted publishing. `contents` is `none` by
                         # replacement -- the publish path needs no repo write.
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -390,7 +393,7 @@ jobs:
           fi
           echo "npm $have"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: npm-tarballs
           path: ${{ runner.temp }}/dist
@@ -504,10 +507,10 @@ jobs:
       # not something this repo has ever exercised, and a failure here lands
       # AFTER an irreversible publish. persist-credentials: false because
       # nothing here needs to push.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           generate_release_notes: true
