@@ -1,0 +1,1 @@
+attestation check failed: expected SLSA v1 provenance for hackmyagent@0.33.2

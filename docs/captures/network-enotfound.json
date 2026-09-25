@@ -1,14 +1,17 @@
 {
-  "capture": "verified-ok-opena2a-cli.txt",
+  "capture": "network-enotfound.txt",
   "doc": "docs/verifying-npm-packages.md",
   "docBlob": "c814fda44eddf787165b7d22526481c0ea5e4432",
   "commit": "09435efb545594f8404a0f3d563e90f404a4b91e",
-  "section": "opena2a-cli",
-  "blockSha256": "69c1905e162c5551b4cb5042d2589f26cf90c688ec8d5f694affced11c467270",
+  "section": "hackmyagent",
+  "blockSha256": "6e75d1e88c8fdb49aa84701c4ad6469275a6f1cabe114f6c4cb3c796be467bd3",
   "shell": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
   "invocation": "block text fed on stdin to the shell, from an empty working directory, with a new empty HOME and npm cache, the npm update notice turned off, and npm_config_logs_max=0 so npm prints no local log path",
-  "setup": "block as written, latest version",
-  "environment": [],
+  "setup": "control: npm_config_registry points at a host under .invalid, which never resolves; the version variable is set to 0.33.2",
+  "environment": [
+    "npm_config_registry=https://registry.npm.invalid/",
+    "HACKMYAGENT_VERSION=0.33.2"
+  ],
   "tools": {
     "cosign": "v3.1.3",
     "cosignSha256": "5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76",
@@ -19,8 +22,8 @@
     "os": "macOS 26.4 arm64"
   },
   "capturedAt": "2026-09-25T07:49:34Z",
-  "exitCode": 0,
-  "expectedMessage": "Verified OK",
+  "exitCode": 1,
+  "expectedMessage": "code ENOTFOUND",
   "messageFound": true,
-  "lastLine": "Verified OK"
+  "lastLine": "npm error Log files were not written due to the config logs-max=0"
 }
