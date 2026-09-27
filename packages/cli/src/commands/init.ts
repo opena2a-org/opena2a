@@ -19,7 +19,7 @@ import { printFooter } from '../util/footer.js';
 import { writeEvent, getShieldDir } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
-import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
+import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile, findSoulFile, firstSoulOverrideLine } from '../util/ai-config.js';
 import {
   calculateSecurityScore as calculateSecurityScoreShared,
   scoreToRiskLevel as scoreToRiskLevelShared,
@@ -531,10 +531,21 @@ const HYGIENE_FILE_PROBES: Record<string, string[]> = {
   'ENV-DOTENV': ['.gitignore'],
   'AI-CONFIG': ['.gitignore', '.git/info/exclude'],
   'AI-SKILLS': ['SKILL.md'],
-  'AI-SOUL': ['SOUL.md', 'soul.md'],
 };
 
 function probeHygieneLocation(findingId: string, dir: string): { file: string; line: number }[] {
+  // The soul file under its on-disk name, at the line the override pattern is on.
+  if (findingId === 'AI-SOUL') {
+    const soul = findSoulFile(dir);
+    if (!soul) return [];
+    let line = 1;
+    try {
+      line = firstSoulOverrideLine(fs.readFileSync(soul.path, 'utf-8')) ?? 1;
+    } catch {
+      // unreadable: point at the file
+    }
+    return [{ file: soul.path, line }];
+  }
   const candidates = HYGIENE_FILE_PROBES[findingId];
   if (!candidates) return [];
   for (const rel of candidates) {
@@ -1014,7 +1025,12 @@ export function getVerificationCommand(
     return 'ls *.skill.md SKILL.md 2>/dev/null';
   }
   if (finding.findingId === 'AI-SOUL') {
-    return 'head -20 soul.md';
+    const loc = finding.locations[0];
+    if (loc) {
+      const rel = path.relative(reportDir, loc.file);
+      return `sed -n '${loc.line}p' '${rel.replace(/'/g, `'\\''`)}'`;
+    }
+    return 'head -20 SOUL.md';
   }
   return null;
 }
