@@ -357,6 +357,55 @@ describe('review', () => {
     expect(report.credentialData.totalFindings).toBeGreaterThan(0);
   });
 
+  // #267: review copied every detected credential verbatim into
+  // credentialData.matches[].value, so the JSON CI archives and the HTML built
+  // to be shared both carried the secret. Two credential shapes on purpose: a
+  // single-shape fixture came back clean on a build that leaked.
+  it('#267: no output format carries a detected credential value', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    const anthropicKey = 'sk-ant-api03-' + 'Q7vK2mXp9LrT4wZb'.repeat(5) + 'Hn3c8';
+    const githubPat = 'ghp_' + 'R4tY8uIo2pAs6dFg0hJk3lZx7cVb5nMq1wEr';
+    fs.writeFileSync(
+      path.join(tempDir, 'config.js'),
+      `const anthropic = "${anthropicKey}";\nconst github = "${githubPat}";\n`,
+    );
+    const secrets = [anthropicKey, githubPat];
+
+    const json = await captureStdout(() => review({
+      targetDir: tempDir,
+      format: 'json',
+      autoOpen: false,
+      skipHma: true,
+    }));
+    const report = JSON.parse(json.output);
+    // The fixture must actually be detected, or absence proves nothing.
+    expect(report.credentialData.totalFindings).toBeGreaterThanOrEqual(2);
+    for (const s of secrets) expect(json.output).not.toContain(s);
+    for (const m of report.credentialData.matches) {
+      expect(m.value).toContain('•');
+      expect(m.filePath).toContain('config.js');
+      expect(m.line).toBeGreaterThan(0);
+    }
+
+    const reportPath = path.join(tempDir, 'shared-report.html');
+    const text = await captureStdout(() => review({
+      targetDir: tempDir,
+      reportPath,
+      autoOpen: false,
+      skipHma: true,
+    }));
+    const html = fs.readFileSync(reportPath, 'utf-8');
+    for (const s of secrets) {
+      expect(text.output).not.toContain(s);
+      expect(html).not.toContain(s);
+    }
+    expect(renderReportPage(html, 'credentials')).toContain('config.js');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(reportPath).mode & 0o077).toBe(0);
+    }
+  });
+
   it('guard signed files show Active in results', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
