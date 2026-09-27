@@ -38,9 +38,8 @@ import { detectProject } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
-import { readVerifiedEvents, uuidv7, type VerifiedEventsResult } from '../shield/events.js';
+import { chainBreakEvent, readVerifiedEvents, type VerifiedEventsResult } from '../shield/events.js';
 import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
-import type { ShieldEvent } from '../shield/types.js';
 import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
@@ -865,30 +864,7 @@ export function runShieldPhase(targetDir: string): ShieldPhaseData {
   // the normal pipeline, so it dedupes, sorts, and scores like any other
   // integrity critical.  The excluded events contribute nothing else.
   if (verified.chainBroken) {
-    const chainBreakEvent: ShieldEvent = {
-      id: uuidv7(),
-      timestamp: new Date().toISOString(),
-      version: 1,
-      source: 'shield',
-      category: 'integrity',
-      severity: 'critical',
-      agent: null,
-      sessionId: null,
-      action: 'event-chain-break',
-      target: 'events.jsonl',
-      outcome: 'blocked',
-      detail: {
-        brokenAt: verified.brokenAt,
-        untrustedEventsExcluded: verified.untrustedCount,
-        reason: 'Event log hash chain break detected at review time; events at and after the break were excluded from classification.',
-      },
-      prevHash: '',
-      eventHash: '',
-      orgId: null,
-      managed: false,
-      agentId: null,
-    };
-    scopedEvents.push(chainBreakEvent);
+    scopedEvents.push(chainBreakEvent(verified, 'review'));
   }
 
   const classifiedFindings = classifyEvents(scopedEvents);

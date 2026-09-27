@@ -607,11 +607,32 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
 // --- Report ---
 
 async function handleReport(options: ShieldOptions): Promise<number> {
-  const { readEvents } = await import('../shield/events.js');
+  const { chainBreakEvent, readVerifiedEvents } = await import('../shield/events.js');
   const isJson = options.format === 'json';
 
   const since = options.since ?? '7d';
-  const events = readEvents({ since });
+  // Chain-verified read (#243), the same exclusion `review` applies (#204):
+  // events at or after the first hash-chain break are untrusted, so they feed
+  // none of the counts, findings, SARIF, HTML or trend snapshots below. The
+  // break itself is surfaced once (SHIELD-INT-002) and the excluded count is
+  // printed, so a report that lost part of its log never reads as a clean one.
+  const verified = readVerifiedEvents({ since });
+  const events = verified.events;
+  const logIntegrity = {
+    chainIntact: !verified.chainBroken,
+    brokenAt: verified.brokenAt,
+    excludedEvents: verified.untrustedCount,
+    excludedInPeriod: verified.untrusted.length,
+  };
+  const writeIntegrityNote = (): void => {
+    if (logIntegrity.chainIntact) return;
+    process.stdout.write(red(
+      `  Log integrity: hash chain broken at event index ${String(logIntegrity.brokenAt)}; ` +
+      `${String(logIntegrity.excludedEvents)} event(s) at and after the break are excluded from this report\n`,
+    ));
+    process.stdout.write(dim('    Verify:  opena2a shield selfcheck\n'));
+    process.stdout.write(dim('    Fix:     opena2a shield recover --archive-log\n'));
+  };
 
   const total = events.length;
   const bySeverity: Record<string, number> = {};
@@ -640,7 +661,9 @@ async function handleReport(options: ShieldOptions): Promise<number> {
 
   // --- Classify events into findings ---
   const { classifyEvents, classifyViolation } = await import('../shield/findings.js');
-  const classifiedFindings = classifyEvents(events);
+  const classifiedFindings = classifyEvents(
+    verified.chainBroken ? [...events, chainBreakEvent(verified, 'report')] : events,
+  );
 
   // --- SARIF output ---
   if (options.format === 'sarif') {
@@ -652,6 +675,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
       const reportPath = path.resolve(options.report);
       fs.writeFileSync(reportPath, sarifJson, 'utf-8');
       process.stdout.write(`SARIF report written to ${reportPath}\n`);
+      writeIntegrityNote();
     } else {
       process.stdout.write(sarifJson + '\n');
     }
@@ -691,6 +715,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
     const reportPath = path.resolve(options.report);
     fs.writeFileSync(reportPath, html, 'utf-8');
     process.stdout.write(`Report written to ${reportPath}\n`);
+    writeIntegrityNote();
     return 0;
   }
 
@@ -698,6 +723,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
     const data: Record<string, unknown> = {
       periodSince: since,
       totalEvents: total,
+      logIntegrity,
       bySeverity,
       bySource,
       byOutcome,
@@ -720,6 +746,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
   process.stdout.write(gray('-'.repeat(50)) + '\n');
   process.stdout.write(`  Period:       since ${cyan(since)}\n`);
   process.stdout.write(`  Total events: ${bold(String(total))}\n`);
+  writeIntegrityNote();
   process.stdout.write('\n');
 
   process.stdout.write(bold('  Severity Breakdown') + '\n');
