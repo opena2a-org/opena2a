@@ -1144,61 +1144,11 @@ Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed
 Valid actions:
   show                             Display current configuration
   contribute [on|off|--enable|--disable]  Enable or disable community data contributions
-  llm [on|off|--enable|--disable]         Enable or disable LLM-powered features`)
-    .action(async (action: string, key: string | undefined, _value: string | undefined, opts: { enable?: boolean; disable?: boolean }) => {
-      const shared = await import('@opena2a/shared');
-      const { loadUserConfig, saveUserConfig, setContributeEnabled } = 'default' in shared ? (shared as any).default : shared;
-
-      // Resolve --enable/--disable flags as aliases for on/off
-      const resolvedKey = opts.enable ? 'on' : opts.disable ? 'off' : key;
-
-      if (action === 'contribute') {
-        if (resolvedKey === 'on') {
-          setContributeEnabled(true);
-          process.stdout.write('Community contributions enabled.\n');
-        } else if (resolvedKey === 'off') {
-          setContributeEnabled(false);
-          process.stdout.write('Community contributions disabled.\n');
-        } else {
-          const config = loadUserConfig();
-          process.stdout.write(`Contribute: ${config.contribute.enabled ? 'enabled' : 'disabled'}\n`);
-          if (config.contribute.consentedAt) {
-            process.stdout.write(`Consented: ${config.contribute.consentedAt}\n`);
-          }
-        }
-      } else if (action === 'llm') {
-        const { setLlmEnabled: setLlm } = 'default' in shared ? (shared as any).default : shared;
-        if (resolvedKey === 'on') {
-          setLlm(true);
-          process.stdout.write('LLM features enabled.\n');
-        } else if (resolvedKey === 'off') {
-          setLlm(false);
-          process.stdout.write('LLM features disabled.\n');
-        } else {
-          const config = loadUserConfig();
-          process.stdout.write(`LLM features: ${config.llm.enabled ? 'enabled' : 'disabled'}\n`);
-          if (config.llm.consentedAt) {
-            process.stdout.write(`Consented: ${config.llm.consentedAt}\n`);
-          }
-        }
-      } else if (action === 'show' || action === 'get') {
-        const config = loadUserConfig();
-        // Report the registry URL commands will ACTUALLY use, not the raw
-        // stored value. `config show` used to print whatever the config file
-        // (or the pinned shared package's default) held, which on a fresh
-        // install was `https://registry.opena2a.org` — a host with no DNS, so
-        // the one command a user runs to find out where the CLI points told
-        // them somewhere it never talks to.
-        const { getRegistryUrl } = await import('./util/report-submission.js');
-        const effective = { ...config, registry: { ...config.registry, url: await getRegistryUrl() } };
-        process.stdout.write(JSON.stringify(effective, null, 2) + '\n');
-      } else {
-        process.stderr.write(`Unknown config action: ${action}\n`);
-        process.stderr.write('Usage: opena2a config contribute on|off|--enable|--disable\n');
-        process.stderr.write('       opena2a config llm on|off|--enable|--disable\n');
-        process.stderr.write('       opena2a config show\n');
-        process.exitCode = 1;
-      }
+  llm [on|off|--enable|--disable]         Enable or disable LLM-powered features
+  set <contribute|llm> <on|off>           Same as the two above (true/false also accepted)`)
+    .action(async (action: string, key: string | undefined, value: string | undefined, opts: { enable?: boolean; disable?: boolean }) => {
+      const { runConfig } = await import('./commands/config.js');
+      process.exitCode = await runConfig(action, key, value, opts);
     });
 
   // Skill command (noun-verb: skill create)
