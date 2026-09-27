@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { generateKeyPairSync } from 'node:crypto';
 import { protect } from '../../src/commands/protect.js';
 
 const mockFetch = vi.fn();
@@ -759,6 +760,71 @@ describe('protect command', () => {
       expect(report.keyFiles).toBeDefined();
       expect(report.keyFiles[0].findingId).toBe('CRED-CERTFILE');
       expect(report.keyFiles[0].severity).toBe('medium');
+    });
+  });
+
+  describe('#270: PEM private keys embedded in source', () => {
+    const rsaPem = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    }).privateKey;
+
+    function seed(): void {
+      fs.writeFileSync(path.join(tempDir, 'api.ts'), `const key = "${'AIza' + 'K'.repeat(35)}";\n`);
+      fs.writeFileSync(path.join(tempDir, 'signer.js'), `// signing key\nconst pem = \`${rsaPem}\`;\n`);
+    }
+
+    function capture(): { text: () => string; restore: () => void } {
+      const chunks: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+      return { text: () => chunks.join(''), restore: () => { process.stdout.write = origWrite; } };
+    }
+
+    it('reports the key with file:line, fails verification, and keeps it in the after score', async () => {
+      seed();
+      const io = capture();
+      let exitCode: number;
+      try {
+        exitCode = await protect({ targetDir: tempDir, ci: true, format: 'json', skipSign: true });
+      } finally {
+        io.restore();
+      }
+
+      const report = JSON.parse(io.text());
+      expect(report.migrated).toBe(1);
+      expect(report.keyFiles).toHaveLength(1);
+      expect(report.keyFiles[0]).toMatchObject({
+        findingId: 'CRED-KEYEMBED',
+        severity: 'critical',
+        relativePath: 'signer.js',
+        line: 2,
+      });
+      expect(report.keyFiles[0].remediation).toContain('signer.js:2');
+      expect(report.keyFiles[0].remediation).not.toContain('git rm');
+      expect(report.verificationPassed).toBe(false);
+      expect(report.scoreAfter).toBeLessThan(100);
+      expect(exitCode).toBe(1);
+      // The key is surfaced, never migrated or rewritten.
+      expect(fs.readFileSync(path.join(tempDir, 'signer.js'), 'utf-8')).toContain(rsaPem);
+    });
+
+    it('never prints an unqualified absence claim after migrating', async () => {
+      seed();
+      const io = capture();
+      try {
+        await protect({ targetDir: tempDir, ci: true, skipSign: true });
+      } finally {
+        io.restore();
+      }
+
+      const out = io.text();
+      expect(out).not.toContain('no credentials remain');
+      expect(out).toContain('Verification passed: the 1 migrated credential no longer appears in source.');
+      expect(out).toContain('1 key finding below needs manual action.');
+      expect(out).toContain('CRED-KEYEMBED  signer.js:2');
+      expect(out).not.toMatch(/Security Score: .*-> .*100\b/);
     });
   });
 });
