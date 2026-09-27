@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { generateKeyPairSync } from 'node:crypto';
 import { init } from '../../src/commands/init.js';
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
@@ -664,6 +665,40 @@ describe('init', () => {
     expect(mcpFinding.fix).toBe('opena2a shield init');
     expect(mcpFinding.locations.length).toBeGreaterThan(0);
     expect(mcpFinding.locations[0].file.endsWith('mcp.json')).toBe(true);
+  });
+
+  // #270: a PEM private key written into a source file is a critical finding
+  // with its own action. It must not be counted into "Migrate N credentials
+  // to a vault" (protect cannot migrate it) nor into the key-file action,
+  // whose `git rm --cached` would untrack ordinary source.
+  it('CRED-KEYEMBED gets its own action, not the migrate or untrack one (#270)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    const pem = generateKeyPairSync('ec', {
+      namedCurve: 'P-256',
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    }).privateKey;
+    fs.writeFileSync(path.join(tempDir, 'signer.ts'), `export const pem = \`${pem}\`;\n`);
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const embedded = report.findings.find((f: any) => f.findingId === 'CRED-KEYEMBED');
+    expect(embedded).toBeDefined();
+    expect(embedded.severity).toBe('critical');
+    expect(embedded.locations[0]).toMatchObject({ line: 1 });
+    expect(embedded.fix).toBe('opena2a protect');
+    expect(output).not.toContain(pem.split('\n')[1]);
+
+    const descriptions = report.actions.map((a: any) => a.description);
+    expect(descriptions).toContain('Move 1 private key out of source and rotate at issuer');
+    expect(descriptions.some((d: string) => d.startsWith('Migrate'))).toBe(false);
+    expect(descriptions.some((d: string) => d.startsWith('Untrack'))).toBe(false);
+    expect(report.securityScore).toBeLessThan(100);
   });
 
   // Phase 4.5 follow-up: a single MEDIUM `.crt` finding alone must NOT

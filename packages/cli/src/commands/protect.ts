@@ -41,8 +41,11 @@ interface KeyFileFinding {
   filePath: string;
   /** Path relative to the scan target (for display) */
   relativePath: string;
-  /** CRED-KEYFILE (private-key-bearing) or CRED-CERTFILE (X.509 cert) */
-  findingId: 'CRED-KEYFILE' | 'CRED-CERTFILE';
+  /** 1-indexed line of the BEGIN armor (CRED-KEYEMBED only; files are whole-file findings) */
+  line?: number;
+  /** CRED-KEYFILE (private-key-bearing), CRED-CERTFILE (X.509 cert), or
+   *  CRED-KEYEMBED (PEM private key written into a source file, #270) */
+  findingId: 'CRED-KEYFILE' | 'CRED-CERTFILE' | 'CRED-KEYEMBED';
   /** Severity per crypto-key-files.ts: critical for .key/.pem/.p12/.pfx, medium for .crt/.cer */
   severity: 'critical' | 'medium';
   /** Human-readable title (e.g. "Private key file") */
@@ -226,17 +229,34 @@ export async function protect(options: ProtectOptions): Promise<number> {
   // protect cannot migrate these to a vault — they're binary key material that
   // requires CA-side rotation — but surfacing them tells the user the file is
   // a credential and what to do about it. Closes #126.
-  const keyFiles: KeyFileFinding[] = scanCryptoKeyFiles(targetDir).map(m => ({
-    filePath: m.filePath,
-    relativePath: path.relative(targetDir, m.filePath),
-    findingId: m.findingId as 'CRED-KEYFILE' | 'CRED-CERTFILE',
-    severity: m.severity as 'critical' | 'medium',
-    title: m.title,
-    explanation: m.explanation ?? '',
-    remediation: m.severity === 'critical'
-      ? `git rm --cached "${path.relative(targetDir, m.filePath)}" && echo "*${path.extname(m.filePath)}" >> .gitignore && rotate the key at its issuing CA / vault`
-      : `git rm --cached "${path.relative(targetDir, m.filePath)}" && echo "*${path.extname(m.filePath)}" >> .gitignore`,
-  }));
+  // A PEM private key embedded in a source file (CRED-KEYEMBED, #270) joins
+  // the same surface-only block: it spans many lines and has no single value
+  // to replace with an env var, and untracking the file would be wrong.
+  const keyFiles: KeyFileFinding[] = scanCryptoKeyFiles(targetDir).map(m => {
+    const rel = path.relative(targetDir, m.filePath);
+    const findingId = m.findingId as KeyFileFinding['findingId'];
+    return {
+      filePath: m.filePath,
+      relativePath: rel,
+      ...(findingId === 'CRED-KEYEMBED' ? { line: m.line } : {}),
+      findingId,
+      severity: m.severity as 'critical' | 'medium',
+      title: m.title,
+      explanation: m.explanation ?? '',
+      remediation: findingId === 'CRED-KEYEMBED'
+        ? `move the key block at ${rel}:${m.line} out of source (a key file outside the repository, or a vault/KMS), load it at runtime, and rotate the key at its issuer`
+        : m.severity === 'critical'
+          ? `git rm --cached "${rel}" && echo "*${path.extname(m.filePath)}" >> .gitignore && rotate the key at its issuing CA / vault`
+          : `git rm --cached "${rel}" && echo "*${path.extname(m.filePath)}" >> .gitignore`,
+    };
+  });
+  // Key findings stay in source after protect runs, so they count in both the
+  // before and the after score; leaving them out printed "-> 100" over a file
+  // that still held a private key (#270).
+  const keyFindingsBySeverity: Record<string, number> = {};
+  for (const k of keyFiles) {
+    keyFindingsBySeverity[k.severity] = (keyFindingsBySeverity[k.severity] || 0) + 1;
+  }
 
   spinner.stop();
 
@@ -246,11 +266,11 @@ export async function protect(options: ProtectOptions): Promise<number> {
   // This ensures the score reflects the state init would have seen.
   let scoreBefore: number | undefined;
   try {
-    const credsBySeverityBefore: Record<string, number> = {};
+    const credsBySeverityBefore: Record<string, number> = { ...keyFindingsBySeverity };
     for (const m of matches) {
       credsBySeverityBefore[m.severity] = (credsBySeverityBefore[m.severity] || 0) + 1;
     }
-    const checksBefore = runScoringChecks(targetDir, matches.length);
+    const checksBefore = runScoringChecks(targetDir, matches.length + keyFiles.length);
     scoreBefore = calculateSecurityScore(credsBySeverityBefore, checksBefore).score;
   } catch {
     // best-effort
@@ -582,8 +602,8 @@ export async function protect(options: ProtectOptions): Promise<number> {
   let scoreAfter: number | undefined;
   try {
     // After: credentials migrated (count = failed only), re-check hygiene
-    const afterCredCount = failed;
-    const afterCredsBySeverity: Record<string, number> = {};
+    const afterCredCount = failed + keyFiles.length;
+    const afterCredsBySeverity: Record<string, number> = { ...keyFindingsBySeverity };
     for (const r of results) {
       if (r.error) {
         const sev = r.credential.severity;
@@ -615,7 +635,17 @@ export async function protect(options: ProtectOptions): Promise<number> {
     if (!isJson) {
       spinner.stop();
       if (verificationPassed) {
-        process.stdout.write(green('Verification passed: no credentials remain in source.\n\n'));
+        // Scoped to what was searched for (#270): the re-scan can show that
+        // the migrated values are gone, never that the source holds no
+        // credential of a kind protect does not detect.
+        process.stdout.write(green(
+          `Verification passed: the ${migrated} migrated credential${migrated === 1 ? '' : 's'} no longer appear${migrated === 1 ? 's' : ''} in source.\n`
+        ));
+        process.stdout.write(dim(
+          keyFiles.length > 0
+            ? `${keyFiles.length} key finding${keyFiles.length === 1 ? '' : 's'} below need${keyFiles.length === 1 ? 's' : ''} manual action.\n\n`
+            : 'The re-scan covers the credential patterns protect detects; review the source for anything else.\n\n'
+        ));
       } else {
         process.stdout.write(yellow(
           `Verification: ${remainingMatches.length} credential(s) still detected.\n` +
@@ -752,7 +782,10 @@ export async function protect(options: ProtectOptions): Promise<number> {
     await writeHtmlReport(options.report, targetDir, matches, isJson);
   }
 
-  return failed > 0 ? 1 : 0;
+  // Key findings remain in source after a migration, exactly as on the
+  // no-credential path above, which already exits 1 for them; exiting 0 here
+  // contradicted the report's own verificationPassed: false.
+  return failed > 0 || keyFiles.length > 0 ? 1 : 0;
 }
 
 // --- Scanning ---
@@ -1311,12 +1344,13 @@ function fixAiConfigExclusion(targetDir: string, dryRun?: boolean): string[] {
  */
 function printKeyFileWarnings(keyFiles: KeyFileFinding[]): void {
   if (keyFiles.length === 0) return;
-  process.stdout.write('\n' + bold(red('Cryptographic key / cert files detected')) + '\n');
-  process.stdout.write(dim('protect cannot rotate binary key material automatically. Surface only:\n'));
+  process.stdout.write('\n' + bold(red('Cryptographic keys and certificates detected')) + '\n');
+  process.stdout.write(dim('protect cannot migrate or rotate key material automatically. Surface only:\n'));
   process.stdout.write(gray('-'.repeat(50)) + '\n');
   for (const k of keyFiles) {
     const sevLabel = k.severity === 'critical' ? red('CRITICAL') : yellow('MEDIUM  ');
-    process.stdout.write(`  ${sevLabel}  ${k.findingId}  ${k.relativePath}\n`);
+    const where = k.line !== undefined ? `${k.relativePath}:${k.line}` : k.relativePath;
+    process.stdout.write(`  ${sevLabel}  ${k.findingId}  ${where}\n`);
     process.stdout.write(dim(`    ${k.title} -- ${k.explanation}\n`));
     process.stdout.write(dim(`    Fix: ${k.remediation}\n\n`));
   }

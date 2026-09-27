@@ -765,7 +765,11 @@ function generateActions(
   // binary key files — surfacing both under a single protect-action would
   // be a CISO Rule 1 dead end on the keyfile side (Phase 4.5 finding).
   const keyfileCreds = creds.filter(c => c.findingId === 'CRED-KEYFILE' || c.findingId === 'CRED-CERTFILE');
-  const textCreds = creds.filter(c => c.findingId !== 'CRED-KEYFILE' && c.findingId !== 'CRED-CERTFILE');
+  // PEM private keys written into source files (#270): not migratable either,
+  // and not untrackable -- the file holding them is ordinary source.
+  const embeddedKeyCreds = creds.filter(c => c.findingId === 'CRED-KEYEMBED');
+  const textCreds = creds.filter(c =>
+    c.findingId !== 'CRED-KEYFILE' && c.findingId !== 'CRED-CERTFILE' && c.findingId !== 'CRED-KEYEMBED');
 
   if (textCreds.length > 0) {
     const byTitle = new Map<string, number>();
@@ -793,6 +797,19 @@ function generateActions(
       why: 'Cryptographic key files (.key/.pem/.p12/.pfx) are credentials by file type. opena2a protect handles text-pattern keys but cannot rotate binary key material — that has to happen at the issuing CA, vault, or KMS.',
       approach: 'Untrack the file from git, add the extension to .gitignore so it cannot be re-added, then issue a fresh key at the upstream provider. Treat the historical commit as a leak even after rotation — assume any holder of the old key has used it.',
       detail: `Files: ${fileExamples}${keyfileCreds.length > 3 ? ` (+${keyfileCreds.length - 3} more)` : ''}`,
+    });
+  }
+
+  if (embeddedKeyCreds.length > 0) {
+    const n = embeddedKeyCreds.length;
+    const locations = embeddedKeyCreds.slice(0, 3)
+      .map(c => `${targetDir ? path.relative(targetDir, c.filePath) : path.basename(c.filePath)}:${c.line}`).join(', ');
+    actions.push({
+      description: `Move ${n} private key${n === 1 ? '' : 's'} out of source and rotate at issuer`,
+      command: 'opena2a protect',
+      why: 'A PEM private key written into a source file is readable by anyone with repo access, and it stays in git history after the file changes.',
+      approach: 'opena2a protect lists each key block with its file:line. Move the key to a file outside the repository or a vault/KMS, load it at runtime, then issue a fresh key: treat the committed one as leaked.',
+      detail: `Locations: ${locations}${n > 3 ? ` (+${n - 3} more)` : ''}`,
     });
   }
 
