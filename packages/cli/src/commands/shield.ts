@@ -107,10 +107,59 @@ export async function shield(options: ShieldOptions): Promise<number> {
 
 // --- Subcommand handlers ---
 
+/**
+ * The directory `shield init` hardens: `--dir`, or the positional the way
+ * every sibling command (`init`, `review`, `protect`, `scan`) takes it.
+ * The positional used to be discarded, so `shield init <dir>` hardened the
+ * current directory and reported success for a target it never touched
+ * (#268). Returns an error message instead of guessing when the arguments
+ * disagree or do not name a directory.
+ */
+export function resolveInitTarget(
+  options: Pick<ShieldOptions, 'dir' | 'args'>,
+): { targetDir?: string; error?: string } {
+  const positional = options.args ?? [];
+  if (positional.length > 1) {
+    return {
+      error: `shield init takes one directory, got ${positional.length}: ${positional.join(' ')}\n` +
+        '  Fix: opena2a shield init <dir>',
+    };
+  }
+  const [dirArg] = positional;
+  if (dirArg !== undefined && options.dir !== undefined &&
+      path.resolve(dirArg) !== path.resolve(options.dir)) {
+    return {
+      error: `shield init was given two different directories: ${dirArg} and --dir ${options.dir}\n` +
+        '  Fix: pass one of them, e.g. opena2a shield init <dir>',
+    };
+  }
+  const target = options.dir ?? dirArg;
+  if (target === undefined) return {};
+  const resolved = path.resolve(target);
+  let isDir = false;
+  try {
+    isDir = fs.statSync(resolved).isDirectory();
+  } catch {
+    isDir = false;
+  }
+  if (!isDir) {
+    return {
+      error: `shield init: ${resolved} is not a directory\n` +
+        '  Fix: opena2a shield init <existing-project-dir>',
+    };
+  }
+  return { targetDir: resolved };
+}
+
 async function handleInit(options: ShieldOptions): Promise<number> {
+  const { targetDir, error } = resolveInitTarget(options);
+  if (error) {
+    process.stderr.write(red(error) + '\n');
+    return 1;
+  }
   const { shieldInit } = await import('../shield/init.js');
   const { exitCode } = await shieldInit({
-    targetDir: options.dir,
+    targetDir,
     ci: options.ci,
     format: options.format,
     verbose: options.verbose,
