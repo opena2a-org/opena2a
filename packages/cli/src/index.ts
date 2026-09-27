@@ -1208,8 +1208,9 @@ Valid actions:
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor (default: basic)')
-    .option('--output <dir>', 'Output directory (default: current)')
+    .option('--output <dir>', 'Output directory (default: ./<name>)')
     .option('--no-sign', 'Skip auto-signing of skill files')
+    .option('--force', 'Replace the scaffold files in an existing, non-empty directory')
     .action(async (subcommand: string | undefined, name: string | undefined, opts, cmd) => {
       // Per-subcommand --help intercept (#132)
       if (subcommand && isHelpRequest()) {
@@ -1253,6 +1254,7 @@ Valid actions:
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor')
     .option('--output <dir>', 'Output directory')
     .option('--no-sign', 'Skip auto-signing')
+    .option('--force', 'Replace the scaffold files in an existing, non-empty directory')
     .action(async (type: string, name: string | undefined, opts) => {
       const { create } = await import('./commands/create/index.js');
       const globalOpts = program.opts();
