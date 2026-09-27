@@ -13,7 +13,7 @@ import { handleNaturalLanguage, matchIntent, formatClassifierBlock } from './nat
 import type { NaturalLanguageBlock } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY, childEnv } from './adapters/registry.js';
-import { CORE_COMMAND_NAMES } from './natural/known-commands.js';
+import { shouldTryNaturalLanguageFallback } from './natural/known-commands.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
@@ -1353,11 +1353,11 @@ Valid actions:
   // `opena2a "scan for secrets"`, yielding argv ['scan', 'for', 'secrets'].
   // We only try this when the first word is NOT a registered command, so
   // valid commands like `opena2a scan secure` always reach Commander.
-  const KNOWN_COMMANDS = [
-    ...Object.keys(ADAPTER_REGISTRY),
-    ...CORE_COMMAND_NAMES,
-  ];
-  if (!isFlag && rawArgs.length >= 2 && !KNOWN_COMMANDS.includes(rawArgs[0])) {
+  // A flag-bearing argv or a compound first token (`fix-all --with-aim`) is a
+  // command invocation, not a phrase: it goes to Commander, which rejects an
+  // unregistered verb with exit 1 instead of the NL matcher answering for it
+  // with some other command and exit 0 (#291).
+  if (shouldTryNaturalLanguageFallback(rawArgs)) {
     const fullPhrase = rawArgs.join(' ');
     const nlMatch = matchIntent(fullPhrase);
     // The classifier gate lives inside handleNaturalLanguage and runs FIRST,
