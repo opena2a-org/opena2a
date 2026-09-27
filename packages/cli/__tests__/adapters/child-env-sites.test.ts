@@ -458,7 +458,9 @@ describe('child-env-sites — the shipped-spread census (#246)', () => {
         expect(envs.length, `${fn}: direct spawn and npx fallback both use childEnv`).toBe(2);
         // The `set` carries the three citation names this site set at base.
         const setName = envs[0][1];
-        const setDecl = new RegExp(`const ${setName}\\s*=\\s*\\{([^}]*)\\}`).exec(source)!;
+        // String#match, not RegExp#exec: the self-scan's NEMO-005 line matcher
+        // reads `exec(` beside an interpolated template as a shell exec (#322).
+        const setDecl = source.match(new RegExp(`const ${setName}\\s*=\\s*\\{([^}]*)\\}`))!;
         expect(setDecl, `${file}: ${setName} is declared`).not.toBeNull();
         for (const name of citationNames) expect(setDecl[1]).toContain(name);
       }
