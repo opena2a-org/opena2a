@@ -28,6 +28,7 @@ export interface SkillCreateOptions {
   template?: string;
   output?: string;
   noSign?: boolean;
+  force?: boolean;
   ci?: boolean;
   format?: string;
   verbose?: boolean;
@@ -68,6 +69,7 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
     selectedCapabilities = CI_DEFAULTS.capabilities;
     selectedPermissions = {};
     templateName = opts.template ?? CI_DEFAULTS.template;
+    if (refuseExistingTarget(resolveOutputDir(opts.output, skillName), opts.force, isJson)) return 1;
   } else {
     // Interactive wizard
     const prompts = await import('@inquirer/prompts');
@@ -77,6 +79,9 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
       default: 'my-skill',
       validate: (v: string) => /^[a-z0-9][a-z0-9-]*$/.test(v) || 'Use lowercase alphanumeric with hyphens',
     });
+    // Checked before the remaining prompts, so a refusal does not come after
+    // the user has answered the whole wizard.
+    if (refuseExistingTarget(resolveOutputDir(opts.output, skillName), opts.force, isJson)) return 1;
 
     description = await prompts.input({
       message: 'Description:',
@@ -147,7 +152,7 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
   }
 
   // Determine output directory
-  const outputDir = path.resolve(opts.output ?? path.join(process.cwd(), skillName));
+  const outputDir = resolveOutputDir(opts.output, skillName);
 
   // Create directory
   fs.mkdirSync(outputDir, { recursive: true });
@@ -267,7 +272,9 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
     }
 
     process.stdout.write(`\n  ${dim('Next steps:')}\n`);
-    process.stdout.write(`    cd ${skillName}\n`);
+    // The directory actually written, not the skill name: with --output the
+    // two differ and `cd <name>` pointed at a directory that does not exist.
+    process.stdout.write(`    cd ${path.relative(process.cwd(), outputDir) || '.'}\n`);
     process.stdout.write(`    opena2a guard verify --skills    ${dim('# verify signature')}\n`);
     process.stdout.write(`    opena2a scan secure              ${dim('# security scan')}\n`);
     process.stdout.write('\n');
@@ -277,6 +284,50 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
 }
 
 // --- Helpers ---
+
+function resolveOutputDir(output: string | undefined, skillName: string): string {
+  return path.resolve(output ?? path.join(process.cwd(), skillName));
+}
+
+/**
+ * Refuse to scaffold into a path that already holds something, unless --force.
+ * The scaffold overwrites SKILL.md and index.ts, the two files that carry a
+ * user's work, so writing into a populated directory and exiting 0 was silent
+ * data loss reported as success (#263). An empty directory is accepted: there
+ * is nothing in it to lose. Returns true when it refused (caller exits 1).
+ */
+function refuseExistingTarget(dir: string, force: boolean | undefined, isJson: boolean): boolean {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(dir);
+  } catch {
+    return false; // does not exist: nothing to overwrite
+  }
+
+  let reason: string;
+  if (!stat.isDirectory()) {
+    // --force cannot help here: the scaffold needs a directory at this path.
+    reason = 'not-a-directory';
+  } else if (fs.readdirSync(dir).length === 0 || force) {
+    return false;
+  } else {
+    reason = 'directory-not-empty';
+  }
+
+  if (isJson) {
+    process.stdout.write(JSON.stringify({ error: reason, directory: dir }, null, 2) + '\n');
+  } else if (reason === 'not-a-directory') {
+    process.stderr.write(red(`Cannot create skill: ${dir} exists and is not a directory.\n`));
+    process.stderr.write(`Choose another name or pass ${cyan('--output <dir>')}.\n`);
+  } else {
+    process.stderr.write(red(`Refusing to overwrite: ${dir} already exists and is not empty.\n`));
+    process.stderr.write(
+      `The scaffold would replace SKILL.md, HEARTBEAT.md, index.ts and skill.test.ts there.\n` +
+      `Choose another name or pass ${cyan('--output <dir>')}, or re-run with ${cyan('--force')} to replace them.\n`
+    );
+  }
+  return true;
+}
 
 function getDefaultPermissionPath(capability: string, permission: string): string {
   switch (`${capability}:${permission}`) {
@@ -299,4 +350,5 @@ function getDefaultPermissionPath(capability: string, permission: string): strin
 export const _internals = {
   CI_DEFAULTS,
   getDefaultPermissionPath,
+  refuseExistingTarget,
 };
