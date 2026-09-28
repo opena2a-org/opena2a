@@ -199,10 +199,15 @@ describe('review', () => {
     };
     getShieldDir();
     writeEvent({ ...base, action: 'genuine-1', target: 'baseline' });
-    // One unparseable line: writeEvent can no longer read the previous hash,
-    // falls back to genesis, and every event after this point fails
-    // verification. This is the whole cost of the attack.
-    fs.appendFileSync(getEventsPath(), 'not json at all\n', 'utf-8');
+    // One appended event whose hashes do not continue the chain: writeEvent
+    // links the next event to it, verification fails at the forged line, and
+    // every event after this point is untrusted. This is the whole cost of
+    // the attack. (An unparseable line no longer breaks the chain, #244.)
+    fs.appendFileSync(getEventsPath(), JSON.stringify({
+      id: 'forged', timestamp: new Date().toISOString(), version: 1,
+      ...base, action: 'genuine-1', target: 'baseline',
+      prevHash: 'f'.repeat(64), eventHash: 'f'.repeat(64),
+    }) + '\n', 'utf-8');
     writeEvent({
       ...base, source: 'configguard', outcome: 'blocked', severity: 'critical',
       action: 'tamper-detected', target: path.join(tempDir, 'mcp.json'),
@@ -225,17 +230,18 @@ describe('review', () => {
     const shieldPhase = report.phases.find((p: any) => p.name === 'Shield Analysis');
     expect(shieldPhase.provisional).toBe(true);
     expect(shieldPhase.provisionalReason).toMatch(/chain broken/);
-    // The detail line carries the excluded count, not just the survivors.
-    expect(shieldPhase.detail).toMatch(/2 excluded/);
+    // The detail line carries the excluded count, not just the survivors:
+    // the forged line plus the two events chained after it.
+    expect(shieldPhase.detail).toMatch(/3 excluded/);
     expect(shieldPhase.detail).toMatch(/chain broken at 1/);
     expect(report.shieldData.chainBroken).toBe(true);
-    expect(report.shieldData.untrustedEventsExcluded).toBe(2);
+    expect(report.shieldData.untrustedEventsExcluded).toBe(3);
     expect(report.shieldData.brokenAt).toBe(1);
 
     // ...and a human watching the terminal is told, on stderr, like the HMA notice.
     const stderr = stderrChunks.join('');
     expect(stderr).toMatch(/chain broken/);
-    expect(stderr).toMatch(/2 untrusted events/);
+    expect(stderr).toMatch(/3 untrusted events/);
     // stdout JSON stays clean: the notice text is on stderr only, and stdout is
     // nothing but the document. (`provisionalReason` legitimately appears IN
     // the JSON — that is the machine-readable half of the same signal.)
@@ -265,7 +271,12 @@ describe('review', () => {
     };
     getShieldDir();
     writeEvent({ ...base, action: 'genuine-1', target: 'baseline' });
-    fs.appendFileSync(getEventsPath(), 'not json at all\n', 'utf-8');
+    // A forged event that does not continue the chain (see the C6 test above)
+    fs.appendFileSync(getEventsPath(), JSON.stringify({
+      id: 'forged', timestamp: new Date().toISOString(), version: 1,
+      ...base, action: 'genuine-1', target: 'baseline',
+      prevHash: 'f'.repeat(64), eventHash: 'f'.repeat(64),
+    }) + '\n', 'utf-8');
     writeEvent({ ...base, source: 'arp', category: 'process.spawn', action: 'spawn', target: '/usr/bin/curl' });
 
     const reportPath = path.join(tempDir, 'chain-report.html');
@@ -281,7 +292,7 @@ describe('review', () => {
     }
 
     // Terminal summary, on the same screen as the finding count it qualifies.
-    expect(output).toMatch(/1 shield events excluded/);
+    expect(output).toMatch(/2 shield events excluded/); // the forged line and the spawn
     expect(output).toMatch(/chain broken at index 1/);
 
     // HTML Shield tab, actually rendered (not merely present in the template).
@@ -355,6 +366,55 @@ describe('review', () => {
     expect(report.compositeScore).toBeLessThan(80);
     expect(report.findings.length).toBeGreaterThan(0);
     expect(report.credentialData.totalFindings).toBeGreaterThan(0);
+  });
+
+  // #267: review copied every detected credential verbatim into
+  // credentialData.matches[].value, so the JSON CI archives and the HTML built
+  // to be shared both carried the secret. Two credential shapes on purpose: a
+  // single-shape fixture came back clean on a build that leaked.
+  it('#267: no output format carries a detected credential value', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    const anthropicKey = 'sk-ant-api03-' + 'Q7vK2mXp9LrT4wZb'.repeat(5) + 'Hn3c8';
+    const githubPat = 'ghp_' + 'R4tY8uIo2pAs6dFg0hJk3lZx7cVb5nMq1wEr';
+    fs.writeFileSync(
+      path.join(tempDir, 'config.js'),
+      `const anthropic = "${anthropicKey}";\nconst github = "${githubPat}";\n`,
+    );
+    const secrets = [anthropicKey, githubPat];
+
+    const json = await captureStdout(() => review({
+      targetDir: tempDir,
+      format: 'json',
+      autoOpen: false,
+      skipHma: true,
+    }));
+    const report = JSON.parse(json.output);
+    // The fixture must actually be detected, or absence proves nothing.
+    expect(report.credentialData.totalFindings).toBeGreaterThanOrEqual(2);
+    for (const s of secrets) expect(json.output).not.toContain(s);
+    for (const m of report.credentialData.matches) {
+      expect(m.value).toContain('•');
+      expect(m.filePath).toContain('config.js');
+      expect(m.line).toBeGreaterThan(0);
+    }
+
+    const reportPath = path.join(tempDir, 'shared-report.html');
+    const text = await captureStdout(() => review({
+      targetDir: tempDir,
+      reportPath,
+      autoOpen: false,
+      skipHma: true,
+    }));
+    const html = fs.readFileSync(reportPath, 'utf-8');
+    for (const s of secrets) {
+      expect(text.output).not.toContain(s);
+      expect(html).not.toContain(s);
+    }
+    expect(renderReportPage(html, 'credentials')).toContain('config.js');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(reportPath).mode & 0o077).toBe(0);
+    }
   });
 
   it('guard signed files show Active in results', async () => {

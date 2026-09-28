@@ -390,16 +390,25 @@ describe('chain-break score floor (C1)', () => {
   /**
    * Write `tail` into a fresh HOME, optionally breaking the chain first.
    *
-   * The break vector is one unparseable line, which is what an append-only
-   * adversary can produce without knowing the chain hashes: writeEvent reads
-   * the last line to derive prevHash, fails to parse the junk, and falls back
-   * to the genesis hash — so every event after it fails verification.
+   * The break vector is one appended event whose hashes do not continue the
+   * chain, which is what an append-only adversary can produce without
+   * recomputing the chain: writeEvent links the next event to the forged
+   * eventHash, verification fails at the forged line, and every event after
+   * it is untrusted.  The forged event is a copy of the benign PREFIX, so it
+   * adds nothing to the counts.  (An unparseable line no longer breaks the
+   * chain: writeEvent skips it and links to the last valid event, #244.)
    */
   function buildLog(home: string, tail: Partial_[], breakChain: boolean): void {
     _mockHomeDir = home;
     getShieldDir();
     writeEvent(makePartial(PREFIX));
-    if (breakChain) fs.appendFileSync(getEventsPath(), 'not json at all\n', 'utf-8');
+    if (breakChain) {
+      const forged = {
+        id: 'forged', timestamp: new Date().toISOString(), version: 1,
+        ...makePartial(PREFIX), prevHash: 'f'.repeat(64), eventHash: 'f'.repeat(64),
+      };
+      fs.appendFileSync(getEventsPath(), JSON.stringify(forged) + '\n', 'utf-8');
+    }
     for (const t of tail) writeEvent(makePartial(t));
   }
 
@@ -438,7 +447,7 @@ describe('chain-break score floor (C1)', () => {
     // the break would otherwise hide.
     expect(intact.chainBroken).toBe(false);
     expect(broken.chainBroken).toBe(true);
-    expect(broken.untrustedEventsExcluded).toBe(tail.length);
+    expect(broken.untrustedEventsExcluded).toBe(tail.length + 1); // + the forged line itself
     expect(findingIds(intact.classifiedFindings)).toEqual(
       expect.arrayContaining(['SHIELD-INT-001', 'SHIELD-PROC-001', 'SHIELD-PROC-002', 'SHIELD-BAS-001']),
     );
