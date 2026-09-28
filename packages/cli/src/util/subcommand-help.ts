@@ -166,12 +166,18 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
 
 export const SHIELD_HELP: SubcommandHelpRegistry = {
   init: {
-    summary: 'Run the full 11-step Shield setup for the current project.',
+    summary: 'Run the full 11-step Shield setup for a project: the directory named, or the current one.',
+    usage: '[directory]',
     options: [
+      { flag: '--dir <path>', description: 'Project directory (same as the positional)' },
       { flag: '--shell-hook', description: 'Install the shell preexec hook' },
       { flag: '--ai-tools', description: 'Configure AI tool settings' },
     ],
-    examples: ['opena2a shield init', 'opena2a shield init --shell-hook --ai-tools'],
+    examples: [
+      'opena2a shield init',
+      'opena2a shield init ./my-project',
+      'opena2a shield init --shell-hook --ai-tools',
+    ],
   },
   status: {
     summary: 'Show current Shield protection status (sessions, policies, integrity).',
