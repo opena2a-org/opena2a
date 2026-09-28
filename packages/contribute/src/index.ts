@@ -108,6 +108,12 @@ export const contribute = {
 
   /**
    * Flush queued events to Registry.
+   *
+   * Resolves `true` when the queue is clear afterwards: the batch was
+   * accepted (and the queue cleared), or the queue was already empty and no
+   * request was made. Resolves `false` when the Registry refused the batch
+   * or could not be reached; the events stay queued for the next flush.
+   * Pass `verbose` to have the reason printed to stderr.
    */
   async flush(registryUrl?: string, verbose?: boolean): Promise<boolean> {
     const batch = buildBatch();
