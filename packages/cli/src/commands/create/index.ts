@@ -15,6 +15,7 @@ export interface CreateOptions {
   template?: string;
   output?: string;
   noSign?: boolean;
+  force?: boolean;
   ci?: boolean;
   format?: string;
   verbose?: boolean;
@@ -44,6 +45,7 @@ export async function create(opts: CreateOptions): Promise<number> {
         template: opts.template,
         output: opts.output,
         noSign: opts.noSign,
+        force: opts.force,
         ci: opts.ci,
         format: opts.format,
         verbose: opts.verbose,

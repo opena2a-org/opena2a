@@ -36,6 +36,7 @@ interface LocalVerdictFinding {
 }
 import { detectProject } from '../util/detect.js';
 import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
+import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
 import { chainBreakEvent, readVerifiedEvents, type VerifiedEventsResult } from '../shield/events.js';
@@ -691,7 +692,10 @@ export async function review(options: ReviewOptions): Promise<number> {
   const reportPath = options.reportPath ??
     path.join(tmpdir(), `opena2a-review-${Date.now()}.html`);
   const html = generateReviewHtml(report);
-  fs.writeFileSync(reportPath, html, 'utf-8');
+  // Owner-only: the report names every finding's file:line and is written to a
+  // shared temp directory by default. `mode` applies only when the file is
+  // created, so an existing --report path keeps its own permissions.
+  fs.writeFileSync(reportPath, html, { encoding: 'utf-8', mode: 0o600 });
 
   process.stdout.write(`  Report: ${dim(reportPath)}`);
 
@@ -800,7 +804,14 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
 }
 
 async function runCredentialPhase(targetDir: string): Promise<CredentialPhaseData> {
-  const matches = await quickCredentialScan(targetDir);
+  // Redacted here, where the phase data is built, not per output format: this
+  // object is serialised verbatim into `--json` and into the HTML report's
+  // embedded payload, so any format that forgot to mask would ship the secret
+  // (#267). The finding needs file:line and a recognisable preview, never the
+  // value. `quickCredentialScan` itself keeps the raw value: `protect` needs it
+  // to rewrite the source.
+  const matches = (await quickCredentialScan(targetDir))
+    .map(m => ({ ...m, value: maskValue(m.value) }));
   const bySeverity: Record<string, number> = {};
   for (const m of matches) {
     bySeverity[m.severity] = (bySeverity[m.severity] || 0) + 1;

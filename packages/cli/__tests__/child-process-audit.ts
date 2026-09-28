@@ -113,4 +113,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'children, one at a time), and execFileSync(npm view hackmyagent) for the ' +
       'deprecation fixture (OPA-04)',
   },
+  'cited-recovery-verbs.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js secure . --fix) then spawnSync(node dist/index.js rollback .), ' +
+      'one at a time; each runs the bundled scanner as its own child (#269)',
+  },
 };

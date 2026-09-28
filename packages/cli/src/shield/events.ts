@@ -126,47 +126,54 @@ function sha256(data: string): string {
 }
 
 /**
- * Read the last non-empty line from a file.  Returns null if the file
- * does not exist or is empty.
+ * Read the chain tail the next event links to.
+ *
+ * `prevHash` is the eventHash of the last VALID event in the file.  A
+ * trailing line that does not parse, is not an object, or carries no
+ * eventHash (a torn append: crash, disk-full, kill mid-write) is skipped,
+ * exactly as the reader skips it, and the chain continues from the event
+ * before it.  Restarting at genesis there would put a genesis-linked event
+ * in the middle of the file: a break the writer made itself, which review
+ * cannot tell apart from tampering and which costs every later event its
+ * trust (issue #244).  Genesis is returned only when the file holds no
+ * valid event at all.
+ *
+ * `unterminated` is true when the file does not end in a newline, the
+ * signature of a torn append.  The caller must start a new line first, or
+ * the next event is glued onto the fragment and lost with it.
  */
-function readLastLine(filePath: string): string | null {
-  if (!existsSync(filePath)) return null;
+function readChainTail(eventsPath: string): { prevHash: string; unterminated: boolean } {
+  if (!existsSync(eventsPath)) return { prevHash: GENESIS_HASH, unterminated: false };
 
   let content: string;
   try {
-    content = readFileSync(filePath, 'utf-8');
+    content = readFileSync(eventsPath, 'utf-8');
   } catch {
-    return null;
+    return { prevHash: GENESIS_HASH, unterminated: false };
   }
+
+  const unterminated = content.length > 0 && !content.endsWith('\n');
 
   const lines = content.split('\n');
-  // Walk backwards to find the last non-empty line
+  // Walk backwards to the last line that is a valid event
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
-    if (line.length > 0) return line;
-  }
-  return null;
-}
+    if (line.length === 0) continue;
 
-/**
- * Extract the prevHash for the next event by reading the eventHash
- * of the last event in the chain.  Returns the genesis hash if the
- * file is empty or missing.
- */
-function getPrevHash(eventsPath: string): string {
-  const lastLine = readLastLine(eventsPath);
-  if (!lastLine) return GENESIS_HASH;
-
-  try {
-    const parsed = JSON.parse(lastLine) as ShieldEvent;
-    if (parsed.eventHash && typeof parsed.eventHash === 'string') {
-      return parsed.eventHash;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const eventHash = (parsed as { eventHash?: unknown }).eventHash;
+        if (typeof eventHash === 'string' && eventHash.length > 0) {
+          return { prevHash: eventHash, unterminated };
+        }
+      }
+    } catch {
+      // Torn or corrupted line -- keep walking back
     }
-  } catch {
-    // Corrupted last line -- fall through to genesis
   }
 
-  return GENESIS_HASH;
+  return { prevHash: GENESIS_HASH, unterminated };
 }
 
 /**
@@ -238,7 +245,7 @@ export function writeEvent(
     // Rotate before writing if the file is oversized
     rotateIfNeeded(eventsPath);
 
-    const prevHash = getPrevHash(eventsPath);
+    const { prevHash, unterminated } = readChainTail(eventsPath);
 
     // Build the event without the final eventHash
     const event: Omit<ShieldEvent, 'eventHash'> & { eventHash?: string } = {
@@ -258,7 +265,8 @@ export function writeEvent(
       eventHash,
     };
 
-    const line = JSON.stringify(fullEvent) + '\n';
+    // Terminate a torn trailing fragment so this event starts its own line
+    const line = (unterminated ? '\n' : '') + JSON.stringify(fullEvent) + '\n';
 
     // Ensure the shield directory exists (getEventsPath already calls getShieldDir)
     appendFileSync(eventsPath, line, { encoding: 'utf-8', mode: 0o600 });
