@@ -490,6 +490,171 @@ describe('createSkill (CI mode)', () => {
 });
 
 // ===========================================================================
+// 7b. Existing target directory (#263)
+// ===========================================================================
+
+describe('createSkill into an existing directory (#263)', () => {
+  function captureStreams(): { out: () => string; err: () => string; restore: () => void } {
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    const origOut = process.stdout.write.bind(process.stdout);
+    const origErr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: any) => { out.push(Buffer.from(chunk)); return true; }) as any;
+    process.stderr.write = ((chunk: any) => { err.push(Buffer.from(chunk)); return true; }) as any;
+    return {
+      out: () => Buffer.concat(out).toString('utf-8'),
+      err: () => Buffer.concat(err).toString('utf-8'),
+      restore: () => { process.stdout.write = origOut; process.stderr.write = origErr; },
+    };
+  }
+
+  function seedUserWork(dir: string): void {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), 'user SKILL.md\n', 'utf-8');
+    fs.writeFileSync(path.join(dir, 'index.ts'), 'export const userWork = 1;\n', 'utf-8');
+  }
+
+  it('refuses a non-empty directory, exits non-zero and leaves the files unchanged', async () => {
+    const outputDir = path.join(tempDir, 'dup');
+    seedUserWork(outputDir);
+
+    const io = captureStreams();
+    let exitCode: number;
+    try {
+      exitCode = await createSkill({ name: 'dup', output: outputDir, noSign: true, ci: true });
+    } finally {
+      io.restore();
+    }
+
+    expect(exitCode).toBe(1);
+    expect(fs.readFileSync(path.join(outputDir, 'SKILL.md'), 'utf-8')).toBe('user SKILL.md\n');
+    expect(fs.readFileSync(path.join(outputDir, 'index.ts'), 'utf-8')).toBe('export const userWork = 1;\n');
+    expect(fs.readdirSync(outputDir).sort()).toEqual(['SKILL.md', 'index.ts']);
+    expect(io.err()).toContain('Refusing to overwrite');
+    expect(io.err()).toContain('--force');
+    expect(io.out()).not.toContain('Skill created');
+  });
+
+  it('refuses the default ./<name> target when it already exists (second run)', async () => {
+    const origCwd = process.cwd();
+    process.chdir(tempDir);
+    const io = captureStreams();
+    let first: number;
+    let second: number;
+    try {
+      first = await createSkill({ name: 'dup', noSign: true, ci: true });
+      fs.writeFileSync(path.join(tempDir, 'dup', 'index.ts'), 'edited\n', 'utf-8');
+      second = await createSkill({ name: 'dup', noSign: true, ci: true });
+    } finally {
+      io.restore();
+      process.chdir(origCwd);
+    }
+
+    expect(first).toBe(0);
+    expect(second).toBe(1);
+    expect(fs.readFileSync(path.join(tempDir, 'dup', 'index.ts'), 'utf-8')).toBe('edited\n');
+  });
+
+  it('reports the refusal as JSON in JSON format', async () => {
+    const outputDir = path.join(tempDir, 'dup-json');
+    seedUserWork(outputDir);
+
+    const io = captureStreams();
+    let exitCode: number;
+    try {
+      exitCode = await createSkill({ name: 'dup-json', output: outputDir, noSign: true, ci: true, format: 'json' });
+    } finally {
+      io.restore();
+    }
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(io.out())).toEqual({ error: 'directory-not-empty', directory: outputDir });
+  });
+
+  it('replaces the scaffold files with --force', async () => {
+    const outputDir = path.join(tempDir, 'dup-force');
+    seedUserWork(outputDir);
+
+    const io = captureStreams();
+    let exitCode: number;
+    try {
+      exitCode = await createSkill({ name: 'dup-force', output: outputDir, noSign: true, force: true, ci: true });
+    } finally {
+      io.restore();
+    }
+
+    expect(exitCode).toBe(0);
+    expect(fs.readFileSync(path.join(outputDir, 'SKILL.md'), 'utf-8')).toContain('name: dup-force');
+    expect(fs.readFileSync(path.join(outputDir, 'index.ts'), 'utf-8')).not.toContain('userWork');
+  });
+
+  it('accepts an existing empty directory without --force', async () => {
+    const outputDir = path.join(tempDir, 'empty');
+    fs.mkdirSync(outputDir);
+
+    const io = captureStreams();
+    let exitCode: number;
+    try {
+      exitCode = await createSkill({ name: 'empty', output: outputDir, noSign: true, ci: true });
+    } finally {
+      io.restore();
+    }
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(path.join(outputDir, 'SKILL.md'))).toBe(true);
+  });
+
+  it('refuses a target path that is a file, even with --force', async () => {
+    const target = path.join(tempDir, 'a-file');
+    fs.writeFileSync(target, 'not a directory\n', 'utf-8');
+
+    const io = captureStreams();
+    let exitCode: number;
+    try {
+      exitCode = await createSkill({ name: 'a-file', output: target, noSign: true, force: true, ci: true });
+    } finally {
+      io.restore();
+    }
+
+    expect(exitCode).toBe(1);
+    expect(fs.readFileSync(target, 'utf-8')).toBe('not a directory\n');
+    expect(io.err()).toContain('is not a directory');
+  });
+
+  it('passes --force through the create entry point', async () => {
+    const outputDir = path.join(tempDir, 'dup-entry');
+    seedUserWork(outputDir);
+
+    const io = captureStreams();
+    let refused: number;
+    let forced: number;
+    try {
+      refused = await create({ type: 'skill', name: 'dup-entry', output: outputDir, noSign: true, ci: true });
+      forced = await create({ type: 'skill', name: 'dup-entry', output: outputDir, noSign: true, force: true, ci: true });
+    } finally {
+      io.restore();
+    }
+
+    expect(refused).toBe(1);
+    expect(forced).toBe(0);
+  });
+
+  it('prints the written directory, not the skill name, in the cd hint', async () => {
+    const outputDir = path.join(tempDir, 'nested', 'elsewhere');
+
+    const io = captureStreams();
+    try {
+      await createSkill({ name: 'named', output: outputDir, noSign: true, ci: true, format: 'text' });
+    } finally {
+      io.restore();
+    }
+
+    expect(io.out()).toContain(`cd ${path.relative(process.cwd(), outputDir)}`);
+    expect(io.out()).not.toContain('cd named\n');
+  });
+});
+
+// ===========================================================================
 // 8. Create command (entry point)
 // ===========================================================================
 
