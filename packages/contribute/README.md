@@ -63,14 +63,14 @@ await contribute.flush();
 |--------|------------|
 | `contribute.scanResult(params)` | Queue a scan result event |
 | `contribute.detection(params)` | Queue a detection event |
-| `contribute.flush()` | Submit all queued events to the Registry |
+| `contribute.flush(registryUrl?, verbose?)` | Submit all queued events to the Registry. Resolves `true` when the queue is clear afterwards (batch accepted, or nothing was queued and no request was made); `false` when the Registry refused the batch or could not be reached, and the events stay queued. `verbose` prints the reason to stderr |
 | `isContributeEnabled()` | Check if contribution is enabled (`contribute.enabled: true` in `~/.opena2a/config.json`, written by the parent tool's consent prompt; every call is a no-op until then) |
 | `queueEvent(event)` | Low-level: add an event to the local queue |
 | `getQueuedEvents()` | Low-level: read queued events |
 | `clearQueue()` | Low-level: clear the local queue |
 | `shouldFlush()` | Check if the queue has reached the flush threshold |
 | `buildBatch()` | Build a submission batch from the queued events; returns `null` when the queue is empty |
-| `submitBatch(batch)` | Submit a batch to the Registry API |
+| `submitBatch(batch, registryUrl?, verbose?)` | Submit a batch to the Registry API. Resolves `true` only when the Registry accepted it; a `null` or empty batch makes no request and resolves `false` |
 | `getContributorToken()` | Get or create an anonymous contributor token |
 
 ## Part of OpenA2A
