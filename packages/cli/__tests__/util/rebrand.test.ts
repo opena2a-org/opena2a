@@ -129,6 +129,19 @@ describe('rebrandBundledCommands — #191 import/python surfaces', () => {
     });
   });
 
+  describe('hackmyagent rollback / fix-all verbs (registered in #269)', () => {
+    it('rewrites the undo and fix-all citations to the registered opena2a verbs', () => {
+      expect(rebrandBundledCommands('Run `hackmyagent rollback .` to undo all changes.'))
+        .toBe('Run `opena2a rollback .` to undo all changes.');
+      expect(rebrandBundledCommands('hackmyagent fix-all --with-aim')).toBe('opena2a fix-all --with-aim');
+    });
+
+    it('leaves the backup directory name alone', () => {
+      expect(rebrandBundledCommands('Backup created: ./.hackmyagent-backup/2026-09-27'))
+        .toBe('Backup created: ./.hackmyagent-backup/2026-09-27');
+    });
+  });
+
   describe('ADVERSARIAL — must NOT corrupt non-citation tool mentions', () => {
     it('preserves a Python import statement (verbatim from cryptoserve help)', () => {
       // `import` is not a cryptoserve CLI verb, so `cryptoserve import` never matches.
