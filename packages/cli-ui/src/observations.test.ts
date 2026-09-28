@@ -472,6 +472,44 @@ describe('renderObservationsBlock', () => {
     expect(cat.tone).toBe('warning');
   });
 
+  it('names every severity a category holds, so the line reconciles with Findings (hackmyagent#393)', () => {
+    // The reported tree: a critical and a high in the same credentials file,
+    // and a low elsewhere. The line used to read `credentials (1 critical)`
+    // and sum to two of the three findings.
+    const findings = [
+      finding({ checkId: 'CRED-001', severity: 'critical' }),
+      finding({ checkId: 'SEM-CRED-002', severity: 'high', category: 'Credential Protection' }),
+      finding({ checkId: 'GIT-001', severity: 'low' }),
+    ];
+    const { lines } = renderObservationsBlock({
+      ...zeroFindingsInput,
+      categories: buildCategorySummaries(findings),
+      verdict: buildVerdict({ critical: 1, high: 1, medium: 0, low: 1 }, { kind: 'library' }, findings),
+    });
+    const cat = lines.find(l => l.label === 'Categories')!;
+    expect(cat.value).toContain('credentials (1 critical, 1 high)');
+    expect(cat.value).toContain('git hygiene (1 low)');
+    const named = [...cat.value.matchAll(/(\d+) (critical|high|medium|low)\b/g)]
+      .reduce((sum, m) => sum + Number(m[1]), 0);
+    expect(named).toBe(findings.length);
+  });
+
+  it('orders a category\'s severities worst first', () => {
+    const findings = [
+      finding({ checkId: 'MCP-001', severity: 'low' }),
+      finding({ checkId: 'MCP-002', severity: 'medium' }),
+      finding({ checkId: 'MCP-003', severity: 'medium' }),
+      finding({ checkId: 'MCP-004', severity: 'critical' }),
+    ];
+    const { lines } = renderObservationsBlock({
+      ...zeroFindingsInput,
+      categories: buildCategorySummaries(findings),
+      verdict: buildVerdict({ critical: 1, high: 0, medium: 2, low: 1 }, { kind: 'library' }, findings),
+    });
+    const cat = lines.find(l => l.label === 'Categories')!;
+    expect(cat.value).toContain('MCP (1 critical, 2 medium, 1 low)');
+  });
+
   it('Verdict tone reflects verdict status', () => {
     const unsafe = renderObservationsBlock({
       ...zeroFindingsInput,
