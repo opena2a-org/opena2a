@@ -15,7 +15,7 @@ import { homedir } from 'node:os';
 import type { IntegrityCheck, IntegrityState, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE } from './types.js';
 import { verifyAllArtifacts } from './signing.js';
-import { GENESIS_HASH } from './events.js';
+import { readVerifiedEvents } from './events.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -262,8 +262,12 @@ export function verifyProcessIntegrity(): IntegrityCheck {
 // ---------------------------------------------------------------------------
 
 /**
- * Verify the integrity of the event chain by checking that each event's
- * prevHash correctly references the preceding event's eventHash.
+ * Verify the event chain with the same reader and verifier `opena2a review`
+ * uses (readVerifiedEvents), so selfcheck and review agree on whether the
+ * log is intact and where it breaks (issue #244).  Unreadable lines are
+ * skipped exactly as review skips them: a torn trailing write is recovered
+ * by the writer and does not break the chain, while a line damaged between
+ * two events still breaks it through the next event's prevHash.
  */
 function verifyEventChainIntegrity(): IntegrityCheck {
   const now = new Date().toISOString();
@@ -278,7 +282,7 @@ function verifyEventChainIntegrity(): IntegrityCheck {
     };
   }
 
-  let lines: string[];
+  let nonEmptyLines: number;
   try {
     const raw = readFileSync(eventsFile, 'utf-8').trim();
     if (raw.length === 0) {
@@ -289,7 +293,7 @@ function verifyEventChainIntegrity(): IntegrityCheck {
         checkedAt: now,
       };
     }
-    lines = raw.split('\n');
+    nonEmptyLines = raw.split('\n').filter(line => line.trim().length > 0).length;
   } catch {
     return {
       name: 'event-chain',
@@ -299,46 +303,32 @@ function verifyEventChainIntegrity(): IntegrityCheck {
     };
   }
 
-  let previousHash = GENESIS_HASH;
+  const verified = readVerifiedEvents();
+  const total = verified.events.length + verified.untrustedCount;
+  const skipped = nonEmptyLines - total;
+  const skippedNote = skipped > 0
+    ? ` ${skipped} unreadable ${skipped === 1 ? 'line was' : 'lines were'} skipped, as review skips them.`
+    : '';
 
-  for (let i = 0; i < lines.length; i++) {
-    let event: { prevHash?: string; eventHash?: string };
-    try {
-      event = JSON.parse(lines[i]);
-    } catch {
-      return {
-        name: 'event-chain',
-        status: 'warn',
-        detail: `Event chain has a malformed entry at line ${i + 1} (common after updates). Your project's security configuration is intact.`,
-        checkedAt: now,
-      };
-    }
-
-    if (typeof event.prevHash !== 'string' || typeof event.eventHash !== 'string') {
-      return {
-        name: 'event-chain',
-        status: 'warn',
-        detail: `Event chain has an incomplete entry at line ${i + 1} (common after updates). Your project's security configuration is intact.`,
-        checkedAt: now,
-      };
-    }
-
-    if (event.prevHash !== previousHash) {
-      return {
-        name: 'event-chain',
-        status: 'warn',
-        detail: `Event chain has gaps at line ${i + 1} (common after updates or multi-project usage). Your project's security configuration is intact.`,
-        checkedAt: now,
-      };
-    }
-
-    previousHash = event.eventHash;
+  if (verified.chainBroken) {
+    const excluded = verified.untrustedCount;
+    return {
+      name: 'event-chain',
+      status: 'warn',
+      detail:
+        `Event chain breaks at event ${(verified.brokenAt as number) + 1} of ${total}. ` +
+        `opena2a review reports the break as SHIELD-INT-002 and excludes the ` +
+        `${excluded} ${excluded === 1 ? 'event' : 'events'} from there on. ` +
+        `A break comes from an edit to the log or from an older CLI version writing concurrently. ` +
+        `To start a fresh chain: opena2a shield recover --archive-log.${skippedNote}`,
+      checkedAt: now,
+    };
   }
 
   return {
     name: 'event-chain',
     status: 'pass',
-    detail: `Event chain valid across ${lines.length} events.`,
+    detail: `Event chain valid across ${total} events.${skippedNote}`,
     checkedAt: now,
   };
 }

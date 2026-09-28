@@ -1,0 +1,5 @@
+npm error code ETARGET
+npm error notarget No matching version found for hackmyagent@0.0.0.
+npm error notarget In most cases you or one of your dependencies are requesting
+npm error notarget a package version that doesn't exist.
+npm error Log files were not written due to the config logs-max=0

@@ -1,0 +1,1 @@
+dash: 2: set: Illegal option -o pipefail

@@ -1,0 +1,3 @@
+npm error code EINTEGRITY
+npm error sha512-9DeR/g4pruOW1yzF/nlTIvpPEN1HTcIgSKf9cUHi2nXgSYfhmbH0McpJeFzZJFaXy1KEY34jVXltyhvc7WiiQQ== integrity checksum failed when using sha512: wanted sha512-9DeR/g4pruOW1yzF/nlTIvpPEN1HTcIgSKf9cUHi2nXgSYfhmbH0McpJeFzZJFaXy1KEY34jVXltyhvc7WiiQQ== but got sha512-1raeHv547JXxPj65LNmOey+l/IH33M+BiJxULIX7sBiL1STZVxY8nmaZ5uli/shih6CDxhRToC5tX7RxVd2dKQ==. (1904086 bytes)
+npm error Log files were not written due to the config logs-max=0

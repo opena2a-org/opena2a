@@ -126,7 +126,7 @@ describe('ai-config', () => {
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
           'github': { command: 'node', args: [], env: { TOKEN: 'ghp_' + 'A'.repeat(36) } },
-          'aws': { command: 'node', args: [], env: { KEY: 'AKIA1234567890ABCDEF' } },
+          'aws': { command: 'node', args: [], env: { KEY: 'AKIA' + '1234567890ABCDEF' } },
         },
       }));
 
@@ -184,7 +184,7 @@ describe('ai-config', () => {
     it('detects Google API key (drift) in MCP env', () => {
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
-          'maps': { command: 'node', args: [], env: { GMAP_KEY: 'AIzaSyC8x4iFaKe_Key12345678901234567890abc' } },
+          'maps': { command: 'node', args: [], env: { GMAP_KEY: 'AIza' + 'SyC8x4iFaKe_Key12345678901234567890abc' } },
         },
       }));
 
@@ -192,6 +192,30 @@ describe('ai-config', () => {
       expect(matches.length).toBe(1);
       expect(matches[0].findingId).toBe('DRIFT-001');
       expect(matches[0].severity).toBe('high');
+    });
+
+    it('OPA-12.AC3 still detects the assembled AWS and Google fixture values', () => {
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'github': { command: 'node', args: [], env: { TOKEN: 'ghp_' + 'A'.repeat(36) } },
+          'aws': { command: 'node', args: [], env: { KEY: 'AKIA' + '1234567890ABCDEF' } },
+        },
+      }));
+
+      const findings = scanMcpConfig(tempDir);
+      const cred = findings.find(f => f.findingId === 'MCP-CRED');
+      expect(cred).toBeDefined();
+      expect(cred!.items!.length).toBe(2);
+
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+        mcpServers: {
+          'maps': { command: 'node', args: [], env: { GMAP_KEY: 'AIza' + 'SyC8x4iFaKe_Key12345678901234567890abc' } },
+        },
+      }));
+
+      const matches = scanMcpCredentials(tempDir);
+      expect(matches.length).toBe(1);
+      expect(matches[0].findingId).toBe('DRIFT-001');
     });
 
     it('detects GitHub token in MCP env', () => {

@@ -1,0 +1,2 @@
+@opena2a/aim-core@0.2.0
+Verified OK

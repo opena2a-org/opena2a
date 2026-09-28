@@ -367,8 +367,9 @@ export const SKILL_HELP: SubcommandHelpRegistry = {
     usage: '[name]',
     options: [
       { flag: '--template <name>', description: 'Template: basic, mcp-tool, data-processor (default: basic)' },
-      { flag: '--output <dir>', description: 'Output directory (default: current)' },
+      { flag: '--output <dir>', description: 'Output directory (default: ./<name>)' },
       { flag: '--no-sign', description: 'Skip auto-signing of skill files' },
+      { flag: '--force', description: 'Replace the scaffold files in an existing, non-empty directory' },
     ],
     examples: [
       'opena2a skill create my-skill',

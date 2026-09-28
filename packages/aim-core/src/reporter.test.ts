@@ -78,19 +78,75 @@ describe('AIMServerReporter', () => {
     expect(reporter2.getQueueLength()).toBe(1);
   });
 
-  it('trims queue at max size', () => {
+  it('trims queue at max size, dropping the oldest events', () => {
+    // Every enqueue rewrites the whole queue file, so 1010 events at the
+    // default cap wrote about 75 MB and timed out at 5000 ms on a loaded CI
+    // runner (unit 10042). A small cap keeps the cell off the disk; a large
+    // batch size keeps the auto-flush from reaching for the network mid-loop.
     const reporter = new AIMServerReporter({
       serverUrl: 'https://aim.example.com',
       agentId: 'aim_test123',
       dataDir: dir,
+      maxQueueSize: 10,
+      maxBatchSize: 1000,
     });
 
-    // Enqueue more than MAX_QUEUE_SIZE (1000)
-    for (let i = 0; i < 1010; i++) {
+    for (let i = 0; i < 12; i++) {
       reporter.enqueue(makeEvent('test', `action-${i}`));
     }
 
+    expect(reporter.getQueueLength()).toBe(10);
+    const persisted = fs
+      .readFileSync(path.join(dir, 'report-queue.jsonl'), 'utf-8')
+      .trim()
+      .split('\n');
+    expect(persisted).toHaveLength(10);
+    expect((JSON.parse(persisted[0]) as AuditEvent).action).toBe('action-2');
+    expect((JSON.parse(persisted[9]) as AuditEvent).action).toBe('action-11');
+  });
+
+  it('treats a queue cap below 1 as 1, so the queue is still bounded', () => {
+    // slice(-0) returns the whole array, so a cap of 0 taken as given would
+    // never trim.
+    for (const maxQueueSize of [0, -5]) {
+      const reporter = new AIMServerReporter({
+        serverUrl: 'https://aim.example.com',
+        agentId: 'aim_test123',
+        dataDir: fs.mkdtempSync(path.join(dir, 'cap-')),
+        maxQueueSize,
+        maxBatchSize: 1000,
+      });
+      reporter.enqueue(makeEvent('test', 'a'));
+      reporter.enqueue(makeEvent('test', 'b'));
+      expect(reporter.getQueueLength()).toBe(1);
+    }
+  });
+
+  it('keeps 1000 queued events by default', () => {
+    // The default cap, proven with one write: a persisted queue of 1000
+    // events plus one more enqueue trims back to 1000, oldest first.
+    const seeded = Array.from({ length: 1000 }, (_, i) =>
+      JSON.stringify(makeEvent('test', `seed-${i}`)),
+    );
+    fs.writeFileSync(path.join(dir, 'report-queue.jsonl'), seeded.join('\n') + '\n', 'utf-8');
+
+    const reporter = new AIMServerReporter({
+      serverUrl: 'https://aim.example.com',
+      agentId: 'aim_test123',
+      dataDir: dir,
+      maxBatchSize: 5000,
+    });
     expect(reporter.getQueueLength()).toBe(1000);
+
+    reporter.enqueue(makeEvent('test', 'one-more'));
+
+    expect(reporter.getQueueLength()).toBe(1000);
+    const persisted = fs
+      .readFileSync(path.join(dir, 'report-queue.jsonl'), 'utf-8')
+      .trim()
+      .split('\n');
+    expect((JSON.parse(persisted[0]) as AuditEvent).action).toBe('seed-1');
+    expect((JSON.parse(persisted[999]) as AuditEvent).action).toBe('one-more');
   });
 
   it('flush returns 0 sent when server unreachable', async () => {

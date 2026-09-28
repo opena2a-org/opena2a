@@ -1,0 +1,2 @@
+opena2a-cli@0.10.13
+Verified OK

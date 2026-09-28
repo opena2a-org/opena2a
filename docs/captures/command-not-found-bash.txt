@@ -1,0 +1,4 @@
+bash: line 6: jq: command not found
+package/package.json: Write error: Broken pipe
+tar: Error exit delayed from previous errors.
+tarball check failed: expected hackmyagent@0.33.2
