@@ -251,6 +251,30 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     aliases: ['secure'],
     ...CHILD_ENV_CONTRACTS.hackmyagent,
   },
+  // `secure --fix` prints "Run `opena2a rollback <dir>` to undo all changes"
+  // and "Run `opena2a fix-all`" (HMA_CLI_PREFIX). The wrapper is the only bin
+  // `npm i -g opena2a-cli` installs, so both are forwarded to the bundled
+  // engine; before #269 they were cited and unregistered.
+  rollback: {
+    name: 'rollback',
+    method: 'import',
+    packageName: 'hackmyagent',
+    subcommand: 'rollback',
+    description: 'Undo the changes the last secure --fix made, from its backup (HackMyAgent)',
+    // `hackmyagent rollback` takes a directory and no output flags.
+    acceptsFormatFlag: false,
+    ...CHILD_ENV_CONTRACTS.hackmyagent,
+  },
+  'fix-all': {
+    name: 'fix-all',
+    method: 'import',
+    packageName: 'hackmyagent',
+    subcommand: 'fix-all',
+    description: 'Run every fix plugin: credentials, AI visibility, signing, skill safety (HackMyAgent)',
+    // `hackmyagent fix-all` emits JSON via a bare `--json`.
+    jsonOutputFlag: '--json',
+    ...CHILD_ENV_CONTRACTS.hackmyagent,
+  },
   secrets: {
     name: 'secrets',
     method: 'import',
