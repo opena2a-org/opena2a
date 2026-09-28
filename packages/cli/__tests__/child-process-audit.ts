@@ -123,6 +123,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'children, one at a time), and execFileSync(npm view hackmyagent) for the ' +
       'deprecation fixture (OPA-04)',
   },
+  'mcp-server-flag.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js mcp sign|verify ...), one at a time (#344)',
+  },
   'cited-recovery-verbs.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
