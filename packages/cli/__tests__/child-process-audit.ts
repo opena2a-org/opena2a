@@ -120,4 +120,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node dist/index.js secure . --fix) then spawnSync(node dist/index.js rollback .), ' +
       'one at a time; each runs the bundled scanner as its own child (#269)',
   },
+  'release/turbo-env-passthrough.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(turbo <the root test script\'s turbo arguments> --dry=json) once, with ' +
+      'placeholder token values; a dry run executes no task (unit 10455)',
+  },
 };

@@ -1,0 +1,1 @@
+{"extends": ["//"], "tasks": {"test": {"passThroughEnv": ["GH_TOKEN"]}}}
