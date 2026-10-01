@@ -69,7 +69,13 @@ jobs:
               mg_pr_base_ref=$(printf '%s' "$mg_pr" | jq -r '.base.ref // empty') || mg_pr_base_ref=""
               mg_pr_head_sha=$(printf '%s' "$mg_pr" | jq -r '.head.sha // empty') || mg_pr_head_sha=""
               mg_pr_changed_files=$(printf '%s' "$mg_pr" | jq -r '.changed_files // empty') || mg_pr_changed_files=""
-              mg_pr_files=$(gh api "repos/$REPO/pulls/$mg_candidate/files" --paginate | jq -s -c 'add // []') || mg_pr_files=""
+              # The pull request's changes, read from the same comparison
+              # endpoint as M's and pinned to the head commit just read, so
+              # the list belongs to that commit and not to whatever the head
+              # is at the moment of the read.
+              if [[ "$mg_pr_head_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                mg_pr_files=$(gh api "repos/$REPO/compare/$MG_BASE_SHA...$mg_pr_head_sha" | jq -c '.files // []') || mg_pr_files=""
+              fi
               # Read again after the file list: the head must not have moved.
               mg_pr_head_sha_again=$(gh api "repos/$REPO/pulls/$mg_candidate" --jq '.head.sha') || mg_pr_head_sha_again=""
             fi
