@@ -263,8 +263,8 @@ jobs:
                 --jq '"check_run id=" + (.id|tostring) + " conclusion=" + .conclusion'
               exit 1
             fi
-            # Bound: the reads and the verdict below run unchanged for the
-            # pull request and its head, and the verdict is posted on M.
+            # Bound: the verdict below runs for the pull request and its
+            # head over the bound file list, and is posted on M.
             PR_NUMBER="$bind_pr"
             HEAD_SHA="$bind_head"
             TARGET_SHA="$MG_HEAD_SHA"
@@ -273,7 +273,28 @@ jobs:
           # The files listing endpoint is capped at 3000 entries; a gate file
           # hidden past the cap would otherwise pass unseen. Refuse to evaluate
           # oversized pull requests instead of failing open.
-          changed_count=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .changed_files)
+          #
+          # On a merge group the list and the count are the bound list: the
+          # pull request's changes at its head that the bind matched against
+          # M, never a second live read that could see another head. A count
+          # that differs from the pull request's own changed-file count means
+          # the bound list may not be the whole pull request, so M fails.
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            changed_count=$(printf '%s' "$mg_pr_files" | jq 'length')
+            if [ "$changed_count" -ne "$mg_pr_changed_files" ]; then
+              gh api -X POST "repos/$REPO/check-runs" \
+                -f name='Gate file approval' \
+                -f head_sha="$MG_HEAD_SHA" \
+                -f status=completed \
+                -f conclusion=failure \
+                -f 'output[title]'='Merge group file count differs from its pull request' \
+                -f 'output[summary]'="The comparison bound to pull request #$bind_pr at $bind_head lists $changed_count files; the pull request reports $mg_pr_changed_files changed files." \
+                --jq '"check_run id=" + (.id|tostring) + " conclusion=" + .conclusion'
+              exit 1
+            fi
+          else
+            changed_count=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .changed_files)
+          fi
           if [ "$changed_count" -ge 3000 ]; then
             conclusion="failure"
             title="Too many changed files to evaluate"
@@ -287,8 +308,12 @@ jobs:
           # Both sides of a rename count: a pull request that renames a file OUT
           # of .github/ reports the old path only in previous_filename, and a
           # rename is as much a gate-file change as an edit.
-          files=$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate \
-            --jq '.[] | .filename, (.previous_filename // empty)')
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            files=$(printf '%s' "$mg_pr_files" | jq -r '.[] | .filename, (.previous_filename // empty)')
+          else
+            files=$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate \
+              --jq '.[] | .filename, (.previous_filename // empty)')
+          fi
 
           # grep exit 1 means no match; anything above 1 is an execution error
           # and must abort rather than read as "no gate files" (fail closed).
