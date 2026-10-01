@@ -211,7 +211,7 @@ jobs:
           # comparison lists at most 300 files, so 300 is refused as possibly
           # truncated. Fields that name a commit (URLs) are not compared.
           if [ -z "$bind_reason" ]; then
-            bind_list_ok='type == "array" and all(.[]; type == "object" and (.filename | type) == "string")'
+            bind_list_ok='type == "array" and all(.[]; type == "object" and (.filename | type) == "string" and ((.sha // "") | test("^[0-9a-f]{40}$")))'
             if ! printf '%s' "$mg_compare_files" | jq -e "$bind_list_ok" > /dev/null 2>&1; then
               bind_reason="The files $MG_HEAD_SHA changes against its base could not be read."
             elif ! printf '%s' "$mg_pr_files" | jq -e "$bind_list_ok" > /dev/null 2>&1; then
