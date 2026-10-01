@@ -3,10 +3,12 @@
 # A merge group commit M carries no pull request in its event and gets no
 # review of its own: no model runs here. This workflow recovers the pull
 # request M was built from, binds M to it with the same bind block that
-# gate-file-approval.yml runs (byte for byte), and passes only when the
-# latest pull_request run of pr-review.yml on that pull request's head commit
-# H completed with success. M carries H's review verdict only because M
-# changes exactly the files the pull request changes, blob for blob.
+# gate-file-approval.yml runs (byte for byte), and passes only when every
+# pull_request run of pr-review.yml on that pull request's head commit H
+# completed, and every attempt of every such run concluded with success. A
+# review that failed on H and was re-run to success does not pass. M carries
+# H's review verdict only because M changes exactly the files the pull
+# request changes, blob for blob.
 #
 # The verdict is read from the Actions runs API by workflow path, never from a
 # check run by name, so a same-named job elsewhere cannot stand in for it.
@@ -207,20 +209,60 @@ jobs:
           fi
           echo "$bind_reason"
 
-          # The review verdict on H: the latest pull_request run of
-          # pr-review.yml for that head commit, selected by workflow path.
-          # Latest is by start time: a re-run keeps its run's creation time
-          # and moves its start time, so ordering by start time selects the
-          # attempt the head's live check reflects.
+          # The review verdict on H, from every pull_request run of
+          # pr-review.yml for that head commit. The list must be complete
+          # (its total equals the runs it lists) and hold at least one run of
+          # pr-review.yml by workflow path. Every run must be completed, and
+          # every attempt of every run, read one by one, must have concluded
+          # with success: a failed attempt re-run to success on the same head
+          # does not pass. Any read that fails also fails the check.
           H="$bind_head"
+          review_path=".github/workflows/pr-review.yml"
           runs=$(gh api "repos/$REPO/actions/workflows/pr-review.yml/runs?head_sha=$H&event=pull_request&per_page=100") || runs=""
-          latest=$(printf '%s' "$runs" | jq -c '[.workflow_runs[]? | select(.path == ".github/workflows/pr-review.yml")] | sort_by(.run_started_at) | last // empty') || latest=""
-          run_status=$(printf '%s' "$latest" | jq -r '.status // empty') || run_status=""
-          run_conclusion=$(printf '%s' "$latest" | jq -r '.conclusion // empty') || run_conclusion=""
-          run_url=$(printf '%s' "$latest" | jq -r '.html_url // empty') || run_url=""
-          if [ "$run_status" = "completed" ] && [ "$run_conclusion" = "success" ]; then
-            echo "The review of pull request #$bind_pr at $H passed: $run_url"
-            exit 0
+          runs_listed=$(printf '%s' "$runs" | jq -e '.workflow_runs | if type == "array" then length else error("no run list") end' 2> /dev/null) || runs_listed=""
+          runs_total=$(printf '%s' "$runs" | jq -r '.total_count // empty' 2> /dev/null) || runs_total=""
+          if ! [[ "$runs_listed" =~ ^[0-9]+$ ]]; then
+            echo "::error::The review runs of pull request #$bind_pr at $H could not be read."
+            exit 1
           fi
-          echo "::error::The review of pull request #$bind_pr at $H is status '${run_status:-none}', conclusion '${run_conclusion:-none}', not completed with success. ${run_url}"
-          exit 1
+          if ! [[ "$runs_total" =~ ^[0-9]+$ ]] || [ "$runs_total" -ne "$runs_listed" ]; then
+            echo "::error::The review runs of pull request #$bind_pr at $H list $runs_listed runs of a total of '$runs_total'; the list is not complete."
+            exit 1
+          fi
+          if ! printf '%s' "$runs" | jq -e --arg p "$review_path" 'any(.workflow_runs[]; .path == $p)' > /dev/null 2>&1; then
+            echo "::error::No run of $review_path is listed for pull request #$bind_pr at $H."
+            exit 1
+          fi
+          for ((run_index = 0; run_index < runs_listed; run_index++)); do
+            run=$(printf '%s' "$runs" | jq -c --argjson i "$run_index" '.workflow_runs[$i]') || run=""
+            run_id=$(printf '%s' "$run" | jq -r '.id // empty' 2> /dev/null) || run_id=""
+            run_status=$(printf '%s' "$run" | jq -r '.status // empty' 2> /dev/null) || run_status=""
+            run_attempts=$(printf '%s' "$run" | jq -r '.run_attempt // empty' 2> /dev/null) || run_attempts=""
+            run_url=$(printf '%s' "$run" | jq -r '.html_url // empty' 2> /dev/null) || run_url=""
+            if ! [[ "$run_id" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Run $((run_index + 1)) of the review runs of pull request #$bind_pr at $H carries no run id: '$run_id'."
+              exit 1
+            fi
+            if ! [[ "$run_attempts" =~ ^[1-9][0-9]{0,8}$ ]]; then
+              echo "::error::Review run $run_id at $H carries no attempt number: '$run_attempts'. $run_url"
+              exit 1
+            fi
+            if [ "$run_status" != "completed" ]; then
+              echo "::error::Review run $run_id at $H, attempt $run_attempts, is status '${run_status:-none}', not completed. $run_url"
+              exit 1
+            fi
+            for ((attempt = 1; attempt <= run_attempts; attempt++)); do
+              attempt_read=$(gh api "repos/$REPO/actions/runs/$run_id/attempts/$attempt") || attempt_read=""
+              attempt_conclusion=$(printf '%s' "$attempt_read" | jq -r '.conclusion // empty' 2> /dev/null) || attempt_conclusion=""
+              if [ -z "$attempt_read" ]; then
+                echo "::error::Review run $run_id at $H, attempt $attempt of $run_attempts, could not be read. $run_url"
+                exit 1
+              fi
+              if [ "$attempt_conclusion" != "success" ]; then
+                echo "::error::Review run $run_id at $H, attempt $attempt of $run_attempts, concluded '${attempt_conclusion:-none}', not success. $run_url"
+                exit 1
+              fi
+            done
+          done
+          echo "The review of pull request #$bind_pr at $H passed: $runs_listed run(s), every attempt concluded with success."
+          exit 0
