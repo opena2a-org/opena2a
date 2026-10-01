@@ -222,6 +222,7 @@ jobs:
               else
                 # Equality above is the decision. This only names the first
                 # difference, so the failure says what to look at.
+                # shellcheck disable=SC2016 # jq variables, not shell ones
                 bind_explain='(.[0] | map({key: .filename, value: .}) | from_entries) as $m
                   | (.[1] | map({key: .filename, value: .}) | from_entries) as $p
                   | ([$m | keys[] | select($p[.] == null)] | first) as $extra
