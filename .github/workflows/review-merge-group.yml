@@ -209,9 +209,12 @@ jobs:
 
           # The review verdict on H: the latest pull_request run of
           # pr-review.yml for that head commit, selected by workflow path.
+          # Latest is by start time: a re-run keeps its run's creation time
+          # and moves its start time, so ordering by start time selects the
+          # attempt the head's live check reflects.
           H="$bind_head"
           runs=$(gh api "repos/$REPO/actions/workflows/pr-review.yml/runs?head_sha=$H&event=pull_request&per_page=100") || runs=""
-          latest=$(printf '%s' "$runs" | jq -c '[.workflow_runs[]? | select(.path == ".github/workflows/pr-review.yml")] | sort_by(.created_at) | last // empty') || latest=""
+          latest=$(printf '%s' "$runs" | jq -c '[.workflow_runs[]? | select(.path == ".github/workflows/pr-review.yml")] | sort_by(.run_started_at) | last // empty') || latest=""
           run_status=$(printf '%s' "$latest" | jq -r '.status // empty') || run_status=""
           run_conclusion=$(printf '%s' "$latest" | jq -r '.conclusion // empty') || run_conclusion=""
           run_url=$(printf '%s' "$latest" | jq -r '.html_url // empty') || run_url=""
