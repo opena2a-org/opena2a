@@ -268,6 +268,27 @@ jobs:
             PR_NUMBER="$bind_pr"
             HEAD_SHA="$bind_head"
             TARGET_SHA="$MG_HEAD_SHA"
+            # From here until a verdict is posted, a read that fails ends
+            # the step under set -e and would leave M with no verdict until
+            # the queue times out. This exit trap posts a failure on M in
+            # that case. It is removed immediately before each post of the
+            # step's own, so M never receives a second check run, and it is
+            # never set on pull request events.
+            # shellcheck disable=SC2329 # invoked by the exit trap below
+            mg_post_failure_on_exit() {
+              mg_exit_status=$?
+              if [ "$mg_exit_status" -ne 0 ]; then
+                gh api -X POST "repos/$REPO/check-runs" \
+                  -f name='Gate file approval' \
+                  -f head_sha="$MG_HEAD_SHA" \
+                  -f status=completed \
+                  -f conclusion=failure \
+                  -f 'output[title]'='Merge group verdict could not be evaluated' \
+                  -f 'output[summary]'="A read for pull request #$bind_pr at $bind_head failed after merge group commit $MG_HEAD_SHA was bound to it (exit status $mg_exit_status), so no verdict was evaluated." \
+                  --jq '"check_run id=" + (.id|tostring) + " conclusion=" + .conclusion' || true
+              fi
+            }
+            trap mg_post_failure_on_exit EXIT
           fi
 
           # The files listing endpoint is capped at 3000 entries; a gate file
@@ -282,6 +303,7 @@ jobs:
           if [ "$EVENT_NAME" = "merge_group" ]; then
             changed_count=$(printf '%s' "$mg_pr_files" | jq 'length')
             if [ "$changed_count" -ne "$mg_pr_changed_files" ]; then
+              trap - EXIT
               gh api -X POST "repos/$REPO/check-runs" \
                 -f name='Gate file approval' \
                 -f head_sha="$MG_HEAD_SHA" \
@@ -385,6 +407,9 @@ jobs:
             conclusion="failure"
           fi
 
+          # The step's own post follows; a merge group's exit trap is removed
+          # first so that M receives exactly one check run.
+          trap - EXIT
           gh api -X POST "repos/$REPO/check-runs" \
             -f name='Gate file approval' \
             -f head_sha="$TARGET_SHA" \
