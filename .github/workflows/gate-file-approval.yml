@@ -37,6 +37,7 @@ on:
     types: [opened, synchronize, reopened, edited]
   pull_request_review:
     types: [submitted, dismissed, edited]
+  merge_group:
 
 permissions:
   contents: read
