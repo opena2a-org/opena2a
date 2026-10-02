@@ -11,6 +11,7 @@ import {
   type ServerConfig,
 } from '../util/aim-client.js';
 import { loadAuth, saveAuth, isAuthValid } from '../util/auth.js';
+import { readSecretFromStdin } from '../util/stdin-secret.js';
 
 interface PolicyRule {
   capability: string;
@@ -46,6 +47,8 @@ interface IdentityOptions {
   autoSync?: boolean;
   server?: string;
   apiKey?: string;
+  /** Read the agent API key from standard input (`--api-key-stdin`). */
+  apiKeyStdin?: boolean;
   json?: boolean;
   /** Positional args passed from Commander (e.g. connect <url>) */
   args?: string[];
@@ -103,8 +106,11 @@ const USAGE = [
   '  activity [--limit N]     View recent agent activity events',
   '',
   'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate, revoke):',
-  '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
-  '  --api-key <key>          AIM API key for authentication',
+  '  --server <url>           AIM server URL (e.g. localhost:8080, cloud); required to register',
+  '  AIM_API_KEY              Agent API key (aim_live_...) issued for an existing agent in your',
+  '                           organization. With --server, create registers the new agent in',
+  '                           that organization; connect registers this machine\'s identity there.',
+  '  --api-key-stdin          Read that key from standard input instead of AIM_API_KEY',
   '',
 ].join('\n');
 
@@ -148,6 +154,23 @@ export async function identity(options: IdentityOptions): Promise<number> {
   // Normalize --json flag to format
   if (options.json) {
     options.format = 'json';
+  }
+
+  // The agent API key comes from AIM_API_KEY or standard input, never the command line: a
+  // value there is readable by every user in the process list and stays in shell history.
+  if (options.apiKey) {
+    process.stderr.write('--api-key is not accepted: a key on the command line is visible in the process list and your shell history.\n');
+    process.stderr.write('Set AIM_API_KEY, or pipe the key in with --api-key-stdin.\n');
+    return 1;
+  }
+  if (options.apiKeyStdin) {
+    options.apiKey = readSecretFromStdin();
+    if (!options.apiKey) {
+      process.stderr.write('--api-key-stdin read nothing from standard input.\n');
+      return 1;
+    }
+  } else if (process.env.AIM_API_KEY) {
+    options.apiKey = process.env.AIM_API_KEY;
   }
 
   // Auto-refresh expired OAuth tokens before dispatching subcommands
@@ -219,8 +242,9 @@ export async function identity(options: IdentityOptions): Promise<number> {
 async function loadAimCore(): Promise<typeof import('@opena2a/aim-core') | null> {
   try {
     return await import('@opena2a/aim-core');
-  } catch {
-    process.stderr.write('aim-core is not available.\n');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    process.stderr.write(`aim-core is not available (${reason}).\n`);
     process.stderr.write('Install: npm install @opena2a/aim-core\n');
     return null;
   }
@@ -307,7 +331,7 @@ function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string; s
 function formatServerError(err: unknown): string {
   if (err instanceof AimServerError) {
     if (err.statusCode === 401) {
-      return 'Authentication failed. Check your --api-key or run: opena2a identity connect <url>';
+      return 'Authentication failed. Check AIM_API_KEY (an agent API key for an existing agent in your organization) or run: opena2a login';
     }
     if (err.statusCode === 403) {
       return 'Access denied. Your API key may lack required permissions.';
@@ -536,7 +560,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
 
   if (!apiKey && !hasOAuth) {
     process.stderr.write('Authentication required.\n');
-    process.stderr.write('Run "opena2a login" first, or use --api-key <key>.\n');
+    process.stderr.write('Run "opena2a login" first, or set AIM_API_KEY to an agent API key.\n');
     return 1;
   }
 
@@ -550,25 +574,49 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
     return 1;
   }
 
+  const useOAuth = hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl);
+
   try {
-    // 2. Register on server (use authenticated endpoint if OAuth, public endpoint if API key)
+    // 2. Create the local identity via aim-core first: an API-key registration
+    //    sends its public key, because the server never returns a private key.
+    const mod = await loadAimCore();
+    let localId = null;
+    if (mod) {
+      const aim = new mod.AIMCore({ agentName: name });
+      // aim-core keeps one identity per machine. An API-key registration binds the
+      // server agent to that identity's key, so registering it under a second name
+      // would put one key on two server agents.
+      const hadIdentity = fs.existsSync(path.join(aim.getDataDir(), 'identity.json'));
+      localId = aim.getIdentity();
+      if (!useOAuth && hadIdentity && localId.agentName !== name) {
+        const shown = localId.agentName.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?');
+        process.stderr.write(`This machine's local identity is "${shown}", and an API-key registration uses its key.\n`);
+        process.stderr.write(`Register that identity instead: opena2a identity connect ${serverUrl}\n`);
+        return 1;
+      }
+    }
+    if (!useOAuth && !localId) {
+      process.stderr.write('Registering with an API key needs a local keypair from aim-core.\n');
+      return 1;
+    }
+
+    // 3. Register on server (OAuth: the member route; API key: the same route in X-API-Key)
     let resp: any;
-    if (hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl)) {
+    if (useOAuth) {
       resp = await client.createAgent({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` });
     } else {
-      resp = await client.register({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` }, apiKey!);
+      resp = await client.register(
+        { name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI`, publicKey: localId!.publicKey },
+        apiKey!,
+      );
     }
 
     // Normalize response - server may return different shapes
     const agentId = resp.agentId ?? resp.id ?? resp.agent?.id;
     const agentName = resp.name ?? resp.agent?.name ?? name;
-
-    // 3. Also create local identity via aim-core
-    const mod = await loadAimCore();
-    let localId = null;
-    if (mod) {
-      const aim = new mod.AIMCore({ agentName: name });
-      localId = aim.getIdentity();
+    if (!agentId) {
+      process.stderr.write('The AIM server answered the registration without an agent id; nothing was stored.\n');
+      return 1;
     }
 
     // 4. Store server config locally
@@ -960,15 +1008,16 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
   const rawUrl = options.args?.[0] ?? options.server;
   if (!rawUrl) {
     process.stderr.write('Missing server URL.\n');
-    process.stderr.write('Usage: opena2a identity connect <url> --api-key <key>\n');
-    process.stderr.write('       opena2a identity connect localhost:8080 --api-key <key>\n');
+    process.stderr.write('Usage: AIM_API_KEY=<key> opena2a identity connect <url>\n');
+    process.stderr.write('       AIM_API_KEY=<key> opena2a identity connect localhost:8080\n');
     return 1;
   }
 
   const apiKey = options.apiKey;
   if (!apiKey) {
-    process.stderr.write('Missing required option: --api-key <key>\n');
-    process.stderr.write('The AIM server requires an API key for agent registration.\n');
+    process.stderr.write('Missing agent API key: set AIM_API_KEY, or pipe it in with --api-key-stdin.\n');
+    process.stderr.write('Use an agent API key (aim_live_...) issued for an existing agent in your organization\n');
+    process.stderr.write('(dashboard: API keys). The new agent is registered in that organization.\n');
     return 1;
   }
 
@@ -993,7 +1042,12 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
 
     // 3. Register on server
     const resp = await client.register(
-      { name: id.agentName, displayName: id.agentName, description: `Agent ${id.agentName} registered via OpenA2A CLI` },
+      {
+        name: id.agentName,
+        displayName: id.agentName,
+        description: `Agent ${id.agentName} registered via OpenA2A CLI`,
+        publicKey: id.publicKey,
+      },
       apiKey,
     );
 
