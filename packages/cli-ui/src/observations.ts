@@ -324,6 +324,8 @@ export function buildVerdict(
   };
 }
 
+const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low'] as const;
+
 /**
  * Format the Categories line — names the buckets that fired, then
  * collapses the remaining clear buckets into a "rest clear" tail.
@@ -343,13 +345,15 @@ function formatCategoriesLine(categories: CategorySummary[], verbose: boolean): 
     return `${shown}${extra}  (all clear)`;
   }
 
+  // Every severity a bucket holds, worst first (hackmyagent#393). Naming only
+  // the top one printed `credentials (1 critical)` over a critical AND a high,
+  // so the line summed to fewer findings than the Findings section under it
+  // and a reader who fixed what it listed had not fixed what was reported.
   const withPrefix = withFindings.map(c => {
-    const { critical, high, medium, low } = c.counts;
-    if (critical > 0) return `${c.name} (${critical} critical)`;
-    if (high > 0) return `${c.name} (${high} high)`;
-    if (medium > 0) return `${c.name} (${medium} medium)`;
-    if (low > 0) return `${c.name} (${low} low)`;
-    return c.name;
+    const parts = SEVERITY_ORDER
+      .filter(sev => c.counts[sev] > 0)
+      .map(sev => `${c.counts[sev]} ${sev}`);
+    return parts.length > 0 ? `${c.name} (${parts.join(', ')})` : c.name;
   });
   const tail = clearCount > 0 ? ` · ${clearCount} others clear` : '';
   return `${withPrefix.join(' · ')}${tail}`;
