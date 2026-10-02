@@ -32,7 +32,13 @@ export function createIdentity(dataDir: string, agentName: string): StoredIdenti
   fs.mkdirSync(dataDir, { recursive: true });
   const identityPath = path.join(dataDir, IDENTITY_FILE);
   const tmpPath = identityPath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpPath, JSON.stringify(identity, null, 2), 'utf-8');
+  // The file holds the secret key, so it is created owner-only (0o600) by the call that
+  // creates it: an explicit mode on the open, not a chmod after the write, so there is no
+  // window in which a umask-derived mode exposes the key. A stale temp file from an earlier
+  // interrupted run is removed first so the mode always comes from this creation.
+  fs.rmSync(tmpPath, { force: true });
+  fs.writeFileSync(tmpPath, JSON.stringify(identity, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  // Belt and braces for platforms where the open(2) mode is not honoured; never relied on.
   try { fs.chmodSync(tmpPath, 0o600); } catch { /* Windows */ }
   fs.renameSync(tmpPath, identityPath);
 
