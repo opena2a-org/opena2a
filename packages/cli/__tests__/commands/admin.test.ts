@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { PassThrough } from 'node:stream';
 import {
   admin,
   resolveApiKey,
@@ -20,6 +21,20 @@ function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; o
 }
 
 const SAMPLE_ID = '11111111-2222-3333-4444-555555555555';
+
+/**
+ * Stand in for process.stdin with a TTY-flagged stream that supplies `answer`
+ * (one line) to the shared confirm prompt, so confirmDestructive reaches the
+ * prompt instead of its non-TTY refusal. Returns a restore function.
+ */
+function withTtyStdinAnswer(answer: string): () => void {
+  const fake = new PassThrough() as PassThrough & { isTTY: boolean };
+  fake.isTTY = true;
+  fake.end(answer + '\n');
+  const original = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+  Object.defineProperty(process, 'stdin', { value: fake, configurable: true, enumerable: true, writable: true });
+  return () => { Object.defineProperty(process, 'stdin', original); };
+}
 
 function pending(): PendingEnrollment[] {
   return [{ sensorId: SAMPLE_ID, publicKey: 'abcd1234', createdAt: '2026-06-26T00:00:00Z' }];
@@ -268,6 +283,75 @@ describe('admin -- key safety & host pinning', () => {
       admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k' }));
     expect(err).toMatch(/Refusing to approve/);
     expect(out).not.toMatch(/Aborted/);
+  });
+});
+
+describe('admin sensors -- interactive confirm (TTY stdin, no --yes, no --ci, text output)', () => {
+  it('QGF-305.AC4 approve calls _internals.approve exactly once when the confirm input supplies y', async () => {
+    const spy = vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 200, data: { sensorId: SAMPLE_ID, state: 'verified' } });
+    const restore = withTtyStdinAnswer('y');
+    let result: { exitCode: number; out: string; err: string };
+    try {
+      expect(process.stdin.isTTY).toBe(true);
+      result = await captureStdout(() =>
+        admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k' }));
+    } finally {
+      restore();
+    }
+    expect(result.out).toContain(`Approve sensor ${SAMPLE_ID}`);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(expect.any(String), 'k', SAMPLE_ID);
+    expect(result.out).not.toMatch(/Aborted\./);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('QGF-305.AC4 approve prints Aborted., returns 1 and does not call _internals.approve when the confirm input supplies n', async () => {
+    const spy = vi.spyOn(_internals, 'approve');
+    const restore = withTtyStdinAnswer('n');
+    let result: { exitCode: number; out: string; err: string };
+    try {
+      result = await captureStdout(() =>
+        admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k' }));
+    } finally {
+      restore();
+    }
+    expect(result.out).toMatch(/Aborted\./);
+    expect(result.exitCode).toBe(1);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('QGF-305.AC4 reject calls _internals.reject exactly once when the confirm input supplies y', async () => {
+    vi.spyOn(_internals, 'listPending').mockResolvedValue({ ok: true, status: 200, data: { pending: pending(), count: 1 } });
+    const spy = vi.spyOn(_internals, 'reject').mockResolvedValue({ ok: true, status: 200, data: {} });
+    const restore = withTtyStdinAnswer('y');
+    let result: { exitCode: number; out: string; err: string };
+    try {
+      result = await captureStdout(() =>
+        admin({ subcommand: 'sensors', args: ['reject', SAMPLE_ID], apiKey: 'k' }));
+    } finally {
+      restore();
+    }
+    expect(result.out).toContain(`Reject (revoke) pending enrollment ${SAMPLE_ID}`);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(expect.any(String), 'k', SAMPLE_ID);
+    expect(result.out).not.toMatch(/Aborted\./);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('QGF-305.AC4 reject prints Aborted., returns 1 and does not call _internals.reject when the confirm input supplies n', async () => {
+    vi.spyOn(_internals, 'listPending').mockResolvedValue({ ok: true, status: 200, data: { pending: pending(), count: 1 } });
+    const spy = vi.spyOn(_internals, 'reject');
+    const restore = withTtyStdinAnswer('n');
+    let result: { exitCode: number; out: string; err: string };
+    try {
+      result = await captureStdout(() =>
+        admin({ subcommand: 'sensors', args: ['reject', SAMPLE_ID], apiKey: 'k' }));
+    } finally {
+      restore();
+    }
+    expect(result.out).toMatch(/Aborted\./);
+    expect(result.exitCode).toBe(1);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

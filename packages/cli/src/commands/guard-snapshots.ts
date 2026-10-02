@@ -7,6 +7,7 @@
 
 import * as fs from 'node:fs';
 import { signedByLabel } from '../util/signed-by.js';
+import { confirm } from '../util/confirm.js';
 import * as path from 'node:path';
 
 // --- Types ---
@@ -205,7 +206,7 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
 
   // Confirm in interactive mode
   if (!isCi && !isJson) {
-    const confirmed = await confirmAction();
+    const confirmed = await confirm('\nConfirm re-sign? [y/N] ');
     if (!confirmed) {
       process.stdout.write('Re-sign cancelled.\n');
       return 1;
@@ -256,19 +257,6 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
     process.stdout.write(`Re-signed ${tampered.length} file${tampered.length === 1 ? '' : 's'}.\n`);
   }
   return 0;
-}
-
-function confirmAction(): Promise<boolean> {
-  return new Promise((resolve) => {
-    process.stdout.write('\nConfirm re-sign? [y/N] ');
-    const { createInterface } = require('node:readline') as typeof import('node:readline');
-    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-    rl.once('line', (answer: string) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes');
-    });
-    rl.once('close', () => resolve(false));
-  });
 }
 
 interface SnapshotOptions {
@@ -337,6 +325,6 @@ export async function guardSnapshot(targetDir: string, options: SnapshotOptions)
 
 export const _internals = {
   createSnapshot, listSnapshots, restoreSnapshot, pruneSnapshots,
-  guardResign, guardSnapshot, confirmAction,
+  guardResign, guardSnapshot,
   STORE_DIR, STORE_FILE, SNAPSHOTS_DIR, MAX_SNAPSHOTS,
 };

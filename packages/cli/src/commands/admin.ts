@@ -21,6 +21,7 @@
 
 import { bold, green, yellow, red, dim, cyan, gray } from '../util/colors.js';
 import { validateRegistryUrl } from '../util/validate-registry-url.js';
+import { confirm } from '../util/confirm.js';
 
 // --- Types ---
 
@@ -120,21 +121,6 @@ export const _internals = {
       return { ok: false, status: response.status, error };
     }
     return { ok: true, status: response.status, data: body as T };
-  },
-
-  confirm(promptText: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      process.stdout.write(promptText);
-      const { createInterface } =
-        require('node:readline') as typeof import('node:readline');
-      const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
-      rl.once('line', (answer: string) => {
-        rl.close();
-        const a = answer.trim().toLowerCase();
-        resolve(a === 'y' || a === 'yes');
-      });
-      rl.once('close', () => resolve(false));
-    });
   },
 };
 
@@ -454,7 +440,8 @@ async function confirmDestructive(
     else process.stderr.write(red('Error: ') + msg + '\n');
     return 'refused';
   }
-  return (await _internals.confirm(promptText)) ? 'consented' : 'declined';
+  // The typed answer is read by the shared confirm prompt (util/confirm.ts).
+  return (await confirm(promptText)) ? 'consented' : 'declined';
 }
 
 /** Resolve a non-consenting result to an exit code, printing once if needed. */
