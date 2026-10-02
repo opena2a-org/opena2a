@@ -13,6 +13,7 @@ import { handleNaturalLanguage, matchIntent, formatClassifierBlock } from './nat
 import type { NaturalLanguageBlock } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY, childEnv } from './adapters/registry.js';
+import { resolveMcpServerArg } from './util/mcp-server-arg.js';
 import { CORE_COMMAND_NAMES } from './natural/known-commands.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
@@ -1277,7 +1278,8 @@ Valid actions:
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--dir <path>', 'Target directory')
-    .action(async (subcommand: string | undefined, server: string | undefined, opts, cmd) => {
+    .option('--server <name>', 'MCP server name (same as the positional)')
+    .action(async (subcommand: string | undefined, positionalServer: string | undefined, opts, cmd) => {
       // Per-subcommand --help intercept (#132)
       if (subcommand && isHelpRequest()) {
         if (printSubcommandHelp('mcp', subcommand, MCP_HELP)) return;
@@ -1287,6 +1289,13 @@ Valid actions:
         return;
       }
       if (!subcommand) subcommand = 'audit';
+      const resolved = resolveMcpServerArg(positionalServer, opts.server);
+      if ('error' in resolved) {
+        process.stderr.write(`${resolved.error}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const { server } = resolved;
       const { mcpCommand } = await import('./commands/mcp-audit.js');
       const globalOpts = program.opts();
       process.exitCode = await mcpCommand({

@@ -384,17 +384,24 @@ export const MCP_HELP: SubcommandHelpRegistry = {
     usage: '[server]',
     options: [
       { flag: '--dir <path>', description: 'Target directory' },
+      { flag: '--server <name>', description: 'Server name (same as the positional)' },
     ],
     examples: ['opena2a mcp audit', 'opena2a mcp audit my-server'],
   },
   sign: {
     summary: 'Sign an MCP server configuration for integrity verification.',
     usage: '[server]',
-    examples: ['opena2a mcp sign my-server'],
+    options: [
+      { flag: '--server <name>', description: 'Server name (same as the positional)' },
+    ],
+    examples: ['opena2a mcp sign my-server', 'opena2a mcp sign --server my-server'],
   },
   verify: {
     summary: 'Verify a signed MCP server configuration.',
     usage: '[server]',
+    options: [
+      { flag: '--server <name>', description: 'Server name (same as the positional)' },
+    ],
     examples: ['opena2a mcp verify my-server'],
   },
 };
