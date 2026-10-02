@@ -1,5 +1,14 @@
 # Changelog — @opena2a/cli-ui
 
+## Unreleased
+
+### Fixed
+- The Observations block's Categories line names every severity a category
+  holds, worst first: `credentials (1 critical, 1 high)`. It named only the
+  top one, so a category's lower findings were unaccounted for and the line
+  summed to fewer findings than the Findings section under it
+  (hackmyagent#393).
+
 ## 0.6.0
 
 ### Added

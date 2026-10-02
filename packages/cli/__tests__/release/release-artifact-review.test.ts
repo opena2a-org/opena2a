@@ -97,7 +97,16 @@ interface ReviewResult {
 }
 
 function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
-  const res = spawnSync(process.execPath, [SCRIPT, '--tarball', tarball, ...extraArgs], {
+  // Every review this file runs against the live feed reads published
+  // advisories only. The output is quoted into delivery reports, and a
+  // developer token can read draft (embargoed) advisories, so no call site
+  // may choose `all` or omit the flag and inherit the script's default.
+  const si = extraArgs.indexOf('--advisory-states');
+  if (si !== -1 && extraArgs[si + 1] !== 'published') {
+    throw new Error(`runReview reads published advisories only; got --advisory-states ${extraArgs[si + 1]}`);
+  }
+  const args = si === -1 ? [...extraArgs, '--advisory-states', 'published'] : extraArgs;
+  const res = spawnSync(process.execPath, [SCRIPT, '--tarball', tarball, ...args], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     timeout: 840_000,
