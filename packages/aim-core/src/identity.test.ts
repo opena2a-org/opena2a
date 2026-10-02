@@ -103,3 +103,23 @@ describe('identity', () => {
     });
   });
 });
+
+it('QGF-304.AC3 round-trips an identity through the real fs at 0o600 under umask 022', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aim-core-test-ac3-'));
+  const previousUmask = process.umask(0o022);
+  try {
+    const created = createIdentity(dir, 'test-agent');
+    const loaded = loadIdentity(dir);
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.agentId).toBe(created.agentId);
+    expect(loaded!.publicKey).toBe(created.publicKey);
+    expect(loaded!.secretKey).toBe(created.secretKey);
+    expect(loaded!.agentName).toBe(created.agentName);
+    expect(loaded!.createdAt).toBe(created.createdAt);
+    expect(fs.statSync(path.join(dir, 'identity.json')).mode & 0o777).toBe(0o600);
+  } finally {
+    process.umask(previousUmask);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
