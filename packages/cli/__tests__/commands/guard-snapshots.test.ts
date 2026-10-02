@@ -2,8 +2,21 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { PassThrough } from 'node:stream';
 import { guard } from '../../src/commands/guard.js';
 import { _internals } from '../../src/commands/guard-snapshots.js';
+
+/**
+ * Stand in for process.stdin with a stream that supplies `answer` (one line)
+ * to the shared confirm prompt. Returns a restore function.
+ */
+function withStdinAnswer(answer: string): () => void {
+  const fake = new PassThrough();
+  fake.end(answer + '\n');
+  const original = Object.getOwnPropertyDescriptor(process, 'stdin')!;
+  Object.defineProperty(process, 'stdin', { value: fake, configurable: true, enumerable: true, writable: true });
+  return () => { Object.defineProperty(process, 'stdin', original); };
+}
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
   const chunks: string[] = [];
@@ -213,6 +226,59 @@ describe('guard-snapshots', () => {
     expect(exitCode).toBe(0);
     const result = JSON.parse(output);
     expect(result.resigned).toBe(1);
+  });
+
+  it('QGF-305.AC3 resign in interactive mode re-signs when the confirm input supplies y', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
+    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"modified"}');
+
+    const restore = withStdinAnswer('y');
+    let result: { exitCode: number; output: string };
+    try {
+      // Interactive: no ci, text format -- the prompt is shown and read.
+      result = await captureStdout(() => guard({ subcommand: 'resign', targetDir: tempDir }));
+    } finally {
+      restore();
+    }
+
+    expect(result.output).toContain('Confirm re-sign? [y/N]');
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain('Re-signed 1 file.');
+    expect(result.output).not.toContain('Re-sign cancelled.');
+
+    const { exitCode: verifyExit } = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir }));
+    expect(verifyExit).toBe(0);
+  });
+
+  it('QGF-305.AC3 resign in interactive mode cancels and leaves the store unchanged when the confirm input supplies n', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
+    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"modified"}');
+    const storePath = path.join(tempDir, '.opena2a/guard/signatures.json');
+    const storeBefore = fs.readFileSync(storePath, 'utf-8');
+
+    const restore = withStdinAnswer('n');
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => guard({ subcommand: 'resign', targetDir: tempDir }));
+    } finally {
+      restore();
+    }
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('Re-sign cancelled.');
+    expect(result.output).not.toContain('Re-signed');
+    expect(fs.readFileSync(storePath, 'utf-8')).toBe(storeBefore);
+
+    // The store still carries the old hash, so verify still reports the changed file.
+    const { exitCode: verifyExit, output: verifyOut } = await captureStdout(() =>
+      guard({ subcommand: 'verify', targetDir: tempDir, format: 'json' }));
+    expect(verifyExit).toBe(1);
+    const report = JSON.parse(verifyOut);
+    expect(report.tampered).toBe(1);
+    expect(report.results.some((r: { filePath: string; status: string }) =>
+      r.filePath === 'package.json' && r.status === 'tampered')).toBe(true);
   });
 
   it('resign returns 0 when nothing changed', async () => {
