@@ -2,7 +2,7 @@
 export interface AIMCoreOptions {
   /** Human-readable agent name */
   agentName: string;
-  /** Directory for identity keys, audit log, and config. Defaults to ~/.opena2a/aim-core */
+  /** Directory for identity keys, audit log, and config. Defaults to $OPENA2A_HOME/aim-core, or ~/.opena2a/aim-core when OPENA2A_HOME is unset */
   dataDir?: string;
   /** Optional AIM server URL for fleet reporting */
   serverUrl?: string;
