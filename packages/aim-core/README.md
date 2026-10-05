@@ -55,6 +55,7 @@ console.log(trust.factors); // { identity, audit, policy, behavior }
 | `createIdentity()` | Generate a new Ed25519 keypair |
 | `loadIdentity()` | Load an existing identity from disk |
 | `getOrCreateIdentity()` | Load if exists, create if not |
+| `hasIdentity(dataDir)` | Whether an identity exists, without creating one |
 | `sign(data)` | Sign data with the agent's private key |
 | `verify(data, signature)` | Verify a signature against the public key |
 | `logEvent(event)` | Append an event to the local audit log |
@@ -63,6 +64,10 @@ console.log(trust.factors); // { identity, audit, policy, behavior }
 | `savePolicy(policy)` | Save capability policy to disk |
 | `checkCapability(cap, ctx)` | Check if a capability is allowed |
 | `calculateTrust()` | Compute a trust score based on identity, audit, and policy factors |
+
+## Storage
+
+Identity, audit log and policy live in `dataDir`, which defaults to `$OPENA2A_HOME/aim-core`, or `~/.opena2a/aim-core` when `OPENA2A_HOME` is unset. The identity file holds the private key and is created with mode 600; pass a `dataDir` outside the project tree. The vault (`getVault()`) lives in `vault/` under the same root. A vault an earlier release created at `~/.aim/vault` stays in use until the new directory exists, unless `OPENA2A_HOME` is set.
 
 ## License
 

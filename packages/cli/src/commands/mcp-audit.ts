@@ -140,6 +140,21 @@ function getIdentityDir(targetDir: string): string {
   return path.join(targetDir, '.opena2a', 'mcp-identities');
 }
 
+/** The .gitignore rule that keeps the in-tree identity files, private keys included, uncommitted. */
+const MCP_IDENTITY_IGNORE_RULE = '.opena2a/mcp-identities/';
+
+/**
+ * Write a file that holds a private key: created at mode 600 by the open that
+ * creates it, then renamed into place, so no reader ever sees it at a wider mode
+ * and a re-sign does not inherit the mode of the file it replaces.
+ */
+function writePrivateFile(filePath: string, content: string): void {
+  const tmpPath = `${filePath}.tmp.${process.pid}`;
+  fs.rmSync(tmpPath, { force: true });
+  fs.writeFileSync(tmpPath, content, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
+  fs.renameSync(tmpPath, filePath);
+}
+
 function getIdentityPath(targetDir: string, serverName: string): string {
   return path.join(getIdentityDir(targetDir), `${serverName}.json`);
 }
@@ -366,9 +381,10 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     // Compute fingerprint
     const fingerprint = crypto.createHash('sha256').update(pubKeyDer).digest('hex').substring(0, 16);
 
-    // Store identity
+    // Store identity. The file holds the private key and sits inside the project
+    // tree, so it is created owner-only by the write that creates it.
     const identityDir = getIdentityDir(options.targetDir);
-    fs.mkdirSync(identityDir, { recursive: true });
+    fs.mkdirSync(identityDir, { recursive: true, mode: 0o700 });
 
     const identity: McpIdentity = {
       serverName,
@@ -380,7 +396,7 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     };
 
     const idPath = getIdentityPath(options.targetDir, serverName);
-    fs.writeFileSync(idPath, JSON.stringify(identity, null, 2));
+    writePrivateFile(idPath, JSON.stringify(identity, null, 2));
 
     if (isJson) {
       process.stdout.write(JSON.stringify({
@@ -389,6 +405,7 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
         fingerprint,
         configHash,
         identityFile: idPath,
+        containsPrivateKey: true,
       }, null, 2) + '\n');
       return 0;
     }
@@ -398,7 +415,10 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     process.stdout.write(`  Transport:    ${server.transport}\n`);
     process.stdout.write(`  Fingerprint:  ${cyan(fingerprint)}\n`);
     process.stdout.write(`  Config hash:  ${dim(configHash.substring(0, 32) + '...')}\n`);
-    process.stdout.write(`  Stored in:    ${dim(idPath)}\n`);
+    process.stdout.write(`  Private key:  ${dim(idPath)}\n`);
+    process.stdout.write('\n');
+    process.stdout.write(yellow('This file holds the server\'s private signing key and is inside the project tree.') + '\n');
+    process.stdout.write(dim('  Keep it out of version control: add ' + MCP_IDENTITY_IGNORE_RULE + ' to the project\'s .gitignore.\n'));
     process.stdout.write('\n');
     process.stdout.write(dim('Tip: To manage signatures automatically across all files, create an agent identity:\n'));
     process.stdout.write(dim('  opena2a identity create --name ' + serverName + '\n'));

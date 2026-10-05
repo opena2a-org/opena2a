@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { createIdentity, loadIdentity, getOrCreateIdentity, getSecretKey, getPublicKey } from './identity';
+import { createIdentity, loadIdentity, getOrCreateIdentity, getSecretKey, getPublicKey, hasIdentity } from './identity';
 
 describe('identity', () => {
   let tmpDir: string;
@@ -13,6 +13,29 @@ describe('identity', () => {
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('hasIdentity', () => {
+    it('is false for an empty dataDir and leaves it empty', () => {
+      expect(hasIdentity(tmpDir)).toBe(false);
+      expect(fs.readdirSync(tmpDir)).toEqual([]);
+    });
+
+    it('is false for a missing dataDir and does not create it', () => {
+      const missing = path.join(tmpDir, 'missing');
+      expect(hasIdentity(missing)).toBe(false);
+      expect(fs.existsSync(missing)).toBe(false);
+    });
+
+    it('is true once an identity exists', () => {
+      createIdentity(tmpDir, 'test-agent');
+      expect(hasIdentity(tmpDir)).toBe(true);
+    });
+
+    it('is false for an unreadable identity file, which getOrCreateIdentity would replace', () => {
+      fs.writeFileSync(path.join(tmpDir, 'identity.json'), '{not json');
+      expect(hasIdentity(tmpDir)).toBe(false);
+    });
   });
 
   describe('createIdentity', () => {

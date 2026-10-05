@@ -10,6 +10,7 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { getUserConfigDir } from '@opena2a/shared';
 import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
@@ -471,9 +472,10 @@ export function scanIdentity(targetDir: string): IdentitySummary {
     }
   }
 
-  // Also check global identity location (~/.opena2a/aim-core/identity.json)
-  // This is where `opena2a identity create` writes by default
-  const globalIdentity = path.join(os.homedir(), '.opena2a', 'aim-core', 'identity.json');
+  // Also check the global identity location (<OpenA2A user home>/aim-core/identity.json,
+  // the user home being $OPENA2A_HOME or ~/.opena2a). This is where
+  // `opena2a identity create` writes by default.
+  const globalIdentity = path.join(getUserConfigDir(), 'aim-core', 'identity.json');
   if (aimIdentities === 0 && fs.existsSync(globalIdentity)) {
     aimIdentities++;
   }

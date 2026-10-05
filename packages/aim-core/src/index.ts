@@ -17,7 +17,7 @@ export type {
 
 // Re-export module functions for advanced usage
 export { sign, verify } from './crypto';
-export { createIdentity, loadIdentity, getOrCreateIdentity } from './identity';
+export { createIdentity, loadIdentity, getOrCreateIdentity, hasIdentity } from './identity';
 export { logEvent, readAuditLog, hasAuditLog } from './audit';
 export { loadPolicy, savePolicy, checkCapability, hasPolicy } from './policy';
 export { calculateTrust } from './trust';
@@ -60,6 +60,8 @@ import type {
   TrustHints,
 } from './types';
 
+import * as fs from 'fs';
+import * as path from 'path';
 import * as identity from './identity';
 import * as audit from './audit';
 import * as policy from './policy';
@@ -68,6 +70,34 @@ import * as crypto from './crypto';
 import { AIMServerReporter } from './reporter';
 import { EventAggregator } from './aggregator';
 import { VaultStore } from './vault/store';
+
+/** The user's home directory, resolved the way aim-core always has. */
+function userHome(): string {
+  return process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
+}
+
+/**
+ * The OpenA2A user home: OPENA2A_HOME when set to a non-blank value (it names
+ * the directory itself), otherwise ~/.opena2a. Same rule as getUserConfigDir()
+ * in @opena2a/shared, so every tool resolves one root.
+ */
+function opena2aHome(): string {
+  const configured = process.env.OPENA2A_HOME?.trim();
+  return configured ? path.resolve(configured) : path.join(userHome(), '.opena2a');
+}
+
+/**
+ * The vault directory: <OpenA2A user home>/vault. A vault an earlier release
+ * created at ~/.aim/vault stays in use while the new location does not exist,
+ * so no stored credential is orphaned; once OPENA2A_HOME is set explicitly,
+ * nothing outside it is read.
+ */
+function defaultVaultDir(): string {
+  const dir = path.join(opena2aHome(), 'vault');
+  if (process.env.OPENA2A_HOME?.trim()) return dir;
+  const legacy = path.join(userHome(), '.aim', 'vault');
+  return !fs.existsSync(dir) && fs.existsSync(legacy) ? legacy : dir;
+}
 
 /**
  * Main entry point for aim-core.
@@ -93,6 +123,11 @@ export class AIMCore {
   /** Get or create the agent's Ed25519 identity */
   getIdentity(): AIMIdentity {
     return identity.getOrCreateIdentity(this.dataDir, this.agentName);
+  }
+
+  /** Whether this agent already has an identity. Never creates one. */
+  hasIdentity(): boolean {
+    return identity.hasIdentity(this.dataDir);
   }
 
   /** Alias for getIdentity() — matches documented API */
@@ -238,15 +273,14 @@ export class AIMCore {
 
   /**
    * Get a VaultStore instance for this agent's vault.
-   * The vault directory is at ~/.aim/vault/ (separate from the data dir).
+   * The vault directory is <OpenA2A user home>/vault/ (separate from the data dir);
+   * see defaultVaultDir() for the earlier ~/.aim/vault/ location.
    */
   getVault(): VaultStore {
-    const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
-    return new VaultStore(`${home}/.aim/vault`);
+    return new VaultStore(defaultVaultDir());
   }
 
   private defaultDataDir(): string {
-    const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
-    return `${home}/.opena2a/aim-core`;
+    return path.join(opena2aHome(), 'aim-core');
   }
 }

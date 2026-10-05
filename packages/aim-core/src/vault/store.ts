@@ -1,7 +1,8 @@
 /**
  * VaultStore — encrypted credential storage.
  *
- * Manages ~/.aim/vault/ on disk. Each credential is independently encrypted
+ * Manages one vault directory on disk (AIMCore.getVault() resolves the default
+ * location). Each credential is independently encrypted
  * per-namespace using XSalsa20-Poly1305 with a key derived from the agent's
  * Ed25519 identity via X25519 ECDH.
  *

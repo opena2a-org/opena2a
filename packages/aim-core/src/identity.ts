@@ -60,6 +60,16 @@ export function loadIdentity(dataDir: string): StoredIdentity | null {
   }
 }
 
+/**
+ * Whether dataDir holds a readable identity. Never creates one: unlike
+ * getOrCreateIdentity, asking has no side effect on disk. A missing or
+ * unreadable identity file both answer false, the same two cases in which
+ * getOrCreateIdentity would create a new identity.
+ */
+export function hasIdentity(dataDir: string): boolean {
+  return loadIdentity(dataDir) !== null;
+}
+
 /** Get or create the agent's identity. Returns the public-facing identity (no secret key). */
 export function getOrCreateIdentity(dataDir: string, agentName: string): AIMIdentity {
   let stored = loadIdentity(dataDir);

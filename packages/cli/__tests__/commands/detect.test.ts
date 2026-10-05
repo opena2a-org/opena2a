@@ -335,6 +335,22 @@ describe('scanIdentity', () => {
     expect(projectIdentity).toBe(false);
   });
 
+  it('finds the global identity under OPENA2A_HOME, where aim-core writes it', () => {
+    const oaHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-oahome-'));
+    const origOaHome = process.env.OPENA2A_HOME;
+    process.env.OPENA2A_HOME = oaHome;
+    try {
+      expect(scanIdentity(tempDir).aimIdentities).toBe(0);
+      fs.mkdirSync(path.join(oaHome, 'aim-core'), { recursive: true });
+      fs.writeFileSync(path.join(oaHome, 'aim-core', 'identity.json'), '{"agentId":"test"}');
+      expect(scanIdentity(tempDir).aimIdentities).toBe(1);
+    } finally {
+      if (origOaHome === undefined) delete process.env.OPENA2A_HOME;
+      else process.env.OPENA2A_HOME = origOaHome;
+      fs.rmSync(oaHome, { recursive: true, force: true });
+    }
+  });
+
   it('detects SOUL.md governance file', () => {
     fs.writeFileSync(path.join(tempDir, 'SOUL.md'), '# Agent Soul\n');
     const summary = scanIdentity(tempDir);

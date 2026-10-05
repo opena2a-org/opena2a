@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
 
 export interface ContributeConfig {
   enabled: boolean;
@@ -58,8 +59,43 @@ const DEFAULT_CONFIG: UserConfig = {
   },
 };
 
+/**
+ * The OpenA2A user home. `OPENA2A_HOME` names that directory itself (not a
+ * parent of `.opena2a`) when it is set to a non-blank value; otherwise it is
+ * `~/.opena2a`. Every per-user path the tools write hangs off this directory.
+ */
 export function getUserConfigDir(): string {
+  const configured = process.env.OPENA2A_HOME?.trim();
+  if (configured) return resolve(configured);
   return join(homedir(), '.opena2a');
+}
+
+/**
+ * Key of a project's user store: the first 16 hex characters of the SHA-256
+ * of the project's canonical path. `realpathSync.native` resolves symlinks
+ * and, on a case-insensitive filesystem, the case stored on disk, so every
+ * spelling of one directory yields one key. A path that does not exist is
+ * keyed on its absolute form. Every implementation pins the same vector:
+ * `getProjectStoreKey('/srv/example-project') === '2550ea6e13e5f88a'`.
+ */
+export function getProjectStoreKey(projectPath: string): string {
+  const absolute = resolve(projectPath);
+  let canonical = absolute;
+  try {
+    canonical = realpathSync.native(absolute);
+  } catch {
+    // Not on disk: key the absolute path as given.
+  }
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+}
+
+/**
+ * Per-project user store, `<user home>/projects/<key>`: where state about a
+ * project that must not be written into its tree (identities, private keys)
+ * lives. Resolves the path only; callers create it.
+ */
+export function getProjectStoreDir(projectPath: string): string {
+  return join(getUserConfigDir(), 'projects', getProjectStoreKey(projectPath));
 }
 
 export function getUserConfigPath(): string {

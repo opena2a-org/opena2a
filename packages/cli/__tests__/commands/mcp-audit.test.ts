@@ -509,6 +509,53 @@ describe('mcp-audit', () => {
       expect(output).toContain('text-sign');
       expect(output).toContain('Fingerprint');
     });
+
+    // The identity file carries the server's private key inside the project tree.
+    // Until it moves to the per-project user store, sign must say so and must not
+    // leave the key readable by other users.
+    it('names the identity file as a private key in text and JSON output', async () => {
+      const config = { mcpServers: { 'pk-label': { command: 'node', args: ['server.js'] } } };
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify(config));
+      const idPath = _internals.getIdentityPath(tempDir, 'pk-label');
+
+      const text = await captureStdout(() =>
+        mcpCommand({ subcommand: 'sign', server: 'pk-label', targetDir: tempDir, format: 'text' }),
+      );
+      expect(text.exitCode).toBe(0);
+      expect(text.output).toContain(`Private key:  ${idPath}`);
+      expect(text.output).toContain('private signing key');
+      expect(text.output).toContain('.opena2a/mcp-identities/');
+      expect(text.output).not.toContain('Stored in:');
+
+      const json = await captureStdout(() =>
+        mcpCommand({ subcommand: 'sign', server: 'pk-label', targetDir: tempDir, format: 'json' }),
+      );
+      const result = JSON.parse(json.output);
+      expect(result.identityFile).toBe(idPath);
+      expect(result.containsPrivateKey).toBe(true);
+    });
+
+    it.skipIf(process.platform === 'win32')('writes the identity file owner-only, also when re-signing over a wider file', async () => {
+      const config = { mcpServers: { 'pk-mode': { command: 'node', args: ['server.js'] } } };
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify(config));
+      const idPath = _internals.getIdentityPath(tempDir, 'pk-mode');
+      const previousUmask = process.umask(0o022);
+      try {
+        const sign = () => captureStdout(() =>
+          mcpCommand({ subcommand: 'sign', server: 'pk-mode', targetDir: tempDir, format: 'json' }),
+        );
+        expect((await sign()).exitCode).toBe(0);
+        expect(fs.statSync(idPath).mode & 0o777).toBe(0o600);
+
+        // A file left world-readable by an earlier release is replaced, not reused.
+        fs.chmodSync(idPath, 0o644);
+        expect((await sign()).exitCode).toBe(0);
+        expect(fs.statSync(idPath).mode & 0o777).toBe(0o600);
+        expect(fs.readdirSync(path.dirname(idPath))).toEqual(['pk-mode.json']);
+      } finally {
+        process.umask(previousUmask);
+      }
+    });
   });
 
   describe('verify subcommand', () => {
