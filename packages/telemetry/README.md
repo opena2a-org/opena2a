@@ -2,7 +2,7 @@
 
 Tier-1 anonymous usage telemetry SDK for OpenA2A CLIs and tools.
 
-Fires anonymous events (tool name, version, command name, success, duration, platform, node major) to the OpenA2A Registry. **No content collection** — no file paths, no scanned content, no prompts, no responses, no env vars, no IP storage. Schema and rationale: [`opena2a.org/telemetry`](https://opena2a.org/telemetry) (canonical disclosure) + `opena2a-registry/docs/telemetry-spec.md` (engineering spec).
+Fires anonymous events (tool name, version, command name, success, duration, an optional outcome reason, platform, node major) to the OpenA2A Registry. **No content collection** — no file paths, no scanned content, no prompts, no responses, no env vars, no IP storage. Schema and rationale: [`opena2a.org/telemetry`](https://opena2a.org/telemetry) (canonical disclosure) + `opena2a-registry/docs/telemetry-spec.md` (engineering spec).
 
 ## Install
 
@@ -23,7 +23,7 @@ tele.error("scan", "HMA_TIMEOUT");
 
 - `init()` loads opt-out config from `~/.config/opena2a/telemetry.json` and `OPENA2A_TELEMETRY` env var, and suppresses telemetry entirely in CI or under `DO_NOT_TRACK` (see [automatic suppression](#automatic-suppression)). **No first-run banner is emitted** (deliberate — see disclosure surfaces below).
 - `start()` fires a `start` event.
-- `track(name, fields?)` fires a `command` event with the command name and optional `success` / `durationMs`.
+- `track(name, fields?)` fires a `command` event with the command name and optional `success` / `durationMs` / `reason` (see [the `reason` field](#the-reason-field)).
 - `error(name, code)` fires an `error` event with the failure code.
 - `status()` returns `{ enabled, configPath, policyURL, installId }` for tools to build their own `--version` line and `telemetry` subcommand (see `@opena2a/cli-ui` helpers).
 - `successFromExitCode(exitCode, semanticSuccessCodes?)` translates `process.exitCode` to the `success` boolean. Default behavior follows POSIX security-tool convention (exit 0 and 1 = success; ≥ 2 = failure). The optional second argument lets dispatchers declare exit codes ≥ 2 that represent semantic outcomes (not crashes). See [crash-rate semantics](#crash-rate-semantics-for-success) below.
@@ -48,6 +48,19 @@ success: tele.successFromExitCode(process.exitCode, [2, 3]),
 ```
 
 Validation always wins. Out-of-range values (< 0 or > 255), non-finite numbers, and unparseable strings continue to return `false` even when listed in `semanticSuccessCodes`. A programming-bug-tier value (e.g. `[256]`) is treated as a programming bug, not a semantic override.
+
+## The `reason` field
+
+`reason` says why a command ended the way it did. It is one of six static values, exported as `USAGE_REASONS`: `findings`, `no-verdict`, `error`, `unmeasured`, `incomplete`, `refused`.
+
+```ts
+await tele.track("secure", {
+  success: tele.successFromExitCode(process.exitCode),
+  reason: "refused",
+});
+```
+
+The calling tool picks the value; it is never derived from arguments, so no user input reaches the wire. `track()` checks the value at runtime and drops anything outside the list, so a JavaScript caller or a type cast cannot send a free-form string. Omit `reason` and the payload carries no `reason` key.
 
 ## Disclosure surfaces
 
@@ -156,6 +169,7 @@ Only these fields, exactly:
 | `name`       | `"scan"` (command events)   | Command-use heatmap              |
 | `success`    | `true` (command events)     | Success rate per command         |
 | `durationMs` | `312` (command events)      | Latency aggregate per command    |
+| `reason`     | `"refused"` (command events, optional) | Outcome mix per command (one of six static values) |
 | `platform`   | `"darwin"`                  | Platform distribution            |
 | `nodeMajor`  | `24`                        | Node-version-support planning    |
 | `countryCode` | derived server-side from CF-IPCountry | Country distribution (no IP stored) |
