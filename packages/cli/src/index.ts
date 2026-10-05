@@ -1204,12 +1204,12 @@ Valid actions:
   // Skill command (noun-verb: skill create)
   program
     .command('skill [subcommand] [name]')
-    .description('Skill management: create secure skills with signing and heartbeat')
+    .description('Skill management: create secure skills with a hash pin and heartbeat')
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor (default: basic)')
     .option('--output <dir>', 'Output directory (default: ./<name>)')
-    .option('--no-sign', 'Skip auto-signing of skill files')
+    .option('--no-sign', 'Skip the opena2a-guard hash pin on skill files')
     .option('--force', 'Replace the scaffold files in an existing, non-empty directory')
     .action(async (subcommand: string | undefined, name: string | undefined, opts, cmd) => {
       // Per-subcommand --help intercept (#132)
@@ -1223,7 +1223,7 @@ Valid actions:
       if (!subcommand) {
         process.stderr.write('Usage: opena2a skill <subcommand> [name]\n\n');
         process.stderr.write('Subcommands:\n');
-        process.stderr.write('  create   Create a secure skill with signing and heartbeat\n');
+        process.stderr.write('  create   Create a secure skill with a hash pin and heartbeat\n');
         process.exitCode = 1;
         return;
       }
@@ -1253,7 +1253,7 @@ Valid actions:
     .description('Create secure skill or component (type: skill)')
     .option('--template <name>', 'Template: basic, mcp-tool, data-processor')
     .option('--output <dir>', 'Output directory')
-    .option('--no-sign', 'Skip auto-signing')
+    .option('--no-sign', 'Skip the hash pin')
     .option('--force', 'Replace the scaffold files in an existing, non-empty directory')
     .action(async (type: string, name: string | undefined, opts) => {
       const { create } = await import('./commands/create/index.js');
