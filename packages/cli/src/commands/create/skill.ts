@@ -3,7 +3,7 @@
  *
  * Scaffolds a secure skill directory with SKILL.md (YAML frontmatter),
  * HEARTBEAT.md, example code, vitest test, and GitHub Action template.
- * Signs the skill via ConfigGuard after scaffolding.
+ * Hash-pins SKILL.md and HEARTBEAT.md via ConfigGuard after scaffolding.
  */
 
 import * as fs from 'node:fs';
@@ -37,7 +37,8 @@ export interface SkillCreateOptions {
 export interface SkillCreateResult {
   directory: string;
   files: string[];
-  signed: boolean;
+  /** An opena2a-guard hash pin was written. This is not a signature. */
+  pinned: boolean;
   warnings: string[];
 }
 
@@ -208,16 +209,16 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
     warnings.push(`[${dm.severity.toUpperCase()}] ${dm.id}: ${dm.message}`);
   }
 
-  // 8. Sign skill files (unless --no-sign)
-  let signed = false;
+  // 8. Hash-pin skill files (unless --no-sign)
+  let pinned = false;
   if (!opts.noSign) {
     try {
-      const { signSkillFiles, signHeartbeatFiles } = await import('../guard-signing.js');
-      await signSkillFiles(outputDir);
-      await signHeartbeatFiles(outputDir);
-      signed = true;
+      const { pinSkillFiles, pinHeartbeatFiles } = await import('../guard-signing.js');
+      await pinSkillFiles(outputDir);
+      await pinHeartbeatFiles(outputDir);
+      pinned = true;
     } catch {
-      warnings.push('Could not auto-sign skill files. Run: opena2a guard sign --skills --heartbeats');
+      warnings.push('Could not hash-pin skill files. Run: opena2a guard sign --skills --heartbeats');
     }
   }
 
@@ -225,7 +226,7 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
   const result: SkillCreateResult = {
     directory: outputDir,
     files: createdFiles,
-    signed,
+    pinned,
     warnings,
   };
 
@@ -241,15 +242,16 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
       process.stdout.write(`    ${green('+')} ${f}\n`);
     }
 
-    if (signed) {
-      // Name WHICH signature this is. `scan` reports `Unsigned Skill` /
+    if (pinned) {
+      // Name WHAT was written. `scan` reports `Unsigned Skill` /
       // `Unsigned Heartbeat` on these same files because it checks for an
       // AIM/Ed25519 signature, while what was written here is an
-      // opena2a-guard pinned hash. Claiming a bare "Signed" left the user
-      // with two contradictory statements and no way to reconcile them
-      // (#259).
+      // opena2a-guard pinned hash. The digest is unkeyed and stored in the
+      // file it covers, so anyone who can edit the file can recompute it:
+      // it catches accidental edits, not deliberate ones, and is described
+      // that way rather than as a signature or tamper detection (#259, #264).
       process.stdout.write(
-        `\n  ${green('Hash-pinned')} SKILL.md and HEARTBEAT.md ${dim('(opena2a-guard, tamper detection)')}\n`
+        `\n  ${green('Hash-pinned')} SKILL.md and HEARTBEAT.md ${dim('(opena2a-guard integrity hash: catches accidental edits)')}\n`
       );
       // `hackmyagent fix-all --with-aim` is the real Ed25519/AIM signing path
       // (its step 3). `opena2a fix-all` does NOT exist -- the natural-language
@@ -257,11 +259,12 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
       // make this line a dead end. Cited the same way guard.ts and
       // mcp-audit.ts already cite it.
       process.stdout.write(
-        `  ${dim('Not an AIM signature -- `scan` reports these as unsigned until you run:')}\n` +
+        `  ${dim('Not a signature: anyone who can edit these files can recompute the hash.')}\n` +
+        `  ${dim('`scan` reports them as unsigned until you add an AIM signature:')}\n` +
         `    ${cyan('hackmyagent fix-all --with-aim')}\n`
       );
     } else if (opts.noSign) {
-      process.stdout.write(`\n  ${dim('Signing skipped (--no-sign)')}\n`);
+      process.stdout.write(`\n  ${dim('Hash pin skipped (--no-sign)')}\n`);
     }
 
     if (warnings.length > 0) {
@@ -275,7 +278,7 @@ export async function createSkill(opts: SkillCreateOptions): Promise<number> {
     // The directory actually written, not the skill name: with --output the
     // two differ and `cd <name>` pointed at a directory that does not exist.
     process.stdout.write(`    cd ${path.relative(process.cwd(), outputDir) || '.'}\n`);
-    process.stdout.write(`    opena2a guard verify --skills    ${dim('# verify signature')}\n`);
+    process.stdout.write(`    opena2a guard verify --skills    ${dim('# check the pinned hash')}\n`);
     process.stdout.write(`    opena2a scan secure              ${dim('# security scan')}\n`);
     process.stdout.write('\n');
   }

@@ -363,12 +363,12 @@ export const RUNTIME_HELP: SubcommandHelpRegistry = {
 
 export const SKILL_HELP: SubcommandHelpRegistry = {
   create: {
-    summary: 'Create a new secure skill (frontmatter + signing + heartbeat).',
+    summary: 'Create a new secure skill (frontmatter + hash pin + heartbeat).',
     usage: '[name]',
     options: [
       { flag: '--template <name>', description: 'Template: basic, mcp-tool, data-processor (default: basic)' },
       { flag: '--output <dir>', description: 'Output directory (default: ./<name>)' },
-      { flag: '--no-sign', description: 'Skip auto-signing of skill files' },
+      { flag: '--no-sign', description: 'Skip the opena2a-guard hash pin on skill files' },
       { flag: '--force', description: 'Replace the scaffold files in an existing, non-empty directory' },
     ],
     examples: [

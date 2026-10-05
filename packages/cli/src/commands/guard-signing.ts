@@ -1,8 +1,13 @@
 /**
- * Skill.md and Heartbeat.md signing bridge for ConfigGuard.
+ * Skill.md and Heartbeat.md hash pinning for ConfigGuard.
  *
- * Signs and verifies SKILL.md / HEARTBEAT.md files using SHA-256 hashing
- * with inline HTML-comment signature blocks (matching HMA signcrypt pattern).
+ * Pins SKILL.md / HEARTBEAT.md files with an inline HTML-comment block that
+ * records a SHA-256 of the file's content. The digest is unkeyed and lives in
+ * the file it covers, so anyone who can edit the file can recompute it: this
+ * catches accidental or partial edits, it is not a signature and proves
+ * nothing about who wrote the file. An AIM (Ed25519) signature is the
+ * mechanism `scan` looks for; the vocabulary here (pin, pinned_by, unpinned,
+ * changed) is kept distinct from it on purpose.
  */
 
 import * as fs from 'node:fs';
@@ -12,26 +17,26 @@ import { createHash } from 'node:crypto';
 
 // --- Types ---
 
-export interface SignResult {
+export interface PinResult {
   filePath: string;
   hash: string;
-  signedAt: string;
-  signedBy: string;
+  pinnedAt: string;
+  pinnedBy: string;
   expiresAt?: string;
 }
 
 export interface VerifyResult {
   filePath: string;
-  status: 'pass' | 'tampered' | 'unsigned' | 'expired';
+  status: 'pass' | 'changed' | 'unpinned' | 'expired';
   currentHash?: string;
   expectedHash?: string;
   expiresAt?: string;
 }
 
-interface SignatureBlock {
+interface PinBlock {
   pinnedHash: string;
-  signedAt: string;
-  signedBy: string;
+  pinnedAt: string;
+  pinnedBy: string;
   expiresAt?: string;
 }
 
@@ -40,51 +45,51 @@ interface SignatureBlock {
 const SKILL_PATTERNS = ['SKILL.md', '*.skill.md'];
 const HEARTBEAT_PATTERNS = ['HEARTBEAT.md', '*.heartbeat.md'];
 const HEARTBEAT_EXPIRY_DAYS = 7;
-const SIG_BLOCK_START = '<!-- opena2a-guard';
-const SIG_BLOCK_END = '-->';
-const SIG_BLOCK_RE = /<!-- opena2a-guard\n([\s\S]*?)-->/;
+const PIN_BLOCK_START = '<!-- opena2a-guard';
+const PIN_BLOCK_END = '-->';
+const PIN_BLOCK_RE = /<!-- opena2a-guard\n([\s\S]*?)-->/;
 
-// --- Signing ---
+// --- Pinning ---
 
-export async function signSkillFiles(targetDir: string): Promise<SignResult[]> {
+export async function pinSkillFiles(targetDir: string): Promise<PinResult[]> {
   const files = findFiles(targetDir, SKILL_PATTERNS);
-  return signFiles(files, targetDir, false);
+  return pinFiles(files, targetDir, false);
 }
 
-export async function signHeartbeatFiles(targetDir: string): Promise<SignResult[]> {
+export async function pinHeartbeatFiles(targetDir: string): Promise<PinResult[]> {
   const files = findFiles(targetDir, HEARTBEAT_PATTERNS);
-  return signFiles(files, targetDir, true);
+  return pinFiles(files, targetDir, true);
 }
 
-function signFiles(files: string[], targetDir: string, withExpiry: boolean): SignResult[] {
-  const results: SignResult[] = [];
+function pinFiles(files: string[], targetDir: string, withExpiry: boolean): PinResult[] {
+  const results: PinResult[] = [];
   const now = new Date();
-  const signedBy = signedByLabel();
+  const pinnedBy = signedByLabel();
 
   for (const fullPath of files) {
     const relPath = path.relative(targetDir, fullPath);
     const raw = fs.readFileSync(fullPath, 'utf-8');
-    const content = stripSignatureBlock(raw);
+    const content = stripPinBlock(raw);
     const hash = 'sha256:' + createHash('sha256').update(content, 'utf-8').digest('hex');
-    const signedAt = now.toISOString();
+    const pinnedAt = now.toISOString();
     const expiresAt = withExpiry ? new Date(now.getTime() + HEARTBEAT_EXPIRY_DAYS * 86400000).toISOString() : undefined;
 
-    const block = buildSignatureBlock({ pinnedHash: hash, signedAt, signedBy, expiresAt });
+    const block = buildPinBlock({ pinnedHash: hash, pinnedAt, pinnedBy, expiresAt });
     fs.writeFileSync(fullPath, content.trimEnd() + '\n\n' + block + '\n', 'utf-8');
 
-    results.push({ filePath: relPath, hash, signedAt, signedBy, expiresAt });
+    results.push({ filePath: relPath, hash, pinnedAt, pinnedBy, expiresAt });
   }
   return results;
 }
 
 // --- Verification ---
 
-export async function verifySkillSignatures(targetDir: string): Promise<VerifyResult[]> {
+export async function verifySkillPins(targetDir: string): Promise<VerifyResult[]> {
   const files = findFiles(targetDir, SKILL_PATTERNS);
   return verifyFiles(files, targetDir, false);
 }
 
-export async function verifyHeartbeatSignatures(targetDir: string): Promise<VerifyResult[]> {
+export async function verifyHeartbeatPins(targetDir: string): Promise<VerifyResult[]> {
   const files = findFiles(targetDir, HEARTBEAT_PATTERNS);
   return verifyFiles(files, targetDir, true);
 }
@@ -95,14 +100,14 @@ function verifyFiles(files: string[], targetDir: string, checkExpiry: boolean): 
   for (const fullPath of files) {
     const relPath = path.relative(targetDir, fullPath);
     const raw = fs.readFileSync(fullPath, 'utf-8');
-    const parsed = parseSignatureBlock(raw);
+    const parsed = parsePinBlock(raw);
 
     if (!parsed) {
-      results.push({ filePath: relPath, status: 'unsigned' });
+      results.push({ filePath: relPath, status: 'unpinned' });
       continue;
     }
 
-    const content = stripSignatureBlock(raw);
+    const content = stripPinBlock(raw);
     const currentHash = 'sha256:' + createHash('sha256').update(content, 'utf-8').digest('hex');
 
     if (checkExpiry && parsed.expiresAt) {
@@ -114,7 +119,7 @@ function verifyFiles(files: string[], targetDir: string, checkExpiry: boolean): 
     }
 
     if (currentHash !== parsed.pinnedHash) {
-      results.push({ filePath: relPath, status: 'tampered', currentHash, expectedHash: parsed.pinnedHash });
+      results.push({ filePath: relPath, status: 'changed', currentHash, expectedHash: parsed.pinnedHash });
     } else {
       results.push({ filePath: relPath, status: 'pass', currentHash, expiresAt: parsed.expiresAt });
     }
@@ -122,20 +127,20 @@ function verifyFiles(files: string[], targetDir: string, checkExpiry: boolean): 
   return results;
 }
 
-// --- Signature block helpers ---
+// --- Pin block helpers ---
 
-function buildSignatureBlock(sig: SignatureBlock): string {
-  const lines = [SIG_BLOCK_START];
-  lines.push(`pinned_hash: ${sig.pinnedHash}`);
-  lines.push(`signed_at: ${sig.signedAt}`);
-  lines.push(`signed_by: ${sig.signedBy}`);
-  if (sig.expiresAt) lines.push(`expires_at: ${sig.expiresAt}`);
-  lines.push(SIG_BLOCK_END);
+function buildPinBlock(pin: PinBlock): string {
+  const lines = [PIN_BLOCK_START];
+  lines.push(`pinned_hash: ${pin.pinnedHash}`);
+  lines.push(`pinned_at: ${pin.pinnedAt}`);
+  lines.push(`pinned_by: ${pin.pinnedBy}`);
+  if (pin.expiresAt) lines.push(`expires_at: ${pin.expiresAt}`);
+  lines.push(PIN_BLOCK_END);
   return lines.join('\n');
 }
 
-function parseSignatureBlock(content: string): SignatureBlock | null {
-  const match = SIG_BLOCK_RE.exec(content);
+function parsePinBlock(content: string): PinBlock | null {
+  const match = PIN_BLOCK_RE.exec(content);
   if (!match) return null;
   const body = match[1];
   const fields = new Map<string, string>();
@@ -145,14 +150,17 @@ function parseSignatureBlock(content: string): SignatureBlock | null {
     fields.set(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
   }
   const pinnedHash = fields.get('pinned_hash');
-  const signedAt = fields.get('signed_at');
-  const signedBy = fields.get('signed_by');
-  if (!pinnedHash || !signedAt || !signedBy) return null;
-  return { pinnedHash, signedAt, signedBy, expiresAt: fields.get('expires_at') };
+  // Blocks written before the rename carry signed_at / signed_by. They hold
+  // the same unkeyed digest, so they still verify and are rewritten with the
+  // pinned_* names the next time the file is pinned.
+  const pinnedAt = fields.get('pinned_at') ?? fields.get('signed_at');
+  const pinnedBy = fields.get('pinned_by') ?? fields.get('signed_by');
+  if (!pinnedHash || !pinnedAt || !pinnedBy) return null;
+  return { pinnedHash, pinnedAt, pinnedBy, expiresAt: fields.get('expires_at') };
 }
 
-function stripSignatureBlock(content: string): string {
-  return content.replace(SIG_BLOCK_RE, '').trimEnd();
+function stripPinBlock(content: string): string {
+  return content.replace(PIN_BLOCK_RE, '').trimEnd();
 }
 
 // --- File discovery ---
@@ -183,8 +191,8 @@ function matchPattern(filename: string, pattern: string): boolean {
 // --- Testable internals ---
 
 export const _internals = {
-  findFiles, matchPattern, buildSignatureBlock, parseSignatureBlock,
-  stripSignatureBlock, signFiles, verifyFiles,
+  findFiles, matchPattern, buildPinBlock, parsePinBlock,
+  stripPinBlock, pinFiles, verifyFiles,
   SKILL_PATTERNS, HEARTBEAT_PATTERNS, HEARTBEAT_EXPIRY_DAYS,
-  SIG_BLOCK_RE,
+  PIN_BLOCK_RE,
 };

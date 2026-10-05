@@ -235,14 +235,14 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
     });
   }
 
-  // Skill and heartbeat signing (delegated to guard-signing bridge)
-  type SignResult = Awaited<ReturnType<typeof import('./guard-signing.js').signSkillFiles>>;
-  let skillResults: SignResult = [];
-  let heartbeatResults: SignResult = [];
+  // Skill and heartbeat hash pins (delegated to guard-signing bridge)
+  type PinResult = Awaited<ReturnType<typeof import('./guard-signing.js').pinSkillFiles>>;
+  let skillResults: PinResult = [];
+  let heartbeatResults: PinResult = [];
   if (options.skills || options.heartbeats) {
-    const { signSkillFiles, signHeartbeatFiles } = await import('./guard-signing.js');
-    if (options.skills) skillResults = await signSkillFiles(targetDir);
-    if (options.heartbeats) heartbeatResults = await signHeartbeatFiles(targetDir);
+    const { pinSkillFiles, pinHeartbeatFiles } = await import('./guard-signing.js');
+    if (options.skills) skillResults = await pinSkillFiles(targetDir);
+    if (options.heartbeats) heartbeatResults = await pinHeartbeatFiles(targetDir);
   }
 
   if (isJson) {
@@ -263,11 +263,11 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
       process.stdout.write(dim(`Run \`opena2a guard resign\` again after editing signed files.\n`));
     }
     if (skillResults.length > 0) {
-      process.stdout.write(green(`Signed ${skillResults.length} skill file${skillResults.length === 1 ? '' : 's'}.\n`));
+      process.stdout.write(green(`Hash-pinned ${skillResults.length} skill file${skillResults.length === 1 ? '' : 's'}.\n`));
       for (const sr of skillResults) { process.stdout.write(dim(`  ${sr.filePath}  ${sr.hash.slice(0, 23)}...\n`)); }
     }
     if (heartbeatResults.length > 0) {
-      process.stdout.write(green(`Signed ${heartbeatResults.length} heartbeat file${heartbeatResults.length === 1 ? '' : 's'}.\n`));
+      process.stdout.write(green(`Hash-pinned ${heartbeatResults.length} heartbeat file${heartbeatResults.length === 1 ? '' : 's'}.\n`));
       for (const hr of heartbeatResults) { process.stdout.write(dim(`  ${hr.filePath}  ${hr.hash.slice(0, 23)}...\n`)); }
     }
     if (signatures.length > 0) process.stdout.write(dim(`\nStore: ${STORE_DIR}/${STORE_FILE}\n`));
@@ -365,14 +365,14 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     // guard-policy module not available
   }
 
-  // Verify skill and heartbeat signatures
-  type VResult = Awaited<ReturnType<typeof import('./guard-signing.js').verifySkillSignatures>>;
+  // Verify skill and heartbeat hash pins
+  type VResult = Awaited<ReturnType<typeof import('./guard-signing.js').verifySkillPins>>;
   let skillVerify: VResult = [];
   let heartbeatVerify: VResult = [];
   if (options.skills || options.heartbeats) {
-    const { verifySkillSignatures, verifyHeartbeatSignatures } = await import('./guard-signing.js');
-    if (options.skills) skillVerify = await verifySkillSignatures(targetDir);
-    if (options.heartbeats) heartbeatVerify = await verifyHeartbeatSignatures(targetDir);
+    const { verifySkillPins, verifyHeartbeatPins } = await import('./guard-signing.js');
+    if (options.skills) skillVerify = await verifySkillPins(targetDir);
+    if (options.heartbeats) heartbeatVerify = await verifyHeartbeatPins(targetDir);
   }
 
   if (isJson) {
@@ -383,13 +383,13 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   } else {
     printVerifyReport(report, enforce);
     if (skillVerify.length > 0) {
-      process.stdout.write(bold('  Skill Signatures') + '\n');
-      for (const sv of skillVerify) { process.stdout.write(`  ${sv.filePath.padEnd(28)} ${sv.status === 'pass' ? green('PASS') : sv.status === 'tampered' ? red('TAMPERED') : yellow(sv.status.toUpperCase())}\n`); }
+      process.stdout.write(bold('  Skill Hash Pins') + '\n');
+      for (const sv of skillVerify) { process.stdout.write(`  ${sv.filePath.padEnd(28)} ${sv.status === 'pass' ? green('PASS') : sv.status === 'changed' ? red('CHANGED') : yellow(sv.status.toUpperCase())}\n`); }
       process.stdout.write('\n');
     }
     if (heartbeatVerify.length > 0) {
-      process.stdout.write(bold('  Heartbeat Signatures') + '\n');
-      for (const hv of heartbeatVerify) { process.stdout.write(`  ${hv.filePath.padEnd(28)} ${hv.status === 'pass' ? green('PASS') : hv.status === 'expired' ? yellow('EXPIRED') : hv.status === 'tampered' ? red('TAMPERED') : yellow(hv.status.toUpperCase())}\n`); }
+      process.stdout.write(bold('  Heartbeat Hash Pins') + '\n');
+      for (const hv of heartbeatVerify) { process.stdout.write(`  ${hv.filePath.padEnd(28)} ${hv.status === 'pass' ? green('PASS') : hv.status === 'expired' ? yellow('EXPIRED') : hv.status === 'changed' ? red('CHANGED') : yellow(hv.status.toUpperCase())}\n`); }
       process.stdout.write('\n');
     }
   }

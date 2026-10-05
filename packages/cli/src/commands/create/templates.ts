@@ -470,14 +470,15 @@ export function generateTestFile(skillName: string, capabilities: string[]): str
   lines.push(`  });`);
   lines.push('');
 
-  lines.push(`  it('has signature block after signing', async () => {`);
+  lines.push(`  it('has a hash pin block after pinning', async () => {`);
   lines.push(`    const fs = await import('node:fs');`);
   lines.push(`    const content = fs.readFileSync('SKILL.md', 'utf-8');`);
-  lines.push(`    // After running opena2a guard sign --skills, this should contain a signature`);
-  lines.push(`    // This test validates the structure if signed`);
+  lines.push(`    // opena2a guard sign --skills appends an opena2a-guard hash pin. It is an`);
+  lines.push(`    // integrity hash that catches accidental edits, not a signature.`);
+  lines.push(`    // This test validates the structure if pinned`);
   lines.push(`    if (content.includes('<!-- opena2a-guard')) {`);
   lines.push(`      expect(content).toContain('pinned_hash: sha256:');`);
-  lines.push(`      expect(content).toContain('signed_by:');`);
+  lines.push(`      expect(content).toContain('pinned_by:');`);
   lines.push(`    }`);
   lines.push(`  });`);
 
@@ -516,7 +517,7 @@ export function generateGitHubAction(skillName: string): string {
     '      - name: Install OpenA2A CLI',
     '        run: npm install -g opena2a-cli',
     '',
-    '      - name: Verify skill signature',
+    '      - name: Verify skill hash pin',
     '        run: opena2a guard verify --skills --ci',
     '',
     '      - name: Verify heartbeat',

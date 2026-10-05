@@ -190,10 +190,14 @@ describe('generateTestFile', () => {
     expect(test).toContain('declares credential capabilities');
   });
 
-  it('includes signature block test', () => {
+  it('includes hash pin block test', () => {
     const test = generateTestFile('sig-skill', []);
-    expect(test).toContain('signature block');
+    expect(test).toContain('hash pin block');
     expect(test).toContain('opena2a-guard');
+    // #264: the generated test checks the field the pin block now carries.
+    expect(test).toContain("toContain('pinned_by:')");
+    expect(test).not.toContain('signed_by:');
+    expect(test).not.toContain('signature block');
   });
 });
 
@@ -396,7 +400,7 @@ describe('createSkill (CI mode)', () => {
     expect(heartbeat).toContain('Interval: 7d');
   });
 
-  it('signs skill files by default', async () => {
+  it('hash-pins skill files by default', async () => {
     const outputDir = path.join(tempDir, 'signed-skill');
     await createSkill({
       name: 'signed-skill',
@@ -407,13 +411,14 @@ describe('createSkill (CI mode)', () => {
     });
 
     const skillMd = fs.readFileSync(path.join(outputDir, 'SKILL.md'), 'utf-8');
-    // After signing, SKILL.md should contain signature block
+    // After pinning, SKILL.md should contain the opena2a-guard pin block
     expect(skillMd).toContain('<!-- opena2a-guard');
     expect(skillMd).toContain('pinned_hash: sha256:');
-    expect(skillMd).toContain('signed_by:');
+    expect(skillMd).toContain('pinned_by:');
+    expect(skillMd).not.toContain('signed_by:');
   });
 
-  it('skips signing with --no-sign', async () => {
+  it('skips the hash pin with --no-sign', async () => {
     const outputDir = path.join(tempDir, 'unsigned-skill');
     await createSkill({
       name: 'unsigned-skill',
@@ -457,7 +462,10 @@ describe('createSkill (CI mode)', () => {
     expect(parsed.files).toContain('index.ts');
     expect(parsed.files).toContain('skill.test.ts');
     expect(parsed.files).toContain('.github/workflows/skill-verify.yml');
-    expect(typeof parsed.signed).toBe('boolean');
+    // #264: the result names what was written, an opena2a-guard hash pin. A
+    // `signed` field contradicted `scan`, which reports these files unsigned.
+    expect(parsed.pinned).toBe(true);
+    expect(parsed).not.toHaveProperty('signed');
     expect(Array.isArray(parsed.warnings)).toBe(true);
   });
 
@@ -486,6 +494,41 @@ describe('createSkill (CI mode)', () => {
     expect(output).toContain('SKILL.md');
     expect(output).toContain('HEARTBEAT.md');
     expect(output).toContain('Next steps');
+  });
+
+  // #264: the pin is an unkeyed SHA-256 stored in the file it covers, so
+  // anyone who can edit the file can recompute it. Calling it tamper
+  // detection or a signature overstated it.
+  it('describes the hash pin as an integrity hash, not tamper detection (#264)', async () => {
+    const outputDir = path.join(tempDir, 'pin-wording');
+
+    const chunks: Buffer[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk: any) => {
+      chunks.push(Buffer.from(chunk));
+      return true;
+    };
+
+    try {
+      await createSkill({
+        name: 'pin-wording',
+        template: 'basic',
+        output: outputDir,
+        ci: true,
+        format: 'text',
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+
+    const output = Buffer.concat(chunks).toString('utf-8');
+    expect(output).toContain('Hash-pinned SKILL.md and HEARTBEAT.md');
+    expect(output).toContain('catches accidental edits');
+    expect(output).toContain('anyone who can edit these files can recompute the hash');
+    expect(output).toContain('hackmyagent fix-all --with-aim');
+    expect(output).not.toMatch(/tamper/i);
+    expect(output).not.toContain('# verify signature');
+    expect(output).toContain('# check the pinned hash');
   });
 });
 
