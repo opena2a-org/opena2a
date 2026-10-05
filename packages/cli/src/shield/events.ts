@@ -515,6 +515,42 @@ export function readVerifiedEvents(filters: EventFilters = {}): VerifiedEventsRe
   };
 }
 
+/**
+ * The synthetic event that surfaces a hash-chain break as the single
+ * SHIELD-INT-002 finding.  It lives in memory only and is never written to
+ * the log.  `review` and `shield report` both classify it through the normal
+ * pipeline, so one break reads as one integrity critical on both surfaces
+ * and the excluded events contribute nothing else.
+ */
+export function chainBreakEvent(
+  verified: Pick<VerifiedEventsResult, 'brokenAt' | 'untrustedCount'>,
+  surface: 'review' | 'report',
+): ShieldEvent {
+  return {
+    id: uuidv7(),
+    timestamp: new Date().toISOString(),
+    version: 1,
+    source: 'shield',
+    category: 'integrity',
+    severity: 'critical',
+    agent: null,
+    sessionId: null,
+    action: 'event-chain-break',
+    target: 'events.jsonl',
+    outcome: 'blocked',
+    detail: {
+      brokenAt: verified.brokenAt,
+      untrustedEventsExcluded: verified.untrustedCount,
+      reason: `Event log hash chain break detected at ${surface} time; events at and after the break were excluded from classification.`,
+    },
+    prevHash: '',
+    eventHash: '',
+    orgId: null,
+    managed: false,
+    agentId: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // verifyEventChain
 // ---------------------------------------------------------------------------
