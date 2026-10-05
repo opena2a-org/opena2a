@@ -217,6 +217,50 @@ describe("track", () => {
     expect(body.event).toBe("command");
     expect(body.name).toBe("audit");
   });
+
+  it("forwards each of the six reason values on the command event", async () => {
+    const reasons = [
+      "findings",
+      "no-verdict",
+      "error",
+      "unmeasured",
+      "incomplete",
+      "refused",
+    ] as const;
+    for (const reason of reasons) {
+      // A fresh module per event: the sender drops sends inside its 200ms
+      // debounce window.
+      const tele = await freshSdk();
+      await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+      await tele.track("secure", { success: true, reason });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    const sent = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).reason);
+    expect(sent).toEqual([...reasons]);
+    const tele = await freshSdk();
+    expect(tele.USAGE_REASONS).toEqual([...reasons]);
+  });
+
+  it("omits reason from the payload when the caller does not pass one", async () => {
+    const tele = await freshSdk();
+    await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+    await tele.track("secure", { success: true, durationMs: 5 });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect("reason" in body).toBe(false);
+  });
+
+  it("drops a reason outside the closed set instead of sending it", async () => {
+    // The union is compile-time only. A JavaScript caller, or a cast, could
+    // pass a string built from user input; it must never reach the wire.
+    const tele = await freshSdk();
+    await tele.init({ tool: "hackmyagent", version: "0.25.0" });
+    const smuggled = "/home/alice/project/.env" as unknown as "findings";
+    await tele.track("secure", { success: false, reason: smuggled });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect("reason" in body).toBe(false);
+    expect(body).toMatchObject({ event: "command", name: "secure", success: false });
+  });
 });
 
 describe("error", () => {

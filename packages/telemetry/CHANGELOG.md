@@ -4,6 +4,20 @@
 
 ### Added
 
+- **`track()` forwards an optional `reason` field.** `TrackFields` and the
+  `UsageEvent` wire format gain `reason?: UsageReason`, a closed set of six
+  static values: `findings`, `no-verdict`, `error`, `unmeasured`,
+  `incomplete`, `refused`. The list is exported as `USAGE_REASONS` and the
+  type as `UsageReason`. The calling tool picks the value; it is never derived
+  from arguments, so no user input reaches the wire. `track()` checks
+  membership at runtime and drops any other value, so a JavaScript caller or a
+  type cast cannot send a free-form string. When `reason` is omitted the
+  payload carries no `reason` key, so existing call sites send exactly what
+  they sent before.
+
+  Publish this only after the Registry accepts **and stores** the field,
+  checked against the stored row rather than the ingest status code.
+
 - **Telemetry is now suppressed automatically in CI and under `DO_NOT_TRACK`.**
   New `isCI()`, `doNotTrack()` and `autoSuppressionReason()` helpers;
   `loadConfig()` returns `enabled: false` when either fires. Suppression is
