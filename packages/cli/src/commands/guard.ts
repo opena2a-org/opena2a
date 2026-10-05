@@ -296,9 +296,17 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   const store = loadStore(targetDir);
 
   if (!store) {
+    const storeFileExists = fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE));
+    // Skill and heartbeat pins live in the files themselves, not in the config store, so
+    // `--skills` / `--heartbeats` must not stop at a missing store (#288). A scaffolded skill
+    // has no package.json for `guard sign` to pin, so its store is never created, and
+    // `skill create` prints `guard verify --skills` as its own next step.
+    if (!storeFileExists && (options.skills || options.heartbeats)) {
+      return verifyPinsWithoutStore(targetDir, options);
+    }
     // A store file that exists but could not be loaded (unparseable, or written by a newer CLI
     // and refused) is not the same as no store: do not advise a sign that would overwrite it.
-    if (fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))) {
+    if (storeFileExists) {
       if (isJson) { process.stdout.write(JSON.stringify({ error: 'The signature store exists but could not be read; nothing was verified.' }, null, 2) + '\n'); }
       else { process.stdout.write(yellow('The signature store exists but could not be read; nothing was verified.\n')); }
     } else if (isJson) { process.stdout.write(JSON.stringify({ error: 'No signature store found. Run: opena2a guard sign' }, null, 2) + '\n'); }
@@ -366,9 +374,8 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   }
 
   // Verify skill and heartbeat signatures
-  type VResult = Awaited<ReturnType<typeof import('./guard-signing.js').verifySkillSignatures>>;
-  let skillVerify: VResult = [];
-  let heartbeatVerify: VResult = [];
+  let skillVerify: PinResults = [];
+  let heartbeatVerify: PinResults = [];
   if (options.skills || options.heartbeats) {
     const { verifySkillSignatures, verifyHeartbeatSignatures } = await import('./guard-signing.js');
     if (options.skills) skillVerify = await verifySkillSignatures(targetDir);
@@ -382,20 +389,60 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     process.stdout.write(JSON.stringify(output, null, 2) + '\n');
   } else {
     printVerifyReport(report, enforce);
-    if (skillVerify.length > 0) {
-      process.stdout.write(bold('  Skill Signatures') + '\n');
-      for (const sv of skillVerify) { process.stdout.write(`  ${sv.filePath.padEnd(28)} ${sv.status === 'pass' ? green('PASS') : sv.status === 'tampered' ? red('TAMPERED') : yellow(sv.status.toUpperCase())}\n`); }
-      process.stdout.write('\n');
-    }
-    if (heartbeatVerify.length > 0) {
-      process.stdout.write(bold('  Heartbeat Signatures') + '\n');
-      for (const hv of heartbeatVerify) { process.stdout.write(`  ${hv.filePath.padEnd(28)} ${hv.status === 'pass' ? green('PASS') : hv.status === 'expired' ? yellow('EXPIRED') : hv.status === 'tampered' ? red('TAMPERED') : yellow(hv.status.toUpperCase())}\n`); }
-      process.stdout.write('\n');
-    }
+    printPinResults(skillVerify, heartbeatVerify);
   }
 
   const sigFailed = [...skillVerify, ...heartbeatVerify].some(v => v.status !== 'pass');
   return (report.tampered > 0 || report.missing > 0 || sigFailed || policyViolations > 0) ? (enforce ? EXIT_QUARANTINE : 1) : 0;
+}
+
+type PinResults = Awaited<ReturnType<typeof import('./guard-signing.js').verifySkillSignatures>>;
+
+function printPinResults(skillVerify: PinResults, heartbeatVerify: PinResults): void {
+  if (skillVerify.length > 0) {
+    process.stdout.write(bold('  Skill Signatures') + '\n');
+    for (const sv of skillVerify) { process.stdout.write(`  ${sv.filePath.padEnd(28)} ${sv.status === 'pass' ? green('PASS') : sv.status === 'tampered' ? red('TAMPERED') : yellow(sv.status.toUpperCase())}\n`); }
+    process.stdout.write('\n');
+  }
+  if (heartbeatVerify.length > 0) {
+    process.stdout.write(bold('  Heartbeat Signatures') + '\n');
+    for (const hv of heartbeatVerify) { process.stdout.write(`  ${hv.filePath.padEnd(28)} ${hv.status === 'pass' ? green('PASS') : hv.status === 'expired' ? yellow('EXPIRED') : hv.status === 'tampered' ? red('TAMPERED') : yellow(hv.status.toUpperCase())}\n`); }
+    process.stdout.write('\n');
+  }
+}
+
+/**
+ * `guard verify --skills` / `--heartbeats` in a directory with no config signature store:
+ * verify the in-file pins and say plainly that no config file was verified. Nothing to verify
+ * at all (no store, no matching files) exits 1, because a verify that checked nothing did not
+ * pass.
+ */
+async function verifyPinsWithoutStore(targetDir: string, options: GuardOptions): Promise<number> {
+  const isJson = options.format === 'json';
+  const { verifySkillSignatures, verifyHeartbeatSignatures } = await import('./guard-signing.js');
+  const skillVerify = options.skills ? await verifySkillSignatures(targetDir) : [];
+  const heartbeatVerify = options.heartbeats ? await verifyHeartbeatSignatures(targetDir) : [];
+  const nothingFound = skillVerify.length === 0 && heartbeatVerify.length === 0;
+  const kinds = [options.skills ? 'skill' : '', options.heartbeats ? 'heartbeat' : ''].filter(Boolean).join(' or ');
+
+  if (isJson) {
+    const output: Record<string, unknown> = { configStore: null };
+    if (options.skills) output.skills = skillVerify;
+    if (options.heartbeats) output.heartbeats = heartbeatVerify;
+    if (nothingFound) output.error = `No signature store and no ${kinds} files found; nothing was verified.`;
+    process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+  } else if (nothingFound) {
+    process.stdout.write(yellow(`No signature store and no ${kinds} files found; nothing was verified.\n`));
+    process.stdout.write(dim('  Pin config files: opena2a guard sign\n'));
+    process.stdout.write(dim('  Pin skill and heartbeat files: opena2a guard sign --skills --heartbeats\n'));
+  } else {
+    process.stdout.write(dim('No config signature store: config files were not verified (pin them with: opena2a guard sign).\n\n'));
+    printPinResults(skillVerify, heartbeatVerify);
+  }
+
+  if (nothingFound) return 1;
+  const sigFailed = [...skillVerify, ...heartbeatVerify].some(v => v.status !== 'pass');
+  return sigFailed ? ((options.enforce ?? false) ? EXIT_QUARANTINE : 1) : 0;
 }
 
 // --- Status ---
