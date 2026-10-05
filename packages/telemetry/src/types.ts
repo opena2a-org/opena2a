@@ -14,7 +14,24 @@ export interface UsageEvent {
   duration_ms?: number;
   platform?: string;
   node_major?: number;
+  reason?: UsageReason;
 }
+
+/**
+ * Why a command ended the way it did. A closed set of static labels: the
+ * calling tool picks one, it is never derived from arguments, so no user
+ * input reaches the wire. `track()` drops any value outside this list.
+ */
+export const USAGE_REASONS = [
+  "findings",
+  "no-verdict",
+  "error",
+  "unmeasured",
+  "incomplete",
+  "refused",
+] as const;
+
+export type UsageReason = (typeof USAGE_REASONS)[number];
 
 export interface InitOptions {
   /** Tool name. Lowercase, [a-z0-9_-], 1-64 chars (enforced by Registry). */
@@ -26,6 +43,7 @@ export interface InitOptions {
 export interface TrackFields {
   success?: boolean;
   durationMs?: number;
+  reason?: UsageReason;
 }
 
 /**

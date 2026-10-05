@@ -8,7 +8,15 @@
 import { platform as osPlatform } from "node:os";
 import { loadConfig, setEnabled, configPaths, POLICY_URL } from "./config.js";
 import { sendEvent } from "./sender.js";
-import type { InitOptions, Status, SuppressionReason, TrackFields, UsageEvent } from "./types.js";
+import { USAGE_REASONS } from "./types.js";
+import type {
+  InitOptions,
+  Status,
+  SuppressionReason,
+  TrackFields,
+  UsageEvent,
+  UsageReason,
+} from "./types.js";
 
 export { flush } from "./sender.js";
 
@@ -74,11 +82,20 @@ export function start(): void {
   if (evt) void sendEvent(evt);
 }
 
+/**
+ * The `UsageReason` union only binds TypeScript callers. A JavaScript caller
+ * or a cast could hand over any string, so check membership at runtime.
+ */
+function isUsageReason(value: unknown): value is UsageReason {
+  return (USAGE_REASONS as readonly unknown[]).includes(value);
+}
+
 export async function track(name: string, fields: TrackFields = {}): Promise<void> {
   const evt = buildEvent("command", {
     name,
     success: fields.success,
     duration_ms: fields.durationMs,
+    ...(isUsageReason(fields.reason) ? { reason: fields.reason } : {}),
   });
   if (evt) await sendEvent(evt);
 }
@@ -189,10 +206,12 @@ export function successFromExitCode(
 }
 
 export { POLICY_URL } from "./config.js";
+export { USAGE_REASONS } from "./types.js";
 export type {
   InitOptions,
   Status,
   SuppressionReason,
   TrackFields,
   UsageEvent,
+  UsageReason,
 } from "./types.js";
