@@ -70,6 +70,7 @@ The identity, the policy file and the audit log give the 45 above. The other fiv
 | Method | Description |
 |--------|-------------|
 | `getOrCreateIdentity()` | Load the identity from `dataDir`, creating an Ed25519 keypair on the first call |
+| `hasIdentity()` | Whether an identity exists in `dataDir`, without creating one |
 | `sign(data)` | Sign bytes with the agent's private key |
 | `verify(data, signature, publicKey)` | Verify a signature against a public key (base64 string or `Uint8Array`) |
 | `logEvent(event)` | Append `{ plugin, action, target, result, metadata? }` to the local audit log |
@@ -80,7 +81,11 @@ The identity, the policy file and the audit log give the 45 above. The other fiv
 | `calculateTrust()` | Compute the 0-100 trust score and its eight factors |
 | `setTrustHints(hints)` | Report the factors the library cannot observe itself |
 
-Lower-level functions are exported as well (`createIdentity`, `loadIdentity`, `getOrCreateIdentity`, `sign`, `verify`, `logEvent`, `readAuditLog`, `loadPolicy`, `savePolicy`, `checkCapability`, `calculateTrust`); each takes the data directory, the policy or the key as an explicit argument.
+Lower-level functions are exported as well (`createIdentity`, `loadIdentity`, `getOrCreateIdentity`, `hasIdentity`, `sign`, `verify`, `logEvent`, `readAuditLog`, `loadPolicy`, `savePolicy`, `checkCapability`, `calculateTrust`); each takes the data directory, the policy or the key as an explicit argument.
+
+## Storage
+
+Identity, audit log and policy live in `dataDir`, which defaults to `$OPENA2A_HOME/aim-core`, or `~/.opena2a/aim-core` when `OPENA2A_HOME` is unset. The identity file holds the private key and is created with mode 600; pass a `dataDir` outside the project tree. The vault (`getVault()`) lives in `vault/` under the same root. A vault an earlier release created at `~/.aim/vault` stays in use until the new directory exists, unless `OPENA2A_HOME` is set.
 
 ## License
 
