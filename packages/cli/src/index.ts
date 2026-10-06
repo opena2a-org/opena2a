@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { Command } from 'commander';
+import { Command, Help } from 'commander';
 import type { TelemetryAction } from '@opena2a/cli-ui' with { 'resolution-mode': 'import' };
 import { printBanner, printCompact } from './branding.js';
 // @opena2a/telemetry and @opena2a/cli-ui are pure ESM; this CLI is CommonJS,
@@ -21,6 +21,7 @@ import { checkMinHmaVersion } from './util/hma-version.js';
 import { HMA_CHECK_COUNT } from './util/canonical.js';
 import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
+import { HELP_CONTRACTS, formatHelpContract } from './util/help-contract.js';
 import {
   isHelpRequest,
   printSubcommandHelp,
@@ -214,6 +215,8 @@ Learn more: https://opena2a.org/docs`);
           const pkgLabel = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
           process.stdout.write(`Usage: opena2a ${name} [args...]\n\n`);
           process.stdout.write(`${wordWrap(config.description, HELP_WIDTH, 0)}\n\n`);
+          const contract = HELP_CONTRACTS[name];
+          if (contract) process.stdout.write(`${formatHelpContract(contract)}\n\n`);
           process.stdout.write(`This command runs the bundled ${pkgLabel} engine.\n`);
           process.stdout.write(`See https://opena2a.org/docs for full documentation.\n\n`);
           // For Docker/Python adapters, don't delegate --help (would launch containers)
@@ -338,7 +341,6 @@ Examples:
   $ opena2a comply src/*.log --json                 Machine-readable output
   $ cat transcript.txt | opena2a comply -q          Verdict line only
 
-Exit codes (CI gate): 0 CLEAN · 1 VIOLATION/DENY · 2 usage error.
 Detection is the @opena2a/aicomply engine. Python? pip install aicomply.
 `)
     .action(async (files: string[], opts: { quiet?: boolean }) => {
@@ -1276,6 +1278,20 @@ Valid actions:
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
+
+  // Every subcommand's --help states its exit codes and what --json and --ci
+  // do to it, right after its options. Appended in formatHelp so it also
+  // prints where a command renders its own help with helpInformation().
+  // Adapter commands print the block in their own header.
+  for (const cmd of program.commands) {
+    const contract = HELP_CONTRACTS[cmd.name()];
+    if (!contract || cmd.name() in ADAPTER_REGISTRY) continue;
+    const block = formatHelpContract(contract);
+    cmd.configureHelp({
+      ...cmd.configureHelp(),
+      formatHelp: (c, helper) => `${Help.prototype.formatHelp.call(helper, c, helper)}\n${block}\n`,
+    });
+  }
 
   const rawArgs = process.argv.slice(2);
 
