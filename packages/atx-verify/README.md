@@ -55,11 +55,16 @@ gate capability-based authorization on whether those fields are signed.
 
 ## Scope
 
-Both declared signature suites are verified: **Ed25519** via Node's `crypto`, and
+Two signature suites are verified: **Ed25519** via Node's `crypto`, and
 **ML-DSA-65** (FIPS 204) via [`@noble/post-quantum`](https://github.com/paulmillr/noble-post-quantum).
-Every signature entry a credential declares must verify, per atx-spec §13 and
-AAP §9.4; a declared entry that does not verify, or for which no eligible trust
-anchor is configured, is `SIGNATURE_INVALID`.
+Every Ed25519 and ML-DSA-65 entry a credential declares must verify, per
+atx-spec §13 and AAP §9.4; such an entry that does not verify, or for which no
+eligible trust anchor is configured, is `SIGNATURE_INVALID`.
+
+An entry whose `algorithm` is anything else (the match is exact), or is missing,
+is skipped: it neither rejects the credential nor counts toward accepting it.
+atx-spec §13 requires a verifier to reject a credential that declares a suite it
+does not implement, as `SIGNATURE_INVALID`; this version does not do that yet.
 
 `mldsaPresent` reports that an ML-DSA-65 entry was declared. On a `valid: true`
 result that entry also verified.
