@@ -20,9 +20,11 @@ import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
 import { HMA_CHECK_COUNT } from './util/canonical.js';
 import { gray } from './util/colors.js';
+import { wordWrap } from './util/format.js';
 import {
   isHelpRequest,
   printSubcommandHelp,
+  HELP_WIDTH,
   GUARD_HELP,
   SHIELD_HELP,
   IDENTITY_HELP,
@@ -132,7 +134,12 @@ async function main(): Promise<void> {
       });
     })
     .showHelpAfterError('Run opena2a --help for available commands.')
-    .addHelpText('beforeAll', `
+    // Subcommands created below inherit this, so every Commander-rendered
+    // help screen wraps at 80 columns even on a wider terminal.
+    .configureHelp({ helpWidth: HELP_WIDTH })
+    // 'before', not 'beforeAll': the quick-start block belongs to the root
+    // help only, so each subcommand's --help opens with its own Usage line.
+    .addHelpText('before', `
 Quick start:
   $ opena2a check <package>         Is this safe to install?
   $ opena2a init                    Security assessment (30 seconds)
@@ -205,7 +212,8 @@ Learn more: https://opena2a.org/docs`);
         // Handle --help / -h: show adapter info without delegating to Docker/external tools
         if (args.includes('--help') || args.includes('-h')) {
           const pkgLabel = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
-          process.stdout.write(`${name} - ${config.description}\n\n`);
+          process.stdout.write(`Usage: opena2a ${name} [args...]\n\n`);
+          process.stdout.write(`${wordWrap(config.description, HELP_WIDTH, 0)}\n\n`);
           process.stdout.write(`This command runs the bundled ${pkgLabel} engine.\n`);
           process.stdout.write(`See https://opena2a.org/docs for full documentation.\n\n`);
           // For Docker/Python adapters, don't delegate --help (would launch containers)
@@ -357,13 +365,16 @@ Detection is the @opena2a/aicomply engine. Python? pip install aicomply.
       .allowExcessArguments(true)
       .addHelpText('after', `
 Examples:
-  $ opena2a check @modelcontextprotocol/server-filesystem   Check npm package via Registry + HMA
-  $ opena2a check express                                    Check npm package
-  $ opena2a check modelcontextprotocol/servers               Check GitHub repo (shorthand)
-  $ opena2a check https://github.com/org/repo               Check GitHub repo (full URL)
-  $ opena2a check .                                          Scan local directory
-  $ opena2a check /path/to/project                           Scan local directory
-  $ opena2a check                                            Scan current directory
+  Check an npm package via Registry + HMA:
+    $ opena2a check @modelcontextprotocol/server-filesystem
+    $ opena2a check express
+  Check a GitHub repo (shorthand or full URL):
+    $ opena2a check modelcontextprotocol/servers
+    $ opena2a check https://github.com/org/repo
+  Scan a local directory (default: the current directory):
+    $ opena2a check .
+    $ opena2a check /path/to/project
+    $ opena2a check
 
 Packages and repos are checked against the OpenA2A Registry first. If fresh data
 exists (< 3 days), it is shown immediately. Otherwise a full HMA security
@@ -463,7 +474,7 @@ analysis runs and results can be shared with the community.
   // Guard command (ConfigGuard)
   program
     .command('guard [subcommand] [args...]')
-    .description('Config file integrity signing and verification (sign|verify|status|watch|diff|policy|hook|resign|snapshot|harden)')
+    .description('Config file integrity signing and verification (sign, verify, status, watch, diff, policy, hook, resign, snapshot, harden)')
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--files <files...>', 'Specific files to guard')
@@ -627,7 +638,7 @@ analysis runs and results can be shared with the community.
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
-    .description('Agent identity management (list|init|create|trust|audit|log|policy|check|sign|verify|integrate|detach|sync|connect|disconnect|tag|mcp|activity|suspend|reactivate)')
+    .description('Agent identity management (list, init, create, trust, audit, log, policy, check, sign, verify, integrate, detach, sync, connect, disconnect, tag, mcp, activity, suspend, reactivate)')
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--name <name>', 'Agent name (for create)')
@@ -693,7 +704,7 @@ analysis runs and results can be shared with the community.
   // Shield command (unified security orchestration)
   program
     .command('shield [subcommand] [args...]')
-    .description('Unified security orchestration ("shield init" runs full 11-step setup; also:|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage|monitor)')
+    .description('Unified security orchestration ("shield init" runs full 11-step setup; also: status, log, selfcheck, policy, evaluate, recover, report, session, baseline, suggest, explain, triage, monitor)')
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--dir <path>', 'Target directory')
@@ -790,7 +801,7 @@ analysis runs and results can be shared with the community.
     .command('scan-soul [directory]')
     .description('Scan governance file for behavioral safety coverage (ABGS)')
     .option('--dir <path>', 'Target directory')
-    .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
+    .option('--profile <name>', 'Agent profile (conversational, code-assistant, tool-agent, autonomous, orchestrator)')
     .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
     .option('--deep', 'Enable LLM-assisted deep analysis')
     .option('--strict', 'Fail if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)')
@@ -821,7 +832,7 @@ analysis runs and results can be shared with the community.
     .command('harden-soul [directory]')
     .description('Generate or improve governance file with ABGS templates')
     .option('--dir <path>', 'Target directory')
-    .option('--profile <name>', 'Agent profile (conversational|code-assistant|tool-agent|autonomous|orchestrator)')
+    .option('--profile <name>', 'Agent profile (conversational, code-assistant, tool-agent, autonomous, orchestrator)')
     .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
     .option('--dry-run', 'Show what would be generated without writing')
     .action(async (directory: string | undefined, opts) => {
@@ -939,7 +950,7 @@ Examples:
   $ opena2a trust https://github.com/org/repo   GitHub URL (auto-detected)
 
 See also:
-  $ opena2a check <package>                  Full local security scan (via hackmyagent)
+  $ opena2a check <package>                  Full local scan (via hackmyagent)
   $ opena2a review                           Full project security review`)
     .action(async (packageArg: string | undefined, opts) => {
       const { trust: runTrust } = await import('./commands/trust.js');
@@ -1148,10 +1159,12 @@ Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed
     .option('--disable', 'Disable the feature (alias for "off")')
     .addHelpText('after', `
 Valid actions:
-  show                             Display current configuration
-  contribute [on|off|--enable|--disable]  Enable or disable community data contributions
+  show                                    Display current configuration
+  contribute [on|off|--enable|--disable]  Enable or disable community data
+                                          contributions
   llm [on|off|--enable|--disable]         Enable or disable LLM-powered features
-  set <contribute|llm> <on|off>           Same as the two above (true/false also accepted)`)
+  set <contribute|llm> <on|off>           Same as the two above (true/false
+                                          also accepted)`)
     .action(async (action: string, key: string | undefined, value: string | undefined, opts: { enable?: boolean; disable?: boolean }) => {
       const { runConfig } = await import('./commands/config.js');
       process.exitCode = await runConfig(action, key, value, opts);

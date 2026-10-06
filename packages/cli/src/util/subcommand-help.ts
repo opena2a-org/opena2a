@@ -12,6 +12,11 @@
  * detecting `--help` / `-h` in the incoming args.
  */
 
+import { wordWrap } from './format.js';
+
+/** Every help screen fits a standard 80-column terminal. */
+export const HELP_WIDTH = 80;
+
 export interface SubcommandHelp {
   /** One-line summary printed on the Usage line. */
   summary: string;
@@ -40,13 +45,17 @@ export function printSubcommandHelp(
 
   const usage = help.usage ?? '';
   process.stdout.write(`Usage: opena2a ${parent} ${sub}${usage ? ' ' + usage : ''}\n\n`);
-  process.stdout.write(`${help.summary}\n`);
+  process.stdout.write(`${wordWrap(help.summary, HELP_WIDTH, 0)}\n`);
 
   if (help.options && help.options.length > 0) {
     process.stdout.write(`\nOptions:\n`);
     const maxFlagWidth = Math.max(...help.options.map(o => o.flag.length));
+    const descColumn = 2 + maxFlagWidth + 2;
     for (const o of help.options) {
-      process.stdout.write(`  ${o.flag.padEnd(maxFlagWidth + 2)}${o.description}\n`);
+      // Wrap with a hanging indent, then put the flag into the first line's
+      // indent so continuation lines align under the description.
+      const wrapped = wordWrap(o.description, HELP_WIDTH, descColumn);
+      process.stdout.write(`  ${o.flag.padEnd(maxFlagWidth + 2)}${wrapped.slice(descColumn)}\n`);
     }
   }
 

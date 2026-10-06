@@ -73,6 +73,34 @@ describe('printSubcommandHelp (#132)', () => {
     expect(output).not.toContain('Options:');
     expect(output).toContain('Examples:');
   });
+
+  it('wraps long option descriptions under the description column', () => {
+    const { output } = captureStdout(() => printSubcommandHelp('guard', 'sign', GUARD_HELP));
+    const lines = output.split('\n');
+    const first = lines.findIndex((l) => l.startsWith('  --files <files...>'));
+    const column = lines[first].indexOf('Sign specific files');
+    expect(lines[first + 1].slice(0, column).trim()).toBe('');
+    expect(lines[first + 1].slice(column)).toMatch(/^\S/);
+  });
+
+  const registries = {
+    guard: GUARD_HELP,
+    shield: SHIELD_HELP,
+    identity: IDENTITY_HELP,
+    runtime: RUNTIME_HELP,
+    skill: SKILL_HELP,
+    mcp: MCP_HELP,
+  };
+  for (const [parent, registry] of Object.entries(registries)) {
+    for (const sub of Object.keys(registry)) {
+      it(`${parent} ${sub} --help opens with its usage and fits 80 columns`, () => {
+        const { output } = captureStdout(() => printSubcommandHelp(parent, sub, registry));
+        const lines = output.split('\n');
+        expect(lines[0].startsWith(`Usage: opena2a ${parent} ${sub}`)).toBe(true);
+        expect(lines.filter((l) => l.length > 80)).toEqual([]);
+      });
+    }
+  }
 });
 
 describe('subcommand help registries (#132)', () => {
