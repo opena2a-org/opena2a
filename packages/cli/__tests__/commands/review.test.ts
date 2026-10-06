@@ -90,6 +90,7 @@ function renderReportPage(html: string, page: string): string {
         innerHTML: '',
         classList: { toggle: () => {}, add: () => {}, remove: () => {} },
         addEventListener: (type: string, fn: (e: any) => void) => handlers.set(`${id}:${type}`, fn),
+        querySelectorAll: () => [] as any[],
       });
     }
     return nodes.get(id);
@@ -106,7 +107,7 @@ function renderReportPage(html: string, page: string): string {
   // The evaluated string is the report our own generator just produced, run
   // against the stub document above. runInNewContext gives it a fresh global
   // scope; it is not a sandbox and is not relied on as one.
-  runInNewContext(script, { document: documentStub, window: {} });
+  runInNewContext(script, { document: documentStub, window: { addEventListener: () => {} } });
 
   const onNavClick = handlers.get('main-nav:click');
   if (!onNavClick) throw new Error('report script did not register the nav listener');
