@@ -366,6 +366,9 @@ describe('chunked reading', () => {
     });
     const check = eventChainCheck();
     expect(check.status).toBe('fail');
-    expect(check.detail).toBe('Failed to read events file.');
+    expect(check.detail).toBe(
+      `Failed to read events file. Check its type and permissions: ls -ld '${getEventsPath()}'`,
+    );
+    expect(check.nextStep).toBe(`ls -ld '${getEventsPath()}'`);
   });
 });
