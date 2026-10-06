@@ -12,12 +12,16 @@
  * (ATX is the current name for the credential formerly called ATC; fixtures use
  * the `atcVersion` field. This verifier dual-supports both signing forms.)
  *
- * Both declared suites are verified: Ed25519 via `node:crypto`, ML-DSA-65
- * (FIPS 204) via `@noble/post-quantum`. Every signature entry the credential
- * declares must verify, per atx-spec §13 and AAP §9.4; a declared entry that
- * does not verify, or for which no eligible anchor is configured, is
- * `SIGNATURE_INVALID`. The live trusted-issuer/CRL anchors are still wired
- * through the {@link AtxVerifier} seam.
+ * Two suites are verified: Ed25519 via `node:crypto`, ML-DSA-65 (FIPS 204) via
+ * `@noble/post-quantum`. Every Ed25519 and ML-DSA-65 entry the credential
+ * declares must verify, per atx-spec §13 and AAP §9.4; such an entry that does
+ * not verify, or for which no eligible anchor is configured, is
+ * `SIGNATURE_INVALID`. An entry whose `algorithm` is anything else (the match
+ * is exact), or is missing, is skipped: it neither rejects the credential nor
+ * counts toward accepting it. atx-spec §13 requires a verifier to reject a
+ * credential that declares a suite it does not implement; this one does not do
+ * that yet. The live trusted-issuer/CRL anchors are still wired through the
+ * {@link AtxVerifier} seam.
  *
  * SECURITY — signature coverage depends on atcVersion:
  *  - v1.0 (canonicalPayload): the pipe-delimited string covers identity, issuer,
@@ -184,8 +188,8 @@ export interface AtxVerificationResult {
   reason?: string;
   /**
    * Whether the credential declared an ML-DSA-65 signature entry. On a
-   * `valid: true` result that entry also verified: a declared entry that
-   * does not verify is `SIGNATURE_INVALID`, never an accept.
+   * `valid: true` result that entry also verified: a declared ML-DSA-65 entry
+   * that does not verify is `SIGNATURE_INVALID`, never an accept.
    */
   mldsaPresent?: boolean;
 }
@@ -369,7 +373,8 @@ export class LocalAtxVerifier implements AtxVerifier {
       return reject('UNTRUSTED_ISSUER', `issuer DID ${atx.issuerDid} is not trusted`);
     }
 
-    // Step 5: signature verification (Ed25519 fully; ML-DSA-65 presence recorded).
+    // Step 5: signature verification (Ed25519 and ML-DSA-65 entries; an entry for
+    // any other algorithm is skipped, see the module comment).
     // A v1.1 TBS that fails to canonicalize is a malformed credential, not a
     // verifier error: reject closed rather than throwing.
     let payload: Buffer;
