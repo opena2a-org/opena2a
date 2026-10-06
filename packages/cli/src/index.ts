@@ -747,7 +747,7 @@ analysis runs and results can be shared with the community.
         process.stderr.write('Subcommands:\n');
         process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
         process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
-        process.stderr.write('  log        Query the tamper-evident event log\n');
+        process.stderr.write('  log        Query the Shield event log\n');
         process.stderr.write('  selfcheck  Run integrity checks\n');
         process.stderr.write('  policy     Show loaded policy summary\n');
         process.stderr.write('  evaluate   Evaluate an action against the policy\n');

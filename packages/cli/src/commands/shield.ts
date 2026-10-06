@@ -4,7 +4,7 @@
  * Subcommands:
  * - init:      Full environment scan, policy generation, shell hooks
  * - status:    Tool availability, policy mode, integrity state
- * - log:       Query the tamper-evident event log
+ * - log:       Query the Shield event log
  * - selfcheck: Run integrity checks (alias: check)
  * - policy:    Show loaded policy summary
  * - evaluate:  Evaluate an action against the policy
@@ -92,7 +92,7 @@ export async function shield(options: ShieldOptions): Promise<number> {
       process.stderr.write('Subcommands:\n');
       process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
       process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
-      process.stderr.write('  log        Query the tamper-evident event log\n');
+      process.stderr.write('  log        Query the Shield event log\n');
       process.stderr.write('  selfcheck  Run integrity checks\n');
       process.stderr.write('  policy     Show loaded policy summary\n');
       process.stderr.write('  evaluate   Evaluate an action against the policy\n');
@@ -481,7 +481,7 @@ function printableReadError(message: string): string {
  * SHIELD-INT-002 (broken hash chain) had no path to green: `selfcheck`
  * reports the config intact, `recover` reports "not in lockdown", and
  * `review` keeps raising the finding, so the only exit was deleting
- * `events.jsonl` by hand -- in a tamper-evidence system.
+ * `events.jsonl`, the Shield event log, by hand.
  *
  * The broken log is ARCHIVED, never deleted: it is the evidence of whatever
  * broke it. Its sha256 is recorded in the first event of the fresh chain, so
@@ -671,7 +671,7 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
     // checks) still unlocks, as it always has: a missing shell rc file must
     // not strand someone in lockdown. But it is NOT "successful
     // verification", and saying so would paper over a warn on the
-    // tamper-evidence log itself, so the warnings are named.
+    // event log itself, so the warnings are named.
     exitLockdown();
 
     const warnings = state.checks.filter(c => c.status === 'warn');

@@ -213,7 +213,7 @@ function rotateIfNeeded(eventsPath: string): void {
 type GeneratedFields = 'id' | 'timestamp' | 'version' | 'prevHash' | 'eventHash';
 
 /**
- * Write a new event to the tamper-evident log.
+ * Write a new event to the Shield event log.
  *
  * The caller provides all event fields except id, timestamp, version,
  * prevHash, and eventHash -- those are generated automatically.
@@ -692,11 +692,11 @@ export function eventVerificationStatus(result: VerifiedEventsResult): EventVeri
  *
  * GUARANTEE BOUNDARY — the chain is a keyless SHA-256 chain (no HMAC, no
  * secret; GENESIS_HASH is a public constant).  Verification therefore
- * detects accidental corruption, truncation, interleaved concurrent
- * writes, and naive appends that do not recompute the chain — which
- * covers forged findings injected without re-hashing (e.g. a forged
- * source:'shield' integrity critical, or a forged in-scope configguard
- * tamper event).  It does NOT stop an attacker who can write events.jsonl
+ * detects accidental corruption, removal of an event that later events
+ * follow, interleaved concurrent writes, and naive appends that do not
+ * recompute the chain — which covers forged findings injected without
+ * re-hashing (e.g. a forged source:'shield' integrity critical, or a
+ * forged in-scope configguard tamper event).  It does NOT stop an attacker who can write events.jsonl
  * and recomputes hashes with the public algorithm: such an attacker can
  * forge a validly-chained tail or rebuild the entire log from genesis.
  * Closing that requires a keyed MAC (with the key outside the log's

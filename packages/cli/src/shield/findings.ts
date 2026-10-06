@@ -155,13 +155,13 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
   },
   'SHIELD-INT-001': {
     id: 'SHIELD-INT-001',
-    title: 'Configuration file tampered',
+    title: 'Configuration file changed',
     severity: 'critical',
     category: 'int',
     owaspAgentic: 'ASI10',
     mitreAtlas: 'AML.T0011',
     remediation: 'opena2a guard diff && opena2a guard resign',
-    description: 'A monitored configuration file has been modified without authorization. The file signature no longer matches the stored hash.',
+    description: 'A monitored configuration file was changed or removed after its SHA-256 hash was recorded. The check cannot tell an authorized change from an unauthorized one.',
   },
   'SHIELD-INT-002': {
     id: 'SHIELD-INT-002',
@@ -171,7 +171,7 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     owaspAgentic: 'ASI10',
     mitreAtlas: 'AML.T0006',
     remediation: 'opena2a shield selfcheck && opena2a shield recover --archive-log',
-    description: 'The tamper-evident event log hash chain has been broken. This indicates log tampering or corruption.',
+    description: "The Shield event log hash chain is broken: an event's hash, or its link to the previous event, does not match.",
   },
   'SHIELD-INT-003': {
     id: 'SHIELD-INT-003',

@@ -199,4 +199,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git ...) scratch-repository setup and ls-files, then execFileSync(sh -c ' +
       '<printed command>) for each key-file command init and protect print, one at a time',
   },
+  'shield/event-log-wording.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git ls-files) over the package sources, and execFileSync(git init / git add) ' +
+      'to build each planted scratch tree, one at a time',
+  },
 };
