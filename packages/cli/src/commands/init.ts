@@ -10,7 +10,8 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
-import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
+import { scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
+import { shellWord } from '../util/shell-word.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
@@ -280,7 +281,7 @@ export async function init(options: InitOptions): Promise<number> {
   for (const f of groupedFindings) {
     const verify = getVerificationCommand(f, targetDir);
     if (verify) f.verify = verify;
-    const tool = getToolRecommendation(f.findingId);
+    const tool = getToolRecommendation(f, targetDir);
     if (tool) f.fix = tool.command;
   }
 
@@ -771,7 +772,7 @@ function generateActions(
   if (templateLeaks.length > 0) {
     const files = Array.from(new Set(templateLeaks.map(l =>
       targetDir ? path.relative(targetDir, l.filePath) : path.basename(l.filePath))));
-    const quoted = files.map(f => `'${f.replace(/'/g, `'\\''`)}'`).join(' ');
+    const quoted = files.map(shellWord).join(' ');
     actions.push({
       description: `Sanitize ${files.join(', ')} — replace credential-shaped values with placeholders`,
       command: `grep -nE 'AKIA|gh[ps]_|AIza|sk-ant-api|sk-proj-|sk-[A-Za-z0-9]{40}|sk_live_' ${quoted}`,
@@ -804,14 +805,25 @@ function generateActions(
     });
   }
 
-  if (keyfileCreds.length > 0) {
-    const fileExamples = keyfileCreds.slice(0, 3).map(c => path.basename(c.filePath)).join(', ');
+  // Tracked key files only (CRED-KEYFILE): a certificate is not in it, and a
+  // key git does not track has nothing to untrack. The command names every
+  // tracked key file, never a placeholder and never truncated; revoking the
+  // key and the .gitignore step are words, never part of the command.
+  const keyfileUntrack = targetDir
+    ? untrackCommand(targetDir, keyfileCreds
+      .filter(c => c.findingId === 'CRED-KEYFILE')
+      .map(c => path.relative(targetDir, c.filePath)))
+    : null;
+  if (keyfileUntrack) {
+    const n = keyfileUntrack.paths.length;
+    const them = n === 1 ? 'it' : 'them';
+    const fileExamples = keyfileUntrack.paths.slice(0, 3).map(p => path.basename(p)).join(', ');
     actions.push({
-      description: `Untrack ${keyfileCreds.length} key/cert file${keyfileCreds.length === 1 ? '' : 's'} and rotate at issuer`,
-      command: "git rm --cached '<file>' && echo '*.key' >> .gitignore",
-      why: 'Cryptographic key files (.key/.pem/.p12/.pfx) are credentials by file type. opena2a protect handles text-pattern keys but cannot rotate binary key material — that has to happen at the issuing CA, vault, or KMS.',
-      approach: 'Untrack the file from git, add the extension to .gitignore so it cannot be re-added, then issue a fresh key at the upstream provider. Treat the historical commit as a leak even after rotation — assume any holder of the old key has used it.',
-      detail: `Files: ${fileExamples}${keyfileCreds.length > 3 ? ` (+${keyfileCreds.length - 3} more)` : ''}`,
+      description: `Revoke ${n} tracked private key${n === 1 ? '' : 's'} with the CA or service that issued ${them}, then stop git tracking ${them}`,
+      command: keyfileUntrack.command,
+      why: 'A key file committed to git is readable by anyone with repository access, in every clone and in the history, even after the file is untracked. Only the CA or service that issued the key can revoke it; no opena2a command can, and opena2a protect does not handle key files.',
+      approach: 'Revoke or replace each key with the CA or service that issued it first. Then run the command: it stops git tracking each file and leaves it on disk. Add the extensions to .gitignore so the files are not committed again, and treat the committed history as leaked.',
+      detail: `Files: ${fileExamples}${n > 3 ? ` (+${n - 3} more)` : ''}`,
     });
   }
 
@@ -965,14 +977,14 @@ export function getVerificationCommand(
     finding.locations.length > 0
   ) {
     const loc = finding.locations[0];
-    const rel = path.relative(reportDir, loc.file);
+    const rel = shellWord(path.relative(reportDir, loc.file));
     // Keyfile/certfile findings target binary or PEM-armored files. `sed -n
     // '1p'` on a `.p12`/`.pfx` dumps raw binary to the terminal — a
     // verification dead-end. For PEM-armored `.pem`/`.key`/`.crt`/`.cer` the
     // first line `-----BEGIN ...-----` tells the user what the file actually
     // is (private key vs public cert). For PKCS#12 we use `openssl pkcs12`.
     if (finding.findingId === 'CRED-KEYFILE' || finding.findingId === 'CRED-CERTFILE') {
-      const ext = path.extname(rel).toLowerCase();
+      const ext = path.extname(loc.file).toLowerCase();
       if (ext === '.p12' || ext === '.pfx') {
         return `openssl pkcs12 -in ${rel} -info -nokeys -passin pass: 2>/dev/null | head -20 || file ${rel}`;
       }
@@ -987,8 +999,7 @@ export function getVerificationCommand(
   // remediation (placeholder + rotate) lives in the finding + the action.
   if (finding.findingId === 'ENV-EXAMPLE-LEAK' && finding.locations.length > 0) {
     const loc = finding.locations[0];
-    const rel = path.relative(reportDir, loc.file);
-    return `sed -n '${loc.line}p' '${rel.replace(/'/g, `'\\''`)}'`;
+    return `sed -n '${loc.line}p' ${shellWord(path.relative(reportDir, loc.file))}`;
   }
 
   // HMA findings -- title contains "~/.zshrc:132 contains ..." pattern
@@ -1038,17 +1049,21 @@ export function getVerificationCommand(
   return null;
 }
 
-function getToolRecommendation(
-  findingId: string,
+// Exported for the regression test that runs every printed Fix in a scratch
+// repository.
+export function getToolRecommendation(
+  finding: GroupedFinding,
+  reportDir: string,
 ): { command: string; label: string } | null {
+  const findingId = finding.findingId;
   // Cryptographic key/cert files are credentials by file type, not text
-  // content. As of #126 `opena2a protect` surfaces these files with a
-  // per-file remediation block (untrack from git + add the extension to
-  // `.gitignore` + rotate the key at its issuing CA / vault). The init Fix
-  // line can now point at the unified entry point. Rotation itself still
-  // happens at the CA and cannot be automated by the CLI.
+  // content, and `opena2a protect` neither revokes nor untracks them. The Fix
+  // is the `git rm --cached` command over the finding's files that git
+  // tracks; revoking the key happens at the CA or service that issued it and
+  // is stated in words, never as a command. No tracked file, no Fix.
   if (findingId === 'CRED-KEYFILE' || findingId === 'CRED-CERTFILE') {
-    return { command: 'opena2a protect', label: 'opena2a protect' };
+    const untrack = untrackCommand(reportDir, finding.locations.map(l => path.relative(reportDir, l.file)));
+    return untrack ? { command: untrack.command, label: 'git rm --cached' } : null;
   }
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
     return { command: 'opena2a protect', label: 'opena2a protect' };
@@ -1254,10 +1269,9 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
         process.stdout.write(`            ${dim('Verify:')} ${cyan(verifyCmd)}\n`);
       }
 
-      // Tool recommendation
-      const toolRec = getToolRecommendation(finding.findingId);
-      if (toolRec) {
-        process.stdout.write(`            ${dim('Fix:')}    ${cyan(toolRec.command)}\n`);
+      // Tool recommendation (resolved once, when the report was built)
+      if (finding.fix) {
+        process.stdout.write(`            ${dim('Fix:')}    ${cyan(finding.fix)}\n`);
       }
 
       process.stdout.write('\n');
