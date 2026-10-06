@@ -2,7 +2,7 @@
  * Threat-model questions — static templates per artifact type.
  *
  * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§6).
- * Curated by [CHIEF-CSR]. Rendered verbatim. Lives in cli-ui (not in
+ * Hand-curated. Rendered verbatim. Lives in cli-ui (not in
  * the registry) because the questions don't change per package — they
  * give the CISO a stable mental model. v1 is intentionally a static
  * baseline; refinement is post-v1 with 30-day CISO feedback.

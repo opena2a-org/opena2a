@@ -209,8 +209,7 @@ export interface VerdictFinding {
  * so the Verdict line is action-oriented: the user learns WHAT to fix, not
  * just HOW MANY exist.
  *
- * Never uses letter grades. Anchors to an action per CISO philosophy rule
- * #10 (feedback_cli_ciso_philosophy.md).
+ * Never uses letter grades. Always anchors to an action the reader can take.
  *
  * `compositeScore` (optional, 0-100) is the caller's overall *target-risk*
  * number. When supplied, it reconciles the severity histogram with the headline
@@ -219,7 +218,7 @@ export interface VerdictFinding {
  * from an absolute "Not safe as-is" to a coherent "Good overall (N/100) — M to
  * harden" instead of sitting in red beside a green 93.
  *
- * [CHIEF-CDS] design posture: when a composite is supplied, IT is the source of
+ * Design posture: when a composite is supplied, IT is the source of
  * truth for the verdict *direction*, because the caller's composite is already
  * severity-weighted AND floor-aware — a confirmed credential/malicious finding
  * drives the dominant-analyzer floor and pulls the composite below the band, so

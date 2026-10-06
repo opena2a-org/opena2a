@@ -54,7 +54,7 @@
  *   - Do NOT treat `score: 100` as a trust signal, and do NOT compare a
  *     0..100 `score` against a 0..1 `trustScore`.
  *
- * ## 1.0.0 migration (deferred breaking change — CHIEF-CA + CHIEF-CPO)
+ * ## 1.0.0 migration (deferred breaking change)
  *
  * The flat object lumps both layers together, which is the root of the
  * ambiguity. The 1.0.0 restructure namespaces them:

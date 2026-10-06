@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   await tele.init({ tool: TOOL, version: VERSION });
 
   // Render the CISO-readable block message when the NanoMind classifier
-  // refuses a natural-language input at the trust boundary (CHIEF-CPO). All
+  // refuses a natural-language input at the trust boundary. All
   // composition (line content, tone->color, modelVersion sanitization) lives
   // in the pure, unit-tested `formatClassifierBlock`; here we only inject the
   // shared cli-ui primitives and write the result. Only the canonical

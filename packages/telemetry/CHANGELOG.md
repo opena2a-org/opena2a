@@ -117,7 +117,7 @@
 
 ### Added
 
-- **`successFromExitCode(exitCode, semanticSuccessCodes?)`** — optional second argument lets each dispatcher declare exit codes ≥ 2 that represent semantic outcomes rather than crashes. Per [CHIEF-CSR-018] + [CHIEF-CPO-022] (`briefs/cli-telemetry-success-semantics.md`), invocation telemetry's `success` field follows **crash-rate semantics**: a `success: false` event means the command itself failed to execute (config error, network failure, exception, integrity violation), not "the user got a result they didn't want." Tools whose exit codes ≥ 2 represent working outcomes — `ai-trust check <not-found-pkg>` exits 2 to signal "I checked, the package isn't in the registry" — pass those codes via the new argument so the dashboard signal reflects actual crash rate.
+- **`successFromExitCode(exitCode, semanticSuccessCodes?)`** — optional second argument lets each dispatcher declare exit codes ≥ 2 that represent semantic outcomes rather than crashes. Invocation telemetry's `success` field follows **crash-rate semantics**: a `success: false` event means the command itself failed to execute (config error, network failure, exception, integrity violation), not "the user got a result they didn't want." Tools whose exit codes ≥ 2 represent working outcomes — `ai-trust check <not-found-pkg>` exits 2 to signal "I checked, the package isn't in the registry" — pass those codes via the new argument so the dashboard signal reflects actual crash rate.
 
   Surfaced by the first 60-day rollup query on `/admin/cli-usage`: `ai-trust audit` showed a 50% "failure" rate driven almost entirely by exit-2 not-found events in `requirements.txt` audits. Real crash rate was ~0%.
 
@@ -126,7 +126,7 @@
 ### Migration for consumer CLIs
 
 - **ai-trust** ships `tele.successFromExitCode(process.exitCode, [2])` consuming 0.3.0 on its next pin bump.
-- **hackmyagent** ships unchanged dispatcher (no `semanticSuccessCodes` — partial-scan exit 2 IS a degraded outcome per [CHIEF-CSR-018]; surface it). HMA's integrity-failure exit-3 path at `src/cli.ts:9494` migrates to `tele.error('startup', 'INTEGRITY_FAIL')` so integrity violations get their own dashboard event row.
+- **hackmyagent** ships unchanged dispatcher (no `semanticSuccessCodes` — partial-scan exit 2 IS a degraded outcome; surface it). HMA's integrity-failure exit-3 path at `src/cli.ts:9494` migrates to `tele.error('startup', 'INTEGRITY_FAIL')` so integrity violations get their own dashboard event row.
 - **damn-vulnerable-ai-agent** — `browse.js:349` exit-2 site needs case-by-case classification before assigning a `semanticSuccessCodes` value. Default is no override.
 - **opena2a-cli**, **secretless-ai** — no production exit-≥2 sites; no migration needed.
 
@@ -134,7 +134,7 @@
 
 - 11 new tests in `index.test.ts` covering `semanticSuccessCodes` behavior, validation precedence, backward compatibility with the no-arg form, and the "empty array = no override" semantic.
 
-### Guardrails (set by [CHIEF-CPO-022])
+### Guardrails
 
 - New CLIs joining the OpenA2A fleet MUST declare `semanticSuccessCodes` at telemetry-wiring time or accept the default `[]` (treat exit ≥ 2 as failure).
 - Exit-code contract toward end-users is unchanged — no shipping CLI changes its `process.exit(...)` codes as part of this rollout. Splitting an existing exit code (e.g. HMA exit 2 → 2-or-4) is a breaking CLI contract change that requires Abdel escalation.
