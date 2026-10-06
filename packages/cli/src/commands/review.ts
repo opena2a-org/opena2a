@@ -345,8 +345,24 @@ export interface DetectPhaseData {
   mcpServers: { name: string; transport: string; source: string; verified: boolean; capabilities: string[]; risk: string }[];
   aiConfigs: { file: string; tool: string; risk: string; details: string }[];
   identity: { aimIdentities: number; mcpIdentities: number; soulFiles: number; capabilityPolicies: number };
-  findings: { severity: string; title: string; whyItMatters: string; remediation: string }[];
+  findings: DetectFinding[];
   recoverablePoints: number;
+}
+
+export interface DetectFinding {
+  /** Stable identifier, also used as the finding id in the review findings list. */
+  id: string;
+  severity: string;
+  title: string;
+  /** `project`: the signal is in the scanned tree itself (the same signals
+   *  targetGovernanceFloorScore floors the composite on), so review counts it
+   *  as a finding. `host`: it reflects AI tools running on the developer's
+   *  machine, not the target, so it stays in the Shadow AI phase only. */
+  scope: 'project' | 'host';
+  /** What the finding points at (files, server names), when it has one. */
+  detail?: string;
+  whyItMatters: string;
+  remediation: string;
 }
 
 export interface RecoveryOpportunity {
@@ -584,7 +600,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   const grade = scoreToGrade(compositeScore);
 
   // Aggregate findings
-  const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData);
+  const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData, detectData);
 
   // Action items
   const actionItems = generateActionItems(credentialData, guardData, shieldData, initData);
@@ -729,7 +745,9 @@ export async function review(options: ReviewOptions): Promise<number> {
   if (!quiet) {
     try {
       const cliUi = await import('@opena2a/cli-ui');
-      const projectLabel = report.projectType && report.projectType !== 'unknown'
+      // formatProjectType reports an undetected type as "Unknown" (or
+      // "Unknown + MCP server"); never print that as the noun of the verdict.
+      const projectLabel = report.projectType && !/^unknown\b/i.test(report.projectType)
         ? report.projectType
         : 'project';
       const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
@@ -827,7 +845,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   process.stdout.write(`  Report: ${dim(printable(reportPath))}`);
 
   // Auto-open
-  const shouldOpen = options.autoOpen !== false && !options.ci;
+  const shouldOpen = shouldAutoOpenReport(options, isTTY);
   if (shouldOpen) {
     openInBrowser(reportPath);
     process.stdout.write(` ${dim('(opened in browser)')}`);
@@ -1477,7 +1495,9 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   const ungovernedAgents = detectedAgents.filter(a => a.governanceStatus === 'no governance');
   if (ungovernedAgents.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-AGENTS',
       severity: 'high',
+      scope: 'host',
       title: `${ungovernedAgents.length} AI agent${ungovernedAgents.length !== 1 ? 's' : ''} running without governance`,
       whyItMatters: 'These agents can take actions in your project but have no rules defining what they should or should not do.',
       remediation: 'opena2a init && opena2a harden-soul',
@@ -1485,7 +1505,9 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   }
   if (detectedIdentity.aimIdentities === 0 && detectedAgents.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-IDENTITY',
       severity: 'high',
+      scope: 'host',
       title: 'No agent identity registered for this project',
       whyItMatters: 'Without an identity, agent actions cannot be traced back to a specific tool or session.',
       remediation: 'opena2a identity create --name my-agent',
@@ -1496,8 +1518,11 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   );
   if (projectCriticalMcp.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-MCP',
       severity: 'critical',
+      scope: 'project',
       title: `${projectCriticalMcp.length} project MCP server${projectCriticalMcp.length !== 1 ? 's' : ''} with sensitive access`,
+      detail: projectCriticalMcp.map(s => s.name).join(', '),
       whyItMatters: 'These MCP servers grant access to sensitive operations like running commands or accessing databases.',
       remediation: 'opena2a mcp audit',
     });
@@ -1505,15 +1530,20 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   const criticalConfigs = detectedAiConfigs.filter(c => c.risk === 'critical');
   if (criticalConfigs.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-CONFIG',
       severity: 'critical',
+      scope: 'project',
       title: 'AI config files contain credential references',
+      detail: criticalConfigs.map(c => c.file).join(', '),
       whyItMatters: 'API keys or tokens appear to be stored directly in configuration files.',
       remediation: 'opena2a protect',
     });
   }
   if (detectedIdentity.soulFiles === 0 && detectedAgents.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-SOUL',
       severity: 'medium',
+      scope: 'host',
       title: 'No SOUL.md governance file in this project',
       whyItMatters: 'Without a SOUL.md, agents rely entirely on their defaults which may not match your expectations.',
       remediation: 'opena2a harden-soul',
@@ -1940,6 +1970,7 @@ export function aggregateFindings(
   shieldData: ShieldPhaseData,
   targetDir: string,
   hmaData: HmaPhaseData | null,
+  detectData?: Pick<DetectPhaseData, 'findings'> | null,
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
@@ -2034,6 +2065,23 @@ export function aggregateFindings(
     });
   }
 
+  // Shadow AI findings about the scanned tree itself. These are the signals
+  // that floor the composite (targetGovernanceFloorScore), so leaving them out
+  // printed "0 findings" and a safe verdict beside the 0/100 they caused.
+  // Host-scoped findings describe the developer's machine and stay in the
+  // Shadow AI phase.
+  for (const f of detectData?.findings ?? []) {
+    if (f.scope !== 'project') continue;
+    findings.push({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      source: 'shadow-ai',
+      detail: f.detail || f.whyItMatters,
+      remediation: f.remediation,
+    });
+  }
+
   // Sort by severity
   const sevOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
   findings.sort((a, b) => (sevOrder[a.severity] ?? 4) - (sevOrder[b.severity] ?? 4));
@@ -2122,6 +2170,18 @@ function writeReviewHtml(reportPath: string, report: ReviewReport): void {
   // shared temp directory by default. `mode` applies only when the file is
   // created, so an existing --report path keeps its own permissions.
   fs.writeFileSync(reportPath, generateReviewHtml(report), { encoding: 'utf-8', mode: 0o600 });
+}
+
+/**
+ * Open the HTML report only for a person at a terminal. A pipe, a redirect or
+ * a CI job has nobody to look at the browser window, so stdout must be a TTY
+ * as well as auto-open being on and --ci being off.
+ */
+export function shouldAutoOpenReport(
+  options: Pick<ReviewOptions, 'autoOpen' | 'ci'>,
+  stdoutIsTTY: boolean,
+): boolean {
+  return options.autoOpen !== false && !options.ci && stdoutIsTTY;
 }
 
 function openInBrowser(filePath: string): void {
