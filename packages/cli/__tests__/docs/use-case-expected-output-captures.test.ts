@@ -203,6 +203,29 @@ function requiredCaptures(): { what: string; block: Fence | undefined }[] {
   ];
 }
 
+/** The directory operand of an `npx opena2a-cli detect <dir> [flags]` line, surrounding quotes removed. */
+function detectOperand(invocation: string[]): string | undefined {
+  for (const line of invocation) {
+    const m = /^npx opena2a-cli detect\s+(\S+)/.exec(line.trim());
+    if (m && !m[1].startsWith('-')) return m[1].replace(/^"(.*)"$/, '$1');
+  }
+  return undefined;
+}
+
+/**
+ * The directory `operand` names for `user`. The captures replace the machine
+ * identity with a Linux-style placeholder, so `~` and `$HOME` resolve to
+ * `/home/<user>` there. A relative operand depends on where the reader stands
+ * and resolves to null.
+ */
+function resolveOperand(operand: string, user: string): string | null {
+  const home = `/home/${user}`;
+  const m = /^(?:~|\$HOME|\$\{HOME\})(\/.*)?$/.exec(operand);
+  if (m) return path.posix.join(home, m[1] ?? '');
+  if (operand.startsWith('/')) return path.posix.normalize(operand);
+  return null;
+}
+
 /** Split one CSV record into fields, honouring csvEscape's `""` quoting. */
 function csvFields(line: string): string[] {
   const fields: string[] = [];
@@ -453,6 +476,66 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     }
 
     expect(violations).toEqual([]);
+  });
+
+  it('each detect capture prints the directory its own command line names', () => {
+    // formatText's device line ends with the directory detect resolved from its
+    // operand, and generateAssetCsv repeats it in every row. A capture of one
+    // directory pasted under a command that names another is not a capture of
+    // that command, however exact the rest of the block is.
+    const problems: string[] = [];
+    const check = (where: string, operand: string | undefined, user: string, printed: string) => {
+      if (operand === undefined) {
+        problems.push(`${where}: the command above this capture names no directory`);
+        return;
+      }
+      const scanned = resolveOperand(operand, user);
+      if (scanned === null) {
+        problems.push(`${where}: \`detect ${operand}\` is relative, so the directory it scans depends on the reader's cwd`);
+      } else if (printed !== scanned) {
+        problems.push(`${where}: prints ${printed}, but \`detect ${operand}\` scans ${scanned}`);
+      }
+    };
+
+    const audits: Fence[] = [];
+    for (const file of [DEV, SEC]) {
+      for (const block of outputBlocks(file)) {
+        const banner = bannerLine(block);
+        if (banner?.text !== 'Shadow AI Agent Audit') continue;
+        audits.push(block);
+        const device = block.body.find((b) => b.line > banner.line && b.text.trim() !== '');
+        const m = device ? /^(.+) \| (.+) \| (.+)$/.exec(device.text) : null;
+        if (!device || !m) {
+          problems.push(`${file}:${block.fenceLine}: no "host | user | directory" line under the banner`);
+          continue;
+        }
+        check(`${file}:${device.line}`, detectOperand(block.invocation), m[2], m[3]);
+      }
+    }
+    expect(audits, 'expected two detect audits in developer.md and one in security-team.md').toHaveLength(3);
+
+    const csv = fences(SEC).filter((f) => f.info === 'csv');
+    expect(csv, `${SEC}: expected exactly one csv fence`).toHaveLength(1);
+    const rows = csv[0].body.filter((b) => b.text.trim() !== '').slice(1);
+    expect(rows.length, 'the CSV block carries no data rows').toBeGreaterThan(0);
+    for (const { line, text } of rows) {
+      const fields = csvFields(text);
+      check(`${SEC}:${line}`, detectOperand(csv[0].invocation), fields[1], fields[2]);
+    }
+
+    // The one-line captures say the rest of their run is the Step 1 audit, which
+    // holds only while their command scans the same directory Step 1's does.
+    const step1 = detectOperand(audits.find((b) => b.file === SEC)!.invocation);
+    const sameAudit = outputBlocks(SEC).filter((b) => /same audit as Step 1/.test(b.label ?? ''));
+    expect(sameAudit, `${SEC}: expected the --report and --export-csv one-line captures`).toHaveLength(2);
+    for (const block of sameAudit) {
+      const operand = detectOperand(block.invocation);
+      if (operand !== step1) {
+        problems.push(`${SEC}:${block.fenceLine}: \`detect ${operand}\` is called the same audit as Step 1, which runs \`detect ${step1}\``);
+      }
+    }
+
+    expect(problems).toEqual([]);
   });
 
   it('OPA-07.AC5 the pinned version is derived, never written down here', () => {
