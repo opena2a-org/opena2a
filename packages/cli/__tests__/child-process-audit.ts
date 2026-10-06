@@ -77,11 +77,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'adapter commands run their bundled engine --help as the CLI child',
   },
   'help-examples.test.ts': {
-    shape: 'sync',
+    shape: 'async-bounded',
     maxSimultaneousChildren: 1,
     spawns:
-      'spawnSync(node dist/index.js <example>), one example at a time, from a ' +
-      'scratch project and HOME',
+      'spawnSync(git init) per sandbox; spawnSync(node dist/index.js <example>) one ' +
+      'example at a time; spawn(node dist/index.js guard watch), awaited and stopped ' +
+      'once it prints its start line, never alongside another child',
   },
   'commands/guard.test.ts': {
     shape: 'sync',
