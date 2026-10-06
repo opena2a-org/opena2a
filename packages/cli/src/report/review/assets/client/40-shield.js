@@ -1,6 +1,6 @@
 function renderShield() {
   var shield = report.shieldData;
-  var h = '<div class="section-intro">Shield is the unified security orchestration layer. It collects events from all OpenA2A tools into a tamper-evident log and classifies them into actionable findings.</div>';
+  var h = '<div class="section-intro">Shield classifies the events in its event log into findings.</div>';
   h += '<div class="stats-grid">';
   h += statCard(shield.shieldPostureScore + '/100', 'Shield Posture', scoreColor(shield.shieldPostureScore));
   h += statCard(shield.eventCount, 'Events (7d)', 'var(--primary)');
