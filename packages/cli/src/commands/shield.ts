@@ -456,11 +456,15 @@ function writeEvaluateVerdict(
  * broke it. Its sha256 is recorded in the first event of the fresh chain, so
  * the new log carries a verifiable pointer back to the old one and the break
  * cannot be laundered by rotating it away.
+ *
+ * The chain check and the digest both read the log in fixed chunks and keep
+ * no event, so a log of any size is checked and archived without being held.
+ * A log that cannot be read is refused as unreadable, never as intact.
  */
 async function handleArchiveLog(options: ShieldOptions): Promise<number> {
   const {
     getEventsPath,
-    readVerifiedEvents,
+    verifyEventLog,
     rotatedEventsPath,
     sha256File,
     writeEvent,
@@ -469,9 +473,9 @@ async function handleArchiveLog(options: ShieldOptions): Promise<number> {
   const isJson = options.format === 'json';
   const eventsPath = getEventsPath();
 
-  const refuse = (status: string, message: string): number => {
+  const refuse = (status: string, message: string, extra: Record<string, unknown> = {}): number => {
     if (isJson) {
-      process.stdout.write(JSON.stringify({ status, eventsPath }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ status, eventsPath, ...extra }, null, 2) + '\n');
     } else {
       process.stderr.write(red(message + '\n'));
     }
@@ -482,7 +486,23 @@ async function handleArchiveLog(options: ShieldOptions): Promise<number> {
     return refuse('no_event_log', `No event log at ${eventsPath}. Nothing to archive.`);
   }
 
-  const { chainBroken, brokenAt, untrustedCount } = readVerifiedEvents();
+  // Counts only: the verdict and the anchor need no event held, so the
+  // chain is checked in fixed chunks with no event kept, whatever the size.
+  let verification: ReturnType<typeof verifyEventLog>;
+  try {
+    verification = verifyEventLog(eventsPath, { countsOnly: true });
+  } catch (err) {
+    // A log that cannot be read is not known to be intact, and a log is
+    // never archived without its chain being checked.
+    const reason = err instanceof Error ? err.message : String(err);
+    return refuse(
+      'unreadable',
+      'Event log could not be read, so its hash chain was not checked. Nothing archived.\n' +
+      `  Reason:   ${reason}\n  Inspect:  opena2a shield selfcheck\n  Log:      ${eventsPath}`,
+      { error: reason },
+    );
+  }
+  const { chainBroken, brokenAt, untrustedCount } = verification;
 
   // Archiving an intact log would discard trustworthy history for nothing,
   // and would be a way to drop events on demand.
