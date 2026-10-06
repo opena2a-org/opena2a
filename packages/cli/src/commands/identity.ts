@@ -97,7 +97,7 @@ const USAGE = [
   'Lifecycle',
   '  suspend                  Suspend agent on server (stops all operations)',
   '  reactivate               Reactivate a suspended agent',
-  '  revoke                   Permanently delete agent from server (irreversible)',
+  '  revoke                   Revoke agent on server',
   '',
   'Activity',
   '  activity [--limit N]     View recent agent activity events',
@@ -2325,7 +2325,7 @@ async function handleReactivate(options: IdentityOptions): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// revoke -- permanently delete agent from server (irreversible)
+// revoke -- revoke an agent on server
 // ---------------------------------------------------------------------------
 
 async function handleRevoke(options: IdentityOptions): Promise<number> {
@@ -2346,8 +2346,6 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
   // Require --ci or explicit confirmation via --name matching
   if (!options.ci && !isJson) {
     process.stderr.write(red('WARNING: This will revoke the agent on the server.') + '\n');
-    process.stderr.write('Data is retained for 30 days. You can reactivate within that window.\n');
-    process.stderr.write('After 30 days, all data will be permanently deleted.\n');
     process.stderr.write('\n');
     process.stderr.write(`To confirm, run: opena2a identity revoke --server cloud --ci\n`);
     process.stderr.write(`To temporarily disable instead: opena2a identity suspend --server cloud\n`);
@@ -2358,17 +2356,18 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
   const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   try {
-    await authedClient.revokeAgent(agentId);
+    const resp = await authedClient.revokeAgent(agentId);
 
     if (isJson) {
-      process.stdout.write(JSON.stringify({ action: 'revoked', agentId, retentionDays: 30 }, null, 2) + '\n');
+      // The CLI states no retention period of its own: any time value in the
+      // output is the server's, under the server's own member name.
+      const serverFields = resp && typeof resp === 'object' && !Array.isArray(resp) ? resp : {};
+      process.stdout.write(JSON.stringify({ action: 'revoked', agentId, ...serverFields }, null, 2) + '\n');
       return 0;
     }
 
     process.stdout.write(red(`Agent ${agentId} revoked.`) + '\n');
-    process.stdout.write('  Data retained for 30 days.\n');
-    process.stdout.write('  To restore within 30 days: opena2a identity reactivate --server cloud\n');
-    process.stdout.write(dim('  After 30 days, all data will be permanently deleted.') + '\n');
+    process.stdout.write(dim('  To reactivate: opena2a identity reactivate --server cloud') + '\n');
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to revoke agent: ${formatServerError(err)}\n`);
