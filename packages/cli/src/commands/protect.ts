@@ -49,8 +49,10 @@ interface KeyFileFinding {
   title: string;
   /** Why this is a credential surface */
   explanation: string;
-  /** Recommended remediation (text-mode hint, not auto-applied yet) */
+  /** The command that stops git tracking the file; never a shell chain */
   remediation: string;
+  /** The sentence printed with it: revoke at the issuer first, then .gitignore */
+  remediationNote: string;
 }
 
 interface ProtectReport {
@@ -82,9 +84,9 @@ interface ProtectReport {
   scoreAfter?: number;
   /**
    * Cryptographic key / cert files in source (CRED-KEYFILE / CRED-CERTFILE).
-   * Surface only — protect does NOT rotate or re-encrypt binary key material;
-   * the user must untrack the file, add the extension to .gitignore, and
-   * rotate the key at its issuing CA / vault. Closes #126.
+   * Surface only — protect does NOT revoke or re-encrypt binary key material;
+   * the key is revoked with the CA or service that issued it, then the file is
+   * untracked and its extension added to .gitignore. Closes #126.
    */
   keyFiles?: KeyFileFinding[];
 }
@@ -154,7 +156,7 @@ import {
   type LivenessResult,
 } from '../util/drift-verification.js';
 import { scanMcpCredentials, scanAiConfigFiles } from '../util/ai-config.js';
-import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
+import { keyFileRemediation, scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { calculateSecurityScore } from '../util/scoring.js';
 import { runScoringChecks } from '../util/hygiene.js';
 import { BrokerClient, GrantDeniedError, BrokerGrantError, BrokerUnexpectedStatusError, DEFAULT_SOCKET_PATH } from '../aap/index.js';
@@ -233,9 +235,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     severity: m.severity as 'critical' | 'medium',
     title: m.title,
     explanation: m.explanation ?? '',
-    remediation: m.severity === 'critical'
-      ? `git rm --cached "${path.relative(targetDir, m.filePath)}" && echo "*${path.extname(m.filePath)}" >> .gitignore && rotate the key at its issuing CA / vault`
-      : `git rm --cached "${path.relative(targetDir, m.filePath)}" && echo "*${path.extname(m.filePath)}" >> .gitignore`,
+    ...keyFileRemediation(m.findingId, path.relative(targetDir, m.filePath)),
   }));
 
   spinner.stop();
@@ -1305,9 +1305,9 @@ function fixAiConfigExclusion(targetDir: string, dryRun?: boolean): string[] {
 
 /**
  * Print a warning block for cryptographic key / cert files detected by
- * `scanCryptoKeyFiles`. protect does not auto-rotate or re-encrypt binary
- * key material; the user must untrack the file, add the extension to
- * .gitignore, and rotate the key at its issuing CA / vault. Closes #126.
+ * `scanCryptoKeyFiles`. protect does not revoke or re-encrypt binary key
+ * material; the note leads with revoking it at the CA or service that issued
+ * it, and the Fix only stops git tracking the file. Closes #126.
  */
 function printKeyFileWarnings(keyFiles: KeyFileFinding[]): void {
   if (keyFiles.length === 0) return;
@@ -1318,7 +1318,7 @@ function printKeyFileWarnings(keyFiles: KeyFileFinding[]): void {
     const sevLabel = k.severity === 'critical' ? red('CRITICAL') : yellow('MEDIUM  ');
     process.stdout.write(`  ${sevLabel}  ${k.findingId}  ${k.relativePath}\n`);
     process.stdout.write(dim(`    ${k.title} -- ${k.explanation}\n`));
-    process.stdout.write(dim(`    Fix: ${k.remediation}\n\n`));
+    process.stdout.write(dim(`    ${k.remediationNote}\n    Fix: ${k.remediation}\n\n`));
   }
 }
 

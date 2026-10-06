@@ -192,4 +192,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(/bin/sh -c <the next step a failing selfcheck check prints>), one ' +
       'at a time, to run each step as printed against a scratch HOME',
   },
+  'commands/printed-path-commands.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git ...) scratch-repository setup and ls-files, then execFileSync(sh -c ' +
+      '<printed command>) for each key-file command init and protect print, one at a time',
+  },
 };

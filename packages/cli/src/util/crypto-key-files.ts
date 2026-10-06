@@ -23,10 +23,13 @@
  * verify command so the user can downgrade by inspection.
  */
 
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { probeEnv } from './child-env.js';
 import type { CredentialMatch } from './credential-patterns.js';
 import { SKIP_DIRS } from './credential-patterns.js';
+import { shellWord } from './shell-word.js';
 
 const KEY_FILE_SEVERITY: Record<string, 'critical' | 'medium'> = {
   '.key': 'critical',
@@ -91,4 +94,55 @@ function walk(dir: string, callback: (filePath: string) => void): void {
       callback(full);
     }
   }
+}
+
+/**
+ * The per-file remediation for a key or certificate file: one `git rm
+ * --cached` command and the sentence printed with it. Revoking the key is a
+ * step at the CA or service that issued it, which no command here can take,
+ * so it is stated in the note and never chained into the command; neither is
+ * the `.gitignore` step, which the note names.
+ */
+export function keyFileRemediation(
+  findingId: string,
+  relativePath: string,
+): { remediation: string; remediationNote: string } {
+  return {
+    remediation: `git rm --cached ${shellWord(relativePath)}`,
+    remediationNote: findingId === 'CRED-KEYFILE'
+      ? 'Run after the key is revoked or replaced with the CA or service that issued it, which no opena2a command can do: it stops git tracking the file; add its extension to .gitignore so it is not committed again.'
+      : 'This stops git tracking the file and leaves it on disk; add its extension to .gitignore so it is not committed again.',
+  };
+}
+
+/**
+ * Is `relativePath` in the git index of `dir`? Decided by `git ls-files
+ * --error-unmatch`, started without a shell. Not a repository, or not
+ * tracked, both answer false.
+ */
+function isTracked(dir: string, relativePath: string): boolean {
+  try {
+    execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'ls-files', '--error-unmatch', '--', relativePath], {
+      stdio: 'ignore',
+      env: probeEnv(['GIT_']),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One `git rm --cached` command over every given path that git tracks in
+ * `dir`, each a single-quoted shell word, in ascending order of relative
+ * path. Never truncated: a command that reads complete and leaves files
+ * tracked is worse than a long one. Null when none of them is tracked.
+ */
+export function untrackCommand(
+  dir: string,
+  relativePaths: string[],
+): { command: string; paths: string[] } | null {
+  const paths = Array.from(new Set(relativePaths)).sort().filter(p => isTracked(dir, p));
+  if (paths.length === 0) return null;
+  return { command: `git rm --cached ${paths.map(shellWord).join(' ')}`, paths };
 }

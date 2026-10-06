@@ -699,8 +699,11 @@ describe('protect command', () => {
         severity: 'critical',
         relativePath: 'leak.key',
       });
-      expect(report.keyFiles[0].remediation).toContain('git rm --cached');
-      expect(report.keyFiles[0].remediation).toContain('.gitignore');
+      // The command only untracks; revoking at the issuer and the .gitignore
+      // step are the note's words, never a segment of a shell chain.
+      expect(report.keyFiles[0].remediation).toBe("git rm --cached 'leak.key'");
+      expect(report.keyFiles[0].remediationNote).toMatch(/^Run after the key is revoked/);
+      expect(report.keyFiles[0].remediationNote).toContain('.gitignore');
       expect(report.verificationPassed).toBe(false);
       expect(exitCode).toBe(1);
     });

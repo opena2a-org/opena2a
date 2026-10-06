@@ -652,11 +652,11 @@ describe('init', () => {
 
     const keyfile = report.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
     expect(keyfile).toBeDefined();
-    // Post-#126: `opena2a protect` now surfaces key/cert files with a
-    // per-file warning block (untrack from git + add to .gitignore + rotate
-    // at issuing CA). init can now point at the unified entry point;
-    // protect's output gives the user the actionable `git rm` command.
-    expect(keyfile.fix).toBe('opena2a protect');
+    // `opena2a protect` neither revokes nor untracks a key file, so it is
+    // never the Fix. The Fix is `git rm --cached` over the tracked files;
+    // this temp dir is not a git repository, so there is nothing to untrack
+    // and no Fix line.
+    expect(keyfile.fix).toBeUndefined();
 
     const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
     expect(mcpFinding).toBeDefined();
