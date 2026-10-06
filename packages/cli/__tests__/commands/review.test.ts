@@ -92,6 +92,7 @@ import {
   type ShieldPhaseData,
   type HmaPhaseData,
   type HmaFinding,
+  type ReviewReport,
 } from '../../src/commands/review.js';
 import type { CredentialMatch } from '../../src/util/credential-patterns.js';
 
@@ -400,6 +401,48 @@ describe('review', () => {
     expect(shieldPhase.detail).not.toMatch(/excluded/);
     expect(report.shieldData.chainBroken).toBe(false);
     expect(stderrChunks.join('')).not.toMatch(/chain broken/);
+  });
+
+  it('the terminal score line names the check that capped the composite, and counts the dimensions it used', async () => {
+    // The line said "capped by a critical dimension" without naming it, and only
+    // when the score sat below every phase score. A skipped HMA phase scores 0,
+    // so with --skip-hma it never said so: a project with a committed key read
+    // "Score: 20/100 ... (composite across 6 dimensions)" while the composite
+    // averaged five dimensions to 89 and Credentials capped it at 20.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'scope', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+    const reportPath = path.join(tempDir, 'scope-report.html');
+    const run = async () => {
+      const { output } = await captureStdout(() => review({
+        targetDir: tempDir, reportPath, autoOpen: false, skipHma: true, ci: true,
+      }));
+      const lines = output.replace(/\x1b\[[0-9;]*m/g, '').split('\n');
+      const html = fs.readFileSync(reportPath, 'utf-8');
+      const payload = html.slice(
+        html.indexOf('>', html.indexOf('<script id="report-data"')) + 1,
+        html.indexOf('</script>'),
+      );
+      const report = JSON.parse(payload) as ReviewReport;
+      return { scoreLine: lines.find(l => l.trimStart().startsWith('Score:')) ?? '', report };
+    };
+
+    const clean = await run();
+    expect(clean.report.scoreModel.floorHeldBy).toEqual([]);
+    expect(clean.report.scoreModel.weights.filter(w => w.weight > 0)).toHaveLength(5);
+    expect(clean.scoreLine).toContain('(composite across 5 dimensions)');
+    expect(clean.scoreLine).not.toMatch(/capped/i);
+
+    fs.writeFileSync(path.join(tempDir, 'config.ts'), `const key = "${'sk-ant-api03-' + 'A'.repeat(85)}";`);
+    const capped = await run();
+    const model = capped.report.scoreModel;
+    expect(model.floorHeldBy).toEqual(['Credentials']);
+    expect(capped.report.compositeScore).toBe(CRITICAL_BAND - 10);
+    expect(model.weightedScore).toBeGreaterThan(capped.report.compositeScore);
+    expect(capped.scoreLine).toContain(`Score: ${CRITICAL_BAND - 10}/100`);
+    expect(capped.scoreLine).toContain(
+      `(5 dimensions average ${model.weightedScore}; capped at ${CRITICAL_BAND - 10} by a critical Credentials result)`,
+    );
+    expect(capped.scoreLine).not.toMatch(/undefined|NaN|critical dimension/);
   });
 
   it('a full scan (HMA ran) is not marked provisional', async () => {

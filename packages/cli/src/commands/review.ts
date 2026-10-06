@@ -715,15 +715,18 @@ export async function review(options: ReviewOptions): Promise<number> {
   // critical band, so a single critical credential legitimately drags the whole
   // review down while `scan` (static code checks only) stays high. Saying so
   // turns an apparent contradiction between commands into two stated scopes.
-  // The floor is driven by risk-only dimension views, not by the phase scores
-  // shown above, so the capping dimension cannot be named from `phases`. What
-  // IS observable and worth saying: the composite sits below every phase, which
-  // is the signal that a critical dimension capped it rather than an average
-  // producing it.
-  const lowestPhase = phases.length > 0 ? Math.min(...phases.map(ph => ph.score)) : 0;
-  const scopeNote = compositeScore < lowestPhase
-    ? `  (composite across ${phases.length} dimensions; capped by a critical dimension)`
-    : `  (composite across ${phases.length} dimensions)`;
+  // The floor is driven by risk-only views, not by the phase scores shown
+  // above, so the count, the average and the check that capped it all come
+  // from scoreModel, the record the JSON and HTML reports carry. A skipped
+  // phase is not a dimension of the composite.
+  const usedDimensions = scoreModel.weights.filter(w => w.weight > 0).length;
+  const heldBy = scoreModel.floorHeldBy;
+  const cappedBy = heldBy.length === 1
+    ? `a critical ${heldBy[0]} result`
+    : `critical ${heldBy.slice(0, -1).join(', ')} and ${heldBy[heldBy.length - 1]} results`;
+  const scopeNote = heldBy.length > 0
+    ? `  (${usedDimensions} dimensions average ${scoreModel.weightedScore}; capped at ${compositeScore} by ${cappedBy})`
+    : `  (composite across ${usedDimensions} dimensions)`;
   // The finding count above is what survived chain verification. When events
   // were excluded, the summary must say so on the same screen as the count it
   // qualifies, not only on stderr.
