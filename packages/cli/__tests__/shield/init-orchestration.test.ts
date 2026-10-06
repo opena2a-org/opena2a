@@ -75,9 +75,15 @@ vi.mock('../../src/shield/signing.js', () => ({
   signAllArtifacts: vi.fn(),
 }));
 
-vi.mock('../../src/util/credential-patterns.js', () => ({
-  quickCredentialScan: vi.fn(() => []),
-}));
+// The credential audit runs the real scanner unless a test overrides it, so
+// the files-read count it reports is the walker's own.
+vi.mock('../../src/util/credential-patterns.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/credential-patterns.js')>();
+  return {
+    quickCredentialScan: vi.fn(() => []),
+    scanCredentialsWithCoverage: vi.fn(actual.scanCredentialsWithCoverage),
+  };
+});
 
 vi.mock('../../src/commands/guard.js', () => ({
   guard: vi.fn(),
@@ -97,10 +103,10 @@ vi.mock('../../src/util/colors.js', () => ({
 }));
 
 vi.mock('../../src/util/spinner.js', () => ({
-  Spinner: vi.fn().mockImplementation(() => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-  })),
+  Spinner: class {
+    start = vi.fn();
+    stop = vi.fn();
+  },
 }));
 
 const { shieldInit } = await import('../../src/shield/init.js');
@@ -206,10 +212,13 @@ describe('shield init orchestration', () => {
 
   it('returns exit code 1 when credentials are found', async () => {
     // Override the mock to return findings
-    const { quickCredentialScan } = await import('../../src/util/credential-patterns.js');
-    vi.mocked(quickCredentialScan).mockReturnValueOnce([
-      { severity: 'critical', title: 'API Key', filePath: 'test.js', line: 1, value: 'sk-test', pattern: 'test' },
-    ] as any);
+    const { scanCredentialsWithCoverage } = await import('../../src/util/credential-patterns.js');
+    vi.mocked(scanCredentialsWithCoverage).mockResolvedValueOnce({
+      matches: [
+        { severity: 'critical', title: 'API Key', filePath: 'test.js', line: 1, value: 'sk-test', pattern: 'test' },
+      ],
+      filesScanned: 1,
+    } as any);
 
     const { exitCode, result } = await shieldInit({
       targetDir: tempDir,
@@ -220,5 +229,65 @@ describe('shield init orchestration', () => {
     expect(exitCode).toBe(1);
     const step = result.steps.find(s => s.name === 'Credential audit');
     expect(step?.status).toBe('warn');
+  });
+});
+
+describe('shield init credential audit over a directory it reads no file in', () => {
+  function textOutput(): string {
+    return vi.mocked(process.stdout.write).mock.calls.map(c => String(c[0])).join('');
+  }
+
+  function auditSection(out: string): string {
+    const start = out.indexOf('Step 2: Credential Audit');
+    const end = out.indexOf('Step 3:');
+    return out.slice(start, end);
+  }
+
+  it('does not call a directory of skipped files clean', async () => {
+    // Every entry is a file type or folder the credential walk skips.
+    const project = path.join(tempDir, 'assets-only');
+    fs.mkdirSync(path.join(project, 'node_modules', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(project, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    fs.writeFileSync(path.join(project, 'guide.pdf'), '%PDF-1.4\n');
+    fs.writeFileSync(path.join(project, 'yarn.lock'), '# yarn lockfile v1\n');
+    fs.writeFileSync(path.join(project, '.npmrc'), 'fund=false\n');
+    fs.writeFileSync(path.join(project, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;\n');
+
+    const { exitCode, result } = await shieldInit({ targetDir: project, format: 'text' });
+
+    const audit = auditSection(textOutput());
+    expect(audit).not.toContain('No hardcoded credentials found');
+    expect(audit).toContain('No files were scanned for credentials, so this is not a clean result.');
+    expect(audit).toContain('opena2a shield init --dir <project-dir>');
+    expect(result.credentialFilesScanned).toBe(0);
+    // Status and exit code are unchanged: only the wording moves.
+    expect(result.steps.find(s => s.name === 'Credential audit')?.status).toBe('done');
+    expect(exitCode).toBe(0);
+  });
+
+  it('still reports no credentials found when it read a file', async () => {
+    const project = path.join(tempDir, 'with-code');
+    fs.mkdirSync(project, { recursive: true });
+    fs.writeFileSync(path.join(project, 'index.js'), 'console.log("hello");\n');
+
+    const { exitCode, result } = await shieldInit({ targetDir: project, format: 'text' });
+
+    const audit = auditSection(textOutput());
+    expect(audit).toContain('No hardcoded credentials found');
+    expect(audit).not.toContain('No files were scanned for credentials');
+    expect(result.credentialFilesScanned).toBe(1);
+    expect(exitCode).toBe(0);
+  });
+
+  it('carries the files-read count in --json', async () => {
+    const project = path.join(tempDir, 'json-empty');
+    fs.mkdirSync(project, { recursive: true });
+    fs.writeFileSync(path.join(project, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    await shieldInit({ targetDir: project, ci: true, format: 'json' });
+
+    const out = textOutput();
+    const json = JSON.parse(out.slice(out.indexOf('{')));
+    expect(json.credentialFilesScanned).toBe(0);
   });
 });
