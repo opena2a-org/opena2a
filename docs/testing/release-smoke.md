@@ -216,6 +216,11 @@ time node packages/cli/dist/index.js check express --json 2>/dev/null
 unset OPENA2A_TELEMETRY_URL
 ```
 
+Before a `telemetry-v*` tag whose CHANGELOG adds a field to the `UsageEvent`
+wire format: confirm the Registry accepts **and stores** that field, checked
+against the stored row rather than the ingest status code. A field the
+Registry drops would be documented as collected while no one stores it.
+
 ---
 
 ## 9. Cleanup
