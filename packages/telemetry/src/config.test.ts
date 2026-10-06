@@ -233,29 +233,50 @@ describe("loadConfig automatic suppression", () => {
     const { config, paths } = loadConfig();
     expect(config.enabled).toBe(false);
     // The file records the user's choice, not where the process ran —
-    // otherwise one CI run would poison a developer's real config.
-    const persisted = JSON.parse(readFileSync(paths.file, "utf8"));
-    expect(persisted.enabled).toBe(true);
+    // otherwise one CI run would poison a developer's real config. A
+    // suppressed run writes nothing at all.
+    expect(existsSync(paths.file)).toBe(false);
 
     delete process.env.CI;
     expect(loadConfig().config.enabled).toBe(true);
   });
 
-  it("still persists a stable install_id while suppressed", () => {
+  it("mints and persists no install_id while suppressed", () => {
     process.env.CI = "true";
-    const a = loadConfig().config.installId;
-    const b = loadConfig().config.installId;
-    expect(a).toBe(b);
+    const { config, paths } = loadConfig();
+    expect(config.installId).toBeNull();
+    expect(existsSync(paths.file)).toBe(false);
+  });
+
+  it("deletes an install_id persisted before the suppression applied", () => {
+    const { paths } = loadConfig();
+    expect(JSON.parse(readFileSync(paths.file, "utf8")).installId).toBeTruthy();
+    process.env.DO_NOT_TRACK = "1";
+    expect(loadConfig().config.installId).toBeNull();
+    expect(existsSync(paths.file)).toBe(false);
   });
 });
 
 describe("setEnabled", () => {
-  it("flips the flag and preserves install_id", () => {
-    const original = loadConfig().config.installId;
+  it("off writes exactly {enabled:false} and drops install_id", () => {
+    const { paths } = loadConfig();
     const flipped = setEnabled(false);
-    expect(flipped.enabled).toBe(false);
-    expect(flipped.installId).toBe(original);
+    expect(flipped).toEqual({ enabled: false, installId: null });
+    expect(JSON.parse(readFileSync(paths.file, "utf8"))).toEqual({ enabled: false });
+    expect(loadConfig().config.installId).toBeNull();
+  });
+
+  it("on keeps an existing install_id", () => {
+    const original = loadConfig().config.installId;
+    expect(setEnabled(true)).toEqual({ enabled: true, installId: original });
     expect(loadConfig().config.installId).toBe(original);
+  });
+
+  it("on under an env opt-out saves the preference without an install_id", () => {
+    const { paths } = loadConfig();
+    process.env.OPENA2A_TELEMETRY = "off";
+    expect(setEnabled(true)).toEqual({ enabled: true, installId: null });
+    expect(JSON.parse(readFileSync(paths.file, "utf8"))).toEqual({ enabled: true });
   });
 });
 

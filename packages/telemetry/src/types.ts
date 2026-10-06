@@ -63,7 +63,12 @@ export interface Status {
   enabled: boolean;
   configPath: string;
   policyURL: string;
-  installId: string;
+  /**
+   * The anonymous install ID, or null while telemetry is off. No ID is
+   * derived, read or kept while any opt-out is in force, so there is none
+   * to show.
+   */
+  installId: string | null;
   /**
    * Present only when telemetry is off because of the *environment*
    * (CI / DO_NOT_TRACK) rather than a user choice. Consumers should say so

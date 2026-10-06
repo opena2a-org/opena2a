@@ -7,7 +7,7 @@ beforeEach(() => {
 });
 
 function makeInput(
-  overrides: { enabled?: boolean; suppressedBy?: "ci" | "do-not-track" } = {},
+  overrides: { enabled?: boolean; suppressedBy?: "ci" | "do-not-track"; installId?: string | null } = {},
 ) {
   let enabled = overrides.enabled ?? true;
   return {
@@ -21,7 +21,7 @@ function makeInput(
       enabled,
       policyURL: "https://opena2a.org/telemetry",
       configPath: "/home/user/.config/opena2a/telemetry.json",
-      installId: "abc-123",
+      installId: overrides.installId === undefined ? "abc-123" : overrides.installId,
       ...(overrides.suppressedBy ? { suppressedBy: overrides.suppressedBy } : {}),
     }),
   };
@@ -139,6 +139,15 @@ describe("runTelemetryCommand", () => {
     expect(out).toContain("opena2a.org/telemetry");
     expect(out).toContain("OPENA2A_TELEMETRY=off");
     expect(input.setOptOut).not.toHaveBeenCalled();
+  });
+
+  it("status says there is no install_id while telemetry is off", () => {
+    const out = runTelemetryCommand(
+      "status",
+      makeInput({ enabled: false, suppressedBy: "do-not-track", installId: null }),
+    );
+    expect(out).toContain("install_id:  none (not kept while telemetry is off)");
+    expect(out).not.toContain("null");
   });
 
   it("status hint suggests 'off' when telemetry is on", () => {

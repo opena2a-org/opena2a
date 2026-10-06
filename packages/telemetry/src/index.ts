@@ -23,7 +23,7 @@ export { flush } from "./sender.js";
 let session: {
   tool: string;
   version: string;
-  installId: string;
+  installId: string | null;
   enabled: boolean;
   suppressedBy: SuppressionReason | null;
 } | null = null;
@@ -31,7 +31,7 @@ let session: {
 /** Build a Status, omitting `suppressedBy` entirely when nothing suppressed. */
 function toStatus(
   enabled: boolean,
-  installId: string,
+  installId: string | null,
   configPath: string,
   suppressedBy: SuppressionReason | null,
 ): Status {
@@ -49,7 +49,8 @@ function nodeMajor(): number {
 }
 
 /**
- * Initialize the SDK. Loads opt-out config, persists install_id.
+ * Initialize the SDK. Loads opt-out config; persists install_id only when
+ * telemetry is on (see loadConfig).
  * Idempotent: calling twice with different tools is supported (the second
  * call rebinds the session — useful in test harnesses).
  */
@@ -65,7 +66,7 @@ export async function init(opts: InitOptions): Promise<void> {
 }
 
 function buildEvent(event: UsageEvent["event"], extras: Partial<UsageEvent> = {}): UsageEvent | null {
-  if (!session || !session.enabled) return null;
+  if (!session || !session.enabled || session.installId === null) return null;
   return {
     tool: session.tool,
     version: session.version,
@@ -139,6 +140,7 @@ export function setOptOut(enabled: boolean): Status {
   const { config, paths, suppressedBy } = loadConfig();
   if (session) {
     session.enabled = config.enabled;
+    session.installId = config.installId;
     session.suppressedBy = suppressedBy;
   }
   return toStatus(config.enabled, config.installId, paths.file, suppressedBy);
