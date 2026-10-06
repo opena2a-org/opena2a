@@ -6,7 +6,7 @@
  * unreadable log as a clean one -- the same fail-open shape the chain
  * verification exists to close, one layer up.
  *
- * The branch is unreachable in production today: `readAllEvents` swallows its
+ * The branch is unreachable in production today: `readVerifiedEvents` swallows its
  * own I/O errors and `verifyEventChain` is total over JSON-derived input. That
  * is precisely why it needs a test. An unreachable branch is where a wrong
  * default survives unnoticed -- a mutation of that line cannot be killed by any

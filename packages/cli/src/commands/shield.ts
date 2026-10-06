@@ -456,11 +456,11 @@ function writeEvaluateVerdict(
  * cannot be laundered by rotating it away.
  */
 async function handleArchiveLog(options: ShieldOptions): Promise<number> {
-  const { createHash } = await import('node:crypto');
   const {
     getEventsPath,
     readVerifiedEvents,
     rotatedEventsPath,
+    sha256File,
     writeEvent,
   } = await import('../shield/events.js');
 
@@ -492,8 +492,8 @@ async function handleArchiveLog(options: ShieldOptions): Promise<number> {
     );
   }
 
-  const archivedBytes = fs.readFileSync(eventsPath);
-  const archivedSha256 = createHash('sha256').update(archivedBytes).digest('hex');
+  // Hashed in fixed chunks: the log is never held whole, whatever its size.
+  const archivedSha256 = sha256File(eventsPath);
   const archivedPath = rotatedEventsPath(eventsPath);
 
   fs.renameSync(eventsPath, archivedPath);

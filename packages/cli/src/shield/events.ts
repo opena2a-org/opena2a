@@ -7,18 +7,24 @@
  * uses SHA-256("genesis") as its prevHash.
  */
 
+import { constants as bufferConstants } from 'node:buffer';
 import { createHash, randomBytes } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
+  closeSync,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   renameSync,
   statSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 import { getEventLockPath, withEventLock } from './lock.js';
 import type { ShieldEvent } from './types.js';
@@ -342,108 +348,285 @@ function parseSince(since: string): Date | null {
   return d;
 }
 
+// ---------------------------------------------------------------------------
+// Chunked log reading
+// ---------------------------------------------------------------------------
+
+/** Bytes read per call: the reader's one fixed buffer. */
+const READ_CHUNK_BYTES = 1024 * 1024;
+
 /**
- * Read and parse every event line from the JSONL log file, in file
- * (chronological, oldest-first) order.  Corrupted JSON lines are
- * silently skipped.  Returns [] if the file is missing or unreadable.
+ * The longest line held for JSON.parse: the longest string the runtime can
+ * create.  A longer line can never parse, so it is dropped as unreadable
+ * as soon as it passes this length.
  */
-function readAllEvents(): ShieldEvent[] {
-  const eventsPath = getEventsPath();
+const MAX_LINE_CHARS = bufferConstants.MAX_STRING_LENGTH;
 
-  if (!existsSync(eventsPath)) return [];
-
-  let content: string;
+/**
+ * Call `onChunk` with each chunk of a regular file, in order, through one
+ * fixed buffer that is reused for the next chunk once `onChunk` returns.
+ *
+ * Reads the size the file has when it is opened, as readFileSync does.
+ * Anything that is not a regular file throws: a device has no end to stop at.
+ */
+function forEachChunk(path: string, chunkBytes: number, onChunk: (chunk: Buffer) => void): void {
+  const fd = openSync(path, 'r');
   try {
-    content = readFileSync(eventsPath, 'utf-8');
-  } catch {
-    return [];
-  }
-
-  const lines = content.split('\n');
-  const events: ShieldEvent[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      // Valid JSON that is not an object (null, scalar, array) cannot be
-      // an event — treat it exactly like an unparseable corrupted line.
-      // A literal `null` line would otherwise flow into verifyEventChain
-      // and throw on property access, emptying the caller's event stream.
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        continue;
-      }
-      events.push(parsed as ShieldEvent);
-    } catch {
-      // Skip corrupted lines
-      continue;
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) {
+      throw new Error(`Not a regular file: ${path}`);
     }
-  }
 
-  return events;
+    const buffer = Buffer.alloc(Math.max(1, Math.min(chunkBytes, stat.size)));
+    let remaining = stat.size;
+    while (remaining > 0) {
+      const read = readSync(fd, buffer, 0, Math.min(buffer.length, remaining), null);
+      if (read === 0) break;
+      remaining -= read;
+      onChunk(read === buffer.length ? buffer : buffer.subarray(0, read));
+    }
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
- * Apply EventFilters to a chronological (oldest-first) event list and
- * return the result in newest-first order, with the count limit applied
- * after reversal.
+ * SHA-256 hex digest of a file's bytes, read in fixed chunks so a file of
+ * any size is hashed without being held in memory.
  */
-function applyEventFilters(events: ShieldEvent[], filters: EventFilters): ShieldEvent[] {
-  let filtered = events;
+export function sha256File(path: string, chunkBytes: number = READ_CHUNK_BYTES): string {
+  const hash = createHash('sha256');
+  forEachChunk(path, chunkBytes, chunk => hash.update(chunk));
+  return hash.digest('hex');
+}
 
-  if (filters.source) {
-    const src = filters.source;
-    filtered = filtered.filter(e => e.source === src);
-  }
+/**
+ * Call `onLine` with each non-blank line of the log, trimmed as
+ * `line.trim()` trims it, or with null for a non-blank line that cannot be
+ * an event.  A line cannot be an event when its first character is not `{`
+ * (JSON.parse would throw or return a non-object), and such a line is never
+ * assembled; or when it is longer than `maxLineChars`, and such a line is
+ * dropped as soon as it passes that length.
+ *
+ * Lines are split on '\n' after decoding.  The StringDecoder carries a
+ * multi-byte character split across a chunk edge into the next chunk, so it
+ * decodes once, exactly as a whole-file decode would.
+ */
+function forEachLogLine(
+  path: string,
+  limits: { chunkBytes: number; maxLineChars: number },
+  onLine: (line: string | null) => void,
+): void {
+  const decoder = new StringDecoder('utf8');
+  // blank: only whitespace so far.  held: assembling a line that opens with
+  // '{'.  dropped: a non-blank line that cannot be an event.
+  let state: 'blank' | 'held' | 'dropped' = 'blank';
+  let pieces: string[] = [];
+  let heldChars = 0;
 
-  if (filters.severity) {
-    const sev = filters.severity;
-    filtered = filtered.filter(e => e.severity === sev);
-  }
-
-  if (filters.agent) {
-    const agent = filters.agent;
-    filtered = filtered.filter(e => e.agent === agent);
-  }
-
-  if (filters.category) {
-    const cat = filters.category;
-    filtered = filtered.filter(e => e.category === cat);
-  }
-
-  if (filters.since) {
-    const sinceDate = parseSince(filters.since);
-    if (sinceDate) {
-      const sinceMs = sinceDate.getTime();
-      filtered = filtered.filter(e => {
-        const eventTime = new Date(e.timestamp).getTime();
-        return eventTime >= sinceMs;
-      });
+  const take = (text: string): void => {
+    if (state === 'blank') {
+      const start = text.search(/\S/);
+      if (start === -1) return;
+      if (text[start] !== '{') {
+        state = 'dropped';
+        return;
+      }
+      state = 'held';
+      text = text.slice(start);
     }
+    if (state !== 'held') return;
+    if (heldChars + text.length > limits.maxLineChars) {
+      state = 'dropped';
+      pieces = [];
+      heldChars = 0;
+      return;
+    }
+    pieces.push(text);
+    heldChars += text.length;
+  };
+
+  const endLine = (): void => {
+    if (state === 'held') onLine(pieces.join('').trim());
+    else if (state === 'dropped') onLine(null);
+    state = 'blank';
+    pieces = [];
+    heldChars = 0;
+  };
+
+  const split = (text: string): void => {
+    let start = 0;
+    let newline = text.indexOf('\n');
+    while (newline !== -1) {
+      take(text.slice(start, newline));
+      endLine();
+      start = newline + 1;
+      newline = text.indexOf('\n', start);
+    }
+    if (start < text.length) take(text.slice(start));
+  };
+
+  forEachChunk(path, limits.chunkBytes, chunk => split(decoder.write(chunk)));
+  split(decoder.end());
+  endLine();
+}
+
+/** Parse one trimmed log line into an event, or null if it is not one. */
+function parseEventLine(line: string): ShieldEvent | null {
+  try {
+    const parsed: unknown = JSON.parse(line);
+    // Valid JSON that is not an object (null, scalar, array) cannot be
+    // an event — treat it exactly like an unparseable corrupted line.
+    // forEachLogLine already drops a line that does not open with '{';
+    // this keeps the chain check total if that ever changes, since a
+    // literal `null` would throw on property access there.
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as ShieldEvent;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The EventFilters a caller asked for, applied to events as they stream
+ * past: every match is kept, or only the newest `count` matches when a
+ * count is set.  `null` keeps nothing.
+ */
+function eventWindow(filters: EventFilters | null): {
+  offer: (event: ShieldEvent) => void;
+  newestFirst: () => ShieldEvent[];
+} {
+  const kept: ShieldEvent[] = [];
+  const count = filters?.count !== undefined && filters.count > 0 ? filters.count : null;
+  const sinceDate = filters?.since ? parseSince(filters.since) : null;
+  const sinceMs = sinceDate ? sinceDate.getTime() : null;
+
+  const matches = (e: ShieldEvent): boolean => {
+    if (filters === null) return false;
+    if (filters.source && e.source !== filters.source) return false;
+    if (filters.severity && e.severity !== filters.severity) return false;
+    if (filters.agent && e.agent !== filters.agent) return false;
+    if (filters.category && e.category !== filters.category) return false;
+    if (sinceMs !== null && !(new Date(e.timestamp).getTime() >= sinceMs)) return false;
+    return true;
+  };
+
+  return {
+    offer(event) {
+      if (!matches(event)) return;
+      kept.push(event);
+      // Trim in batches so a long log costs one splice per `count` events.
+      if (count !== null && kept.length >= 2 * count) {
+        kept.splice(0, kept.length - count);
+      }
+    },
+    // Newest-first (reverse chronological order), count limit applied
+    // after reversing.
+    newestFirst() {
+      return (count === null ? kept.slice() : kept.slice(-count)).reverse();
+    },
+  };
+}
+
+/** Options for verifyEventLog. */
+export interface EventLogReadOptions {
+  /** The events to keep, as readEvents filters them.  The rest are only counted. */
+  filters?: EventFilters;
+  /** Keep no events: return only the verdict and the counts. */
+  countsOnly?: boolean;
+  /** Bytes per read.  Tests lower it to move the chunk edges. */
+  chunkBytes?: number;
+  /** Longest line held for JSON.parse.  Tests lower it. */
+  maxLineChars?: number;
+}
+
+/** A chain-verified read, with the counts a caller needs beyond its window. */
+export interface EventLogVerification extends VerifiedEventsResult {
+  /** Events before the first chain break, in the caller's window or not. */
+  trustedCount: number;
+  /**
+   * Non-blank lines that are not an event (unparseable, not a JSON object,
+   * or longer than the longest line that can be parsed).  Skipped, as
+   * review skips them.
+   */
+  unreadableLines: number;
+}
+
+/**
+ * Read a log once, in fixed chunks, checking the hash chain line by line
+ * when `verify` is set (otherwise every event counts as trusted).  A missing
+ * log is empty; any other read failure throws.
+ */
+function scanEventLog(
+  eventsPath: string,
+  options: EventLogReadOptions,
+  verify: boolean,
+): EventLogVerification {
+  const window = options.countsOnly ? null : (options.filters ?? {});
+  const trusted = eventWindow(window);
+  const untrusted = eventWindow(window);
+  // One object, so the closure's writes are not narrowed away below.
+  const scan = {
+    index: 0,
+    prevHash: GENESIS_HASH,
+    brokenAt: null as number | null,
+    firstUntrusted: null as ShieldEvent | null,
+    unreadableLines: 0,
+  };
+
+  if (existsSync(eventsPath)) {
+    const limits = {
+      chunkBytes: options.chunkBytes ?? READ_CHUNK_BYTES,
+      maxLineChars: options.maxLineChars ?? MAX_LINE_CHARS,
+    };
+    forEachLogLine(eventsPath, limits, line => {
+      const event = line === null ? null : parseEventLine(line);
+      if (event === null) {
+        scan.unreadableLines++;
+        return;
+      }
+      if (scan.brokenAt === null && (!verify || eventLinks(event, scan.prevHash))) {
+        scan.prevHash = event.eventHash;
+        trusted.offer(event);
+      } else {
+        if (scan.brokenAt === null) {
+          scan.brokenAt = scan.index;
+          scan.firstUntrusted = event;
+        }
+        untrusted.offer(event);
+      }
+      scan.index++;
+    });
   }
 
-  // Newest-first (reverse chronological order).  Copy before reversing so
-  // the caller's chronological input array is not mutated.
-  filtered = [...filtered].reverse();
-
-  // Apply count limit after reversing
-  if (filters.count !== undefined && filters.count > 0) {
-    filtered = filtered.slice(0, filters.count);
-  }
-
-  return filtered;
+  const untrustedCount = scan.brokenAt === null ? 0 : scan.index - scan.brokenAt;
+  return {
+    events: trusted.newestFirst(),
+    untrusted: untrusted.newestFirst(),
+    chainBroken: scan.brokenAt !== null,
+    brokenAt: scan.brokenAt,
+    untrustedCount,
+    firstUntrusted: scan.firstUntrusted,
+    trustedCount: scan.index - untrustedCount,
+    unreadableLines: scan.unreadableLines,
+  };
 }
 
 /**
  * Read events from the JSONL log file, applying optional filters.
  *
  * Returns events in newest-first order.  Corrupted JSON lines are
- * silently skipped.
+ * silently skipped.  Returns [] if the file is missing or unreadable.
  */
 export function readEvents(filters: EventFilters = {}): ShieldEvent[] {
-  return applyEventFilters(readAllEvents(), filters);
+  const eventsPath = getEventsPath();
+  try {
+    return scanEventLog(eventsPath, { filters }, false).events;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -477,8 +660,9 @@ export interface VerifiedEventsResult {
 
 /**
  * Read events with hash-chain verification: verify the full chronological
- * log with verifyEventChain and exclude every event at or after the first
- * chain break BEFORE applying filters (issue #204, the "Option 2" of #111).
+ * log, with the same link check as verifyEventChain, and exclude every event
+ * at or after the first chain break BEFORE applying filters (issue #204, the
+ * "Option 2" of #111).
  *
  * The chain must be verified on the complete, unfiltered log — a time or
  * source filter would detach the first surviving event from its genesis
@@ -500,19 +684,36 @@ export interface VerifiedEventsResult {
  * trust boundary) or an external anchor — a follow-up beyond issue #204.
  */
 export function readVerifiedEvents(filters: EventFilters = {}): VerifiedEventsResult {
-  const all = readAllEvents();
-  const { valid, brokenAt } = verifyEventChain(all);
+  const eventsPath = getEventsPath();
+  let verification: EventLogVerification;
+  try {
+    verification = verifyEventLog(eventsPath, { filters });
+  } catch {
+    // A log that cannot be read reads as an empty one, as it always has.
+    return {
+      events: [], untrusted: [], chainBroken: false, brokenAt: null,
+      untrustedCount: 0, firstUntrusted: null,
+    };
+  }
+  const { trustedCount: _trusted, unreadableLines: _unreadable, ...result } = verification;
+  return result;
+}
 
-  const trusted = valid ? all : all.slice(0, brokenAt as number);
-
-  return {
-    events: applyEventFilters(trusted, filters),
-    untrusted: valid ? [] : applyEventFilters(all.slice(brokenAt as number), filters),
-    chainBroken: !valid,
-    brokenAt,
-    untrustedCount: valid ? 0 : all.length - (brokenAt as number),
-    firstUntrusted: valid ? null : all[brokenAt as number] ?? null,
-  };
+/**
+ * The chain-verified read behind readVerifiedEvents, for callers that need
+ * the counts outside their window or must tell an unreadable log apart from
+ * an empty one: it throws when the log exists but cannot be read.
+ *
+ * The log is read once in fixed chunks, never as one string, so a log of any
+ * size gets the verdict its content warrants.  The chain is checked line by
+ * line against the running prevHash, and only the events in the caller's
+ * window are kept; the rest are counted.
+ */
+export function verifyEventLog(
+  eventsPath: string,
+  options: EventLogReadOptions = {},
+): EventLogVerification {
+  return scanEventLog(eventsPath, options, true);
 }
 
 /**
@@ -568,32 +769,26 @@ export function chainBreakEvent(
 export function verifyEventChain(
   events: ShieldEvent[],
 ): { valid: boolean; brokenAt: number | null } {
-  if (events.length === 0) {
-    return { valid: true, brokenAt: null };
-  }
-
   for (let i = 0; i < events.length; i++) {
-    const event = events[i];
-
-    // 1. Verify prevHash links to the previous event (or genesis)
-    if (i === 0) {
-      if (event.prevHash !== GENESIS_HASH) {
-        return { valid: false, brokenAt: 0 };
-      }
-    } else {
-      if (event.prevHash !== events[i - 1].eventHash) {
-        return { valid: false, brokenAt: i };
-      }
-    }
-
-    // 2. Verify the eventHash matches the event content
-    // Reconstruct the event without eventHash and compute the hash
-    const { eventHash: _storedHash, ...rest } = event;
-    const computedHash = sha256(JSON.stringify(rest));
-    if (computedHash !== event.eventHash) {
+    const prevHash = i === 0 ? GENESIS_HASH : events[i - 1].eventHash;
+    if (!eventLinks(events[i], prevHash)) {
       return { valid: false, brokenAt: i };
     }
   }
 
   return { valid: true, brokenAt: null };
+}
+
+/**
+ * One link of the chain: `event` names `prevHash` (the previous event's
+ * eventHash, or genesis) and its eventHash matches its own content.
+ */
+function eventLinks(event: ShieldEvent, prevHash: string): boolean {
+  // 1. Verify prevHash links to the previous event (or genesis)
+  if (event.prevHash !== prevHash) return false;
+
+  // 2. Verify the eventHash matches the event content
+  // Reconstruct the event without eventHash and compute the hash
+  const { eventHash: _storedHash, ...rest } = event;
+  return sha256(JSON.stringify(rest)) === event.eventHash;
 }

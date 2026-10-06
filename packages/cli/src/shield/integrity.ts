@@ -15,7 +15,7 @@ import { homedir } from 'node:os';
 import type { IntegrityCheck, IntegrityState, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE } from './types.js';
 import { verifyAllArtifacts } from './signing.js';
-import { readVerifiedEvents } from './events.js';
+import { verifyEventLog, type EventLogVerification } from './events.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -263,11 +263,13 @@ export function verifyProcessIntegrity(): IntegrityCheck {
 
 /**
  * Verify the event chain with the same reader and verifier `opena2a review`
- * uses (readVerifiedEvents), so selfcheck and review agree on whether the
- * log is intact and where it breaks (issue #244).  Unreadable lines are
- * skipped exactly as review skips them: a torn trailing write is recovered
- * by the writer and does not break the chain, while a line damaged between
- * two events still breaks it through the next event's prevHash.
+ * uses (verifyEventLog, behind readVerifiedEvents), so selfcheck and review
+ * agree on whether the log is intact and where it breaks (issue #244).
+ * Unreadable lines are skipped exactly as review skips them: a torn trailing
+ * write is recovered by the writer and does not break the chain, while a
+ * line damaged between two events still breaks it through the next event's
+ * prevHash.  The log is read once in fixed chunks, so a log of any size gets
+ * a verdict.
  */
 function verifyEventChainIntegrity(): IntegrityCheck {
   const now = new Date().toISOString();
@@ -282,18 +284,9 @@ function verifyEventChainIntegrity(): IntegrityCheck {
     };
   }
 
-  let nonEmptyLines: number;
+  let verified: EventLogVerification;
   try {
-    const raw = readFileSync(eventsFile, 'utf-8').trim();
-    if (raw.length === 0) {
-      return {
-        name: 'event-chain',
-        status: 'pass',
-        detail: 'Events file is empty; chain is trivially valid.',
-        checkedAt: now,
-      };
-    }
-    nonEmptyLines = raw.split('\n').filter(line => line.trim().length > 0).length;
+    verified = verifyEventLog(eventsFile, { countsOnly: true });
   } catch {
     return {
       name: 'event-chain',
@@ -303,9 +296,16 @@ function verifyEventChainIntegrity(): IntegrityCheck {
     };
   }
 
-  const verified = readVerifiedEvents();
-  const total = verified.events.length + verified.untrustedCount;
-  const skipped = nonEmptyLines - total;
+  const total = verified.trustedCount + verified.untrustedCount;
+  const skipped = verified.unreadableLines;
+  if (total + skipped === 0) {
+    return {
+      name: 'event-chain',
+      status: 'pass',
+      detail: 'Events file is empty; chain is trivially valid.',
+      checkedAt: now,
+    };
+  }
   const skippedNote = skipped > 0
     ? ` ${skipped} unreadable ${skipped === 1 ? 'line was' : 'lines were'} skipped, as review skips them.`
     : '';
