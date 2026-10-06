@@ -31,6 +31,9 @@ interface InitResult {
   aiToolsConfigured: boolean;
   configSigning: { signed: number; files: string[] } | null;
   arpInit: { created: boolean; path: string; agentName?: string } | null;
+  /** Files the credential audit opened and read; null when the audit did not
+   *  run. Zero findings over zero files is "nothing examined", not "clean". */
+  credentialFilesScanned: number | null;
   steps: { name: string; status: 'done' | 'skipped' | 'warn' }[];
 }
 
@@ -89,12 +92,22 @@ export async function shieldInit(options: {
   // --- Step 2: Credential Audit ---
   if (isText) process.stdout.write(bold('Step 2: Credential Audit\n'));
   let credentialFindings = 0;
+  let credentialFilesScanned: number | null = null;
   try {
-    const { quickCredentialScan } = await import('../util/credential-patterns.js');
-    const matches = await quickCredentialScan(targetDir);
+    const { scanCredentialsWithCoverage } = await import('../util/credential-patterns.js');
+    const { matches, filesScanned } = await scanCredentialsWithCoverage(targetDir);
     credentialFindings = matches.length;
+    credentialFilesScanned = filesScanned;
     if (isText) {
-      if (matches.length === 0) {
+      if (matches.length === 0 && filesScanned === 0) {
+        // The step status stays `done` and the exit code stays 0; only the
+        // wording stops calling an unread directory clean.
+        process.stdout.write(yellow('  No files were scanned for credentials, so this is not a clean result.\n'));
+        process.stdout.write(dim('  Everything in this directory is a file type or folder the audit skips\n'));
+        process.stdout.write(dim('  (for example images, lockfiles, dependency and test folders, and\n'));
+        process.stdout.write(dim('  dotfiles other than .env). Run it on the folder that holds your code:\n'));
+        process.stdout.write(`    ${cyan('opena2a shield init --dir <project-dir>')}\n`);
+      } else if (matches.length === 0) {
         process.stdout.write(green('  No hardcoded credentials found\n'));
       } else {
         process.stdout.write(yellow(`  ${matches.length} credential${matches.length !== 1 ? 's' : ''} found\n`));
@@ -449,6 +462,7 @@ export async function shieldInit(options: {
     aiToolsConfigured,
     configSigning: configSigningResult,
     arpInit: arpInitResult,
+    credentialFilesScanned,
     steps,
   };
 
