@@ -191,6 +191,11 @@ export interface IntegrityCheck {
   name: string;
   status: 'pass' | 'warn' | 'fail';
   detail: string;
+  /**
+   * The one command to run next. Every `fail` check carries one, and `detail`
+   * ends with it, so anything that prints the detail prints the step too.
+   */
+  nextStep?: string;
   checkedAt: string;
 }
 

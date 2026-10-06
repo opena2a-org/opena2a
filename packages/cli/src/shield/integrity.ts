@@ -25,6 +25,42 @@ function getShieldDir(): string {
   return join(homedir(), '.opena2a', 'shield');
 }
 
+/** Quote a value for a POSIX shell, so a cited command runs as printed. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** The command a failing check tells the user to run next, and what it is for. */
+export interface NextStep {
+  label: string;
+  command: string;
+}
+
+/**
+ * Build a failing check. A FAIL with no next step is a dead end, so the step
+ * is required here and every failing check is built here.
+ *
+ * The step must leave the evidence of the failure in place: it reads, or (in
+ * lockdown) verifies before it unlocks. It is never `shield init`, which
+ * re-records the policy hash and re-signs the artifacts, so the failing rows
+ * turn green without anyone having looked at what changed.
+ */
+function failCheck(
+  name: string,
+  detail: string,
+  step: NextStep,
+  checkedAt: string,
+): IntegrityCheck {
+  const sentence = /[.!?]$/.test(detail) ? detail : `${detail}.`;
+  return {
+    name,
+    status: 'fail',
+    detail: `${sentence} ${step.label}: ${step.command}`,
+    nextStep: step.command,
+    checkedAt,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // File hashing
 // ---------------------------------------------------------------------------
@@ -77,11 +113,14 @@ export function recordPolicyHash(policyPath: string): void {
  *   - No recorded hash exists (policy was never recorded)
  *   - The current hash matches the recorded hash
  *
- * Returns `{ valid: false, detail }` when the hashes diverge (tampered).
+ * Returns `{ valid: false, detail, nextStep }` when the hashes diverge
+ * (tampered) or the recorded hash cannot be read.
  */
 export function verifyPolicyIntegrity(
   policyPath?: string,
-): { valid: boolean; detail: string } {
+):
+  | { valid: true; detail: string }
+  | { valid: false; detail: string; nextStep: NextStep } {
   const resolvedPath = policyPath ?? join(getShieldDir(), SHIELD_POLICY_FILE);
 
   if (!existsSync(resolvedPath)) {
@@ -104,6 +143,7 @@ export function verifyPolicyIntegrity(
     return {
       valid: false,
       detail: 'Failed to parse policy-hash.json; file may be corrupted.',
+      nextStep: { label: 'Inspect the record', command: `cat ${shellQuote(hashFile)}` },
     };
   }
 
@@ -116,6 +156,10 @@ export function verifyPolicyIntegrity(
   return {
     valid: false,
     detail: `Policy file has been modified since ${recorded.recordedAt}. Expected hash ${recorded.hash}, got ${currentHash}.`,
+    nextStep: {
+      label: 'Review the policy as it is now',
+      command: `cat ${shellQuote(resolvedPath)}`,
+    },
   };
 }
 
@@ -208,13 +252,15 @@ export function verifyShellHookIntegrity(
     };
   }
 
-  return {
-    name: 'shell-hook',
-    status: 'fail',
-    detail:
-      'Installed shell hook does not match expected content. The hook may have been tampered with.',
-    checkedAt: now,
-  };
+  return failCheck(
+    'shell-hook',
+    'Installed shell hook does not match expected content. The hook may have been tampered with.',
+    {
+      label: 'Review the installed hook',
+      command: `sed -n ${shellQuote(`/${HOOK_START_MARKER}/,/${HOOK_END_MARKER}/p`)} ${shellQuote(rcFile)}`,
+    },
+    now,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -230,12 +276,12 @@ export function verifyProcessIntegrity(): IntegrityCheck {
   const execPath = process.execPath;
 
   if (!existsSync(execPath)) {
-    return {
-      name: 'process',
-      status: 'fail',
-      detail: `Node executable not found at ${execPath}.`,
-      checkedAt: now,
-    };
+    return failCheck(
+      'process',
+      `Node executable not found at ${execPath}.`,
+      { label: 'Find the node binary a new shell would run', command: 'command -v node' },
+      now,
+    );
   }
 
   // A minimal heuristic: the binary name should contain "node".
@@ -288,12 +334,12 @@ function verifyEventChainIntegrity(): IntegrityCheck {
   try {
     verified = verifyEventLog(eventsFile, { countsOnly: true });
   } catch {
-    return {
-      name: 'event-chain',
-      status: 'fail',
-      detail: 'Failed to read events file.',
-      checkedAt: now,
-    };
+    return failCheck(
+      'event-chain',
+      'Failed to read events file.',
+      { label: 'Check its type and permissions', command: `ls -ld ${shellQuote(eventsFile)}` },
+      now,
+    );
   }
 
   const total = verified.trustedCount + verified.untrustedCount;
@@ -440,12 +486,14 @@ export function runIntegrityChecks(options: {
     return {
       status: 'lockdown',
       checks: [
-        {
-          name: 'lockdown',
-          status: 'fail',
-          detail: `System is in lockdown: ${reason}`,
-          checkedAt: now,
-        },
+        // recover --verify runs every check with the marker still in place
+        // and lifts it only when none fails (#228).
+        failCheck(
+          'lockdown',
+          `System is in lockdown: ${reason}`,
+          { label: 'Verify before unlocking', command: 'opena2a shield recover --verify' },
+          now,
+        ),
       ],
       lastVerified: now,
       chainHash: '',
@@ -454,12 +502,9 @@ export function runIntegrityChecks(options: {
 
   // 1. Policy integrity
   const policyResult = verifyPolicyIntegrity();
-  const policyCheck: IntegrityCheck = {
-    name: 'policy',
-    status: policyResult.valid ? 'pass' : 'fail',
-    detail: policyResult.detail,
-    checkedAt: now,
-  };
+  const policyCheck: IntegrityCheck = policyResult.valid
+    ? { name: 'policy', status: 'pass', detail: policyResult.detail, checkedAt: now }
+    : failCheck('policy', policyResult.detail, policyResult.nextStep, now);
 
   // 2. Shell hook integrity
   const shellHookCheck = verifyShellHookIntegrity(options.shell);
@@ -472,12 +517,17 @@ export function runIntegrityChecks(options: {
 
   // 5. Artifact signatures
   const artifactResult = verifyAllArtifacts();
-  const artifactCheck: IntegrityCheck = {
-    name: 'artifact-signatures',
-    status: artifactResult.valid ? 'pass' : 'fail',
-    detail: artifactResult.detail,
-    checkedAt: now,
-  };
+  const artifactCheck: IntegrityCheck = artifactResult.valid
+    ? { name: 'artifact-signatures', status: 'pass', detail: artifactResult.detail, checkedAt: now }
+    : failCheck(
+      'artifact-signatures',
+      artifactResult.detail,
+      {
+        label: 'See when each signed file last changed',
+        command: `ls -l ${shellQuote(getShieldDir())}`,
+      },
+      now,
+    );
 
   const checks: IntegrityCheck[] = [
     policyCheck,

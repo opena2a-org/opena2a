@@ -178,4 +178,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(node dist/index.js <cited command> --help) per cited opena2a command, one at a time',
   },
+  'shield/selfcheck-next-step.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(/bin/sh -c <the next step a failing selfcheck check prints>), one ' +
+      'at a time, to run each step as printed against a scratch HOME',
+  },
 };
