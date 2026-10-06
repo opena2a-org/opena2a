@@ -263,7 +263,9 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
         },
       },
       'atx-verify': {
-        dependencies: { canonicalize: '2.1.0' },
+        // @noble/post-quantum verifies ML-DSA-65 signatures; pinned exactly, as
+        // canonicalize is, to the version the lockfile already resolves.
+        dependencies: { '@noble/post-quantum': '0.2.1', canonicalize: '2.1.0' },
         devDependencies: { '@types/node': '^20.11.0', typescript: '^5.7.0', vitest: '^4.1.8' },
       },
       'check-core': {

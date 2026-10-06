@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as crypto from 'node:crypto';
+import { ml_dsa65 } from '@noble/post-quantum/ml-dsa';
 import {
   LocalAtxVerifier,
   canonicalPayload,
@@ -148,12 +149,94 @@ describe('LocalAtxVerifier', () => {
     expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
   });
 
-  it('records ML-DSA-65 presence without silently skipping it', () => {
+  it('rejects a forged ML-DSA-65 signature riding an intact Ed25519 one', () => {
+    // This used to assert valid === true: an unverifiable post-quantum entry was
+    // accepted on the strength of the classical one. atx-spec §13 and AAP §9.4
+    // require every declared entry to verify, so the expectation is inverted.
     const { atx, pubHex } = makeSignedAtx();
     atx.signatures.push({ keyId: 'test#pqc', algorithm: 'ML-DSA-65', value: 'AA==' });
     const r = new LocalAtxVerifier(makeTrustAnchors(pubHex)).verify(atx);
-    expect(r.valid).toBe(true);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
     expect(r.mldsaPresent).toBe(true);
+  });
+});
+
+/**
+ * A hybrid credential: Ed25519-signed by makeSignedAtx, plus an ML-DSA-65 entry
+ * over the same canonical payload. `signWith` overrides the ML-DSA-65 secret
+ * key, so a test can forge the entry with a key other than the anchored one.
+ */
+function makeHybridAtx(signWith?: Uint8Array): {
+  atx: Atx;
+  anchors: AtxTrustAnchors;
+} {
+  const { atx, pubHex } = makeSignedAtx();
+  const { publicKey, secretKey } = ml_dsa65.keygen(crypto.randomBytes(32));
+  const pqSig = ml_dsa65.sign(signWith ?? secretKey, new Uint8Array(canonicalPayload(atx)));
+  atx.signatures.push({
+    keyId: `${TEST_ISSUER}#mldsa65`,
+    algorithm: 'ML-DSA-65',
+    value: Buffer.from(pqSig).toString('base64'),
+  });
+  const anchors = makeTrustAnchors(pubHex);
+  anchors.publicKeys.push({
+    keyId: `${TEST_ISSUER}#mldsa65`,
+    algorithm: 'ML-DSA-65',
+    publicKeyHex: Buffer.from(publicKey).toString('hex'),
+  });
+  return { atx, anchors };
+}
+
+describe('ML-DSA-65 verification', () => {
+  it('accepts a hybrid credential whose ML-DSA-65 entry verifies against its anchor', () => {
+    const { atx, anchors } = makeHybridAtx();
+    const r = new LocalAtxVerifier(anchors).verify(atx);
+    expect(r.valid, r.reason).toBe(true);
+    expect(r.mldsaPresent).toBe(true);
+  });
+
+  it('rejects an ML-DSA-65 entry signed by a key other than the anchored one', () => {
+    const forger = ml_dsa65.keygen(crypto.randomBytes(32));
+    const { atx, anchors } = makeHybridAtx(forger.secretKey);
+    const r = new LocalAtxVerifier(anchors).verify(atx);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(r.reason).toContain('ML-DSA-65');
+    expect(r.reason).toContain('did not verify');
+    expect(r.mldsaPresent).toBe(true);
+  });
+
+  it('rejects an ML-DSA-65 entry whose signature bytes were altered', () => {
+    const { atx, anchors } = makeHybridAtx();
+    const entry = atx.signatures.find((s) => s.algorithm === 'ML-DSA-65')!;
+    const bytes = Buffer.from(entry.value, 'base64');
+    bytes[100] ^= 0x01;
+    entry.value = bytes.toString('base64');
+    const r = new LocalAtxVerifier(anchors).verify(atx);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(r.reason).toContain('did not verify');
+  });
+
+  it('rejects when the only ML-DSA-65 anchor is controlled by another authority', () => {
+    const { atx, anchors } = makeHybridAtx();
+    const pq = anchors.publicKeys.find((k) => k.algorithm === 'ML-DSA-65')!;
+    pq.keyId = 'did:opena2a:authority:other.example#mldsa65';
+    const r = new LocalAtxVerifier(anchors).verify(atx);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(r.reason).toContain('key-to-issuer binding');
+  });
+
+  it('names an unparseable ML-DSA-65 anchor instead of reporting bad signature bytes', () => {
+    const { atx, anchors } = makeHybridAtx();
+    const pq = anchors.publicKeys.find((k) => k.algorithm === 'ML-DSA-65')!;
+    pq.publicKeyHex = pq.publicKeyHex.slice(0, 64);
+    const r = new LocalAtxVerifier(anchors).verify(atx);
+    expect(r.valid).toBe(false);
+    expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(r.reason).toContain('failed to parse');
   });
 });
 
