@@ -7,7 +7,7 @@ function renderShield() {
   h += statCard(shield.classifiedFindings ? shield.classifiedFindings.length : 0, 'Shield Findings', shield.classifiedFindings && shield.classifiedFindings.length > 0 ? 'var(--amber)' : 'var(--green)');
   h += statCard(shield.policyLoaded ? 'Loaded' : 'None', 'Policy', shield.policyLoaded ? 'var(--green)' : 'var(--dim)');
   h += statCard(shield.policyMode || '--', 'Mode', 'var(--muted)');
-  h += statCard(shield.integrityStatus || 'healthy', 'Integrity', shield.integrityStatus === 'healthy' ? 'var(--green)' : 'var(--red)');
+  h += statCard(shield.integrityStatus || 'Not checked', 'Integrity', !shield.integrityStatus ? 'var(--muted)' : shield.integrityStatus === 'healthy' ? 'var(--green)' : 'var(--red)');
   if (shield.chainBroken) h += statCard(shield.untrustedEventsExcluded, 'Excluded (Chain Break)', 'var(--red)');
   h += '</div>';
   if (shield.chainBroken) {
