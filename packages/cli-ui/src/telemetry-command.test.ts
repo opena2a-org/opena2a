@@ -210,6 +210,61 @@ describe("runTelemetryCommand", () => {
     expect(input.setOptOut).not.toHaveBeenCalled();
   });
 
+  describe("contributor_token", () => {
+    // Contributed scans reach the Registry keyed by this token and carry no
+    // install_id, so a CLI that contributes must show it next to install_id.
+    const SENTINEL = "c0ffee".repeat(10) + "beef";
+
+    it("status prints the contributor token between install_id and config", () => {
+      const getContributorToken = vi.fn(() => SENTINEL);
+      const out = runTelemetryCommand("status", { ...makeInput(), getContributorToken });
+      expect(out).toContain(`  contributor_token: ${SENTINEL}`);
+      const lines = out.split("\n");
+      const at = (prefix: string) => lines.findIndex((l) => l.startsWith(prefix));
+      expect(at("  install_id:")).toBeGreaterThan(0);
+      expect(at("  contributor_token:")).toBe(at("  install_id:") + 1);
+      expect(at("  config:")).toBe(at("  contributor_token:") + 1);
+      expect(getContributorToken).toHaveBeenCalledTimes(1);
+    });
+
+    it("'on' and 'off' print it too, since both render the status block", () => {
+      for (const action of ["on", "off"] as const) {
+        const out = runTelemetryCommand(action, {
+          ...makeInput(),
+          getContributorToken: () => SENTINEL,
+        });
+        expect(out, `action=${action}`).toContain(`contributor_token: ${SENTINEL}`);
+      }
+    });
+
+    it("is omitted for a CLI that does not pass a token getter", () => {
+      const out = runTelemetryCommand("status", makeInput());
+      expect(out).not.toContain("contributor_token");
+    });
+
+    it("prints 'unavailable' instead of failing when the token cannot be derived", () => {
+      const out = runTelemetryCommand("status", {
+        ...makeInput(),
+        getContributorToken: () => {
+          throw new Error("EACCES: permission denied");
+        },
+      });
+      expect(out).toContain("  contributor_token: unavailable");
+      expect(out).not.toContain("EACCES");
+      expect(out).toContain("  config:");
+    });
+
+    it("help lists contributor_token under status only when it is shown", () => {
+      const withToken = runTelemetryCommand("--help", {
+        ...makeInput(),
+        getContributorToken: () => SENTINEL,
+      });
+      expect(withToken).toContain("install_id, contributor_token, config file");
+      expect(withToken).not.toContain(SENTINEL);
+      expect(runTelemetryCommand("--help", makeInput())).not.toContain("contributor_token");
+    });
+  });
+
   it("'-h' is an alias for '--help'", () => {
     const inputA = makeInput();
     const inputB = makeInput();
