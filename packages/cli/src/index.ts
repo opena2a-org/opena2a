@@ -762,7 +762,7 @@ analysis runs and results can be shared with the community.
     .command('review [directory]')
     .description('Run all security checks and open unified HTML dashboard')
     .option('--dir <path>', 'Target directory')
-    .option('--report <path>', 'Output path for HTML report')
+    .option('--report <path>', 'Output path for HTML report (also written with --format json)')
     .option('--no-open', 'Do not auto-open report in browser')
     .option('--skip-hma', 'Skip HMA scan even if available')
     .action(async (directory: string | undefined, opts) => {

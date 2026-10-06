@@ -510,6 +510,74 @@ describe('review', () => {
     expect(html).toContain('report-data');
   });
 
+  it('--format json with --report writes the HTML report and keeps stdout pure JSON', async () => {
+    // `--report <path>` used to be dropped silently under `--format json`:
+    // the JSON branch returned before the report was written, so the path the
+    // user named stayed empty and nothing said so.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'json-report' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+
+    const reportPath = path.join(tempDir, 'json-report.html');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        format: 'json',
+        autoOpen: false,
+        skipHma: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(0);
+    const report = JSON.parse(result.output);
+    expect(report.phases).toHaveLength(6);
+    expect(fs.existsSync(reportPath)).toBe(true);
+    const html = fs.readFileSync(reportPath, 'utf-8');
+    expect(html).toContain('OpenA2A Security Review');
+    expect(html).toContain('report-data');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(reportPath).mode & 0o077).toBe(0);
+    }
+    expect(stderrChunks.join('')).toContain(reportPath);
+  });
+
+  it('--format sarif is refused with a message and exit 2, and writes no report', async () => {
+    // `--format sarif` used to fall through to text output and write the HTML
+    // report, with exit 0 — a SARIF consumer received neither SARIF nor an error.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'sarif-refused' }));
+
+    const reportPath = path.join(tempDir, 'review.sarif');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        format: 'sarif',
+        autoOpen: false,
+        skipHma: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toBe('');
+    expect(fs.existsSync(reportPath)).toBe(false);
+    const stderr = stderrChunks.join('');
+    expect(stderr).toContain('--format sarif');
+    expect(stderr).toContain('text');
+    expect(stderr).toContain('json');
+  });
+
   it('renders the @opena2a/cli-ui Observations block with Surfaces/Checks/Categories/Verdict labels', async () => {
     // Smoke test for the CA-030 cli-ui wire at packages/cli/src/commands/review.ts:430.
     // Asserts the dynamic import of @opena2a/cli-ui succeeded AND the four label
