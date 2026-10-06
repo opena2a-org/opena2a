@@ -780,6 +780,7 @@ analysis runs and results can be shared with the community.
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
+        quiet: globalOpts.quiet,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
