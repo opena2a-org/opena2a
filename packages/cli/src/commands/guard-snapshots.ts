@@ -159,6 +159,13 @@ interface ResignOptions {
   verbose?: boolean;
 }
 
+/**
+ * How a re-sign was consented to, recorded as `detail.consent` on the
+ * `config.resigned` event: 'prompt' is a yes typed at a terminal, 'ci' is
+ * `--ci`, which re-signs without confirmation.
+ */
+export type ResignConsent = 'prompt' | 'ci';
+
 export async function guardResign(targetDir: string, options: ResignOptions): Promise<number> {
   const isJson = options.format === 'json';
   const isCi = options.ci ?? false;
@@ -204,13 +211,28 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
     }
   }
 
-  // Confirm in interactive mode
-  if (!isCi && !isJson) {
+  // Consent. A typed yes counts only when stdin is a terminal; --ci is the
+  // one way to re-sign without it. --format json selects an output format and
+  // does not imply consent, so without --ci it refuses rather than prompting
+  // into machine-read output. The event records which of the two it was.
+  let consent: ResignConsent;
+  if (isCi) {
+    consent = 'ci';
+  } else if (isJson || !process.stdin.isTTY) {
+    const reason = isJson
+      ? '--format json does not prompt, so the change cannot be confirmed. Re-run with --ci to re-sign without confirmation, or without --format json at a terminal to confirm.'
+      : 'stdin is not a terminal, so the change cannot be confirmed. Re-run at a terminal to confirm, or pass --ci to re-sign without confirmation.';
+    const msg = `Refusing to re-sign: ${reason}`;
+    if (isJson) { process.stdout.write(JSON.stringify({ error: msg, files: tampered.map(t => t.filePath) }, null, 2) + '\n'); }
+    else { process.stderr.write(msg + '\n'); }
+    return 1;
+  } else {
     const confirmed = await confirm('\nConfirm re-sign? [y/N] ');
     if (!confirmed) {
       process.stdout.write('Re-sign cancelled.\n');
       return 1;
     }
+    consent = 'prompt';
   }
 
   // Create safety snapshot before re-signing
@@ -246,7 +268,7 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
     writeEvent({
       source: 'configguard', category: 'config.resigned', severity: 'info',
       agent: null, sessionId: null, action: 'guard.resign', target: targetDir,
-      outcome: 'allowed', detail: { fileCount: tampered.length, files: tampered.map(t => t.filePath) },
+      outcome: 'allowed', detail: { fileCount: tampered.length, files: tampered.map(t => t.filePath), consent },
       orgId: null, managed: false, agentId: null,
     });
   } catch { /* Shield module not available */ }

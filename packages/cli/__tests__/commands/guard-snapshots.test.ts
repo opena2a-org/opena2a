@@ -7,11 +7,13 @@ import { guard } from '../../src/commands/guard.js';
 import { _internals } from '../../src/commands/guard-snapshots.js';
 
 /**
- * Stand in for process.stdin with a stream that supplies `answer` (one line)
- * to the shared confirm prompt. Returns a restore function.
+ * Stand in for a terminal's process.stdin with a stream that supplies
+ * `answer` (one line) to the shared confirm prompt. Marked as a TTY because
+ * guard resign accepts a typed answer only from a terminal. Returns a
+ * restore function.
  */
 function withStdinAnswer(answer: string): () => void {
-  const fake = new PassThrough();
+  const fake = Object.assign(new PassThrough(), { isTTY: true });
   fake.end(answer + '\n');
   const original = Object.getOwnPropertyDescriptor(process, 'stdin')!;
   Object.defineProperty(process, 'stdin', { value: fake, configurable: true, enumerable: true, writable: true });
