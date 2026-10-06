@@ -602,11 +602,22 @@ export async function review(options: ReviewOptions): Promise<number> {
     // An explicit --report path is honoured here too; it used to be dropped
     // silently. The confirmation goes to stderr so stdout stays pure JSON, and
     // no browser opens in this machine-readable mode.
+    //
+    // The JSON goes out first: a report path that cannot be written must not
+    // cost the caller the document it asked for on stdout. That failure exits
+    // 2, as an unsupported --format does, so a gate can tell "an output was
+    // not produced" from the score verdict (exit 1 below 50).
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     if (options.reportPath) {
-      writeReviewHtml(options.reportPath, report);
+      try {
+        writeReviewHtml(options.reportPath, report);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(red(`Report not written: ${msg}\n`));
+        return 2;
+      }
       process.stderr.write(dim(`  Report: ${options.reportPath}\n`));
     }
-    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     return compositeScore < 50 ? 1 : 0;
   }
 
