@@ -1,7 +1,6 @@
 /**
  * Terminal grammar primitives — the six front-door renderers plus the
- * `envelope` builder from the CDO design-function ruling (COUNCIL_LEDGER
- * 56558, second ruling, decision 2).
+ * `envelope` builder.
  *
  * Every OpenA2A CLI front door speaks one grammar:
  *   - the verdict line comes first: one line, no leading blank;

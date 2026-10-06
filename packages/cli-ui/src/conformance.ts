@@ -1,8 +1,7 @@
 /**
  * Front-door conformance runner — `frontDoorConformance` spawns a built
- * CLI binary and checks the five grammar properties from the CDO
- * design-function ruling (COUNCIL_LEDGER 56558, decision 2) against what
- * the binary actually prints:
+ * CLI binary and checks the five properties of the front-door terminal
+ * grammar (`grammar.ts`) against what the binary actually prints:
  *
  *   1. verdict-first-line — the first non-blank stdout line is the
  *      verdict line (it names the envelope's verdict);

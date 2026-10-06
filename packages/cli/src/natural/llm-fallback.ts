@@ -269,7 +269,7 @@ async function confirmExecution(command: string): Promise<boolean> {
 export async function handleNaturalLanguage(
   input: string,
 ): Promise<string | NaturalLanguageBlock | null> {
-  // Trust-boundary classification (CHIEF-CA). The NanoMind classifier runs
+  // Trust-boundary classification. The NanoMind classifier runs
   // FIRST -- before any static intent matching or LLM fallback -- so
   // adversarial free-form input is refused before it can be translated into a
   // command. NanoMind is the foundational semantic layer here, not a
@@ -278,8 +278,8 @@ export async function handleNaturalLanguage(
   // The classifier is defense-in-depth: a null result (daemon unreachable,
   // timeout, schema violation, SSRF rejection, empty input) means "not
   // blocked" and the normal intent flow proceeds unchanged. This is the
-  // CHIEF-CDS silent-fallback contract -- a missing daemon never errors or
-  // logs to stderr.
+  // silent-fallback contract -- a missing daemon never errors or logs to
+  // stderr.
   // 1500ms (vs the 5000ms adapter default) bounds the worst-case stall on
   // this interactive hot path: a healthy local daemon answers in single-digit
   // ms, but a wedged or hostile process bound to the loopback port could

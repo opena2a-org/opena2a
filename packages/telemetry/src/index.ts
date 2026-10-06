@@ -161,8 +161,7 @@ export function setOptOut(enabled: boolean): Status {
  * lets each dispatcher declare its semantic-but-not-crash exit codes so
  * the dashboard signal reflects actual crash rate. Validation (range,
  * non-finite) always wins: an out-of-range value in `semanticSuccessCodes`
- * is treated as a programming bug and still returns false. See
- * [CHIEF-CSR-018] + [CHIEF-CPO-022] for the policy.
+ * is treated as a programming bug and still returns false.
  *
  * @param exitCode - Process exit code (0-255 per POSIX) or undefined/null
  *   for processes that haven't set one (treated as success). Strings are

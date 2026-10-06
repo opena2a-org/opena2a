@@ -29,8 +29,7 @@
 ## 0.6.0
 
 ### Added
-- Terminal grammar primitives (`src/grammar.ts`, CDO design-function ruling,
-  COUNCIL_LEDGER 56558 decision 2) — seven exports, pinned by golden
+- Terminal grammar primitives (`src/grammar.ts`) — seven exports, pinned by golden
   snapshots in `src/grammar.test.ts`:
   - `renderVerdict({ verdict, summary })` — the verdict line, always first:
     one line, no leading blank.

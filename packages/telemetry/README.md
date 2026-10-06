@@ -32,7 +32,7 @@ All methods are fire-and-forget. Network failures, rate-limiting (429), and time
 
 ## Crash-rate semantics for `success`
 
-Per [CHIEF-CSR-018] + [CHIEF-CPO-022], the `success` field in invocation telemetry follows **crash-rate semantics**: `success: false` means the command itself failed to execute (config error, network failure, exception, integrity violation) — NOT "the user got a result they didn't want."
+The `success` field in invocation telemetry follows **crash-rate semantics**: `success: false` means the command itself failed to execute (config error, network failure, exception, integrity violation) — NOT "the user got a result they didn't want."
 
 Some CLIs use exit codes ≥ 2 for semantic outcomes the command achieved correctly. Example: `ai-trust check <not-found-pkg>` exits 2 to signal "I checked, the package isn't in the registry." That's the command doing its job, not a crash. Pass those codes as the optional second argument so the dashboard signal reflects actual crash rate:
 

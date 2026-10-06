@@ -1501,7 +1501,7 @@ export function targetGovernanceFloorScore(detect: {
 }
 
 /**
- * Build the participant set for the dominant-analyzer floor (#175, [CHIEF-CDS]).
+ * Build the participant set for the dominant-analyzer floor (#175).
  *
  * Only analyzers whose critical-band score is an *unambiguous target-malice
  * signal* participate — a low score must mean "the target itself is dangerous",
@@ -1554,7 +1554,7 @@ export function buildFloorParticipants(inputs: FloorParticipantInputs): FloorPar
 }
 
 /**
- * Dominant-analyzer floor (#175, [CHIEF-CDS]).
+ * Dominant-analyzer floor (#175).
  *
  * The composite is a weighted average, so a single analyzer reporting a
  * critical problem (e.g. HMA `secure` 0/100 on a kitchen-sink fixture) can be
