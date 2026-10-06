@@ -12,7 +12,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { writeEvent, readEvents } from './events.js';
+import {
+  writeEvent,
+  readEvents,
+  readVerifiedEvents,
+  eventVerificationStatus,
+  type EventVerificationStatus,
+} from './events.js';
 import type { ShieldEvent, EventSeverity, EventOutcome, ShieldEventSource } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -120,6 +126,22 @@ export function translateARPEvent(
 // Bulk import
 // ---------------------------------------------------------------------------
 
+export interface ARPImportResult {
+  imported: number;
+  /** Events already recorded in Shield's log, so not imported again. */
+  skipped: number;
+  /**
+   * Of `skipped`, the events whose only record is at or after a chain break.
+   * That record is unverified, so it is counted here and never reported as a
+   * verified import. Importing again would only append to the same unverified
+   * tail; once the broken log is archived (opena2a shield recover
+   * --archive-log), the next import records these events in the fresh chain.
+   */
+  skippedUnverified: number;
+  errors: number;
+  total: number;
+}
+
 /**
  * Read ARP events from .opena2a/arp/events.jsonl and import them into
  * Shield's tamper-evident event log. Skips events that have already been
@@ -127,39 +149,32 @@ export function translateARPEvent(
  *
  * Returns the count of newly imported events.
  */
-export function importARPEvents(targetDir: string, agentName?: string): {
-  imported: number;
-  skipped: number;
-  errors: number;
-  total: number;
-} {
+export function importARPEvents(targetDir: string, agentName?: string): ARPImportResult {
   const arpEventsPath = join(targetDir, '.opena2a', 'arp', 'events.jsonl');
+  const none: ARPImportResult = { imported: 0, skipped: 0, skippedUnverified: 0, errors: 0, total: 0 };
 
   if (!existsSync(arpEventsPath)) {
-    return { imported: 0, skipped: 0, errors: 0, total: 0 };
+    return none;
   }
 
   let content: string;
   try {
     content = readFileSync(arpEventsPath, 'utf-8');
   } catch {
-    return { imported: 0, skipped: 0, errors: 0, total: 0 };
+    return none;
   }
 
   const lines = content.trim().split('\n').filter(Boolean);
 
-  // Build set of already-imported ARP event IDs
-  const existingEvents = readEvents({ count: 10000, source: 'arp' });
-  const importedIds = new Set<string>();
-  for (const event of existingEvents) {
-    const detail = event.detail as Record<string, unknown>;
-    if (detail?.arpEventId) {
-      importedIds.add(String(detail.arpEventId));
-    }
-  }
+  // Already-imported ARP event IDs, from the chain-verified read, kept apart
+  // by whether the record that names them is verified.
+  const existing = readVerifiedEvents({ count: 10000, source: 'arp' });
+  const verifiedIds = arpEventIds(existing.events);
+  const unverifiedIds = arpEventIds(existing.untrusted);
 
   let imported = 0;
   let skipped = 0;
+  let skippedUnverified = 0;
   let errors = 0;
 
   for (const line of lines) {
@@ -172,8 +187,13 @@ export function importARPEvents(targetDir: string, agentName?: string): {
     }
 
     // Skip already-imported events
-    if (importedIds.has(arpEvent.id)) {
+    if (verifiedIds.has(arpEvent.id)) {
       skipped++;
+      continue;
+    }
+    if (unverifiedIds.has(arpEvent.id)) {
+      skipped++;
+      skippedUnverified++;
       continue;
     }
 
@@ -182,7 +202,19 @@ export function importARPEvents(targetDir: string, agentName?: string): {
     imported++;
   }
 
-  return { imported, skipped, errors, total: lines.length };
+  return { imported, skipped, skippedUnverified, errors, total: lines.length };
+}
+
+/** The ARP event IDs that Shield events record in detail.arpEventId. */
+function arpEventIds(events: ShieldEvent[]): Set<string> {
+  const ids = new Set<string>();
+  for (const event of events) {
+    const detail = event.detail as Record<string, unknown>;
+    if (detail?.arpEventId) {
+      ids.add(String(detail.arpEventId));
+    }
+  }
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +239,22 @@ export interface ARPStats {
  */
 export function getARPStats(since?: string): ARPStats {
   return computeARPStats(readEvents({ source: 'arp', since, count: 10000 }));
+}
+
+/**
+ * ARP stats over verified events only, with the log's verification status:
+ * an ARP event at or after a chain break is never counted.  Same window as
+ * getARPStats (source filter, since, newest 10000).  Used by shield monitor.
+ */
+export function getVerifiedARPStats(since?: string): {
+  stats: ARPStats;
+  verification: EventVerificationStatus;
+} {
+  const verified = readVerifiedEvents({ source: 'arp', since, count: 10000 });
+  return {
+    stats: computeARPStats(verified.events),
+    verification: eventVerificationStatus(verified),
+  };
 }
 
 /**

@@ -659,6 +659,22 @@ export interface VerifiedEventsResult {
 }
 
 /**
+ * The verification status a feature reports with the events it read through
+ * readVerifiedEvents: whether the chain is broken, at which chronological
+ * index, and how many events from there on are unverified.
+ */
+export type EventVerificationStatus =
+  Pick<VerifiedEventsResult, 'chainBroken' | 'brokenAt' | 'untrustedCount'>;
+
+export function eventVerificationStatus(result: VerifiedEventsResult): EventVerificationStatus {
+  return {
+    chainBroken: result.chainBroken,
+    brokenAt: result.brokenAt,
+    untrustedCount: result.untrustedCount,
+  };
+}
+
+/**
  * Read events with hash-chain verification: verify the full chronological
  * log, with the same link check as verifyEventChain, and exclude every event
  * at or after the first chain break BEFORE applying filters (issue #204, the
