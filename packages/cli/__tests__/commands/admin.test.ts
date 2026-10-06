@@ -159,6 +159,51 @@ describe('admin sensors approve', () => {
     expect(out).toMatch(/verified/i);
   });
 
+  it('prints the state the server returned, not an assumed one', async () => {
+    vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 200, data: { sensorId: SAMPLE_ID, state: 'pending_review' } });
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k', yes: true }));
+    expect(exitCode).toBe(0);
+    expect(out).toContain('pending_review');
+    expect(out).not.toMatch(/verified/i);
+  });
+
+  it('prints no state word when a 2xx approve response carries no state', async () => {
+    vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 200, data: { sensorId: SAMPLE_ID } });
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k', yes: true }));
+    expect(exitCode).toBe(0);
+    expect(out).toMatch(/Approved\./);
+    expect(out).toContain(SAMPLE_ID);
+    expect(out).not.toMatch(/verified/i);
+    expect(out).not.toMatch(/is now/i);
+  });
+
+  it('prints no state word when a 2xx approve response has no body', async () => {
+    vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 204 });
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k', yes: true }));
+    expect(exitCode).toBe(0);
+    expect(out).not.toMatch(/verified/i);
+    expect(out).not.toMatch(/is now/i);
+  });
+
+  it('--json reports state null, not "verified", when the approve response carries no state', async () => {
+    vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 200, data: { sensorId: SAMPLE_ID } });
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k', yes: true, json: true }));
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(out)).toEqual({ sensorId: SAMPLE_ID, state: null });
+  });
+
+  it('--json passes through the state the server returned', async () => {
+    vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 200, data: { sensorId: SAMPLE_ID, state: 'verified' } });
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['approve', SAMPLE_ID], apiKey: 'k', yes: true, json: true }));
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(out)).toEqual({ sensorId: SAMPLE_ID, state: 'verified' });
+  });
+
   it('refuses to approve non-interactively without --yes and does not call the API', async () => {
     const spy = vi.spyOn(_internals, 'approve');
     const { exitCode, out } = await captureStdout(() =>

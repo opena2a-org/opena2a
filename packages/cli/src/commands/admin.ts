@@ -72,7 +72,7 @@ export const _internals = {
     registryUrl: string,
     apiKey: string,
     sensorId: string,
-  ): Promise<ApiResult<{ sensorId: string; state: string }>> {
+  ): Promise<ApiResult<{ sensorId: string; state?: string }>> {
     return _internals.request(
       'POST',
       `${registryUrl}/internal/telemetry/sensors/${encodeURIComponent(sensorId)}/approve`,
@@ -301,7 +301,7 @@ async function handleApprove(
   );
   if (consent !== 'consented') return abortFor(consent, isJson);
 
-  let res: ApiResult<{ sensorId: string; state: string }>;
+  let res: ApiResult<{ sensorId: string; state?: string }>;
   try {
     res = await _internals.approve(registryUrl, apiKey, id);
   } catch (err) {
@@ -315,11 +315,16 @@ async function handleApprove(
     return 1;
   }
 
-  const state = res.data?.state ?? 'verified';
+  // Report a state only when the registry returned one. A 2xx without `state`
+  // says the approve call succeeded, not which state the sensor reached.
+  const returned = res.data?.state;
+  const state = typeof returned === 'string' && returned.length > 0 ? returned : null;
   if (isJson) {
     emitJson({ sensorId: id, state });
-  } else {
+  } else if (state !== null) {
     process.stdout.write(green('Approved. ') + `Sensor ${bold(id)} is now ${bold(state)}.\n`);
+  } else {
+    process.stdout.write(green('Approved. ') + `The registry did not return a state for sensor ${bold(id)}.\n`);
   }
   return 0;
 }
