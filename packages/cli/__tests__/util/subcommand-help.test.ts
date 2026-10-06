@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  answerHelpRequest,
   isHelpRequest,
   printSubcommandHelp,
+  SUBCOMMAND_ROUTES,
   GUARD_HELP,
   SHIELD_HELP,
   IDENTITY_HELP,
@@ -211,4 +213,123 @@ describe('shield help matches what the shield command reads', () => {
       }
     });
   }
+});
+
+describe('answerHelpRequest', () => {
+  const parentHelp = () => 'Usage: opena2a identity [options] [subcommand] [args...]\n';
+
+  it('prints the subcommand block for a subcommand with a help entry', () => {
+    const { result, output } = captureStdout(() =>
+      answerHelpRequest('identity', 'log', IDENTITY_HELP, parentHelp, ['log', '--help']));
+    expect(result).toBe(true);
+    expect(output.startsWith('Usage: opena2a identity log')).toBe(true);
+  });
+
+  it('prints the parent help for a word the handler accepts without an entry', () => {
+    const { result, output } = captureStdout(() =>
+      answerHelpRequest('identity', 'show', IDENTITY_HELP, parentHelp, ['show', '--ci', '-h']));
+    expect(result).toBe(true);
+    expect(output).toBe(parentHelp());
+  });
+
+  it('prints the parent help when no subcommand is given', () => {
+    const { result, output } = captureStdout(() =>
+      answerHelpRequest('admin', undefined, {}, parentHelp, ['--help']));
+    expect(result).toBe(true);
+    expect(output).toBe(parentHelp());
+  });
+
+  it('returns false and prints nothing without a help flag', () => {
+    const { result, output } = captureStdout(() =>
+      answerHelpRequest('identity', 'revoke', IDENTITY_HELP, parentHelp, ['revoke', '--ci']));
+    expect(result).toBe(false);
+    expect(output).toBe('');
+  });
+
+  describe('a word the handler does not route', () => {
+    const savedExitCode = process.exitCode;
+    afterEach(() => { process.exitCode = savedExitCode; });
+
+    function answer(parent: string, sub: string, registry: Parameters<typeof answerHelpRequest>[2]) {
+      const errChunks: string[] = [];
+      const origErr = process.stderr.write;
+      process.stderr.write = ((chunk: any) => { errChunks.push(String(chunk)); return true; }) as any;
+      try {
+        const { result, output } = captureStdout(() =>
+          answerHelpRequest(parent, sub, registry, parentHelp, [sub, '--help']));
+        return { result, output, stderr: errChunks.join(''), exitCode: process.exitCode };
+      } finally {
+        process.stderr.write = origErr;
+      }
+    }
+
+    it('is named as unknown with the parent help, exit 1, and nothing on stdout', () => {
+      const { result, output, stderr, exitCode } = answer('guard', 'signs', GUARD_HELP);
+      expect(result).toBe(true);
+      expect(output).toBe('');
+      expect(stderr).toBe(`Unknown guard subcommand: signs\n\n${parentHelp()}`);
+      expect(exitCode).toBe(1);
+    });
+
+    it('includes an inherited object property name', () => {
+      const { result, output, stderr, exitCode } = answer('identity', 'constructor', IDENTITY_HELP);
+      expect(result).toBe(true);
+      expect(output).toBe('');
+      expect(stderr.startsWith('Unknown identity subcommand: constructor')).toBe(true);
+      expect(exitCode).toBe(1);
+    });
+
+    it('does not include a routed alias without an entry', () => {
+      const { output, stderr, exitCode } = answer('shield', 'check', SHIELD_HELP);
+      expect(output).toBe(parentHelp());
+      expect(stderr).toBe('');
+      expect(exitCode).toBe(savedExitCode);
+    });
+  });
+});
+
+describe('SUBCOMMAND_ROUTES lists the words each handler routes', () => {
+  const SRC = path.resolve(__dirname, '..', '..', 'src');
+  const read = (file: string) => fs.readFileSync(path.join(SRC, file), 'utf-8');
+
+  /** The `case '<word>':` labels of the first switch after `marker`, up to its default. */
+  function caseLabels(file: string, marker: string): string[] {
+    const source = read(file);
+    const start = source.indexOf(marker);
+    expect(start, `${marker} not found in ${file}`).toBeGreaterThan(-1);
+    const body = source.slice(start, source.indexOf('default:', start));
+    return [...body.matchAll(/case '([a-z-]+)':/g)].map((m) => m[1]);
+  }
+
+  for (const [parent, file, marker] of [
+    ['guard', 'commands/guard.ts', 'export async function guard('],
+    ['runtime', 'commands/runtime.ts', 'export async function runtime('],
+    ['identity', 'commands/identity.ts', 'export async function identity('],
+    ['shield', 'commands/shield.ts', 'export async function shield('],
+    ['mcp', 'commands/mcp-audit.ts', 'export async function mcpCommand('],
+  ]) {
+    it(parent, () => {
+      expect(SUBCOMMAND_ROUTES[parent]).toEqual(caseLabels(file, marker));
+    });
+  }
+
+  it('admin: the sensors group and its verbs', () => {
+    const verbs = [...read('commands/admin.ts').matchAll(/case '([a-z-]+)':/g)].map((m) => m[1]);
+    expect(read('commands/admin.ts')).toContain("if (group === 'sensors')");
+    expect(SUBCOMMAND_ROUTES.admin).toEqual(['sensors', ...verbs]);
+  });
+
+  it('skill: the subcommands its dispatcher compares against', () => {
+    const index = read('index.ts');
+    const start = index.indexOf(".command('skill [subcommand] [name]')");
+    const body = index.slice(start, index.indexOf('Unknown skill subcommand', start));
+    expect(SUBCOMMAND_ROUTES.skill).toEqual([...body.matchAll(/subcommand === '([a-z-]+)'/g)].map((m) => m[1]));
+  });
+
+  it('guard: the words index.ts routes to the guard handler', () => {
+    const index = read('index.ts');
+    const validSubs = /const validSubs = \[([^\]]*)\]/.exec(index);
+    expect(validSubs).not.toBeNull();
+    expect(SUBCOMMAND_ROUTES.guard).toEqual([...validSubs![1].matchAll(/'([a-z-]+)'/g)].map((m) => m[1]));
+  });
 });
