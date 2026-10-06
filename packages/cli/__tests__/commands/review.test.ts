@@ -547,6 +547,40 @@ describe('review', () => {
     expect(stderrChunks.join('')).toContain(reportPath);
   });
 
+  it('--format json with a --report path that cannot be written still prints the JSON, and exits 2', async () => {
+    // Writing the report before the JSON lost the document on stdout when the
+    // path was unwritable, and the thrown error surfaced as exit 1 — the code a
+    // json run uses for a score below 50, so a gate could not tell them apart.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'json-report-unwritable' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+
+    const reportPath = path.join(tempDir, 'no-such-dir', 'out.html');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        format: 'json',
+        autoOpen: false,
+        skipHma: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(2);
+    const report = JSON.parse(result.output);
+    expect(report.phases).toHaveLength(6);
+    expect(fs.existsSync(reportPath)).toBe(false);
+    const stderr = stderrChunks.join('');
+    expect(stderr).toContain('Report not written');
+    expect(stderr).toContain(reportPath);
+    expect(stderr).not.toContain('  Report: ');
+  });
+
   it('--format sarif is refused with a message and exit 2, and writes no report', async () => {
     // `--format sarif` used to fall through to text output and write the HTML
     // report, with exit 0 — a SARIF consumer received neither SARIF nor an error.
