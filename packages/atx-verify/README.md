@@ -32,8 +32,8 @@ on duplicate members, so a parsed object cannot carry the evidence step 1
 rejects on.
 
 Trust anchors (trusted issuers, public keys, CRL, clock) are **injected** — the
-library does no I/O. A consumer wires the live anchors (and, in production, the
-post-quantum half) via the `AtxVerifier` seam.
+library does no I/O. A consumer wires the live anchors, including the ML-DSA-65
+public keys, via the `AtxVerifier` seam.
 
 ## Signature coverage depends on `atcVersion`
 
@@ -55,10 +55,19 @@ gate capability-based authorization on whether those fields are signed.
 
 ## Scope
 
-Ed25519 is verified fully via Node's `crypto`. **ML-DSA-65** presence is recorded
-(`mldsaPresent`) but verification is delegated — Node's stdlib has no ML-DSA,
-matching the Python reference verifier. Wire the PQC half via the `AtxVerifier`
-seam in production.
+Both declared signature suites are verified: **Ed25519** via Node's `crypto`, and
+**ML-DSA-65** (FIPS 204) via [`@noble/post-quantum`](https://github.com/paulmillr/noble-post-quantum).
+Every signature entry a credential declares must verify, per atx-spec §13 and
+AAP §9.4; a declared entry that does not verify, or for which no eligible trust
+anchor is configured, is `SIGNATURE_INVALID`.
+
+`mldsaPresent` reports that an ML-DSA-65 entry was declared. On a `valid: true`
+result that entry also verified.
+
+> **Upgrading from 0.4.0 or earlier.** A deployment that configures only Ed25519
+> trust anchors will see hybrid credentials move from accept to reject, with the
+> reason `no ML-DSA-65 trust anchors configured`. Configure the post-quantum
+> anchor; the previous acceptance was not safe.
 
 ## Runtime and packaging
 
@@ -212,10 +221,10 @@ comments in the published `.d.ts`.
 ## Conformance
 
 The package's test suite — in [the repository](https://github.com/opena2a-org/opena2a/tree/main/packages/atx-verify),
-not the published tarball — replays the FULL OpenA2A ATX conformance suite (20
-fixtures, pinned signatures, vendored verbatim from
-[`atx-conformance`](https://github.com/opena2a-standards/atx-conformance) at
-`f4d40a4`) through the raw `verifyCredential` entry point; CI byte-compares the
+not the published tarball — replays the FULL OpenA2A ATX conformance suite
+(pinned signatures, vendored verbatim from
+[`atx-conformance`](https://github.com/opena2a-standards/atx-conformance) at the
+ref CI pins) through the raw `verifyCredential` entry point; CI byte-compares the
 vendored copies against the pinned suite so they cannot drift, and pins the
 v1.1 JCS baseline canonical bytes from
 [`atx-conformance/jcs-vectors`](https://github.com/opena2a-standards/atx-conformance/tree/main/jcs-vectors).
