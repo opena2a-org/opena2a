@@ -13,6 +13,7 @@ import { bold, green, yellow, red, dim, cyan, gray } from '../util/colors.js';
 import { rebrandBundledCommands } from '../util/rebrand.js';
 import { Spinner } from '../util/spinner.js';
 import { validateRegistryUrl } from '../util/validate-registry-url.js';
+import { trustBadgeMarkdown } from '../util/trust-badge.js';
 import type { TrustLookupResponse } from './atp-types.js';
 
 // --- Types ---
@@ -400,7 +401,7 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
   }
 
   // Links — some Registry responses embed legacy hostnames (registry.oa2a.org,
-  // api.opena2a.org) that 404. Suppress the Profile/Badge lines for known-dead
+  // api.opena2a.org) that 404. Suppress the Profile line for known-dead
   // hostnames so users don't see broken URLs. Closes #123 — the prior copy
   // ("Registry launches soon") claimed the Registry was offline, which was
   // misleading: the Registry is live, only the per-package profile URL is
@@ -410,7 +411,12 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     process.stdout.write(dim('Profile: not available for this package') + '\n');
   } else {
     process.stdout.write(`Profile: ${cyan(data.profileUrl)}\n`);
-    process.stdout.write(`Badge:   ${dim(`${data.profileUrl.replace('/agents/', '/v1/trust/')}/badge.svg`)}\n`);
+  }
+  // The badge comes from the Registry's badge URLs, independent of the
+  // profile host; with none in the response there is no badge line.
+  const badge = trustBadgeMarkdown(data);
+  if (badge) {
+    process.stdout.write(`Badge:   ${dim(badge)}\n`);
   }
   process.stdout.write('\n');
 }

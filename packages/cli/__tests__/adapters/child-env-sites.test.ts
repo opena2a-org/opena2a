@@ -56,10 +56,10 @@ const HELPER_RETURNS = [...RESOLVERS, 'buildChildEnv'];
  * to a resolver removes its line from this roster in the same diff.
  */
 const IMPLICIT_INHERIT: readonly string[] = [
-  'commands/claim.ts:80',
-  'commands/claim.ts:84',
-  'commands/claim.ts:120',
-  'commands/claim.ts:139',
+  'commands/claim.ts:81',
+  'commands/claim.ts:85',
+  'commands/claim.ts:121',
+  'commands/claim.ts:140',
   'commands/detect.ts:207',
   'commands/detect.ts:1062',
   'commands/detect.ts:1388',

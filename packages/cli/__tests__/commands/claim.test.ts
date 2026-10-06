@@ -353,7 +353,10 @@ describe('claim', () => {
     vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({
       ok: true,
       status: 200,
-      data: makeTrustResponse(),
+      data: makeTrustResponse({
+        badgeImageUrl: 'https://test-registry.example.com/v1/trust/badge.svg?package=%40anthropic%2Fmcp-server-fetch&source=npm',
+        badgeLinkUrl: 'https://test-registry.example.com/agents/test-agent-uuid',
+      }),
     });
     vi.spyOn(_internals, 'verifyNpmOwnership').mockResolvedValue({
       method: 'npm',
