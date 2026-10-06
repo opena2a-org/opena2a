@@ -37,6 +37,7 @@
  * pass.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -67,6 +68,7 @@ const CHECKS = [
   'no-test-material',
   'no-install-scripts',
   'pinned-first-party-deps',
+  'version-reuse',
   'global-install-smoke',
   'credential-scan',
   'npm-audit',
@@ -243,6 +245,121 @@ function checkPinnedFirstPartyDeps(manifest) {
   }
   if (bad.length > 0) return { status: 'fail', detail: bad };
   return { status: 'pass', detail: ['every @opena2a/* and hackmyagent dependency is an exact version'] };
+}
+
+// ---------------------------------------------------------------------------
+// version-reuse — the publish job skips every name@version npm already
+// serves, so that re-running it can finish a partial release. The skip cannot
+// tell that re-run from a tree whose package changed without a version bump:
+// the run still publishes the siblings, drops this tarball, and reports a
+// notice, not a failure. Measured 2026-09-11: opena2a-cli 0.10.13 in the tree
+// pinned @opena2a/cli-ui 0.6.0 while the published opena2a-cli@0.10.13 pins
+// 0.5.2, so a release would have shipped cli-ui 0.6.0 and never the CLI that
+// needs it.
+//
+// A different dependency set at a version npm already serves fails: what a
+// user installs is not what this run reviewed, and publish will not change
+// that. The same dependency set passes, because that is the re-run the skip
+// exists for; when the bytes differ as well the detail says so, but does not
+// fail on it, since a toolchain change alone can move the bytes of an
+// unchanged package.
+// ---------------------------------------------------------------------------
+
+/** The dependency set npm resolves: an optionalDependencies entry overrides a dependencies entry of the same name. */
+function installedDependencySet(m) {
+  return {
+    dependencies: { ...(m?.dependencies ?? {}), ...(m?.optionalDependencies ?? {}) },
+    peerDependencies: { ...(m?.peerDependencies ?? {}) },
+  };
+}
+
+function viewPublishedVersion(name, version) {
+  const spec = `${name}@${version}`;
+  let out;
+  try {
+    out = run('npm', ['view', spec, '--json']).trim();
+  } catch (e) {
+    const text = `${e.stdout ?? ''}${e.stderr ?? ''}${e.message ?? ''}`;
+    if (/E404|404 Not Found|No match found/i.test(text)) return { notFound: true };
+    return { error: `npm view ${spec} errored: ${short(e.stderr || e.message, 200)}` };
+  }
+  if (!out) return { notFound: true };
+  let parsed;
+  try {
+    parsed = JSON.parse(out);
+  } catch {
+    return { error: `npm view ${spec} returned output that is not JSON: ${short(out, 200)}` };
+  }
+  const doc = Array.isArray(parsed) ? parsed.find((d) => d?.version === version) : parsed;
+  if (!doc || doc.version !== version) {
+    return { error: `npm view ${spec} answered for a version other than ${version}` };
+  }
+  return { doc };
+}
+
+function checkVersionReuse(tarball, manifest) {
+  if (!manifest?.name || !manifest?.version) {
+    return { status: 'precondition', detail: ['the tarball carries no package/package.json name and version to look up'] };
+  }
+  const spec = `${manifest.name}@${manifest.version}`;
+  const published = viewPublishedVersion(manifest.name, manifest.version);
+  if (published.notFound) {
+    return { status: 'pass', detail: [`${spec} is not on the registry yet, so the publish job will publish these bytes`] };
+  }
+  if (published.error) {
+    return {
+      status: 'precondition',
+      detail: [
+        `could not ask the registry whether ${spec} is already published: ${published.error}`,
+        'the publish job skips a version the registry serves, so an unread answer is not a pass',
+      ],
+    };
+  }
+
+  const here = installedDependencySet(manifest);
+  const there = installedDependencySet(published.doc);
+  const differences = [];
+  for (const block of Object.keys(here)) {
+    const names = [...new Set([...Object.keys(here[block]), ...Object.keys(there[block])])].sort();
+    for (const name of names) {
+      const a = here[block][name];
+      const b = there[block][name];
+      if (a === b) continue;
+      differences.push(
+        `${block}: ${name} is ${a === undefined ? 'absent' : `"${a}"`} in this tarball, ` +
+          `${b === undefined ? 'absent' : `"${b}"`} in the published ${spec}`
+      );
+    }
+  }
+  if (differences.length > 0) {
+    return {
+      status: 'fail',
+      detail: [
+        `${spec} is already on npm with a different dependency set. The publish job skips a version the registry serves, ` +
+          'so this tarball would never ship while the rest of the run still publishes:',
+        ...differences,
+        `Bump the version in ${manifest.name}'s package.json so the change can ship.`,
+      ],
+    };
+  }
+
+  const integrity = `sha512-${createHash('sha512').update(readFileSync(tarball)).digest('base64')}`;
+  const publishedIntegrity = published.doc.dist?.integrity;
+  if (publishedIntegrity === integrity) {
+    return {
+      status: 'pass',
+      detail: [`${spec} is already on npm with these exact bytes; the publish job skips it, which is what finishing a partial release needs`],
+    };
+  }
+  return {
+    status: 'pass',
+    detail: [
+      `${spec} is already on npm with the same dependency set, so the publish job skips it`,
+      publishedIntegrity
+        ? `its published bytes differ from this tarball's (${publishedIntegrity} on npm, ${integrity} here), so these bytes never ship; if the source changed, bump the version`
+        : 'the published copy carries no dist.integrity, so its bytes were not compared with this tarball',
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -926,6 +1043,7 @@ async function main() {
     record('no-test-material', checkNoTestMaterial(entries));
     record('no-install-scripts', checkNoInstallScripts(manifest));
     record('pinned-first-party-deps', checkPinnedFirstPartyDeps(manifest));
+    record('version-reuse', checkVersionReuse(tarball, manifest));
     const siblings = manifest
       ? resolveWorkspaceSiblings(tarball, manifest)
       : { overrides: {}, log: [], refused: [], unreadable: [] };
