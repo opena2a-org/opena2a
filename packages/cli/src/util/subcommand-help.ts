@@ -141,6 +141,9 @@ export function answerHelpRequest(
 
 // --- Registries per parent command ---
 
+// Every example in these registries runs as shown: __tests__/help-examples.test.ts
+// runs each one from the build and fails on the handler's usage-error path.
+
 export const GUARD_HELP: SubcommandHelpRegistry = {
   sign: {
     summary: 'Sign config files for integrity verification. Git-ignored files are skipped: the store is committed with the repository.',
@@ -176,7 +179,8 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
     ],
   },
   watch: {
-    summary: 'Watch for config file changes and emit tamper events on the shield event log.',
+    summary:
+      'Watch the signed files and record a tamper event in the Shield event log when one changes or is deleted. Runs until Ctrl+C.',
     usage: '[directory]',
     examples: ['opena2a guard watch'],
   },
@@ -186,18 +190,20 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a guard diff'],
   },
   policy: {
-    summary: 'Manage guard policies (which files to track, severity, etc.).',
-    usage: '[action]',
+    summary:
+      'Create the guard policy (init) or show it (show, the default). The policy lists the files that must be signed, whether verify fails on an unsigned one, and whether a tampered file disables the heartbeat.',
+    usage: '[init|show]',
     examples: [
+      'opena2a guard policy init',
       'opena2a guard policy show',
-      'opena2a guard policy set strict',
     ],
   },
   hook: {
-    summary: 'Install / manage git hooks (pre-commit verification).',
-    usage: '[action]',
+    summary: 'Install, remove or check the git pre-commit hook that runs guard verify.',
+    usage: '<install|uninstall|status>',
     examples: [
       'opena2a guard hook install',
+      'opena2a guard hook status',
       'opena2a guard hook uninstall',
     ],
   },
@@ -210,19 +216,21 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a guard resign'],
   },
   snapshot: {
-    summary: 'Take a config snapshot for later diff / rollback.',
-    usage: '[action]',
+    summary:
+      'Save the signature store as a snapshot (create), list the snapshots (list, the default) or restore one (restore <id>). A snapshot holds the recorded signatures, not the files.',
+    usage: '[create|list|restore] [id]',
     examples: [
-      'opena2a guard snapshot take',
+      'opena2a guard snapshot create',
       'opena2a guard snapshot list',
     ],
   },
   harden: {
-    summary: 'Auto-fix config security issues (file permissions, missing signatures, etc.).',
+    summary:
+      "Check the SKILL.md and HEARTBEAT.md files against the scanner's skill and heartbeat checks. Findings are reported; --fix applies the fixable ones.",
     usage: '[directory]',
     options: [
-      { flag: '--fix', description: 'Apply fixes (default is dry-run)' },
-      { flag: '--dry-run', description: 'Preview fixes without applying' },
+      { flag: '--fix', description: 'Apply the fixable findings' },
+      { flag: '--dry-run', description: 'Show what --fix would change, without writing' },
     ],
     examples: [
       'opena2a guard harden --dry-run',
@@ -270,13 +278,19 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a shield selfcheck'],
   },
   policy: {
-    summary: 'View or update Shield policies.',
-    usage: '[action]',
-    examples: ['opena2a shield policy show', 'opena2a shield policy set strict'],
+    summary: 'Show a summary of the loaded Shield policy: its mode and the rule counts per category.',
+    examples: ['opena2a shield policy', 'opena2a shield policy --format json'],
   },
   evaluate: {
-    summary: 'Evaluate the current project against active Shield policies.',
-    examples: ['opena2a shield evaluate'],
+    summary: 'Check an action against the Shield policy and print the verdict. Exits 1 when the policy blocks it.',
+    options: [
+      { flag: '--action <action>', description: 'Action to check, e.g. process.spawn or network.connect' },
+      { flag: '--target <target>', description: 'What the action acts on: a binary, host or path' },
+      { flag: '--agent <name>', description: 'Agent whose policy overrides apply' },
+    ],
+    examples: [
+      'opena2a shield evaluate --action process.spawn --target /usr/bin/curl',
+    ],
   },
   recover: {
     summary: 'Recover from Shield lockdown, or retire a broken event log.',
@@ -290,26 +304,31 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a shield recover --verify', 'opena2a shield recover --archive-log'],
   },
   report: {
-    summary: 'Write an HTML security posture report.',
+    summary: 'Print a security posture report over the recent Shield events, or write it as HTML with --report.',
     options: [
-      { flag: '--report <path>', description: 'Output path (default: shield-report.html)' },
+      { flag: '--report <path>', description: 'Write the report as HTML to this file' },
+      { flag: '--since <timespec>', description: 'Period to cover: 7d (default), 1w, 1m, ISO 8601' },
+      { flag: '--analyze', description: 'Add a summary written by an LLM backend' },
     ],
-    examples: ['opena2a shield report --report ./out.html'],
+    examples: ['opena2a shield report', 'opena2a shield report --report ./out.html'],
   },
   session: {
-    summary: 'Show or manage the current local Ed25519 session identity.',
+    summary: 'Show which AI coding assistant, if any, drives the current terminal session, and its session ID.',
     examples: ['opena2a shield session'],
   },
   baseline: {
-    summary: 'Establish a baseline for future drift detection.',
+    summary: 'Show the adaptive enforcement baselines Shield has recorded per agent.',
+    options: [
+      { flag: '--agent <name>', description: 'Show the baseline of this agent only' },
+    ],
     examples: ['opena2a shield baseline'],
   },
   suggest: {
-    summary: 'Suggest policy / configuration changes based on observed events.',
+    summary: 'Suggest policy changes from the recorded events, using an LLM backend.',
     options: [
-      { flag: '--analyze', description: 'Enable LLM analysis of the event corpus' },
+      { flag: '--agent <name>', description: 'Agent whose events to use (default: the agent of the latest event)' },
     ],
-    examples: ['opena2a shield suggest --analyze'],
+    examples: ['opena2a shield suggest'],
   },
   explain: {
     summary: 'Explain the newest Shield events that match the filters.',
@@ -342,8 +361,6 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
   },
 };
 
-// Every example below runs as shown: __tests__/help-examples.test.ts runs
-// each one from the build and fails on the handler's usage-error path.
 export const IDENTITY_HELP: SubcommandHelpRegistry = {
   list: {
     summary: 'Show the local agent identity.',
@@ -503,8 +520,12 @@ export const IDENTITY_HELP: SubcommandHelpRegistry = {
 
 export const RUNTIME_HELP: SubcommandHelpRegistry = {
   start: {
-    summary: 'Start the runtime monitor for the current project.',
+    summary:
+      'Start ARP monitoring for the project with its arp.yaml, arp.yml or arp.json (runtime init writes one). Runs until Ctrl+C.',
     usage: '[directory]',
+    options: [
+      { flag: '--config <path>', description: 'ARP config file to use instead' },
+    ],
     examples: ['opena2a runtime start'],
   },
   status: {
@@ -513,14 +534,20 @@ export const RUNTIME_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a runtime status', 'opena2a runtime status --format json'],
   },
   tail: {
-    summary: 'Tail the runtime event stream.',
+    summary: 'Show the last runtime events recorded in .opena2a/arp/events.jsonl.',
     usage: '[directory]',
-    examples: ['opena2a runtime tail'],
+    options: [
+      { flag: '--count <n>', description: 'Number of events to show (default: 20)' },
+    ],
+    examples: ['opena2a runtime tail', 'opena2a runtime tail --count 50'],
   },
   init: {
-    summary: 'Initialize runtime configuration for a project.',
+    summary: 'Write an arp.yaml for the project, generated from its detected type.',
     usage: '[directory]',
-    examples: ['opena2a runtime init'],
+    options: [
+      { flag: '--force', description: 'Overwrite an existing arp.yaml' },
+    ],
+    examples: ['opena2a runtime init', 'opena2a runtime init --force'],
   },
 };
 
@@ -536,23 +563,23 @@ export const SKILL_HELP: SubcommandHelpRegistry = {
     ],
     examples: [
       'opena2a skill create my-skill',
-      'opena2a skill create my-skill --template mcp-tool',
+      'opena2a skill create reporter --template mcp-tool',
     ],
   },
 };
 
 export const MCP_HELP: SubcommandHelpRegistry = {
   audit: {
-    summary: 'Audit MCP server configurations for security issues.',
-    usage: '[server]',
+    summary:
+      'List the MCP servers configured in your home directory and in the project, with their signature status and Registry trust score.',
     options: [
-      { flag: '--dir <path>', description: 'Target directory' },
-      { flag: '--server <name>', description: 'Server name (same as the positional)' },
+      { flag: '--dir <path>', description: 'Project directory (default: current directory)' },
     ],
-    examples: ['opena2a mcp audit', 'opena2a mcp audit my-server'],
+    examples: ['opena2a mcp audit', 'opena2a mcp audit --format json'],
   },
   sign: {
-    summary: 'Sign an MCP server configuration for integrity verification.',
+    summary:
+      'Create a signed identity for a configured MCP server, recording a hash of its command or URL in .opena2a/mcp-identities.',
     usage: '[server]',
     options: [
       { flag: '--server <name>', description: 'Server name (same as the positional)' },
@@ -560,7 +587,8 @@ export const MCP_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a mcp sign my-server', 'opena2a mcp sign --server my-server'],
   },
   verify: {
-    summary: 'Verify a signed MCP server configuration.',
+    summary:
+      "Check that a signed MCP server's configuration still matches its identity, and show its Registry trust score.",
     usage: '[server]',
     options: [
       { flag: '--server <name>', description: 'Server name (same as the positional)' },
