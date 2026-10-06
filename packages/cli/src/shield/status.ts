@@ -2,8 +2,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import type { ShieldStatus, ToolStatus, PolicyMode, IntegrityStatus } from './types.js';
-import { SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
+import { type ShieldStatus, type ToolStatus, type PolicyMode, type ShieldIntegrityStatus, SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
+import { runIntegrityChecks } from './integrity.js';
 
 function getShieldDir(): string {
   return join(homedir(), '.opena2a', 'shield');
@@ -195,11 +195,14 @@ export function getShieldStatus(targetDir?: string): ShieldStatus {
     } catch { /* ok */ }
   }
 
-  // Integrity status
-  let integrityStatus: IntegrityStatus = 'healthy';
-  const lockdownPath = join(shieldDir, 'lockdown');
-  if (existsSync(lockdownPath)) {
-    integrityStatus = 'lockdown';
+  // Integrity status: the verdict `shield selfcheck` computes, from the same
+  // function with the same shell (lockdown short-circuits there too). Never a
+  // default: printing a state that was not measured is a fail-open verdict.
+  let integrityStatus: ShieldIntegrityStatus;
+  try {
+    integrityStatus = runIntegrityChecks({ shell: shell ?? undefined }).status;
+  } catch {
+    integrityStatus = 'not-checked';
   }
 
   // Last report
@@ -259,7 +262,10 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
   lines.push(`Shell integration: ${status.shellIntegration ? 'active' : 'inactive'}`);
 
   // Integrity
-  lines.push(`Integrity: ${status.integrityStatus.toUpperCase()}`);
+  const integrityLabel = status.integrityStatus === 'not-checked'
+    ? 'NOT CHECKED'
+    : status.integrityStatus.toUpperCase();
+  lines.push(`Integrity: ${integrityLabel}`);
 
   // Last report
   if (status.lastReportScore !== null) {
@@ -271,7 +277,10 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
   if (!status.policyLoaded) recs.push('Run: opena2a shield init');
   // Shell hooks are opt-in -- don't recommend installation unless user has opted in before
   if (status.integrityStatus === 'lockdown') recs.push('LOCKDOWN active. Run: opena2a shield recover --verify');
-  if (status.integrityStatus === 'compromised') recs.push('Integrity issues detected. Run: opena2a shield selfcheck');
+  if (status.integrityStatus === 'compromised' || status.integrityStatus === 'degraded') {
+    recs.push('Integrity issues detected. Run: opena2a shield selfcheck');
+  }
+  if (status.integrityStatus === 'not-checked') recs.push('Integrity was not checked. Run: opena2a shield selfcheck');
 
   const inactiveTools = status.tools.filter(p => !p.active && p.name !== 'Registry');
   if (inactiveTools.length > 0) {

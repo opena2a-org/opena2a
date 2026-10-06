@@ -204,7 +204,12 @@ describe('Shield E2E Integration', () => {
       // Step 5: Run integrity checks -- should be healthy
       // (We need to re-sign artifacts since we wrote new events after signing)
       // Note: integrity checks verify policy and artifacts, not event count
+      // A real HOME has a shell rc file; without one the shell-hook check
+      // warns, and status (which reports this same verdict) would read DEGRADED.
+      fs.writeFileSync(path.join(tempDir, '.zshrc'), '');
+      fs.writeFileSync(path.join(tempDir, '.bashrc'), '');
       const state = runIntegrityChecks({ shell: 'zsh' });
+      expect(state.status).toBe('healthy');
 
       // Event chain should pass (it's based on the hash chain, not artifacts)
       const eventChainCheck = state.checks.find(c => c.name === 'event-chain');

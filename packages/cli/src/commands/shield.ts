@@ -177,7 +177,9 @@ async function handleStatus(options: ShieldOptions): Promise<number> {
   const output = formatStatus(status, format);
   process.stdout.write(output + '\n');
 
-  return (status.integrityStatus === 'lockdown' || status.integrityStatus === 'compromised') ? 1 : 0;
+  // Status is informational: it exits 1 on the lockdown marker only. The
+  // measured verdict decides `shield selfcheck`'s exit code, not this one.
+  return status.integrityStatus === 'lockdown' ? 1 : 0;
 }
 
 async function handleLog(options: ShieldOptions): Promise<number> {

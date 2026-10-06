@@ -183,6 +183,10 @@ export interface SessionIdentity {
 
 export type IntegrityStatus = 'healthy' | 'degraded' | 'compromised' | 'lockdown';
 
+/** What `shield status` reports: a computed IntegrityStatus, or 'not-checked'
+ *  when the checks could not run. */
+export type ShieldIntegrityStatus = IntegrityStatus | 'not-checked';
+
 export interface IntegrityCheck {
   name: string;
   status: 'pass' | 'warn' | 'fail';
@@ -322,7 +326,7 @@ export interface ShieldStatus {
   policyLoaded: boolean;
   policyMode: PolicyMode | null;
   shellIntegration: boolean;
-  integrityStatus: IntegrityStatus;
+  integrityStatus: ShieldIntegrityStatus;
   lastReportScore: number | null;
   lastReportDate: string | null;
 }
