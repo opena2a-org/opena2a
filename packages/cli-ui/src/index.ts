@@ -12,6 +12,7 @@ export {
   normalizeVerdict,
   verdictColor,
   type Verdict,
+  type CheckVerdict,
 } from "./verdict.js";
 export {
   trustLevelLabel,

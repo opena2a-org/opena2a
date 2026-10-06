@@ -31,7 +31,7 @@ console.log(`  ${trustLevelLegend(3)}`);
 
 Seven grammar exports render the shared front-door language every OpenA2A CLI speaks (verdict line first, path-up score, bounded next steps):
 
-- `renderVerdict({ verdict, summary })` — the verdict line, always printed first: one line, no leading blank.
+- `renderVerdict({ verdict, summary })` — the verdict line, always printed first: one line, no leading blank. Takes the registry verdicts and a check's own `pass` / `fail` / `unverified` verdict (`✔ PASS`, `✖ FAIL`, `? UNVERIFIED`).
 - `renderScore({ score, pathTo100 })` — `72/100 -> 100 by <cmd>` plus a meter; only ever the path up, never a delta (`-5`) or a letter grade (`B+`).
 - `renderFinding(finding)` — severity, title, `file:line`, one sentence of why, a `Verify:` command, a `Fix:` command, at most one URL.
 - `renderNextSteps(commands)` — one to three runnable commands (throws `RangeError` outside that range), first one primary. This is the grammar's command-list variant — see the import note below.
@@ -91,3 +91,4 @@ test("front door speaks the CLI grammar", async () => {
 - Score / meter: green ≥ 70, yellow ≥ 40, red below.
 - Trust level: green (3, 4), yellow (1, 2), red (0).
 - Verdict: safe → green, warning → yellow, blocked → red, listed → cyan.
+- Check verdict: pass → green (as safe), fail → red (as blocked), unverified → yellow `?`. The printed word carries the meaning with color off.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+- A check's own verdict family, `pass` / `fail` / `unverified` (type
+  `CheckVerdict`). `renderVerdict` prints `✔ PASS` in green and `✖ FAIL`
+  in red, the symbol and color of `safe` and `blocked`, and `? UNVERIFIED`
+  in yellow; `verdictColor` maps the three words the same way. Before this
+  the three words fell through to the grey `•` of an unknown verdict. The
+  printed word is unchanged, so the line reads the same under `NO_COLOR`.
+
 ### Fixed
 - The Observations block's Categories line names every severity a category
   holds, worst first: `credentials (1 critical, 1 high)`. It named only the

@@ -170,7 +170,9 @@ function severityColor(c: ChalkInstance, severity: GrammarSeverity) {
 
 /**
  * The verdict line — always the first thing a front door prints. Exactly
- * one line, no leading blank line.
+ * one line, no leading blank line. A check's pass/fail/unverified verdict
+ * prints its own word (PASS, FAIL, UNVERIFIED), so the line reads the same
+ * with color off.
  */
 export function renderVerdict(input: VerdictLineInput, opts?: GrammarRenderOptions): string {
   const c = resolveChalk(opts);
@@ -179,6 +181,7 @@ export function renderVerdict(input: VerdictLineInput, opts?: GrammarRenderOptio
   let paint: (text: string) => string;
   switch (normalized) {
     case "safe":
+    case "pass":
       symbol = "✔";
       paint = c.green;
       break;
@@ -186,7 +189,12 @@ export function renderVerdict(input: VerdictLineInput, opts?: GrammarRenderOptio
       symbol = "⚠";
       paint = c.yellow;
       break;
+    case "unverified":
+      symbol = "?";
+      paint = c.yellow;
+      break;
     case "blocked":
+    case "fail":
       symbol = "✖";
       paint = c.red;
       break;
