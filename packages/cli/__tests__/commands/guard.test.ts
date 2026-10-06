@@ -167,6 +167,50 @@ describe('guard', () => {
     expect(exitCode).toBe(1);
   });
 
+  // #378: hash pins live in the files they cover. Where there is no config
+  // file for `guard sign` to store, `verify --skills` answered "No signature
+  // store found. Run: opena2a guard sign", sign had nothing to store, and the
+  // pin was never checked.
+  it('verify --skills checks the hash pin where there is no config file to store (#378)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'SKILL.md'), '# Demo skill\n');
+    await captureStdout(() => guard({ subcommand: 'sign', targetDir: tempDir, skills: true, format: 'json' }));
+    expect(fs.existsSync(path.join(tempDir, '.opena2a', 'guard', 'signatures.json'))).toBe(false);
+
+    const intact = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, skills: true, format: 'json' }));
+    expect(intact.output).not.toContain('No signature store found');
+    expect(JSON.parse(intact.output).skills).toEqual([expect.objectContaining({ filePath: 'SKILL.md', status: 'pass' })]);
+    expect(intact.exitCode).toBe(0);
+
+    const text = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, skills: true }));
+    expect(text.output).toContain('checked the hash pins only');
+    expect(text.output).toContain('Skill Hash Pins');
+    expect(text.exitCode).toBe(0);
+
+    const raw = fs.readFileSync(path.join(tempDir, 'SKILL.md'), 'utf-8');
+    fs.writeFileSync(path.join(tempDir, 'SKILL.md'), raw.replace('# Demo skill', '# Edited skill'));
+    const changed = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, skills: true, format: 'json' }));
+    expect(JSON.parse(changed.output).skills).toEqual([expect.objectContaining({ filePath: 'SKILL.md', status: 'changed' })]);
+    expect(changed.exitCode).toBe(1);
+  });
+
+  it('verify --skills still needs the store where config files exist (#378)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'SKILL.md'), '# Demo skill\n');
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{}');
+    await captureStdout(() => guard({ subcommand: 'sign', targetDir: tempDir, skills: true, format: 'json' }));
+    // Deleting the store must not turn the verify green.
+    fs.rmSync(path.join(tempDir, '.opena2a', 'guard', 'signatures.json'));
+
+    const { exitCode, output } = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, skills: true, format: 'json' }));
+    expect(JSON.parse(output).error).toContain('No signature store found');
+    expect(exitCode).toBe(1);
+  });
+
+  it('verify --skills with no store and no pinned file exits 1: nothing was checked (#378)', async () => {
+    const { exitCode, output } = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, skills: true, heartbeats: true, format: 'json' }));
+    expect(JSON.parse(output).error).toBe('Nothing to verify: no signature store and no SKILL.md or HEARTBEAT.md here; nothing was verified.');
+    expect(exitCode).toBe(1);
+  });
+
   it('handles missing signed files', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{}');
     await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });

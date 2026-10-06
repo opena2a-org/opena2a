@@ -5,6 +5,7 @@ import * as os from 'node:os';
 
 import { createSkill, _internals } from '../../../src/commands/create/skill.js';
 import { create, _internals as createInternals } from '../../../src/commands/create/index.js';
+import { guard } from '../../../src/commands/guard.js';
 import {
   TEMPLATES,
   TEMPLATE_NAMES,
@@ -826,6 +827,36 @@ describe('GitHub Action template', () => {
     expect(content).toContain('actions/checkout@v4');
     expect(content).toContain('actions/setup-node@v4');
     expect(content).toContain('npm install -g opena2a-cli');
+  });
+
+  // #378: the workflow's verify steps (and the `Next steps` hint) failed on a
+  // fresh skill with "No signature store found": the directory holds no
+  // config file for `guard sign` to store, so the pins were never checked.
+  it('the verify steps the workflow runs pass on a freshly created skill (#378)', async () => {
+    const outputDir = path.join(tempDir, 'fresh-verify');
+    await createSkill({
+      name: 'fresh-verify',
+      template: 'basic',
+      output: outputDir,
+      ci: true,
+      format: 'json',
+    });
+
+    for (const pins of [{ skills: true }, { heartbeats: true }]) {
+      const chunks: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+      let exitCode: number;
+      try {
+        exitCode = await guard({ subcommand: 'verify', targetDir: outputDir, format: 'json', ...pins });
+      } finally {
+        process.stdout.write = origWrite;
+      }
+      const report = JSON.parse(chunks.join(''));
+      expect(report.error).toBeUndefined();
+      expect(report.skills ?? report.heartbeats).toEqual([expect.objectContaining({ status: 'pass' })]);
+      expect(exitCode).toBe(0);
+    }
   });
 });
 

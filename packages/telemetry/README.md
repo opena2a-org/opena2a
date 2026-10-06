@@ -53,6 +53,8 @@ Validation always wins. Out-of-range values (< 0 or > 255), non-finite numbers, 
 
 `reason` says why a command ended the way it did. It is one of six static values, exported as `USAGE_REASONS`: `findings`, `no-verdict`, `error`, `unmeasured`, `incomplete`, `refused`.
 
+**Pending.** `reason` is not in a published release of this package yet. It ships once the Registry stores the field; until then no published version sends it.
+
 ```ts
 await tele.track("secure", {
   success: tele.successFromExitCode(process.exitCode),
@@ -191,7 +193,7 @@ Only these fields, exactly:
 | `name`       | `"scan"` (command events)   | Command-use heatmap              |
 | `success`    | `true` (command events)     | Success rate per command         |
 | `durationMs` | `312` (command events)      | Latency aggregate per command    |
-| `reason`     | `"refused"` (command events, optional) | Outcome mix per command (one of six static values) |
+| `reason`     | `"refused"` (command events, optional) | Outcome mix per command (one of six static values). **Pending:** not in a published release yet; see [the `reason` field](#the-reason-field) |
 | `platform`   | `"darwin"`                  | Platform distribution            |
 | `nodeMajor`  | `24`                        | Node-version-support planning    |
 | `countryCode` | derived server-side from CF-IPCountry | Country distribution (no IP stored) |

@@ -19,9 +19,6 @@ The 0.2.0 entry in this file called the hash irreversible, which was misleading:
   payload carries no `reason` key, so existing call sites send exactly what
   they sent before.
 
-  Publish this only after the Registry accepts **and stores** the field,
-  checked against the stored row rather than the ingest status code.
-
 - **Telemetry is now suppressed automatically in CI and under `DO_NOT_TRACK`.**
   New `isCI()`, `doNotTrack()` and `autoSuppressionReason()` helpers;
   `loadConfig()` returns `enabled: false` when either fires. Suppression is

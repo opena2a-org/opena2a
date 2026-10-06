@@ -316,7 +316,15 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   const enforce = options.enforce ?? false;
   const store = loadStore(targetDir);
 
-  if (!store) {
+  // Hash pins live in the files they cover, so `--skills` / `--heartbeats` need no store. Where
+  // there is no config file for `guard sign` to store (a fresh `skill create` directory), advising
+  // a sign was a loop that never checked the pin (#378): check the pins alone. Where config files
+  // exist a missing store still fails, so deleting the store cannot turn a verify green.
+  const pinsOnly = !store && !!(options.skills || options.heartbeats)
+    && !fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))
+    && resolveDefaultFiles(targetDir).files.length === 0;
+
+  if (!store && !pinsOnly) {
     // A store file that exists but could not be loaded (unparseable, or written by a newer CLI
     // and refused) is not the same as no store: do not advise a sign that would overwrite it.
     if (fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))) {
@@ -327,8 +335,9 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     return 1;
   }
 
+  const signatures = store?.signatures ?? [];
   const results: GuardResult[] = [];
-  for (const sig of store.signatures) {
+  for (const sig of signatures) {
     const fullPath = path.join(targetDir, sig.filePath);
     if (!fs.existsSync(fullPath)) { results.push({ filePath: sig.filePath, status: 'missing', expectedHash: sig.hash }); continue; }
     const content = fs.readFileSync(fullPath);
@@ -340,12 +349,12 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     }
   }
 
-  const signedPaths = new Set(store.signatures.map(s => s.filePath));
+  const signedPaths = new Set(signatures.map(s => s.filePath));
   for (const relPath of resolveFiles(targetDir)) {
     if (!signedPaths.has(relPath)) { results.push({ filePath: relPath, status: 'unsigned' }); }
   }
 
-  const report = buildReport('verify', targetDir, results, store.signatures.length);
+  const report = buildReport('verify', targetDir, results, signatures.length);
   const tamperedFiles = results.filter(r => r.status === 'tampered' || r.status === 'missing');
 
   if (tamperedFiles.length > 0) {
@@ -353,7 +362,7 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
       tamperedCount: report.tampered, missingCount: report.missing,
       files: tamperedFiles.map(f => ({ path: f.filePath, status: f.status, diff: f.diff ?? null })),
     });
-  } else {
+  } else if (store) {
     await emitEvent('config.verified', 'guard.verify', targetDir, 'info', 'allowed', {
       passedCount: report.passed, unsignedCount: report.unsigned, totalSigned: report.totalSigned,
     });
@@ -396,13 +405,26 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     if (options.heartbeats) heartbeatVerify = await verifyHeartbeatPins(targetDir);
   }
 
+  // With no store and no pinned file either, nothing was checked: that is not a pass.
+  if (pinsOnly && skillVerify.length === 0 && heartbeatVerify.length === 0) {
+    const what = [options.skills ? 'SKILL.md' : '', options.heartbeats ? 'HEARTBEAT.md' : ''].filter(Boolean).join(' or ');
+    const message = `Nothing to verify: no signature store and no ${what} here; nothing was verified.`;
+    if (isJson) { process.stdout.write(JSON.stringify({ error: message }, null, 2) + '\n'); }
+    else { process.stdout.write(yellow(message + '\n')); }
+    return 1;
+  }
+
   if (isJson) {
     const output: Record<string, unknown> = { ...report };
     if (skillVerify.length > 0) output.skills = skillVerify;
     if (heartbeatVerify.length > 0) output.heartbeats = heartbeatVerify;
     process.stdout.write(JSON.stringify(output, null, 2) + '\n');
   } else {
-    printVerifyReport(report, enforce);
+    if (pinsOnly && report.results.length === 0) {
+      process.stdout.write('\n' + dim('  No config files here for a signature store to cover; checked the hash pins only.') + '\n\n');
+    } else {
+      printVerifyReport(report, enforce);
+    }
     if (skillVerify.length > 0) {
       process.stdout.write(bold('  Skill Hash Pins') + '\n');
       for (const sv of skillVerify) { process.stdout.write(`  ${sv.filePath.padEnd(28)} ${sv.status === 'pass' ? green('PASS') : sv.status === 'changed' ? red('CHANGED') : yellow(sv.status.toUpperCase())}\n`); }
