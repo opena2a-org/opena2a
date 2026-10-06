@@ -6,8 +6,11 @@ export type TelemetryAction = "on" | "off" | "status" | "--help" | "-h" | undefi
 export interface TelemetryCommandInput {
   /** Tool name — only used in the printed output. */
   tool: string;
-  /** Returns the current telemetry status. Typically `tele.status`. */
-  getStatus: () => TelemetryStatusLike & { configPath: string; installId: string };
+  /**
+   * Returns the current telemetry status. Typically `tele.status`.
+   * `installId` is null while telemetry is off: the SDK keeps no ID then.
+   */
+  getStatus: () => TelemetryStatusLike & { configPath: string; installId: string | null };
   /** Persists the new opt-out state. Typically `tele.setOptOut`. */
   setOptOut: (enabled: boolean) => unknown;
   /**
@@ -99,7 +102,7 @@ function renderStatus(
   const lines = [
     header,
     `  state:       ${stateWord}${suppressionNote(status.suppressedBy)}`,
-    `  install_id:  ${chalk.dim(status.installId)}`,
+    `  install_id:  ${chalk.dim(status.installId ?? "none (not kept while telemetry is off)")}`,
   ];
   if (input.getContributorToken) {
     // Contributed scans carry this token and no install_id, so it is the

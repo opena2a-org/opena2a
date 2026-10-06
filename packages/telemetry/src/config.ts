@@ -1,6 +1,6 @@
 import { homedir, hostname, platform as osPlatform } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import type { SuppressionReason } from "./types.js";
@@ -40,7 +40,14 @@ export const CI_VENDOR_ENV_VARS = [
 
 export interface TelemetryConfig {
   enabled: boolean;
-  installId: string;
+  /** null whenever telemetry is off: no identifier is derived, read or kept. */
+  installId: string | null;
+}
+
+/** On-disk shape. `installId` is present only while telemetry is on. */
+interface ConfigFile {
+  enabled: boolean;
+  installId?: string;
 }
 
 export interface ConfigPaths {
@@ -56,18 +63,28 @@ export function configPaths(): ConfigPaths {
   return { dir, file: join(dir, "telemetry.json") };
 }
 
-function readConfigFile(file: string): Partial<TelemetryConfig> | null {
+function readConfigFile(file: string): Partial<ConfigFile> | null {
   if (!existsSync(file)) return null;
   try {
     const raw = readFileSync(file, "utf8");
-    const parsed = JSON.parse(raw) as Partial<TelemetryConfig>;
-    return parsed;
+    const parsed: unknown = JSON.parse(raw);
+    // A hand-edited file can hold any JSON value; only an object is a config.
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Partial<ConfigFile>;
   } catch {
     return null;
   }
 }
 
-function writeConfigFile(paths: ConfigPaths, cfg: TelemetryConfig): void {
+/** The persisted install_id, if the file holds a usable one. */
+function storedInstallId(file: Partial<ConfigFile> | null): string | undefined {
+  const id = file?.installId;
+  return typeof id === "string" && id !== "" ? id : undefined;
+}
+
+function writeConfigFile(paths: ConfigPaths, cfg: ConfigFile): void {
   if (!existsSync(paths.dir)) {
     mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
   }
@@ -297,8 +314,15 @@ export function autoSuppressionReason(
  *      choice by the user, so an explicit opt-in may override it.
  *   5. default ON (matches spec).
  *
- * The install_id is always persisted on first call so subsequent runs
- * (and subsequent tools on the same machine) report the same ID.
+ * The install_id exists only while telemetry is on. When it is on, the ID
+ * is derived once and persisted so later runs (and other tools on the same
+ * machine) report the same one. When it is off for ANY of the reasons
+ * above, nothing is derived — no machine-id read, no `ioreg` / `reg query`
+ * probe, no hostname hash — `installId` is null, and an ID left in the file
+ * by an earlier run is deleted: the file keeps an explicit
+ * `enabled: false` and loses the `installId` key, and a file that held
+ * nothing but the default `enabled: true` plus an ID is removed. This never
+ * writes `enabled: true`.
  *
  * Note that CI/DO_NOT_TRACK suppression is computed per-invocation and
  * deliberately NOT written to the config file: the file records what the
@@ -311,18 +335,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
 } {
   const paths = configPaths();
   const file = readConfigFile(paths.file);
-  const installId = file?.installId ?? deriveInstallId();
   const fileEnabled = file?.enabled ?? true;
   const envDisabled = envOptOut(env);
   const autoReason = autoSuppressionReason(env);
   const enabled = !envDisabled && fileEnabled && autoReason === null;
 
-  if (!file || !file.installId || file.enabled === undefined) {
-    try {
-      writeConfigFile(paths, { enabled: fileEnabled, installId });
-    } catch {
-      // best-effort persistence; running in a sandbox without HOME is fine.
+  let installId: string | null = null;
+  if (enabled) {
+    const stored = storedInstallId(file);
+    installId = stored ?? deriveInstallId();
+    if (!stored || file?.enabled === undefined) {
+      try {
+        writeConfigFile(paths, { enabled: true, installId });
+      } catch {
+        // best-effort persistence; running in a sandbox without HOME is fine.
+      }
     }
+  } else if (file && "installId" in file) {
+    forgetInstallId(paths, file.enabled === false);
   }
 
   // Attribute the off-state to the reason a consumer must actually explain,
@@ -345,13 +375,41 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
   return { config: { enabled, installId }, paths, suppressedBy };
 }
 
-export function setEnabled(enabled: boolean): TelemetryConfig {
+/**
+ * Delete a persisted install_id. An explicit `enabled: false` is kept;
+ * anything else in the file is the default and is not written back, so
+ * this never writes `enabled: true`. Best-effort, like every write here.
+ */
+function forgetInstallId(paths: ConfigPaths, keepOptOut: boolean): void {
+  try {
+    if (keepOptOut) writeConfigFile(paths, { enabled: false });
+    else unlinkSync(paths.file);
+  } catch {
+    // read-only or missing config dir: nothing more we can do.
+  }
+}
+
+/**
+ * Persist the user's choice (`<tool> telemetry on|off`).
+ *
+ * `off` writes exactly `{"enabled":false}`: the install_id is deleted, not
+ * kept for later. `on` never derives an ID itself — loadConfig() does that
+ * on the next load, and only when telemetry is then actually on — and keeps
+ * an existing ID only when no env opt-out, DO_NOT_TRACK or CI is holding
+ * telemetry off.
+ */
+export function setEnabled(
+  enabled: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): TelemetryConfig {
   const paths = configPaths();
-  const existing = readConfigFile(paths.file);
-  const installId = existing?.installId ?? deriveInstallId();
-  const cfg: TelemetryConfig = { enabled, installId };
+  let cfg: ConfigFile = { enabled };
+  if (enabled && !envOptOut(env) && autoSuppressionReason(env) === null) {
+    const existingId = storedInstallId(readConfigFile(paths.file));
+    if (existingId) cfg = { enabled: true, installId: existingId };
+  }
   writeConfigFile(paths, cfg);
-  return cfg;
+  return { enabled, installId: cfg.installId ?? null };
 }
 
 export function endpointURL(env: NodeJS.ProcessEnv = process.env): string {

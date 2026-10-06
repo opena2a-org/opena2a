@@ -17,6 +17,9 @@
   prints exactly what it printed before.
 
 ### Fixed
+- `runTelemetryCommand` accepts a status whose `installId` is `null`, which
+  `@opena2a/telemetry` reports while telemetry is off, and prints
+  `install_id:  none (not kept while telemetry is off)` instead of the value.
 - The Observations block's Categories line names every severity a category
   holds, worst first: `credentials (1 critical, 1 high)`. It named only the
   top one, so a category's lower findings were unaccounted for and the line

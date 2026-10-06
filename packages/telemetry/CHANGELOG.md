@@ -82,6 +82,20 @@
 
 ### Fixed
 
+- **No install ID exists while telemetry is off.** Under any opt-out
+  (`OPENA2A_TELEMETRY` set to `off`, `0`, `false` or `no` in any case and with
+  surrounding whitespace, a persisted `{"enabled": false}`, `DO_NOT_TRACK`, or
+  CI) `init()`, `status()` and `setOptOut()` no longer derive an ID. There is
+  no machine-id read, no `ioreg` or `reg query` probe and no hostname hash,
+  nothing is written to `telemetry.json`, and nothing is sent. Earlier
+  releases derived and persisted the ID on every load, opted out or not.
+- **An ID written by an earlier release is deleted** on the first run under an
+  opt-out. An explicit `"enabled": false` is kept; a file that held only the
+  default `"enabled": true` and an ID is removed, so this never writes
+  `"enabled": true`.
+- **`telemetry off` writes exactly `{"enabled": false}`**, with no ID.
+  `telemetry on` derives an ID only once telemetry is actually on.
+
 - **`DEFAULT_ENDPOINT` now points at the canonical ingest path** —
   `https://api.oa2a.org/api/v1/telemetry/v1/event` (was
   `.../api/v1/registry/telemetry/v1/event`). Registry PR #283 (2026-06-26) moved
@@ -92,6 +106,12 @@
   client release; this fix ensures **future** installs post to the canonical path
   directly and lets the alias eventually be retired. Ships whenever the package is
   next published — no consumer action required (the alias covers the gap).
+
+### Changed
+
+- **`Status.installId` is now `string | null`**: `null` while telemetry is off.
+  A consumer that prints it should show that no ID is kept rather than the
+  value; `@opena2a/cli-ui`'s `runTelemetryCommand` does.
 
 ## 0.3.0 — 2026-05-24
 

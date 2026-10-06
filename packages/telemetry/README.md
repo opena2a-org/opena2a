@@ -25,7 +25,7 @@ tele.error("scan", "HMA_TIMEOUT");
 - `start()` fires a `start` event.
 - `track(name, fields?)` fires a `command` event with the command name and optional `success` / `durationMs` / `reason` (see [the `reason` field](#the-reason-field)).
 - `error(name, code)` fires an `error` event with the failure code.
-- `status()` returns `{ enabled, configPath, policyURL, installId }` for tools to build their own `--version` line and `telemetry` subcommand (see `@opena2a/cli-ui` helpers).
+- `status()` returns `{ enabled, configPath, policyURL, installId }` for tools to build their own `--version` line and `telemetry` subcommand (see `@opena2a/cli-ui` helpers). `installId` is `null` while telemetry is off.
 - `successFromExitCode(exitCode, semanticSuccessCodes?)` translates `process.exitCode` to the `success` boolean. Default behavior follows POSIX security-tool convention (exit 0 and 1 = success; ≥ 2 = failure). The optional second argument lets dispatchers declare exit codes ≥ 2 that represent semantic outcomes (not crashes). See [crash-rate semantics](#crash-rate-semantics-for-success) below.
 
 All methods are fire-and-forget. Network failures, rate-limiting (429), and timeouts are swallowed. Telemetry never blocks the calling tool.
@@ -75,9 +75,16 @@ Per the spec, this SDK does not emit a per-run CLI banner. Disclosure is discove
 
 Three ways to disable, in precedence order:
 
-1. **Per-invocation** — `OPENA2A_TELEMETRY=off` (also `0`, `false`, `no`).
-2. **Persistent** — `<tool> telemetry off` (writes to `~/.config/opena2a/telemetry.json`).
+1. **Per-invocation** — `OPENA2A_TELEMETRY=off` (also `0`, `false`, `no`; case-insensitive, surrounding whitespace ignored).
+2. **Persistent** — `<tool> telemetry off` (writes exactly `{"enabled": false}` to `~/.config/opena2a/telemetry.json`).
 3. **Direct edit** — `~/.config/opena2a/telemetry.json` → `{"enabled": false}`.
+
+While telemetry is off, for any of these reasons or the
+[automatic suppression](#automatic-suppression) below, no install ID exists.
+None is derived (no machine-id read, no `ioreg` or `reg query` probe, no
+hostname hash), `status().installId` is `null`, and an ID stored by an earlier
+run is deleted from `telemetry.json` on the next run. An explicit
+`"enabled": false` in that file is kept.
 
 ## Automatic suppression
 
