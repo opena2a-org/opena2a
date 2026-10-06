@@ -48,7 +48,7 @@ rm -f ~/.config/opena2a/telemetry.json
 | # | Command | Expected |
 |---|---------|----------|
 | 2.1 | `opena2a --version` | `opena2a 0.10.0` on **stdout** (single line) + `Telemetry: on (opt-out: OPENA2A_TELEMETRY=off  •  details: opena2a.org/telemetry)` on **stderr**. `--version 2>/dev/null` shows only the version; `--version 2>&1 1>/dev/null` shows only the telemetry line. |
-| 2.2 | `opena2a telemetry status` | `opena2a telemetry`, then `state: on`, install_id, config path, policy URL, toggle hint |
+| 2.2 | `opena2a telemetry status` | `opena2a telemetry`, then `state: on`, install_id, contributor_token (64 hex characters), config path, policy URL, toggle hint |
 | 2.3 | `opena2a telemetry off` | `Telemetry disabled for opena2a.` Then `--version` shows `Telemetry: off`. `~/.config/opena2a/telemetry.json` has `"enabled": false`. |
 | 2.4 | `opena2a telemetry on` | Re-enables persistently. |
 | 2.5 | `OPENA2A_TELEMETRY=off opena2a telemetry status` | `state: off` (env wins over file). |

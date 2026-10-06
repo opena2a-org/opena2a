@@ -260,11 +260,15 @@ Learn more: https://opena2a.org/docs`);
   program
     .command('telemetry [action]')
     .description('Inspect or toggle anonymous usage telemetry: on | off | status')
-    .action((action: TelemetryAction | undefined) => {
+    .action(async (action: TelemetryAction | undefined) => {
+      // Scans this CLI contributes carry the contributor token, not the
+      // install_id, so status shows both.
+      const { getContributorToken } = await import('@opena2a/contribute');
       console.log(runTelemetryCommand(action, {
         tool: BRAND,
         getStatus: tele.status,
         setOptOut: tele.setOptOut,
+        getContributorToken,
       }));
     });
 

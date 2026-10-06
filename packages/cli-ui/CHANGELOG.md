@@ -9,6 +9,12 @@
   in yellow; `verdictColor` maps the three words the same way. Before this
   the three words fell through to the grey `•` of an unknown verdict. The
   printed word is unchanged, so the line reads the same under `NO_COLOR`.
+- `runTelemetryCommand` accepts an optional `getContributorToken`. When a CLI
+  passes it (typically `getContributorToken` from `@opena2a/contribute`), the
+  status block prints `contributor_token:` between `install_id:` and
+  `config:`, and the `status` help line names it. A getter that throws prints
+  `unavailable` instead of failing the command. A CLI that passes no getter
+  prints exactly what it printed before.
 
 ### Fixed
 - The Observations block's Categories line names every severity a category

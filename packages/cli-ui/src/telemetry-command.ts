@@ -10,6 +10,13 @@ export interface TelemetryCommandInput {
   getStatus: () => TelemetryStatusLike & { configPath: string; installId: string };
   /** Persists the new opt-out state. Typically `tele.setOptOut`. */
   setOptOut: (enabled: boolean) => unknown;
+  /**
+   * Returns the token that community scan contributions from this machine
+   * carry. Typically `getContributorToken` from `@opena2a/contribute`. Only
+   * CLIs that contribute scans pass it; without it no `contributor_token:`
+   * line is printed.
+   */
+  getContributorToken?: () => string;
 }
 
 /**
@@ -58,7 +65,9 @@ function renderHelp(input: TelemetryCommandInput): string {
     chalk.bold("Actions:"),
     `  on        Enable telemetry persistently for ${tool}.`,
     `  off       Disable telemetry persistently for ${tool}.`,
-    `  status    Show current state, install_id, config file, and policy URL.`,
+    input.getContributorToken
+      ? `  status    Show current state, install_id, contributor_token, config file, and policy URL.`
+      : `  status    Show current state, install_id, config file, and policy URL.`,
     `  --help    Show this message.`,
     "",
     chalk.bold("Per-invocation override (does not persist):"),
@@ -91,9 +100,16 @@ function renderStatus(
     header,
     `  state:       ${stateWord}${suppressionNote(status.suppressedBy)}`,
     `  install_id:  ${chalk.dim(status.installId)}`,
+  ];
+  if (input.getContributorToken) {
+    // Contributed scans carry this token and no install_id, so it is the
+    // only key that identifies them in the Registry.
+    lines.push(`  contributor_token: ${chalk.dim(contributorTokenOrUnavailable(input.getContributorToken))}`);
+  }
+  lines.push(
     `  config:      ${chalk.dim(status.configPath)}`,
     `  policy:      ${chalk.cyan(status.policyURL)}`,
-  ];
+  );
   if (status.suppressedBy) {
     // Suppression re-applies on every load, so `telemetry on` would write
     // enabled=true and change nothing observable. Say what is actually
@@ -126,6 +142,16 @@ function renderStatus(
     }
   }
   return lines.join("\n");
+}
+
+// The token is derived from a salt file under the home directory; a status
+// command must still print when that file cannot be read or created.
+function contributorTokenOrUnavailable(getToken: () => string): string {
+  try {
+    return getToken();
+  } catch {
+    return "unavailable";
+  }
 }
 
 type SuppressionReason = NonNullable<TelemetryStatusLike["suppressedBy"]>;
