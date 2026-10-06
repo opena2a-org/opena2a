@@ -35,7 +35,7 @@ interface LocalVerdictFinding {
   line?: number;
 }
 import { detectProject } from '../util/detect.js';
-import { quickCredentialScan, type CredentialMatch } from '../util/credential-patterns.js';
+import { quickCredentialScan, scanCredentialsWithCoverage, type CredentialMatch } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
@@ -147,6 +147,9 @@ export interface InitPhaseData {
 export interface CredentialPhaseData {
   matches: CredentialMatch[];
   totalFindings: number;
+  /** Files the credential scan opened and read. Zero findings over zero files
+   *  is "nothing examined", not "clean". */
+  filesScanned: number;
   bySeverity: Record<string, number>;
   driftFindings: CredentialMatch[];
   envVarSuggestions: { finding: string; envVar: string }[];
@@ -394,9 +397,11 @@ export async function review(options: ReviewOptions): Promise<number> {
     status: phase2Status,
     score: credScore,
     durationMs: phase2Ms,
-    detail: credentialData.totalFindings === 0
-      ? 'No hardcoded credentials'
-      : `${credentialData.totalFindings} finding(s)`,
+    detail: credentialData.totalFindings > 0
+      ? `${credentialData.totalFindings} finding(s)`
+      : credentialData.filesScanned === 0
+        ? 'No files scanned for credentials'
+        : 'No hardcoded credentials',
   });
   progressDone(2, 'Checking credentials...      ', formatMs(phase2Ms));
 
@@ -858,10 +863,10 @@ async function runCredentialPhase(targetDir: string): Promise<CredentialPhaseDat
   // object is serialised verbatim into `--json` and into the HTML report's
   // embedded payload, so any format that forgot to mask would ship the secret
   // (#267). The finding needs file:line and a recognisable preview, never the
-  // value. `quickCredentialScan` itself keeps the raw value: `protect` needs it
+  // value. The scan itself keeps the raw value: `protect` needs it
   // to rewrite the source.
-  const matches = (await quickCredentialScan(targetDir))
-    .map(m => ({ ...m, value: maskValue(m.value) }));
+  const scan = await scanCredentialsWithCoverage(targetDir);
+  const matches = scan.matches.map(m => ({ ...m, value: maskValue(m.value) }));
   const bySeverity: Record<string, number> = {};
   for (const m of matches) {
     bySeverity[m.severity] = (bySeverity[m.severity] || 0) + 1;
@@ -875,6 +880,7 @@ async function runCredentialPhase(targetDir: string): Promise<CredentialPhaseDat
   return {
     matches,
     totalFindings: matches.length,
+    filesScanned: scan.filesScanned,
     bySeverity,
     driftFindings,
     envVarSuggestions,

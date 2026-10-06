@@ -461,6 +461,63 @@ describe('review', () => {
     expect(report).toHaveProperty('shieldData');
   });
 
+  // A credential check that opened no file found nothing because it read
+  // nothing. Saying "No hardcoded credentials found. Your project is clean."
+  // there answers a question the scan never asked.
+  async function reviewBothFormats(dir: string) {
+    const reportPath = path.join(tempHome, 'report.html');
+    const origStderr = process.stderr.write;
+    process.stderr.write = (() => true) as any;
+    try {
+      const { output } = await captureStdout(() => review({
+        targetDir: dir, format: 'json', autoOpen: false, skipHma: true,
+      }));
+      await captureStdout(() => review({
+        targetDir: dir, reportPath, autoOpen: false, skipHma: true, ci: true,
+      }));
+      const html = fs.readFileSync(reportPath, 'utf-8');
+      return {
+        report: JSON.parse(output),
+        credentialsTab: renderReportPage(html, 'credentials'),
+        overviewTab: renderReportPage(html, 'overview'),
+      };
+    } finally {
+      process.stderr.write = origStderr;
+    }
+  }
+
+  it('a directory in which the credential scan opens no file is not reported as clean', async () => {
+    // Every file here is one the credential walk skips: an image, a document
+    // and a dotfile that is not an .env file.
+    fs.writeFileSync(path.join(tempDir, 'logo.png'), 'PNG');
+    fs.writeFileSync(path.join(tempDir, 'guide.pdf'), '%PDF-1.4');
+    fs.writeFileSync(path.join(tempDir, '.toolrc'), 'x=1\n');
+
+    const { report, credentialsTab, overviewTab } = await reviewBothFormats(tempDir);
+
+    expect(report.credentialData.filesScanned).toBe(0);
+    const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
+    expect(credPhase.detail).toBe('No files scanned for credentials');
+
+    expect(credentialsTab).not.toContain('No hardcoded credentials found');
+    expect(credentialsTab).not.toContain('Your project is clean');
+    expect(credentialsTab).toContain('No files were scanned for credentials');
+    expect(credentialsTab).toContain('opena2a review');
+    expect(overviewTab).toContain('No files scanned for credentials');
+    expect(overviewTab).not.toContain('No hardcoded credentials');
+  });
+
+  it('a directory with a readable source file and no credential keeps the clean wording', async () => {
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
+
+    const { report, credentialsTab } = await reviewBothFormats(tempDir);
+
+    expect(report.credentialData.filesScanned).toBeGreaterThanOrEqual(1);
+    const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
+    expect(credPhase.detail).toBe('No hardcoded credentials');
+    expect(credentialsTab).toContain('No hardcoded credentials found. Your project is clean.');
+  });
+
   it('HMA unavailable gracefully skips', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');

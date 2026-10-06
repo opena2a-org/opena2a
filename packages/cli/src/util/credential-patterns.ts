@@ -709,7 +709,20 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
 // --- Quick scan (used by init) ---
 
 export async function quickCredentialScan(targetDir: string): Promise<CredentialMatch[]> {
+  return (await scanCredentialsWithCoverage(targetDir)).matches;
+}
+
+/** What a credential scan found, together with how much it actually read. */
+export interface CredentialScanResult {
+  matches: CredentialMatch[];
+  /** Files the scan opened and read. Zero means nothing under the directory
+   *  was examined, so an empty `matches` is not a clean result. */
+  filesScanned: number;
+}
+
+export async function scanCredentialsWithCoverage(targetDir: string): Promise<CredentialScanResult> {
   const matches: CredentialMatch[] = [];
+  let filesScanned = 0;
   const seen = new Set<string>();
   // Loaded once before the walk so per-value label refinement + catalog
   // detection stay synchronous inside the walkFiles callback.
@@ -724,6 +737,7 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
     } catch {
       return;
     }
+    filesScanned++;
 
     const lines = content.split('\n');
 
@@ -785,7 +799,7 @@ export async function quickCredentialScan(targetDir: string): Promise<Credential
     collectCatalogMatches(lines, filePath, catalog, isKnownExample, seen, matches);
   });
 
-  return matches;
+  return { matches, filesScanned };
 }
 
 // --- Template env leak posture scan (used by init, NOT by protect) ---
