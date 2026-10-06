@@ -12,17 +12,17 @@ You are a CISO, security engineer, or compliance analyst. Developers on your tea
 
 ## Step 1: Discover Shadow AI
 
-Run detection on a developer workstation to see what AI tools are active. This command is read-only and does not modify any files.
+Run detection on a developer workstation to see what AI tools are active. This command is read-only and does not modify any files. With `"$HOME"` as the target, `detect` treats the top of the home directory as the project, so a `.mcp.json` and AI config files kept there are listed as the project's; it reads the process table and the machine-wide MCP configs under the home directory whatever the target.
 
 ```bash
 npx opena2a-cli detect "$HOME"
 ```
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
+Captured from opena2a-cli v0.10.13 on 2026-10-06; the device line and the scan timestamp are replaced with fixed placeholders:
 ```
 Shadow AI Agent Audit
-dev-laptop-042 | jsmith | /home/jsmith/payments-api
-2026-09-04 18:22:41 UTC
+dev-laptop-042 | jsmith | /home/jsmith
+2026-10-06 18:22:41 UTC
 
 Governance: 28/100 -> 100/100 by addressing 2 findings
 5 MCP servers | 4 AI configs
@@ -62,7 +62,7 @@ AI Config Files (4 found)
 ```
 
 Key observations for security teams:
-- **Running AI Agents** lists every AI coding assistant found in the machine's process table, including local model runtimes like Ollama that bypass corporate API gateways. The capture above was taken on a build machine with none running, so the section is empty; on a developer workstation each assistant appears with its identity and governance status.
+- **Running AI Agents** lists every AI coding assistant found in the machine's process table, including local model runtimes like Ollama that bypass corporate API gateways. The capture above was taken with none in the process table, so the section is empty; on a developer workstation each assistant appears with its identity and governance status.
 - **MCP Servers** reveals what external services AI agents can access, in plain language. `can read and modify your database` is a postgres server; `can run any command on your computer` is shell access, which is the only capability the scoring treats as critical on its own.
 - **Governance**, the first line of the report, is a single number (0-100) for executive reporting, followed by the score the machine would reach if every listed finding were addressed.
 
@@ -78,7 +78,7 @@ npx opena2a-cli detect "$HOME" --report shadow-ai-report.html
 
 On the terminal this prints the Step 1 audit unchanged and then one more line, naming the file it wrote and opening it in your browser.
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04 -- the last line of the run; everything above it is the same audit as Step 1:
+Captured from opena2a-cli v0.10.13 on 2026-10-06 -- the last line of the run; everything above it is the same audit as Step 1:
 ```
 Report: shadow-ai-report.html
 ```
@@ -110,28 +110,28 @@ npx opena2a-cli detect "$HOME" --export-csv assets.csv
 
 As with `--report`, the terminal shows the Step 1 audit and then one more line:
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04 -- the last line of the run; everything above it is the same audit as Step 1:
+Captured from opena2a-cli v0.10.13 on 2026-10-06 -- the last line of the run; everything above it is the same audit as Step 1:
 ```
 Asset inventory: assets.csv
 ```
 
 The file it wrote carries one row per discovered asset -- one per AI agent, one per MCP server, one per AI config file:
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04; the `Hostname`, `Username`, `Scan Directory` and `Scan Timestamp` columns are replaced with fixed placeholders:
+Captured from opena2a-cli v0.10.13 on 2026-10-06; the `Hostname`, `Username`, `Scan Directory` and `Scan Timestamp` columns are replaced with fixed placeholders:
 ```csv
 Hostname,Username,Scan Directory,Scan Timestamp,Asset Type,Name,Installed From,Transport,Capabilities,Risk
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,filesystem,This project,stdio,Can read and write files on your machine,medium
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,postgres,This project,stdio,Can read and modify your database,high
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,github,This project,stdio,Can read and push code to your repositories,medium
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,slack,This project,stdio,Can send messages on your behalf,medium
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,MCP Server,shell-runner,This project,stdio,Can run any command on your computer,critical
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,.cursorrules,Cursor,,Cursor configuration,low
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,CLAUDE.md,Claude Code,,Claude Code configuration,low
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,.github/copilot-instructions.md,GitHub Copilot,,GitHub Copilot configuration,low
-dev-laptop-042,jsmith,/home/jsmith/payments-api,2026-09-04T18:22:41.000Z,AI Config,.env.ai,AI Framework,,AI Framework config contains credential references,critical
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,MCP Server,filesystem,This project,stdio,Can read and write files on your machine,medium
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,MCP Server,postgres,This project,stdio,Can read and modify your database,high
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,MCP Server,github,This project,stdio,Can read and push code to your repositories,medium
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,MCP Server,slack,This project,stdio,Can send messages on your behalf,medium
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,MCP Server,shell-runner,This project,stdio,Can run any command on your computer,critical
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,AI Config,.cursorrules,Cursor,,Cursor configuration,low
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,AI Config,CLAUDE.md,Claude Code,,Claude Code configuration,low
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,AI Config,.github/copilot-instructions.md,GitHub Copilot,,GitHub Copilot configuration,low
+dev-laptop-042,jsmith,/home/jsmith,2026-10-06T18:22:41.000Z,AI Config,.env.ai,AI Framework,,AI Framework config contains credential references,critical
 ```
 
-The columns are named for CMDB and ServiceNow import. Every row repeats `Hostname`, `Username`, `Scan Directory` and `Scan Timestamp`, so you can aggregate results from multiple machines into a single spreadsheet or database. `Asset Type` is one of `AI Agent`, `MCP Server` or `AI Config`; the machine captured above had no AI agent processes running, so it exported no `AI Agent` rows.
+The columns are named for CMDB and ServiceNow import. Every row repeats `Hostname`, `Username`, `Scan Directory` and `Scan Timestamp`, so you can aggregate results from multiple machines into a single spreadsheet or database. `Asset Type` is one of `AI Agent`, `MCP Server` or `AI Config`; the capture above was taken with no AI agent in the process table, so it exported no `AI Agent` rows.
 
 ---
 

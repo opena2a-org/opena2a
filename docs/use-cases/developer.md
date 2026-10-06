@@ -12,17 +12,17 @@ You use Claude Code, Cursor, GitHub Copilot, or another AI coding assistant. You
 
 ## Step 1: See What's Running
 
-Start by discovering what AI tools are active in your environment and how well-governed they are.
+Start by discovering what AI tools are active in your environment and how well-governed they are. With `"$HOME"` as the target, `detect` treats the top of your home directory as the project, so a `.mcp.json` there is listed under `Project-local` and `~/.claude/settings.json` is one of its AI config files; it reads the process table and the machine-wide MCP configs under your home directory whatever the target.
 
 ```bash
 npx opena2a-cli detect "$HOME"
 ```
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
+Captured from opena2a-cli v0.10.13 on 2026-10-06; the device line and the scan timestamp are replaced with fixed placeholders:
 ```
 Shadow AI Agent Audit
-macbook-pro | dev | /home/dev/my-project
-2026-09-04 18:22:41 UTC
+macbook-pro | dev | /home/dev
+2026-10-06 18:22:41 UTC
 
 Governance: 63/100 -> 100/100 by addressing 3 findings
 3 MCP servers | 3 AI configs
@@ -66,7 +66,7 @@ AI Config Files (3 found)
 
 The governance score tells you how well-managed your AI environment is: 100 is fully governed, and every point it deducts is attached to a finding with a fix. A score of 63 means several gaps need attention.
 
-`Running AI Agents` lists the AI assistants it finds in the machine's process table. The capture above was taken on a build machine with none running; on a workstation with Claude Code or Cursor open, each one appears here with its identity and governance status, and an ungoverned agent costs the score more than any single MCP server does.
+`Running AI Agents` lists the AI assistants it finds in the machine's process table. The capture above was taken with none in the process table; on a workstation with Claude Code or Cursor open, each one appears here with its identity and governance status, and an ungoverned agent costs the score more than any single MCP server does.
 
 ---
 
@@ -248,14 +248,14 @@ The three findings from Step 1 each name their own fix. The broad-permission con
 npx opena2a-cli detect "$HOME"
 ```
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04; the device line and the scan timestamp are replaced with fixed placeholders:
+Captured from opena2a-cli v0.10.13 on 2026-10-06; the device line and the scan timestamp are replaced with fixed placeholders:
 ```
 Shadow AI Agent Audit
-macbook-pro | dev | /home/dev/my-project
-2026-09-04 18:22:41 UTC
+macbook-pro | dev | /home/dev
+2026-10-06 18:22:41 UTC
 
 Governance: 100/100 -- fully governed
-3 MCP servers | 2 AI configs
+3 MCP servers | 3 AI configs
 
 What This Means
   3 MCP servers give your AI agents additional capabilities (file access, database queries, API calls, etc.).
@@ -273,7 +273,7 @@ MCP Servers (3 found)
 
 ```
 
-Signed servers are the ones marked `verified`; an unsigned project server is what the score deducts for. Credentials are in the environment, behavioral governance is defined in `SOUL.md`, and every project MCP server has a signature to check against.
+Signed servers are the ones marked `verified`; an unsigned project server is what the score deducts for. For the capture, `~/.claude/settings.json` moved its tools from `allow` to `ask`, and each `mcp sign` ran from the home directory, which is where it writes `.opena2a/mcp-identities/` and where `detect "$HOME"` looks for signatures. The summary line still counts all three AI config files; none grants broad permissions any more, so the report does not list them. Credentials are in the environment, behavioral governance is defined in `SOUL.md`, and every project MCP server has a signature to check against.
 
 ---
 
