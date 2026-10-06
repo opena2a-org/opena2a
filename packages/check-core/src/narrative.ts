@@ -161,7 +161,7 @@ export interface SkillNarrative {
   misuseNarrative: string;
   /**
    * Static threat-model questions for the skill artifact type.
-   * Curated by [CHIEF-CSR]; rendered verbatim. Lives here (not in
+   * Hand-curated; rendered verbatim. Lives here (not in
    * cli-ui) so the registry stores everything the renderer needs.
    */
   threatModelQuestions: string[];

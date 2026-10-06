@@ -428,7 +428,8 @@ export function refineCredentialLabel(
  * `@opena2a/credential-patterns` catalog carries no severity, so protect/review
  * derive one here. Account-takeover-class secrets (LLM keys, cloud/infra,
  * payment, auth) are critical; repo/registry and messaging tokens are high;
- * observability keys are medium. [CHIEF-CDS] — change behind a Phase 4.5 review.
+ * observability keys are medium. Changing a row changes the severity, and so
+ * the score and exit code, of every catalog match in that category.
  */
 export const CATALOG_CATEGORY_SEVERITY: Record<string, string> = {
   'ai-ml': 'critical',

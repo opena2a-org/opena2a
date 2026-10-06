@@ -124,7 +124,7 @@ Do **not** gate CI on `analystEscalations` — it is a human-review channel,
 not a verdict. The authoritative per-field guidance is exported in
 `CHECK_FIELD_GUIDE`.
 
-**1.0.0 (deferred breaking change, CHIEF-CA + CHIEF-CPO):** the flat object
+**1.0.0 (deferred breaking change):** the flat object
 namespaces the two layers — `{ localScan: { score, maxScore, findings },
 registry: { trustScore, trustLevel, verdict, scanStatus } }`. Whether to keep
 both `verdict` and `trustLevel` is a separate 1.0.0 decision. Until then the
