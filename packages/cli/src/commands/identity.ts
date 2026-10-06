@@ -1150,17 +1150,38 @@ async function handlePolicy(options: IdentityOptions): Promise<number> {
   }
 }
 
+/**
+ * The access token stored for exactly this server, from the agent connection
+ * or from "opena2a login". A token stored for another server is never returned.
+ */
+function storedTokenFor(serverUrl: string): string | undefined {
+  const config = loadServerConfig();
+  if (config?.accessToken && resolveServerUrl(config.serverUrl) === serverUrl) {
+    return config.accessToken;
+  }
+  const globalAuth = loadAuth();
+  if (globalAuth && isAuthValid(globalAuth) && resolveServerUrl(globalAuth.serverUrl) === serverUrl) {
+    return globalAuth.accessToken;
+  }
+  return undefined;
+}
+
 async function handleServerPolicies(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  // Query the server --server names, with --api-key or a token stored for it.
+  const serverUrl = resolveServerUrl(options.server!);
+  const accessToken = options.apiKey ? undefined : storedTokenFor(serverUrl);
+  if (!options.apiKey && !accessToken) {
+    process.stderr.write(`Not logged in to ${serverUrl}.\n`);
+    process.stderr.write(`Run: opena2a login --server ${serverUrl}\n`);
+    process.stderr.write(`  or: opena2a identity policy --server ${serverUrl} --api-key <key>\n`);
     return 1;
   }
 
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
+  const authedClient = options.apiKey
+    ? new AimClient(serverUrl, { apiKey: options.apiKey })
+    : new AimClient(serverUrl, { accessToken });
 
   try {
     const resp = await authedClient.listPolicies();
