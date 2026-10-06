@@ -8,6 +8,7 @@
  * Schema: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
  */
 
+import { frameworkTags } from './findings.js';
 import type { ClassifiedFinding, FindingDefinition } from './findings.js';
 import type { EventSeverity } from './types.js';
 
@@ -113,7 +114,7 @@ function buildRule(finding: FindingDefinition): SarifReportingDescriptor {
     help: { text: `Remediation: ${finding.remediation}` },
     properties: {
       'security-severity': SEVERITY_SCORES[finding.severity],
-      tags: [finding.owaspAgentic, finding.mitreAtlas],
+      tags: frameworkTags(finding),
     },
   };
 }

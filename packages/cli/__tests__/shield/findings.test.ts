@@ -42,6 +42,16 @@ function makeEvent(overrides: Partial<ShieldEvent> = {}): ShieldEvent {
 // FINDING_CATALOG
 // ---------------------------------------------------------------------------
 
+/**
+ * `mitreAtlas` is an ATLAS technique id (`AML.T####`), a sub-technique id
+ * (`AML.T####.###`) or null. A mitigation (`AML.M`), tactic (`AML.TA`) or
+ * case-study (`AML.CS`) id, an empty string, a placeholder or another
+ * framework's id is a false framework claim in SARIF and the report.
+ */
+function isTechniqueOrNull(value: string | null): boolean {
+  return value === null || /^AML\.T\d{4}(\.\d{3})?$/.test(value);
+}
+
 describe('FINDING_CATALOG', () => {
   it('contains 15 finding definitions', () => {
     expect(Object.keys(FINDING_CATALOG).length).toBe(15);
@@ -54,10 +64,19 @@ describe('FINDING_CATALOG', () => {
       expect(def.severity).toBeTruthy();
       expect(def.category).toBeTruthy();
       expect(def.owaspAgentic).toMatch(/^ASI\d+$/);
-      expect(def.mitreAtlas).toMatch(/^AML\.T\d+$/);
+      expect(isTechniqueOrNull(def.mitreAtlas), `${id} mitreAtlas ${String(def.mitreAtlas)}`).toBe(true);
       // `remediation` is checked structurally, not for truthiness -- see
       // "remediation commands resolve against the CLI surface" below.
       expect(def.description).toBeTruthy();
+    }
+  });
+
+  it('the mitreAtlas shape rule admits only a technique, a sub-technique or null', () => {
+    for (const ok of ['AML.T0051', 'AML.T0051.000', null]) {
+      expect(isTechniqueOrNull(ok), String(ok)).toBe(true);
+    }
+    for (const bad of ['AML.M0024', 'AML.TA0002', 'AML.CS0001', '', 'N/A', 'ASI03', 'T1562', 'AML.T51']) {
+      expect(isTechniqueOrNull(bad), bad).toBe(false);
     }
   });
 
