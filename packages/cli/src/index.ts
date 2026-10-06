@@ -23,8 +23,7 @@ import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
 import { HELP_CONTRACTS, formatHelpContract } from './util/help-contract.js';
 import {
-  isHelpRequest,
-  printSubcommandHelp,
+  answerHelpRequest,
   HELP_WIDTH,
   GUARD_HELP,
   SHIELD_HELP,
@@ -488,14 +487,12 @@ analysis runs and results can be shared with the community.
     .option('--dry-run', 'Preview fixes without applying (harden subcommand)')
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
       const validSubs = ['sign', 'verify', 'status', 'watch', 'diff', 'policy', 'hook', 'resign', 'snapshot', 'harden'];
-      // Per-subcommand --help intercept (closes #132)
-      if (subcommand && isHelpRequest()) {
-        if (printSubcommandHelp('guard', subcommand, GUARD_HELP)) return;
-      }
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // A path in the subcommand position runs `status` on that directory.
+      const isPath = (word: string) =>
+        word === '.' || word.startsWith('/') || word.startsWith('./') || word.startsWith('..') || word.includes('/');
+      // --help prints help and never runs the subcommand (#132)
+      const helpSub = subcommand && isPath(subcommand) ? 'status' : subcommand;
+      if (answerHelpRequest('guard', helpSub, GUARD_HELP, () => cmd.helpInformation())) return;
       if (!subcommand) {
         process.stderr.write('Usage: opena2a guard <subcommand> [directory]\n\n');
         process.stderr.write('Subcommands:\n');
@@ -517,7 +514,7 @@ analysis runs and results can be shared with the community.
       let dirOverride: string | undefined;
       if (!validSubs.includes(subcommand)) {
         // Check if it's a path (starts with /, ./, ../, is ".", or contains path separators)
-        if (subcommand === '.' || subcommand.startsWith('/') || subcommand.startsWith('./') || subcommand.startsWith('..') || subcommand.includes('/')) {
+        if (isPath(subcommand)) {
           dirOverride = subcommand;
           resolvedSub = 'status';
         } else {
@@ -559,14 +556,8 @@ analysis runs and results can be shared with the community.
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
     .action(async (subcommand: string | undefined, directory: string | undefined, opts, cmd) => {
-      // Per-subcommand --help intercept (#132)
-      if (subcommand && isHelpRequest()) {
-        if (printSubcommandHelp('runtime', subcommand, RUNTIME_HELP)) return;
-      }
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // --help prints help and never runs the subcommand (#132)
+      if (answerHelpRequest('runtime', subcommand, RUNTIME_HELP, () => cmd.helpInformation())) return;
       if (!subcommand) {
         process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
         process.stderr.write('Subcommands:\n');
@@ -661,14 +652,8 @@ analysis runs and results can be shared with the community.
     .option('--all', 'Enable all detected tools (attach)')
     .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
-      // Per-subcommand --help intercept (#132)
-      if (subcommand && isHelpRequest()) {
-        if (printSubcommandHelp('identity', subcommand, IDENTITY_HELP)) return;
-      }
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // --help prints help and never runs the subcommand (#132)
+      if (answerHelpRequest('identity', subcommand, IDENTITY_HELP, () => cmd.helpInformation())) return;
       if (!subcommand) {
         subcommand = 'list';
       }
@@ -734,14 +719,8 @@ analysis runs and results can be shared with the community.
     .option('--shell-hook', 'Install shell preexec hook (shield init only)')
     .option('--ai-tools', 'Configure AI tool settings (shield init only)')
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
-      // Per-subcommand --help intercept (#132)
-      if (subcommand && isHelpRequest()) {
-        if (printSubcommandHelp('shield', subcommand, SHIELD_HELP)) return;
-      }
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // --help prints help and never runs the subcommand (#132)
+      if (answerHelpRequest('shield', subcommand, SHIELD_HELP, () => cmd.helpInformation())) return;
       if (!subcommand) {
         process.stderr.write('Usage: opena2a shield <subcommand>\n\n');
         process.stderr.write('Subcommands:\n');
@@ -1015,10 +994,8 @@ Examples:
 
 Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed).`)
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // `admin sensors approve <id> --yes --help` prints help, never approves.
+      if (answerHelpRequest('admin', subcommand, {}, () => cmd.helpInformation())) return;
       const { admin } = await import('./commands/admin.js');
       const globalOpts = program.opts();
       process.exitCode = await admin({
@@ -1183,14 +1160,8 @@ Valid actions:
     .option('--no-sign', 'Skip the opena2a-guard hash pin on skill files')
     .option('--force', 'Replace the scaffold files in an existing, non-empty directory')
     .action(async (subcommand: string | undefined, name: string | undefined, opts, cmd) => {
-      // Per-subcommand --help intercept (#132)
-      if (subcommand && isHelpRequest()) {
-        if (printSubcommandHelp('skill', subcommand, SKILL_HELP)) return;
-      }
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // --help prints help and never runs the subcommand (#132)
+      if (answerHelpRequest('skill', subcommand, SKILL_HELP, () => cmd.helpInformation())) return;
       if (!subcommand) {
         process.stderr.write('Usage: opena2a skill <subcommand> [name]\n\n');
         process.stderr.write('Subcommands:\n');
@@ -1250,14 +1221,8 @@ Valid actions:
     .option('--dir <path>', 'Target directory')
     .option('--server <name>', 'MCP server name (same as the positional)')
     .action(async (subcommand: string | undefined, positionalServer: string | undefined, opts, cmd) => {
-      // Per-subcommand --help intercept (#132)
-      if (subcommand && isHelpRequest()) {
-        if (printSubcommandHelp('mcp', subcommand, MCP_HELP)) return;
-      }
-      if (subcommand === '--help' || subcommand === '-h' || (!subcommand && isHelpRequest())) {
-        process.stdout.write(cmd.helpInformation());
-        return;
-      }
+      // --help prints help and never runs the subcommand (#132)
+      if (answerHelpRequest('mcp', subcommand, MCP_HELP, () => cmd.helpInformation())) return;
       if (!subcommand) subcommand = 'audit';
       const resolved = resolveMcpServerArg(positionalServer, opts.server);
       if ('error' in resolved) {

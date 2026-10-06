@@ -40,7 +40,8 @@ export function printSubcommandHelp(
   sub: string,
   registry: SubcommandHelpRegistry,
 ): boolean {
-  const help = registry[sub];
+  // Own entries only: `identity constructor --help` is not a subcommand.
+  const help = Object.prototype.hasOwnProperty.call(registry, sub) ? registry[sub] : undefined;
   if (!help) return false;
 
   const usage = help.usage ?? '';
@@ -82,6 +83,60 @@ export function isHelpRequest(args?: ReadonlyArray<string>): boolean {
     if (a === '--help' || a === '-h') return true;
   }
   return false;
+}
+
+/**
+ * The words each parent's handler routes, aliases included, in the order of
+ * its dispatch. __tests__/util/subcommand-help.test.ts reads them back from
+ * the handlers' source, so a word a handler adds is listed here too.
+ */
+export const SUBCOMMAND_ROUTES: Readonly<Record<string, ReadonlyArray<string>>> = {
+  guard: ['sign', 'verify', 'status', 'watch', 'diff', 'policy', 'hook', 'resign', 'snapshot', 'harden'],
+  runtime: ['start', 'status', 'tail', 'init'],
+  identity: [
+    'list', 'show', 'init', 'create', 'trust', 'audit', 'log', 'policy', 'check', 'sign', 'verify',
+    'integrate', 'attach', 'detach', 'sync', 'connect', 'disconnect', 'tag', 'mcp', 'activity',
+    'suspend', 'reactivate', 'revoke',
+  ],
+  shield: [
+    'init', 'status', 'log', 'selfcheck', 'check', 'policy', 'evaluate', 'recover', 'report',
+    'session', 'baseline', 'suggest', 'explain', 'triage', 'monitor',
+  ],
+  admin: ['sensors', 'list-pending', 'pending', 'ls', 'approve', 'reject'],
+  skill: ['create'],
+  mcp: ['audit', 'sign', 'verify'],
+};
+
+/**
+ * Answer a help request for `opena2a <parent> [sub]` without running
+ * anything: the subcommand's own block when the registry has one, the
+ * parent's help for any other word the handler routes, and for a word it
+ * does not route the same answer the handler gives (unknown subcommand,
+ * exit 1). Returns false when no help flag is present, so the caller goes
+ * on to run the command.
+ *
+ * Intercepting only registered subcommands let `--help` fall through to the
+ * handler for every other word it accepts: `opena2a identity revoke --ci
+ * --help` revoked the agent on the AIM server instead of printing help.
+ */
+export function answerHelpRequest(
+  parent: string,
+  sub: string | undefined,
+  registry: SubcommandHelpRegistry,
+  parentHelp: () => string,
+  args?: ReadonlyArray<string>,
+): boolean {
+  if (!isHelpRequest(args)) return false;
+  if (sub && printSubcommandHelp(parent, sub, registry)) return true;
+  // A typo such as `guard signs --help` must not read as a valid command.
+  if (sub && !sub.startsWith('-') && !(SUBCOMMAND_ROUTES[parent] ?? []).includes(sub)) {
+    process.stderr.write(`Unknown ${parent} subcommand: ${sub}\n\n`);
+    process.stderr.write(parentHelp());
+    process.exitCode = 1;
+    return true;
+  }
+  process.stdout.write(parentHelp());
+  return true;
 }
 
 // --- Registries per parent command ---
@@ -287,93 +342,162 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
   },
 };
 
+// Every example below runs as shown: __tests__/help-examples.test.ts runs
+// each one from the build and fails on the handler's usage-error path.
 export const IDENTITY_HELP: SubcommandHelpRegistry = {
   list: {
-    summary: 'List all known agent identities.',
+    summary: 'Show the local agent identity.',
     examples: ['opena2a identity list', 'opena2a identity list --format json'],
   },
   init: {
-    summary: 'Initialize a new local agent identity (generates an Ed25519 keypair).',
-    examples: ['opena2a identity init'],
+    summary: 'Create a named local agent identity (an Ed25519 key pair). Same as create.',
+    usage: '<name>',
+    options: [
+      { flag: '--name <name>', description: 'Identity name, instead of the positional' },
+    ],
+    examples: ['opena2a identity init production-agent'],
   },
   create: {
-    summary: 'Create a new named agent identity.',
+    summary:
+      'Create a named local agent identity (an Ed25519 key pair). With --server, or when you are logged in, it is also registered on the AIM server.',
+    usage: '<name>',
     options: [
-      { flag: '--name <name>', description: 'Identity name' },
+      { flag: '--name <name>', description: 'Identity name, instead of the positional' },
+      { flag: '--server <url>', description: 'AIM server URL (e.g. localhost:8080, cloud)' },
+      { flag: '--api-key <key>', description: 'AIM API key for that server' },
     ],
-    examples: ['opena2a identity create --name production-agent'],
+    examples: [
+      'opena2a identity create production-agent',
+      'opena2a identity create --name production-agent',
+    ],
   },
   trust: {
-    summary: 'Manage trust relationships between agent identities.',
-    usage: '[action]',
-    examples: ['opena2a identity trust add <agent>', 'opena2a identity trust list'],
+    summary:
+      "Show the trust score of the local agent identity with its factor breakdown, and the AIM server's trust data when the identity is registered there.",
+    examples: ['opena2a identity trust', 'opena2a identity trust --format json'],
   },
   audit: {
-    summary: 'Audit identity events and trust changes.',
-    examples: ['opena2a identity audit'],
+    summary: 'Show recent audit events of the local agent identity.',
+    options: [
+      { flag: '--limit <n>', description: 'Number of events to show (default: 10)' },
+    ],
+    examples: ['opena2a identity audit', 'opena2a identity audit --limit 50'],
   },
   log: {
-    summary: 'Show the identity event log.',
+    summary: 'Record an audit event for the local agent identity.',
     options: [
-      { flag: '--limit <n>', description: 'Maximum events to return' },
+      { flag: '--action <action>', description: 'What the agent did, e.g. db:read (required)' },
+      { flag: '--target <target>', description: 'What it acted on, e.g. customers' },
+      { flag: '--result <result>', description: 'allowed (default), denied or error' },
+      { flag: '--plugin <plugin>', description: 'Plugin that performed the action' },
     ],
-    examples: ['opena2a identity log --limit 100'],
+    examples: ['opena2a identity log --action db:read --target customers --result allowed'],
   },
   policy: {
-    summary: 'Manage identity policies.',
-    examples: ['opena2a identity policy show'],
+    summary:
+      "Show the local capability policy. --file loads a YAML policy instead, and --server lists the AIM server's security policies.",
+    options: [
+      { flag: '--file <path>', description: 'YAML capability policy to load' },
+      { flag: '--server <url>', description: 'AIM server whose policies to list' },
+    ],
+    examples: ['opena2a identity policy', 'opena2a identity policy --format json'],
   },
   check: {
-    summary: 'Check identity status against active policies.',
-    examples: ['opena2a identity check'],
+    summary:
+      'Check whether the local capability policy allows a capability. Exits 0 when it is allowed and 1 when it is denied; with --json it exits 0 and the JSON carries the result.',
+    usage: '<capability>',
+    options: [
+      { flag: '--plugin <plugin>', description: 'Plugin asking for the capability' },
+    ],
+    examples: ['opena2a identity check db:read', 'opena2a identity check db:read --plugin reporter'],
   },
   sign: {
-    summary: 'Sign an artifact with the current identity.',
-    examples: ['opena2a identity sign <file>'],
+    summary: 'Sign a string or a file with the private key of the local agent identity.',
+    options: [
+      { flag: '--data <data>', description: 'String to sign' },
+      { flag: '--file <path>', description: 'File to sign' },
+    ],
+    examples: ['opena2a identity sign --data hello', 'opena2a identity sign --file package.json'],
   },
   verify: {
-    summary: 'Verify an artifact signature against a known identity.',
-    examples: ['opena2a identity verify <file>'],
+    summary: 'Verify a signature over a string against the signer\'s public key.',
+    options: [
+      { flag: '--data <data>', description: 'The signed string' },
+      { flag: '--signature <sig>', description: 'Base64 signature' },
+      { flag: '--public-key <key>', description: 'Base64 public key of the signer' },
+    ],
+    examples: ['opena2a identity verify --data hello --signature <sig> --public-key <key>'],
   },
   integrate: {
-    summary: 'Integrate the current identity with an external system.',
-    examples: ['opena2a identity integrate'],
+    summary:
+      'Wire security tools to the local agent identity, so their events feed its audit log and trust score. Without --tools or --all, every tool is enabled the first time and the saved selection is kept after that.',
+    options: [
+      { flag: '--tools <list>', description: 'Comma-separated: secretless, configguard, arp, hma, shield' },
+      { flag: '--all', description: 'Enable every tool' },
+      { flag: '--auto-sync', description: 'Sync tool events whenever the trust score is calculated' },
+      { flag: '--dir <path>', description: 'Project directory (default: current directory)' },
+    ],
+    examples: ['opena2a identity integrate', 'opena2a identity integrate --tools shield,hma'],
   },
   detach: {
-    summary: 'Detach the current identity from an external integration.',
+    summary: 'Remove the tool wiring that integrate added. The local identity is kept.',
+    options: [
+      { flag: '--dir <path>', description: 'Project directory (default: current directory)' },
+    ],
     examples: ['opena2a identity detach'],
   },
   sync: {
-    summary: 'Sync identity state with the Registry.',
+    summary:
+      'Import new events from the integrated tools into the audit log of the local agent identity and refresh its trust score. Run integrate first.',
+    options: [
+      { flag: '--dir <path>', description: 'Project directory (default: current directory)' },
+    ],
     examples: ['opena2a identity sync'],
   },
   connect: {
-    summary: 'Connect to a remote agent identity.',
-    examples: ['opena2a identity connect <agent>'],
+    summary: 'Register the local agent identity on an AIM server and keep the connection.',
+    usage: '<url>',
+    options: [
+      { flag: '--api-key <key>', description: 'AIM API key for the server (required)' },
+    ],
+    examples: ['opena2a identity connect localhost:8080 --api-key <key>'],
   },
   disconnect: {
-    summary: 'Disconnect from a remote agent identity.',
-    examples: ['opena2a identity disconnect <agent>'],
+    summary: 'Remove the stored AIM server connection. The local identity is kept.',
+    examples: ['opena2a identity disconnect'],
   },
   tag: {
-    summary: 'Tag an identity with arbitrary labels.',
-    examples: ['opena2a identity tag <agent> <label>'],
+    summary:
+      "List the organization's tags, or add or remove a tag on the agent connected to the AIM server. Log in first with opena2a login.",
+    usage: '<list|add|remove> [name]',
+    examples: ['opena2a identity tag list', 'opena2a identity tag add production'],
   },
   mcp: {
-    summary: 'Show or manage MCP server identities.',
-    examples: ['opena2a identity mcp'],
+    summary:
+      'List, add or remove the MCP servers of the agent connected to the AIM server; attach discovers and adds all of them. Log in first with opena2a login.',
+    usage: '<list|add|remove|attach> [id]',
+    examples: ['opena2a identity mcp list', 'opena2a identity mcp attach'],
   },
   activity: {
-    summary: 'Show recent identity activity.',
-    examples: ['opena2a identity activity'],
+    summary: 'Show recent activity events of the agent connected to the AIM server. Log in first with opena2a login.',
+    options: [
+      { flag: '--limit <n>', description: 'Number of events to show (default: 10)' },
+    ],
+    examples: ['opena2a identity activity', 'opena2a identity activity --limit 50'],
   },
   suspend: {
-    summary: 'Suspend an agent identity (revoke trust temporarily).',
-    examples: ['opena2a identity suspend <agent>'],
+    summary:
+      'Suspend the agent connected to the AIM server; it stops all operations until reactivated. Log in first with opena2a login.',
+    examples: ['opena2a identity suspend'],
   },
   reactivate: {
-    summary: 'Reactivate a suspended agent identity.',
-    examples: ['opena2a identity reactivate <agent>'],
+    summary: 'Reactivate the suspended or revoked agent connected to the AIM server. Log in first with opena2a login.',
+    examples: ['opena2a identity reactivate'],
+  },
+  revoke: {
+    summary:
+      'Revoke the agent connected to the AIM server. Its data is kept for 30 days, and reactivate restores it within that window. Without --ci or --json it only prints a warning and exits 1. Log in first with opena2a login.',
+    examples: ['opena2a identity revoke'],
   },
 };
 

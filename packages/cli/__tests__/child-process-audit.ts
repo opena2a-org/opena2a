@@ -76,6 +76,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node dist/index.js <command> --help), one command at a time; ' +
       'adapter commands run their bundled engine --help as the CLI child',
   },
+  'help-examples.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js <example>), one example at a time, from a ' +
+      'scratch project and HOME',
+  },
   'commands/guard.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
