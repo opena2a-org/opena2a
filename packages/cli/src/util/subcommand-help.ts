@@ -140,6 +140,9 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
   resign: {
     summary: 'Re-sign tracked files after intentional changes.',
     usage: '[directory]',
+    options: [
+      { flag: '--ci', description: 'Re-sign without confirmation (required when stdin is not a terminal or with --format json)' },
+    ],
     examples: ['opena2a guard resign'],
   },
   snapshot: {
