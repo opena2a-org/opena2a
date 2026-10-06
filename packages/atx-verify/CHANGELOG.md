@@ -4,14 +4,14 @@ All notable changes to `@opena2a/atx-verify` are documented here.
 
 ## [0.5.0] - Unreleased
 
-A minor bump, not a patch: one class of consumer sees credentials that used to
-verify begin rejecting. That change is the fix.
+A minor bump, not a patch: under each of the three changes in behaviour below,
+some credentials that used to verify now reject. Those rejections are the fix.
 
 Published `0.4.0` predates three commits already on `main` that touch this
 package. One (#292) changes the published package; the other two (#325, #329)
 change only the repository's tests and CI. Upgrading from the published package
-therefore picks up two changes in behaviour together: ML-DSA-65 verification and
-the `issuerChain` rule below.
+therefore picks up three changes in behaviour together: ML-DSA-65 verification
+and the two `issuerChain` rules below.
 
 ### Changed
 
@@ -45,6 +45,12 @@ the `issuerChain` rule below.
   trusted** (`9ab7e747`, #292). On `main` but never published: `0.4.0` predates
   it. A credential could otherwise name an untrusted authority in its signed
   `issuerChain` and have that authority's key accepted.
+
+- **An `issuerChain` that is present but is not an array of strings now
+  rejects as `MALFORMED`**, on v1.0 and on v1.1 (`9ab7e747`, #292); a `null`
+  chain counts as absent. `0.4.0` accepted such a v1.0 credential. On v1.1 it
+  accepted a string chain or a chain with a non-string entry, and threw a
+  `TypeError` for an object, number or boolean chain.
 
 - **The vendored conformance suite is pinned by CI at an explicit ref and
   byte-compared in both directions** (`3c6ea102`, #325). The vendored set
