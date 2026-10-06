@@ -55,9 +55,15 @@ export interface ReviewOptions {
   autoOpen?: boolean;
   skipHma?: boolean;
   ci?: boolean;
-  format?: 'text' | 'json';
+  /** The global `--format` value, unvalidated: Commander accepts any string,
+   *  so review() checks it against REVIEW_FORMATS before doing any work. */
+  format?: string;
   verbose?: boolean;
 }
+
+/** Output formats review produces. Anything else (the global `--format`
+ *  advertises `sarif`) is refused rather than falling through to text. */
+const REVIEW_FORMATS = ['text', 'json'] as const;
 
 export interface PhaseResult {
   name: string;
@@ -303,6 +309,17 @@ export interface RecoverySummary {
 // --- Core ---
 
 export async function review(options: ReviewOptions): Promise<number> {
+  // Refuse an output format review cannot produce before running any phase.
+  // It used to fall through to text output and an HTML report with exit 0, so
+  // a `--format sarif` pipeline received neither SARIF nor an error. Exit 2
+  // keeps a CI gate red and stays distinct from findings (exit 1).
+  const format = options.format ?? 'text';
+  if (!(REVIEW_FORMATS as readonly string[]).includes(format)) {
+    process.stderr.write(red(`opena2a review does not support --format ${format}.\n`));
+    process.stderr.write(dim('  Supported: --format text (summary plus HTML report) or --format json (report on stdout).\n'));
+    return 2;
+  }
+
   const targetDir = path.resolve(options.targetDir ?? process.cwd());
 
   if (!fs.existsSync(targetDir)) {
@@ -582,6 +599,13 @@ export async function review(options: ReviewOptions): Promise<number> {
   }
 
   if (options.format === 'json') {
+    // An explicit --report path is honoured here too; it used to be dropped
+    // silently. The confirmation goes to stderr so stdout stays pure JSON, and
+    // no browser opens in this machine-readable mode.
+    if (options.reportPath) {
+      writeReviewHtml(options.reportPath, report);
+      process.stderr.write(dim(`  Report: ${options.reportPath}\n`));
+    }
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     return compositeScore < 50 ? 1 : 0;
   }
@@ -691,11 +715,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Generate HTML report
   const reportPath = options.reportPath ??
     path.join(tmpdir(), `opena2a-review-${Date.now()}.html`);
-  const html = generateReviewHtml(report);
-  // Owner-only: the report names every finding's file:line and is written to a
-  // shared temp directory by default. `mode` applies only when the file is
-  // created, so an existing --report path keeps its own permissions.
-  fs.writeFileSync(reportPath, html, { encoding: 'utf-8', mode: 0o600 });
+  writeReviewHtml(reportPath, report);
 
   process.stdout.write(`  Report: ${dim(reportPath)}`);
 
@@ -1821,6 +1841,13 @@ function generateActionItems(
 
 function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function writeReviewHtml(reportPath: string, report: ReviewReport): void {
+  // Owner-only: the report names every finding's file:line and is written to a
+  // shared temp directory by default. `mode` applies only when the file is
+  // created, so an existing --report path keeps its own permissions.
+  fs.writeFileSync(reportPath, generateReviewHtml(report), { encoding: 'utf-8', mode: 0o600 });
 }
 
 function openInBrowser(filePath: string): void {
