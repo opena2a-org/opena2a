@@ -45,6 +45,7 @@ const ALL_CHECKS = [
   'no-test-material',
   'no-install-scripts',
   'pinned-first-party-deps',
+  'version-reuse',
   'global-install-smoke',
   'credential-scan',
   'npm-audit',
@@ -379,6 +380,19 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
+    title: 'a version npm already serves, packed with a different dependency set, fails version-reuse',
+    check: 'version-reuse',
+    spec: {
+      // The published @opena2a/cli-ui@0.5.2 depends on chalk "^5.3.0", and a
+      // published version never changes. The exact pin is the one difference:
+      // publish would skip this tarball and ship none of it.
+      name: '@opena2a/cli-ui',
+      version: '0.5.2',
+      manifestExtra: { dependencies: { chalk: '5.3.0' } },
+      files: { 'dist/index.js': 'module.exports = {};\n' },
+    },
+  },
+  {
     title: 'a dist/ file carrying a value of the control class fails credential-scan',
     check: 'credential-scan',
     spec: {
@@ -454,6 +468,40 @@ describe('release-artifact-review: poisoned tarballs go red', () => {
       expect(r.out).toContain('precondition');
       // Specifically: nothing was scanned, and nothing scanned is not a pass.
       expect(r.census['credential-scan']).toBe('precondition');
+    },
+    600_000
+  );
+});
+
+describe('release-artifact-review: a version npm already serves passes version-reuse only with the same dependencies', () => {
+  it(
+    'the published tarball itself passes, so re-running publish to finish a partial release stays possible',
+    () => {
+      const dir = mkdtempSync(path.join(scratch, 'published-'));
+      execFileSync('npm', ['pack', '@opena2a/cli-ui@0.5.2', '--ignore-scripts', `--pack-destination=${dir}`], {
+        encoding: 'utf8',
+      });
+      const r = runReview(path.join(dir, 'opena2a-cli-ui-0.5.2.tgz'));
+      expect(r.census['version-reuse'], r.out).toBe('pass');
+      expect(r.out).toContain('@opena2a/cli-ui@0.5.2 is already on npm with these exact bytes');
+    },
+    600_000
+  );
+
+  it(
+    'the same dependency set with different bytes passes and says those bytes never ship',
+    () => {
+      const r = runReview(
+        buildTarball(scratch, {
+          name: '@opena2a/cli-ui',
+          version: '0.5.2',
+          manifestExtra: { dependencies: { chalk: '^5.3.0' } },
+          files: { 'dist/index.js': 'module.exports = {};\n' },
+        })
+      );
+      expect(r.census['version-reuse'], r.out).toBe('pass');
+      expect(r.out).toContain('@opena2a/cli-ui@0.5.2 is already on npm with the same dependency set');
+      expect(r.out).toContain('so these bytes never ship');
     },
     600_000
   );
@@ -559,8 +607,10 @@ describe('release-artifact-review: clean subjects go green', () => {
       // consumer-closure and npm-audit may be pass or an HONEST fail (a
       // pinned dependency inside a published advisory blocks the release and
       // is quoted below for the delivery report) — but never a precondition:
-      // unread feeds are not clean feeds.
-      for (const check of ['npm-audit', 'consumer-closure']) {
+      // unread feeds are not clean feeds. version-reuse likewise: it fails
+      // honestly while the tree's version is already published with other
+      // dependencies, which only a version bump clears.
+      for (const check of ['npm-audit', 'consumer-closure', 'version-reuse']) {
         if (r.census[check] === 'precondition') {
           expect.fail(preconditionFailure(check, r.out));
         }
