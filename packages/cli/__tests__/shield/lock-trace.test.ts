@@ -9,18 +9,25 @@
  * timestamp, prevHash, eventHash) -- everything the caller supplied and the
  * chain's shape must match. The trace file's absence is asserted literally.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { LOCK_TRACE_ENV } from '../../src/shield/lock.js';
 import { getEventsPath, writeEvent } from '../../src/shield/events.js';
 
+// The event log lives under homedir() only, so each run gets its own home.
+const mockHome = vi.hoisted(() => ({ dir: '' }));
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, homedir: () => mockHome.dir || actual.homedir() };
+});
+
 const temps: string[] = [];
-function makeProject(): string {
+function makeHome(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shield-lock-trace-'));
-  fs.mkdirSync(path.join(dir, '.opena2a'), { recursive: true });
   temps.push(dir);
+  mockHome.dir = dir;
   return dir;
 }
 
@@ -28,34 +35,34 @@ const savedTrace = process.env[LOCK_TRACE_ENV];
 afterEach(() => {
   if (savedTrace === undefined) delete process.env[LOCK_TRACE_ENV];
   else process.env[LOCK_TRACE_ENV] = savedTrace;
+  mockHome.dir = '';
   while (temps.length > 0) fs.rmSync(temps.pop()!, { recursive: true, force: true });
 });
 
-function writeThree(projectDir: string): void {
+function writeThree(home: string): void {
+  mockHome.dir = home;
   for (const index of [0, 1, 2]) {
-    writeEvent(
-      {
-        source: 'shield',
-        category: 'trace-off-test',
-        severity: 'info',
-        agent: null,
-        sessionId: null,
-        action: 'trace.compare',
-        target: `event-${index}`,
-        outcome: 'monitored',
-        detail: { index },
-        orgId: null,
-        managed: false,
-        agentId: null,
-      },
-      projectDir,
-    );
+    writeEvent({
+      source: 'shield',
+      category: 'trace-off-test',
+      severity: 'info',
+      agent: null,
+      sessionId: null,
+      action: 'trace.compare',
+      target: `event-${index}`,
+      outcome: 'monitored',
+      detail: { index },
+      orgId: null,
+      managed: false,
+      agentId: null,
+    });
   }
 }
 
 const VOLATILE = new Set(['id', 'timestamp', 'prevHash', 'eventHash']);
-function normalisedChain(projectDir: string): string {
-  const raw = fs.readFileSync(getEventsPath(projectDir), 'utf-8');
+function normalisedChain(home: string): string {
+  mockHome.dir = home;
+  const raw = fs.readFileSync(getEventsPath(), 'utf-8');
   const lines = raw.split('\n').filter(l => l.trim().length > 0);
   return lines
     .map(l => {
@@ -69,8 +76,8 @@ function normalisedChain(projectDir: string): string {
 
 describe('lock trace off-switch (OPA-01.AC1)', () => {
   it('writes no trace file with the variable unset, and the same chain either way', () => {
-    // Traced write: the variable names a file inside the project temp dir.
-    const traced = makeProject();
+    // Traced write: the variable names a file inside the temp home.
+    const traced = makeHome();
     const traceFile = path.join(traced, 'lock-trace.jsonl');
     process.env[LOCK_TRACE_ENV] = traceFile;
     writeThree(traced);
@@ -82,7 +89,7 @@ describe('lock trace off-switch (OPA-01.AC1)', () => {
 
     // Untraced write: variable unset. No trace file, no sequence file, no mutex dir.
     delete process.env[LOCK_TRACE_ENV];
-    const untraced = makeProject();
+    const untraced = makeHome();
     const untracedTrace = path.join(untraced, 'lock-trace.jsonl');
     writeThree(untraced);
     expect(fs.existsSync(untracedTrace)).toBe(false);
@@ -97,7 +104,7 @@ describe('lock trace off-switch (OPA-01.AC1)', () => {
 
   it('treats an empty variable as unset', () => {
     process.env[LOCK_TRACE_ENV] = '';
-    const project = makeProject();
+    const project = makeHome();
     writeThree(project);
     expect(fs.readdirSync(project).filter(n => n.includes('trace'))).toEqual([]);
     expect(normalisedChain(project).split('\n')).toHaveLength(3);

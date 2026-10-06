@@ -16,7 +16,7 @@ import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
 import { Spinner } from '../util/spinner.js';
 import { printFooter } from '../util/footer.js';
-import { writeEvent, getShieldDir } from '../shield/events.js';
+import { writeEvent } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
 import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
@@ -221,9 +221,9 @@ export async function init(options: InitOptions): Promise<number> {
   const activeTools = shieldStatus.tools.filter(p => p.active).length;
   const totalTools = shieldStatus.tools.length;
 
-  // 11. Write shield events
+  // 11. Write shield events to the home log; `target` scopes them to this
+  // project. Nothing is written into the project tree.
   try {
-    getShieldDir(targetDir);
     const riskLevel = scoreToRiskLevel(score);
     writeEvent({
       source: 'shield',
@@ -238,7 +238,7 @@ export async function init(options: InitOptions): Promise<number> {
       orgId: null,
       managed: false,
       agentId: null,
-    }, targetDir);
+    });
     for (const cred of credentialMatches) {
       writeEvent({
         source: 'shield',
@@ -253,7 +253,7 @@ export async function init(options: InitOptions): Promise<number> {
         orgId: null,
         managed: false,
         agentId: null,
-      }, targetDir);
+      });
     }
   } catch {
     // Shield event writing is best-effort

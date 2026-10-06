@@ -86,29 +86,16 @@ export function uuidv7(): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Return the absolute path to the Shield data directory.
+ * Return the absolute path to the Shield data directory, `~/.opena2a/shield/`,
+ * creating it if absent.
  *
- * When `projectDir` is provided, uses a project-local `.opena2a/shield/`
- * directory (creating it if the project already has `.opena2a/`).
- * When omitted, falls back to the global `~/.opena2a/shield/`.
- *
- * @param projectDir  Optional project root.  When provided and the project
- *                    has a `.opena2a/` directory, events are stored locally.
+ * The event log is one home-scoped resource and takes no location: its
+ * readers (review, shield selfcheck, shield log) read this directory only,
+ * so an event written anywhere else would sit in a second chain that nothing
+ * verifies.  Project scoping is an event field (`target`), not a directory.
  */
-export function getShieldDir(projectDir?: string): string {
-  let dir: string;
-
-  if (projectDir) {
-    const projectOpena2a = join(projectDir, '.opena2a');
-    if (existsSync(projectOpena2a)) {
-      dir = join(projectDir, '.opena2a', 'shield');
-    } else {
-      dir = join(homedir(), '.opena2a', 'shield');
-    }
-  } else {
-    dir = join(homedir(), '.opena2a', 'shield');
-  }
-
+export function getShieldDir(): string {
+  const dir = join(homedir(), '.opena2a', 'shield');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
@@ -116,8 +103,8 @@ export function getShieldDir(projectDir?: string): string {
 }
 
 /** Return the absolute path to the events JSONL file. */
-export function getEventsPath(projectDir?: string): string {
-  return join(getShieldDir(projectDir), SHIELD_EVENTS_FILE);
+export function getEventsPath(): string {
+  return join(getShieldDir(), SHIELD_EVENTS_FILE);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,15 +224,15 @@ type GeneratedFields = 'id' | 'timestamp' | 'version' | 'prevHash' | 'eventHash'
  * Rotation is inside the same section so a rename cannot land between a
  * writer's prevHash read and its append.
  *
- * @param partial     Event fields (minus auto-generated ones).
- * @param projectDir  Optional project root to write events to a
- *                    project-local `.opena2a/shield/` instead of global.
+ * Always writes the home log (see getShieldDir); scope an event to a project
+ * through its `target` field.
+ *
+ * @param partial  Event fields (minus auto-generated ones).
  */
 export function writeEvent(
   partial: Omit<ShieldEvent, GeneratedFields>,
-  projectDir?: string,
 ): ShieldEvent {
-  const eventsPath = getEventsPath(projectDir);
+  const eventsPath = getEventsPath();
 
   return withEventLock(getEventLockPath(eventsPath), () => {
     // Rotate before writing if the file is oversized
