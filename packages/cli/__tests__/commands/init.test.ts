@@ -727,4 +727,63 @@ describe('init', () => {
       expect(action.command).not.toMatch(/\bstatus\s*$/);
     }
   });
+
+  // A credential check that opened no file found nothing because it read
+  // nothing. "No security findings detected." and a "Strong baseline" tip
+  // there answer a question the scan never asked.
+  it('a directory in which the credential checks open no file is not reported as clean', async () => {
+    // Every file here is one the credential checks skip: an image, a
+    // document, and dotfiles that are neither .env nor an MCP config.
+    fs.writeFileSync(path.join(tempDir, 'logo.png'), 'PNG');
+    fs.writeFileSync(path.join(tempDir, 'guide.pdf'), '%PDF-1.4');
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const { exitCode, output: json } = await captureStdout(() => init({ targetDir: tempDir, format: 'json' }));
+    const report = JSON.parse(json);
+    expect(report.credentialFilesScanned).toBe(0);
+    expect(report.credentialFindings).toBe(0);
+    // Wording only: the check still passes, so the score is unchanged.
+    expect(report.hygieneChecks.find((c: any) => c.label === 'Credential scan'))
+      .toEqual({ label: 'Credential scan', status: 'pass', detail: 'no files scanned' });
+
+    const { exitCode: textExit, output: text } = await captureStdout(() => init({ targetDir: tempDir }));
+    expect(textExit).toBe(exitCode);
+    expect(text).not.toContain('No security findings detected');
+    expect(text).not.toContain('Strong baseline');
+    expect(text).toContain('No files were scanned for credentials, so this is not a clean result.');
+    expect(text).toContain('opena2a init <project-dir>');
+  });
+
+  it('a directory with a readable source file keeps the clean wording', async () => {
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const { output: json } = await captureStdout(() => init({ targetDir: tempDir, format: 'json' }));
+    const report = JSON.parse(json);
+    expect(report.credentialFilesScanned).toBeGreaterThanOrEqual(1);
+    expect(report.hygieneChecks.find((c: any) => c.label === 'Credential scan').detail).toBe('no findings');
+
+    const { output: text } = await captureStdout(() => init({ targetDir: tempDir }));
+    expect(text).not.toContain('No files were scanned for credentials');
+  });
+
+  it('counts the MCP config and template env files the source walk skips', async () => {
+    // Each is read by its own credential reader, so neither directory is
+    // "no files scanned" even though the source walk opens nothing in it.
+    const mcpOnly = path.join(tempDir, 'mcp-only');
+    fs.mkdirSync(mcpOnly);
+    fs.writeFileSync(path.join(mcpOnly, '.mcp.json'), JSON.stringify({
+      mcpServers: { docs: { command: 'docs-server', args: [] } },
+    }));
+    const templateOnly = path.join(tempDir, 'template-only');
+    fs.mkdirSync(templateOnly);
+    fs.writeFileSync(path.join(templateOnly, '.env.example'), 'API_KEY=your-key-here\n');
+
+    for (const dir of [mcpOnly, templateOnly]) {
+      const { output: json } = await captureStdout(() => init({ targetDir: dir, format: 'json' }));
+      expect(JSON.parse(json).credentialFilesScanned).toBe(1);
+      const { output: text } = await captureStdout(() => init({ targetDir: dir }));
+      expect(text).not.toContain('No files were scanned for credentials');
+    }
+  });
 });

@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
-import { quickCredentialScan, scanTemplateEnvLeaks, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
+import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
 import { scanCryptoKeyFiles } from '../util/crypto-key-files.js';
 import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
@@ -19,7 +19,7 @@ import { printFooter } from '../util/footer.js';
 import { writeEvent } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
-import { scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
+import { MCP_CONFIG_FILES, scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
 import {
   calculateSecurityScore as calculateSecurityScoreShared,
   scoreToRiskLevel as scoreToRiskLevelShared,
@@ -80,6 +80,9 @@ interface InitReport {
   projectType: string;
   directory: string;
   credentialFindings: number;
+  /** Files the credential checks opened and read. Zero findings over zero
+   *  files is "nothing examined", not "clean". */
+  credentialFilesScanned: number;
   credentialsBySeverity: Record<string, number>;
   hygieneChecks: HygieneCheck[];
   securityScore: number;
@@ -132,10 +135,16 @@ export async function init(options: InitOptions): Promise<number> {
 
   // 2. Quick credential scan (source files + MCP configs)
   if (isTTY) spinner.update('Scanning for credentials...');
-  const credentialMatches = await quickCredentialScan(targetDir);
+  const sourceScan = await scanCredentialsWithCoverage(targetDir);
+  const credentialMatches = sourceScan.matches;
 
   // Scan MCP config files for credentials (these are skipped by walkFiles)
   const mcpCreds = scanMcpCredentials(targetDir);
+  // The walk never enters a dot-named path, so every dot-named MCP config
+  // that exists was read by the MCP scan alone; `mcp.json` is walked already.
+  const mcpConfigsRead = MCP_CONFIG_FILES
+    .filter(f => f.startsWith('.') && fs.existsSync(path.join(targetDir, f)))
+    .length;
   const seenCredValues = new Set(credentialMatches.map(m => m.value));
   for (const mc of mcpCreds) {
     if (!seenCredValues.has(mc.value)) {
@@ -165,12 +174,15 @@ export async function init(options: InitOptions): Promise<number> {
   // a real exposure that `secure` (HMA CONFIG-004) flags — the `init` buggy
   // corpus tier scored identically to benign. Kept out of `credentialMatches`
   // so protect actions / shield credential events stay migration-only.
-  const templateEnvLeaks = scanTemplateEnvLeaks(targetDir);
+  const templateScan = scanTemplateEnvLeaksWithCoverage(targetDir);
+  const templateEnvLeaks = templateScan.leaks;
   const hasTemplateEnvLeak = templateEnvLeaks.length > 0;
+
+  const credentialFilesScanned = sourceScan.filesScanned + mcpConfigsRead + templateScan.filesScanned;
 
   // 3. Security hygiene checks
   if (isTTY) spinner.update('Checking environment...');
-  const checks = await runHygieneChecks(targetDir, project, credentialMatches.length);
+  const checks = await runHygieneChecks(targetDir, project, credentialMatches.length, credentialFilesScanned);
 
   // 4. Check advisories (non-blocking)
   let advisoryCheck: AdvisoryCheck = { advisories: [], matchedPackages: [], total: 0, fromCache: false };
@@ -281,6 +293,7 @@ export async function init(options: InitOptions): Promise<number> {
     projectType: formatProjectType(project),
     directory: targetDir,
     credentialFindings: credentialMatches.length,
+    credentialFilesScanned,
     credentialsBySeverity: credsBySeverity,
     hygieneChecks: checks,
     securityScore: score,
@@ -397,12 +410,18 @@ async function runHygieneChecks(
   dir: string,
   project: ReturnType<typeof detectProject>,
   credCount: number,
+  credFilesScanned: number,
 ): Promise<HygieneCheck[]> {
   const checks: HygieneCheck[] = [];
 
-  // Credential scan result
+  // Credential scan result. With no file read, the detail says so; the status
+  // stays `pass` so the score does not move.
   if (credCount === 0) {
-    checks.push({ label: 'Credential scan', status: 'pass', detail: 'no findings' });
+    checks.push({
+      label: 'Credential scan',
+      status: 'pass',
+      detail: credFilesScanned === 0 ? 'no files scanned' : 'no findings',
+    });
   } else {
     checks.push({
       label: 'Credential scan',
@@ -1120,6 +1139,15 @@ function getContextualTip(
     };
   }
 
+  // A high score here measures configuration only: no file was read for
+  // credentials, so neither "Strong baseline" nor "Good posture" holds.
+  if (report.credentialFilesScanned === 0) {
+    return {
+      text: 'No file in this directory was scanned for credentials. Run init on the folder that holds your code.',
+      command: 'opena2a init <project-dir>',
+    };
+  }
+
   if (report.securityScore >= 90) {
     return {
       text: `Strong baseline. HackMyAgent runs ${HMA_CHECK_COUNT} checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.`,
@@ -1239,8 +1267,18 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
       process.stdout.write(dim(`  [+${hiddenCount} lower-severity finding${hiddenCount === 1 ? '' : 's'} -- run with --verbose to see all]`) + '\n');
       process.stdout.write('\n');
     }
-  } else {
+  } else if (report.credentialFilesScanned > 0) {
     process.stdout.write(green('  No security findings detected.') + '\n\n');
+  }
+
+  // Zero findings over zero files read is "nothing examined", not "clean".
+  if (report.credentialFilesScanned === 0) {
+    process.stdout.write(yellow('  No files were scanned for credentials, so this is not a clean result.') + '\n');
+    process.stdout.write(dim(wordWrap(
+      'The credential check opens source and config files, and everything in this directory is a file type or folder it skips (for example images, archives, lockfiles, dependency and test folders, and dotfiles other than .env). Run it on the folder that holds your code:',
+      72, 2,
+    )) + '\n');
+    process.stdout.write(`    ${cyan('opena2a init <project-dir>')}\n\n`);
   }
 
   // --- Security Score ---
