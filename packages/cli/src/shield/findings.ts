@@ -26,9 +26,22 @@ export interface FindingDefinition {
   severity: EventSeverity;
   category: string;
   owaspAgentic: string;
-  mitreAtlas: string;
+  /**
+   * MITRE ATLAS technique (`AML.T####`) or sub-technique (`AML.T####.###`)
+   * id, or null when no ATLAS technique describes the finding. Never a
+   * mitigation, tactic or case-study id, and never a placeholder string.
+   */
+  mitreAtlas: string | null;
   remediation: string;
   description: string;
+}
+
+/**
+ * The framework ids a finding cites, for SARIF tags and report compliance
+ * badges. A null ATLAS id is left out rather than emitted as a tag.
+ */
+export function frameworkTags(finding: Pick<FindingDefinition, 'owaspAgentic' | 'mitreAtlas'>): string[] {
+  return [finding.owaspAgentic, finding.mitreAtlas].filter((tag): tag is string => tag !== null);
 }
 
 export interface ClassifiedFinding {

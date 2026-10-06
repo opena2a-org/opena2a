@@ -423,6 +423,8 @@ const JS = `
   function init() { renderPage('overview'); bindNav(); }
 
   function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+  // A finding no ATLAS technique describes carries a null id: print the no-value token, not an empty badge.
+  function mitreCell(id) { return id ? '<span class="badge-mitre">'+esc(id)+'</span>' : '<span style="color:var(--dim)">--</span>'; }
   function formatTs(iso) { if (!iso) return '--'; try { var d = new Date(iso); if (isNaN(d.getTime())) return iso; return d.toISOString().replace('T',' ').replace(/\\.\\d+Z$/,' UTC'); } catch(e) { return iso; } }
   function scoreColor(s) { return s >= 90 ? 'var(--green)' : s >= 70 ? 'var(--primary)' : s >= 50 ? 'var(--medium)' : 'var(--red)'; }
   function statCard(v, l, c) { return '<div class="stat-card"><div class="stat-value" style="color:'+c+'">'+v+'</div><div class="stat-label">'+l+'</div></div>'; }
@@ -527,7 +529,7 @@ const JS = `
     if(findings.length>0){
       h+='<h2 class="section-title">'+(findings.length>5?'Top Findings':'Findings')+'</h2><div class="card"><table class="data-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th></tr></thead><tbody>';
       var top=findings.slice(0,5);
-      for(var i=0;i<top.length;i++){var f=top[i];h+='<tr><td><span class="finding-id" onclick="navigateToFinding(\\''+esc(f.finding.id)+'\\')">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td></tr>';}
+      for(var i=0;i<top.length;i++){var f=top[i];h+='<tr><td><span class="finding-id" onclick="navigateToFinding(\\''+esc(f.finding.id)+'\\')">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td><td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td><td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td>'+mitreCell(f.finding.mitreAtlas)+'</td></tr>';}
       h+='</tbody></table>';
       if(findings.length>5) h+='<div style="text-align:center;padding:8px;color:var(--dim);font-size:11px;cursor:pointer" onclick="document.querySelector(\\'.nav-tab[data-page=findings]\\').click()">View all '+findings.length+' findings --></div>';
       h+='</div>';
@@ -542,10 +544,10 @@ const JS = `
     h+='<div class="search-box"><input type="text" class="search-input" id="findings-search" placeholder="Search findings by ID, title, OWASP, MITRE..." oninput="window._filterFindings(this.value)"></div>';
     h+='<div class="card"><table class="data-table" id="findings-table"><thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Count</th><th>OWASP</th><th>MITRE</th><th>Remediation</th></tr></thead><tbody>';
     for(var i=0;i<findings.length;i++){var f=findings[i];
-      h+='<tr class="finding-row" data-idx="'+i+'" data-search="'+esc((f.finding.id+' '+f.finding.title+' '+f.finding.owaspAgentic+' '+f.finding.mitreAtlas+' '+f.finding.category).toLowerCase())+'">';
+      h+='<tr class="finding-row" data-idx="'+i+'" data-search="'+esc((f.finding.id+' '+f.finding.title+' '+f.finding.owaspAgentic+(f.finding.mitreAtlas?' '+f.finding.mitreAtlas:'')+' '+f.finding.category).toLowerCase())+'">';
       h+='<td><span class="finding-id">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td>';
       h+='<td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td>';
-      h+='<td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td><span class="badge-mitre">'+esc(f.finding.mitreAtlas)+'</span></td>';
+      h+='<td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td>'+mitreCell(f.finding.mitreAtlas)+'</td>';
       h+='<td><div class="remediation-cmd"><code class="remediation-code" title="'+esc(f.finding.remediation)+'">'+esc(f.finding.remediation)+'</code><button class="copy-btn" data-cmd="'+esc(f.finding.remediation)+'" onclick="event.stopPropagation();copyCmd(this)">Copy</button></div></td></tr>';
       h+='<tr class="finding-expand" id="finding-detail-'+i+'"><td colspan="7"><div class="finding-detail"><div class="finding-detail-grid">';
       h+='<div><div class="finding-meta">Description</div><div class="finding-val">'+esc(f.finding.description)+'</div></div>';

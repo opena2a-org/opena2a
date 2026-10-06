@@ -709,7 +709,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
   const topActions = topN(byAction, 10);
 
   // --- Classify events into findings ---
-  const { classifyEvents, classifyViolation } = await import('../shield/findings.js');
+  const { classifyEvents, classifyViolation, frameworkTags } = await import('../shield/findings.js');
   const classifiedFindings = classifyEvents(
     verified.chainBroken ? [...events, chainBreakEvent(verified, 'report')] : events,
   );
@@ -741,7 +741,7 @@ async function handleReport(options: ShieldOptions): Promise<number> {
       if (finding) {
         v.findingId = finding.id;
         v.remediationCommand = finding.remediation;
-        v.compliance = [finding.owaspAgentic, finding.mitreAtlas];
+        v.compliance = frameworkTags(finding);
       }
     }
 
