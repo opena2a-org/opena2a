@@ -20,6 +20,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { EventSeverity, IntegrityState } from '../shield/types.js';
+import type { EventVerificationStatus } from '../shield/events.js';
 import { bold, dim, gray, green, yellow, red, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
 
@@ -1271,20 +1272,21 @@ async function buildNarrative(
 // --- Monitor ---
 
 async function handleMonitor(options: ShieldOptions): Promise<number> {
-  const { importARPEvents, getARPStats } = await import('../shield/arp-bridge.js');
+  const { importARPEvents, getVerifiedARPStats } = await import('../shield/arp-bridge.js');
   const isJson = options.format === 'json';
   const targetDir = options.dir ? path.resolve(options.dir) : process.cwd();
 
   // Step 1: Import any existing ARP events into Shield's hash chain
   const result = importARPEvents(targetDir, options.agent);
 
-  // Step 2: Get ARP stats from Shield's unified log
-  const stats = getARPStats(options.since ?? '7d');
+  // Step 2: Get ARP stats from the verified events in Shield's unified log
+  const { stats, verification } = getVerifiedARPStats(options.since ?? '7d');
 
   if (isJson) {
     process.stdout.write(JSON.stringify({
       import: result,
       stats,
+      verification,
     }, null, 2) + '\n');
     return 0;
   }
@@ -1298,8 +1300,14 @@ async function handleMonitor(options: ShieldOptions): Promise<number> {
     if (result.imported > 0) {
       process.stdout.write(`    ${green(`${result.imported} new events`)} imported into Shield log\n`);
     }
-    if (result.skipped > 0) {
-      process.stdout.write(`    ${dim(`${result.skipped} already imported`)}\n`);
+    if (result.skipped > result.skippedUnverified) {
+      process.stdout.write(`    ${dim(`${result.skipped - result.skippedUnverified} already imported`)}\n`);
+    }
+    if (result.skippedUnverified > 0) {
+      process.stdout.write(
+        `    ${yellow(`${result.skippedUnverified} recorded only past a chain break`)} ` +
+        `${dim('(unverified); archive the broken log to import them into a fresh chain')}\n`,
+      );
     }
     if (result.errors > 0) {
       process.stdout.write(`    ${yellow(`${result.errors} parse errors`)}\n`);
@@ -1309,6 +1317,8 @@ async function handleMonitor(options: ShieldOptions): Promise<number> {
     process.stdout.write(dim('  No ARP events found.') + '\n');
     process.stdout.write(dim('  Start ARP monitoring: opena2a runtime start') + '\n\n');
   }
+
+  writeChainBreakNotice(verification, 'not counted', '  ');
 
   // ARP stats from Shield's unified log
   if (stats.totalEvents > 0) {
@@ -1537,7 +1547,7 @@ function stabilityBar(score: number): string {
 
 async function handleSuggest(options: ShieldOptions): Promise<number> {
   const { checkLlmAvailable, suggestPolicy } = await import('../shield/llm.js');
-  const { readEvents } = await import('../shield/events.js');
+  const { readVerifiedEvents, eventVerificationStatus } = await import('../shield/events.js');
   const isJson = options.format === 'json';
 
   const { backend } = await checkLlmAvailable();
@@ -1547,9 +1557,17 @@ async function handleSuggest(options: ShieldOptions): Promise<number> {
     return 1;
   }
 
-  const events = readEvents({ count: 100, agent: options.agent });
+  // Verified events only: an event past a chain break never shapes a policy.
+  const verified = readVerifiedEvents({ count: 100, agent: options.agent });
+  const verification = eventVerificationStatus(verified);
+  const events = verified.events;
 
   if (events.length === 0) {
+    if (verification.chainBroken) {
+      process.stdout.write(yellow('No verified events found.') + '\n');
+      writeChainBreakNotice(verification, 'left out of the suggestion');
+      return 0;
+    }
     process.stdout.write(yellow('No events found.') + ' ' + dim('Run shield init and use your tools to generate events.') + '\n');
     return 0;
   }
@@ -1604,10 +1622,11 @@ async function handleSuggest(options: ShieldOptions): Promise<number> {
   }
 
   if (isJson) {
-    process.stdout.write(JSON.stringify(suggestion, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ ...suggestion, verification }, null, 2) + '\n');
     return 0;
   }
 
+  writeChainBreakNotice(verification, 'left out of the suggestion');
   process.stdout.write(bold('Policy Suggestion') + dim(` (confidence: ${Math.round(suggestion.confidence * 100)}%)`) + '\n');
   process.stdout.write(gray('-'.repeat(50)) + '\n');
   process.stdout.write(dim(`Based on ${suggestion.basedOnActions} actions across ${suggestion.basedOnSessions} sessions for agent "${suggestion.agent}"\n\n`));
@@ -1654,7 +1673,7 @@ async function handleSuggest(options: ShieldOptions): Promise<number> {
 
 async function handleExplain(options: ShieldOptions): Promise<number> {
   const { checkLlmAvailable, explainAnomaly } = await import('../shield/llm.js');
-  const { readEvents } = await import('../shield/events.js');
+  const { readVerifiedEvents, eventVerificationStatus } = await import('../shield/events.js');
   const isJson = options.format === 'json';
 
   const { backend } = await checkLlmAvailable();
@@ -1665,19 +1684,30 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
   }
 
   const count = options.count ? parseInt(options.count, 10) : 1;
-  const events = readEvents({
+  const verified = readVerifiedEvents({
     count,
     severity: options.severity,
     agent: options.agent,
   });
+  const verification = eventVerificationStatus(verified);
 
-  if (events.length === 0) {
+  // The newest `count` matching events, as the unverified read returned them.
+  // Past a break the newest are the unverified tail, so they are listed with
+  // that status rather than swapped for older verified events, and only the
+  // verified ones are explained.
+  const limit = count > 0 ? count : undefined;
+  const rows = [
+    ...verified.untrusted.map(event => ({ event, verified: false })),
+    ...verified.events.map(event => ({ event, verified: true })),
+  ].slice(0, limit);
+
+  if (rows.length === 0) {
     process.stdout.write(yellow('No events found matching the filters.') + ' ' + dim('Try: opena2a shield log --count 50') + '\n');
     return 0;
   }
 
-  const agentName = options.agent ?? events[0].agent ?? 'unknown';
-  const allAgentEvents = readEvents({ count: 100, agent: agentName });
+  const agentName = options.agent ?? rows.find(r => r.verified)?.event.agent ?? 'unknown';
+  const allAgentEvents = readVerifiedEvents({ count: 100, agent: agentName }).events;
   const actionCounts: Record<string, number> = {};
   for (const e of allAgentEvents) {
     const key = `${e.action} -> ${e.target}`;
@@ -1689,9 +1719,18 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
     .map(([action]) => action);
 
   const seenActions = new Set<string>();
-  const results: Array<{ event: typeof events[0]; explanation: Awaited<ReturnType<typeof explainAnomaly>> }> = [];
+  const results: Array<{
+    event: (typeof rows)[number]['event'];
+    verified: boolean;
+    explanation: Awaited<ReturnType<typeof explainAnomaly>>;
+  }> = [];
 
-  for (const event of events) {
+  for (const { event, verified: isVerified } of rows) {
+    if (!isVerified) {
+      results.push({ event, verified: false, explanation: null });
+      continue;
+    }
+
     const actionKey = `${event.action}:${event.target}`;
     const isFirstOccurrence = !seenActions.has(actionKey);
     seenActions.add(actionKey);
@@ -1702,20 +1741,27 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
       isFirstOccurrence,
     });
 
-    results.push({ event, explanation });
+    results.push({ event, verified: true, explanation });
   }
 
   if (isJson) {
     process.stdout.write(JSON.stringify(results.map(r => ({
       event: r.event,
+      verified: r.verified,
       explanation: r.explanation,
     })), null, 2) + '\n');
     return 0;
   }
 
-  for (const { event, explanation } of results) {
+  writeChainBreakNotice(verification, 'not explained');
+  for (const { event, verified: isVerified, explanation } of results) {
     const sev = colorSeverity(event.severity);
     process.stdout.write(`[${event.timestamp}] [${sev}] ${event.action} -> ${event.target}\n`);
+
+    if (!isVerified) {
+      process.stdout.write(`  ${yellow('UNVERIFIED')} ${dim('Past the event chain break; not explained.')}\n\n`);
+      continue;
+    }
 
     if (!explanation) {
       process.stdout.write(dim('  Analysis unavailable.\n\n'));
@@ -1744,7 +1790,7 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
 
 async function handleTriage(options: ShieldOptions): Promise<number> {
   const { checkLlmAvailable, triageIncident } = await import('../shield/llm.js');
-  const { readEvents } = await import('../shield/events.js');
+  const { readVerifiedEvents, eventVerificationStatus } = await import('../shield/events.js');
   const { loadPolicy } = await import('../shield/policy.js');
   const isJson = options.format === 'json';
 
@@ -1758,13 +1804,21 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   const severity = options.severity ?? 'high';
   const count = options.count ? parseInt(options.count, 10) : 10;
 
-  const events = readEvents({
+  // Verified events only: an event past a chain break is never triaged.
+  const verified = readVerifiedEvents({
     severity,
     count,
     agent: options.agent,
   });
+  const verification = eventVerificationStatus(verified);
+  const events = verified.events;
 
   if (events.length === 0) {
+    if (verification.chainBroken) {
+      process.stdout.write(yellow(`No verified ${severity}+ severity events found.`) + '\n');
+      writeChainBreakNotice(verification, 'left out of the triage');
+      return 0;
+    }
     process.stdout.write(yellow(`No ${severity}+ severity events found.`) + ' ' + dim('Lower the threshold: opena2a shield triage --severity low') + '\n');
     return 0;
   }
@@ -1773,7 +1827,7 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   const policy = loadPolicy(options.dir);
   const policyMode = policy?.mode ?? 'monitor';
 
-  const baselineEvents = readEvents({ count: 100, agent: agentName });
+  const baselineEvents = readVerifiedEvents({ count: 100, agent: agentName }).events;
   const recentBaseline = [...new Set(
     baselineEvents.map(e => `${e.action} -> ${e.target}`)
   )].slice(0, 10);
@@ -1790,9 +1844,11 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   }
 
   if (isJson) {
-    process.stdout.write(JSON.stringify(triage, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ ...triage, verification }, null, 2) + '\n');
     return 0;
   }
+
+  writeChainBreakNotice(verification, 'left out of the triage');
 
   const classColor = triage.classification === 'confirmed-threat' ? red
     : triage.classification === 'suspicious' ? yellow
@@ -1817,6 +1873,28 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
 }
 
 // --- Formatting helpers ---
+
+/**
+ * Printed by a feature that read events through the chain-verified reader
+ * when the chain is broken: where it breaks, what the feature did with the
+ * events from there on, and the commands to inspect it and start a fresh
+ * chain.  Prints nothing for an intact chain.
+ */
+function writeChainBreakNotice(
+  verification: EventVerificationStatus,
+  effect: string,
+  indent = '',
+): void {
+  if (!verification.chainBroken) return;
+  const n = verification.untrustedCount;
+  const subject = n === 1 ? 'The event from there on is' : `The ${n} events from there on are`;
+  process.stdout.write(indent + yellow(
+    `Event chain breaks at event ${(verification.brokenAt as number) + 1}. ` +
+    `${subject} unverified and ${effect}.`,
+  ) + '\n');
+  process.stdout.write(indent + dim('  Inspect:     opena2a shield selfcheck') + '\n');
+  process.stdout.write(indent + dim('  Fresh chain: opena2a shield recover --archive-log') + '\n\n');
+}
 
 function colorSeverity(severity: EventSeverity): string {
   return severityColor(severity)(severity.toUpperCase());
