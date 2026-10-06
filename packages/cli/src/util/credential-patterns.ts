@@ -843,7 +843,15 @@ export interface TemplateEnvLeak {
  * shaming a user to "rotate" a non-secret.
  */
 export function scanTemplateEnvLeaks(targetDir: string): TemplateEnvLeak[] {
+  return scanTemplateEnvLeaksWithCoverage(targetDir).leaks;
+}
+
+/** {@link scanTemplateEnvLeaks}, together with how many template files it read. */
+export function scanTemplateEnvLeaksWithCoverage(
+  targetDir: string,
+): { leaks: TemplateEnvLeak[]; filesScanned: number } {
   const leaks: TemplateEnvLeak[] = [];
+  let filesScanned = 0;
   const seen = new Set<string>();
 
   const walk = (dir: string): void => {
@@ -874,6 +882,7 @@ export function scanTemplateEnvLeaks(targetDir: string): TemplateEnvLeak[] {
       } catch {
         continue;
       }
+      filesScanned++;
       const lines = content.split('\n');
       for (const pattern of TEMPLATE_SCAN_PATTERNS) {
         for (let i = 0; i < lines.length; i++) {
@@ -900,5 +909,5 @@ export function scanTemplateEnvLeaks(targetDir: string): TemplateEnvLeak[] {
   };
 
   walk(targetDir);
-  return leaks;
+  return { leaks, filesScanned };
 }
