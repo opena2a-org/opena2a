@@ -59,6 +59,8 @@ export interface ReviewOptions {
    *  so review() checks it against REVIEW_FORMATS before doing any work. */
   format?: string;
   verbose?: boolean;
+  /** The global `--quiet`: keep the result, drop progress and commentary. */
+  quiet?: boolean;
 }
 
 /** Output formats review produces. Anything else (the global `--format`
@@ -319,6 +321,18 @@ export async function review(options: ReviewOptions): Promise<number> {
     process.stderr.write(dim('  Supported: --format text (summary plus HTML report) or --format json (report on stdout).\n'));
     return 2;
   }
+  // --quiet and --verbose ask for opposite output; honouring either one would
+  // silently ignore the other.
+  if (options.quiet && options.verbose) {
+    process.stderr.write(red('opena2a review cannot use --quiet and --verbose together.\n'));
+    process.stderr.write(dim('  Pass one: --quiet prints the score, finding counts and report path; --verbose adds detail.\n'));
+    return 2;
+  }
+  // --quiet keeps the result (score line, finding counts, report path) and the
+  // stderr notices that qualify the verdict. It drops the banner, the phase
+  // progress lines, the Observations block, the report confirmation under
+  // --format json and the contribute prompt.
+  const quiet = options.quiet === true;
 
   const targetDir = path.resolve(options.targetDir ?? process.cwd());
 
@@ -328,18 +342,18 @@ export async function review(options: ReviewOptions): Promise<number> {
   }
 
   const phases: PhaseResult[] = [];
-  const isText = options.format !== 'json';
+  const showProgress = options.format !== 'json' && !quiet;
   const isTTY = process.stdout.isTTY === true;
 
   function progress(step: number, label: string): void {
-    if (!isText) return;
+    if (!showProgress) return;
     if (isTTY) {
       process.stdout.write(dim(`  [${step}/6] ${label}`));
     }
   }
 
   function progressDone(step: number, label: string, timing: string): void {
-    if (!isText) return;
+    if (!showProgress) return;
     if (isTTY) {
       process.stdout.write(`\r  [${step}/6] ${label} ${dim(timing)}\n`);
     } else {
@@ -347,7 +361,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     }
   }
 
-  if (isText) {
+  if (showProgress) {
     process.stdout.write('\n');
     process.stdout.write(bold('  OpenA2A Security Review') + '\n\n');
   }
@@ -616,13 +630,13 @@ export async function review(options: ReviewOptions): Promise<number> {
         process.stderr.write(red(`Report not written: ${msg}\n`));
         return 2;
       }
-      process.stderr.write(dim(`  Report: ${options.reportPath}\n`));
+      if (!quiet) process.stderr.write(dim(`  Report: ${options.reportPath}\n`));
     }
     return compositeScore < 50 ? 1 : 0;
   }
 
   // Print summary
-  process.stdout.write('\n');
+  if (!quiet) process.stdout.write('\n');
   const scoreColor = compositeScore >= 80 ? green
     : compositeScore >= 60 ? yellow : red;
   // Recovery-framed output: show path forward, not punitive grade
@@ -662,64 +676,67 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Shared block from @opena2a/cli-ui so review/scan output stays
   // consistent with hackmyagent secure output per [CA-030]. Dynamic
   // import because cli-ui is ESM and this package is CJS (same pattern
-  // as @opena2a/shared / @opena2a/contribute usage elsewhere).
-  try {
-    const cliUi = await import('@opena2a/cli-ui');
-    const projectLabel = report.projectType && report.projectType !== 'unknown'
-      ? report.projectType
-      : 'project';
-    const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
-      checkId: f.id,
-      name: f.title,
-      category: f.source,
-      passed: false,
-      severity: f.severity as LocalSeverity,
-    }));
-    const verdictFindings: LocalVerdictFinding[] = findings.map(f => ({
-      severity: f.severity as LocalSeverity,
-      name: f.title,
-      checkId: f.id,
-    }));
-    const categorySummaries = cliUi.buildCategorySummaries(categorizable);
-    const verdict = cliUi.buildVerdict(
-      { critical: sevCounts.critical, high: sevCounts.high, medium: sevCounts.medium, low: sevCounts.low },
-      { kind: projectLabel },
-      verdictFindings,
-      // Pass the composite (target-risk) score so the verdict line reconciles
-      // with the headline band instead of disagreeing in direction (#221).
-      compositeScore,
-    );
-    const { lines } = cliUi.renderObservationsBlock({
-      surfaces: { kind: projectLabel },
-      checks: {
-        staticCount: phases.length,
-        semanticCount: 0,
-      },
-      categories: categorySummaries,
-      verdict,
-      verbose: !!options.verbose,
-    });
-    process.stdout.write('\n');
-    const toneColor = (tone: 'default' | 'good' | 'warning' | 'critical'): (s: string) => string => {
-      if (tone === 'good') return green;
-      if (tone === 'warning') return yellow;
-      if (tone === 'critical') return red;
-      return (s: string): string => s;
-    };
-    const LABEL_WIDTH = 12;
-    for (const line of lines) {
-      const labelPad = line.label.padEnd(LABEL_WIDTH, ' ');
-      const color = toneColor(line.tone);
-      process.stdout.write(`  ${dim(labelPad)}${color(line.value)}\n`);
-    }
-    process.stdout.write('\n');
-  } catch (err: unknown) {
-    // cli-ui import failed — non-critical, skip the Observations block.
-    // The existing Score + findings summary above still carries the result.
-    // Log in verbose mode so debugging isn't silent.
-    if (options.verbose) {
-      const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(dim(`  [observations] skipped — ${msg}\n`));
+  // as @opena2a/shared / @opena2a/contribute usage elsewhere). Skipped under
+  // --quiet: the Score line above already carries the result.
+  if (!quiet) {
+    try {
+      const cliUi = await import('@opena2a/cli-ui');
+      const projectLabel = report.projectType && report.projectType !== 'unknown'
+        ? report.projectType
+        : 'project';
+      const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
+        checkId: f.id,
+        name: f.title,
+        category: f.source,
+        passed: false,
+        severity: f.severity as LocalSeverity,
+      }));
+      const verdictFindings: LocalVerdictFinding[] = findings.map(f => ({
+        severity: f.severity as LocalSeverity,
+        name: f.title,
+        checkId: f.id,
+      }));
+      const categorySummaries = cliUi.buildCategorySummaries(categorizable);
+      const verdict = cliUi.buildVerdict(
+        { critical: sevCounts.critical, high: sevCounts.high, medium: sevCounts.medium, low: sevCounts.low },
+        { kind: projectLabel },
+        verdictFindings,
+        // Pass the composite (target-risk) score so the verdict line reconciles
+        // with the headline band instead of disagreeing in direction (#221).
+        compositeScore,
+      );
+      const { lines } = cliUi.renderObservationsBlock({
+        surfaces: { kind: projectLabel },
+        checks: {
+          staticCount: phases.length,
+          semanticCount: 0,
+        },
+        categories: categorySummaries,
+        verdict,
+        verbose: !!options.verbose,
+      });
+      process.stdout.write('\n');
+      const toneColor = (tone: 'default' | 'good' | 'warning' | 'critical'): (s: string) => string => {
+        if (tone === 'good') return green;
+        if (tone === 'warning') return yellow;
+        if (tone === 'critical') return red;
+        return (s: string): string => s;
+      };
+      const LABEL_WIDTH = 12;
+      for (const line of lines) {
+        const labelPad = line.label.padEnd(LABEL_WIDTH, ' ');
+        const color = toneColor(line.tone);
+        process.stdout.write(`  ${dim(labelPad)}${color(line.value)}\n`);
+      }
+      process.stdout.write('\n');
+    } catch (err: unknown) {
+      // cli-ui import failed — non-critical, skip the Observations block.
+      // The existing Score + findings summary above still carries the result.
+      // Log in verbose mode so debugging isn't silent.
+      if (options.verbose) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(dim(`  [observations] skipped — ${msg}\n`));
+      }
     }
   }
 
@@ -736,13 +753,15 @@ export async function review(options: ReviewOptions): Promise<number> {
     openInBrowser(reportPath);
     process.stdout.write(` ${dim('(opened in browser)')}`);
   }
-  process.stdout.write('\n\n');
+  process.stdout.write(quiet ? '\n' : '\n\n');
 
   // Community contribution
   try {
     const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
       await import('../util/report-submission.js');
-    await recordScanAndMaybePrompt();
+    // The contribute prompt is guidance, so --quiet suppresses it the same way
+    // machine-readable mode does; the scan is still counted.
+    await recordScanAndMaybePrompt({ machineReadable: quiet });
 
     if (await isContributeEnabled()) {
       const registryUrl = await getRegistryUrl();

@@ -612,6 +612,103 @@ describe('review', () => {
     expect(stderr).toContain('json');
   });
 
+  it('--quiet prints the score, finding counts and report path only, and keeps the verdict notices', async () => {
+    // The global `--quiet` used to be dropped silently: review printed the
+    // banner, six progress lines and the Observations block exactly as without it.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'quiet-text' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+
+    const reportPath = path.join(tempDir, 'quiet.html');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        autoOpen: false,
+        skipHma: true,
+        quiet: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(0);
+    const lines = result.output.replace(/\x1b\[\d+m/g, '').split('\n').filter(l => l.trim() !== '');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatch(/^ {2}Score: \d+\/100/);
+    expect(lines[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium\)$/);
+    expect(lines[2]).toBe(`  Report: ${reportPath}`);
+    expect(result.output).not.toContain('OpenA2A Security Review');
+    expect(result.output).not.toContain('[1/6]');
+    expect(result.output).not.toContain('Surfaces');
+    expect(fs.existsSync(reportPath)).toBe(true);
+    // The provisional-verdict notice qualifies the score, so it is essential.
+    expect(stderrChunks.join('')).toMatch(/Provisional verdict/);
+  });
+
+  it('--quiet with --format json keeps stdout pure JSON and drops the report confirmation', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'quiet-json' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+
+    const reportPath = path.join(tempDir, 'quiet-json.html');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        format: 'json',
+        autoOpen: false,
+        skipHma: true,
+        quiet: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.output).phases).toHaveLength(6);
+    expect(fs.existsSync(reportPath)).toBe(true);
+    const stderr = stderrChunks.join('');
+    expect(stderr).not.toContain('Report:');
+    expect(stderr).toMatch(/Provisional verdict/);
+  });
+
+  it('--quiet with --verbose is refused with a message and exit 2, and writes no report', async () => {
+    // The two ask for opposite output; honouring either one ignores the other.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'quiet-verbose' }));
+
+    const reportPath = path.join(tempDir, 'quiet-verbose.html');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        autoOpen: false,
+        skipHma: true,
+        quiet: true,
+        verbose: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toBe('');
+    expect(fs.existsSync(reportPath)).toBe(false);
+    const stderr = stderrChunks.join('');
+    expect(stderr).toContain('--quiet');
+    expect(stderr).toContain('--verbose');
+  });
+
   it('renders the @opena2a/cli-ui Observations block with Surfaces/Checks/Categories/Verdict labels', async () => {
     // Smoke test for the CA-030 cli-ui wire at packages/cli/src/commands/review.ts:430.
     // Asserts the dynamic import of @opena2a/cli-ui succeeded AND the four label
