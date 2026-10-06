@@ -1,13 +1,13 @@
 /**
- * suggest, explain, triage and monitor read the event log through the
+ * suggest, explain, triage, monitor and log read the event log through the
  * chain-verified reader.
  *
  * Each of them used to read the raw log, so a line appended without
  * recomputing the hash chain reached the LLM prompt, the policy suggestion,
- * the incident triage and the ARP import as if it were a recorded event.
- * Now an event at or after a chain break is never sent to the LLM or
- * counted, every output carries the log's verification status, and explain
- * labels each event it lists as verified or not.
+ * the incident triage, the ARP import and the log listing as if it were a
+ * recorded event.  Now an event at or after a chain break is never sent to
+ * the LLM or counted, every output carries the log's verification status,
+ * and explain and log label each event they list as verified or not.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -307,5 +307,88 @@ describe('shield monitor', () => {
 
     expect(out).toContain('1 recorded only past a chain break');
     expect(out).toContain('opena2a shield recover --archive-log');
+  });
+});
+
+describe('shield log', () => {
+  it('lists every event and marks each one past the break as unverified in json', async () => {
+    const t0 = writeEvent(makePartial({ target: 't0.example' }));
+    const t1 = writeEvent(makePartial({ target: 't1.example' }));
+    const forged = appendForgedEvent();
+
+    const { code, out } = await run('log', { format: 'json' });
+
+    expect(code).toBe(0);
+    const json = JSON.parse(out);
+    expect(json.map((e: ShieldEvent) => e.id)).toEqual([forged.id, t1.id, t0.id]);
+    expect(json.map((e: { verified: boolean }) => e.verified)).toEqual([false, true, true]);
+    // The array keeps its shape: each entry is the event, plus its status.
+    expect(json[1]).toEqual({ ...t1, verified: true });
+  });
+
+  it('reports a forged line that claims to be verified as unverified', async () => {
+    writeEvent(makePartial());
+    appendForgedEvent({ verified: true } as Partial<ShieldEvent>);
+
+    const { out } = await run('log', { format: 'json' });
+
+    expect(JSON.parse(out)[0].verified).toBe(false);
+  });
+
+  it('marks every event after an interior deletion as unverified', async () => {
+    for (const target of ['t0', 't1', 't2', 't3']) writeEvent(makePartial({ target }));
+    const lines = fs.readFileSync(getEventsPath(), 'utf-8').split('\n');
+    lines.splice(1, 1);
+    fs.writeFileSync(getEventsPath(), lines.join('\n'));
+
+    const { out } = await run('log', { format: 'json' });
+
+    const json = JSON.parse(out);
+    expect(json.map((e: ShieldEvent) => e.target)).toEqual(['t3', 't2', 't0']);
+    expect(json.map((e: { verified: boolean }) => e.verified)).toEqual([false, false, true]);
+  });
+
+  it('keeps the newest --count matching events across the break', async () => {
+    writeEvent(makePartial({ target: 't0' }));
+    writeEvent(makePartial({ target: 't1' }));
+    appendForgedEvent({ target: 'f0' });
+    appendForgedEvent({ target: 'f1' });
+
+    const { out } = await run('log', { format: 'json', count: '3' });
+
+    const json = JSON.parse(out);
+    expect(json.map((e: ShieldEvent) => e.target)).toEqual(['f1', 'f0', 't1']);
+    expect(json.map((e: { verified: boolean }) => e.verified)).toEqual([false, false, true]);
+  });
+
+  it('prints the break once and marks only the events past it in text', async () => {
+    writeEvent(makePartial({ target: 't0.example' }));
+    writeEvent(makePartial({ target: 't1.example' }));
+    appendForgedEvent();
+
+    const { code, out } = await run('log');
+
+    expect(code).toBe(0);
+    expect(out.split('Event chain breaks at event 3.')).toHaveLength(2);
+    expect(out).toContain('opena2a shield recover --archive-log');
+    const rows = out.split('\n').filter(line => line.includes('network.connect'));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toContain(FORGED_TARGET);
+    expect(rows[0]).toContain('UNVERIFIED');
+    expect(rows[1]).not.toContain('UNVERIFIED');
+    expect(rows[2]).not.toContain('UNVERIFIED');
+  });
+
+  it('prints no marker and no notice for an intact log', async () => {
+    writeEvent(makePartial());
+    writeEvent(makePartial());
+
+    const { code, out: text } = await run('log');
+    const { out: json } = await run('log', { format: 'json' });
+
+    expect(code).toBe(0);
+    expect(text).not.toContain('UNVERIFIED');
+    expect(text).not.toContain('Event chain breaks');
+    expect(JSON.parse(json).map((e: { verified: boolean }) => e.verified)).toEqual([true, true]);
   });
 });

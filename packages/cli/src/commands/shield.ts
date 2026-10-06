@@ -184,11 +184,11 @@ async function handleStatus(options: ShieldOptions): Promise<number> {
 }
 
 async function handleLog(options: ShieldOptions): Promise<number> {
-  const { readEvents } = await import('../shield/events.js');
+  const { readVerifiedEvents, eventVerificationStatus } = await import('../shield/events.js');
   const isJson = options.format === 'json';
 
   const count = options.count ? parseInt(options.count, 10) : 20;
-  const events = readEvents({
+  const verified = readVerifiedEvents({
     count,
     source: options.source,
     severity: options.severity,
@@ -196,25 +196,38 @@ async function handleLog(options: ShieldOptions): Promise<number> {
     since: options.since,
     category: options.category,
   });
+  const verification = eventVerificationStatus(verified);
+
+  // The log is the forensic view: it keeps the newest `count` matching
+  // events, as the unverified read returned them, and lists an event past a
+  // chain break with that status instead of dropping it.
+  const limit = count > 0 ? count : undefined;
+  const rows = [
+    ...verified.untrusted.map(event => ({ event, verified: false })),
+    ...verified.events.map(event => ({ event, verified: true })),
+  ].slice(0, limit);
 
   if (isJson) {
-    process.stdout.write(JSON.stringify(events, null, 2) + '\n');
+    process.stdout.write(JSON.stringify(rows.map(r => ({ ...r.event, verified: r.verified })), null, 2) + '\n');
     return 0;
   }
 
-  if (events.length === 0) {
+  writeChainBreakNotice(verification, 'marked UNVERIFIED where listed');
+
+  if (rows.length === 0) {
     process.stdout.write(yellow('No events found.') + ' ' + dim('Generate events: opena2a shield init') + '\n');
     return 0;
   }
 
-  for (const event of events) {
+  for (const { event, verified: isVerified } of rows) {
     const ts = event.timestamp;
     const sev = colorSeverity(event.severity);
     const action = event.action;
     const target = event.target;
     const outcome = event.outcome;
+    const marker = isVerified ? '' : ' ' + yellow('UNVERIFIED');
 
-    process.stdout.write(`[${ts}] [${sev}] ${action} -> ${target} (${outcome})\n`);
+    process.stdout.write(`[${ts}] [${sev}] ${action} -> ${target} (${outcome})${marker}\n`);
   }
 
   return 0;
