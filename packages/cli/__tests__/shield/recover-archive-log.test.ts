@@ -27,7 +27,14 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, homedir: () => _mockHomeDir };
 });
 
-const { writeEvent, getEventsPath, getShieldDir, verifyEventChain } =
+// The chain check recover runs, observed but not changed: the wrapper calls
+// the real verifyEventLog and records what each call returned.
+vi.mock('../../src/shield/events.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/shield/events.js')>();
+  return { ...actual, verifyEventLog: vi.fn(actual.verifyEventLog) };
+});
+
+const { writeEvent, getEventsPath, getShieldDir, verifyEventChain, verifyEventLog } =
   await import('../../src/shield/events.js');
 const { runShieldPhase } = await import('../../src/commands/review.js');
 const { shield } = await import('../../src/commands/shield.js');
@@ -204,5 +211,80 @@ describe('shield recover --archive-log', () => {
     expect(payload.archivedSha256).toBe(beforeSha);
     expect(payload.archivedPath).toBe(path.join(getShieldDir(), archives()[0]));
     expect(payload.untrustedCount).toBe(1);
+  });
+
+  it('checks the chain without holding any event of the log', async () => {
+    getShieldDir();
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    writeEvent(makePartial({ action: 'genuine-2' }));
+    for (let i = 1; i <= 40; i++) appendForgedEvent(`forged-${i}`);
+    const check = vi.mocked(verifyEventLog);
+    check.mockClear();
+
+    expect(await runArchive()).toBe(0);
+
+    // One pass over the log that keeps no event: every event is counted,
+    // none is held, trusted or not.
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(check).toHaveBeenCalledWith(path.join(getShieldDir(), 'events.jsonl'), { countsOnly: true });
+    const result = check.mock.results[0];
+    expect(result.type).toBe('return');
+    if (result.type !== 'return') return;
+    expect(result.value.events).toEqual([]);
+    expect(result.value.untrusted).toEqual([]);
+    expect(result.value.trustedCount).toBe(2);
+    expect(result.value.untrustedCount).toBe(40);
+
+    // The anchor still records the break from those counts.
+    const fresh = readChain();
+    expect(fresh.length).toBe(1);
+    expect(fresh[0].detail.brokenAt).toBe(2);
+    expect(fresh[0].detail.untrustedCount).toBe(40);
+  });
+
+  it('refuses a log it cannot read as unreadable, never as intact', async () => {
+    getShieldDir();
+    // A directory where the log belongs: it exists, and cannot be read as a log.
+    fs.mkdirSync(getEventsPath());
+
+    const chunks: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      chunks.push(String(chunk));
+      return true;
+    });
+    const code = await shield({ subcommand: 'recover', archiveLog: true, format: 'json' });
+    out.mockRestore();
+
+    expect(code).toBe(1);
+    const payload = JSON.parse(chunks.join(''));
+    expect(payload.status).toBe('unreadable');
+    expect(payload.eventsPath).toBe(getEventsPath());
+    expect(payload.error).toBe(`Not a regular file: ${getEventsPath()}`);
+
+    // Nothing archived, nothing written: the path is left as it was found.
+    expect(archives()).toEqual([]);
+    expect(fs.statSync(getEventsPath()).isDirectory()).toBe(true);
+  });
+
+  it('names the read failure in text mode, with the command that inspects it', async () => {
+    getShieldDir();
+    fs.mkdirSync(getEventsPath());
+
+    const errors: string[] = [];
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      errors.push(String(chunk));
+      return true;
+    });
+    const out = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const code = await shield({ subcommand: 'recover', archiveLog: true });
+    err.mockRestore();
+    out.mockRestore();
+
+    expect(code).toBe(1);
+    const text = errors.join('');
+    expect(text).toContain('Event log could not be read, so its hash chain was not checked. Nothing archived.');
+    expect(text).toContain(`Reason:   Not a regular file: ${getEventsPath()}`);
+    expect(text).toContain('Inspect:  opena2a shield selfcheck');
+    expect(text).not.toContain('intact');
   });
 });
