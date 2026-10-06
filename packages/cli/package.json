@@ -35,7 +35,7 @@
     "secretless-ai": "0.23.0"
   },
   "optionalDependencies": {
-    "@opena2a/aim-core": "*"
+    "@opena2a/aim-core": "0.2.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

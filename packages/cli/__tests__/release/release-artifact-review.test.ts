@@ -329,6 +329,28 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
+    // The shape opena2a-cli itself shipped through 0.10.13: no caret or tilde,
+    // so a check that denied only those two prefixes passed it.
+    title: 'a "*" range on an @opena2a/ optional dependency fails pinned-first-party-deps',
+    check: 'pinned-first-party-deps',
+    spec: {
+      name: 'opena2a-qgf-star-optional',
+      version: '0.0.0',
+      manifestExtra: { optionalDependencies: { '@opena2a/aim-core': '*' } },
+      files: { 'dist/index.js': 'module.exports = {};\n' },
+    },
+  },
+  {
+    title: 'a dist-tag on an @opena2a/ dependency fails pinned-first-party-deps',
+    check: 'pinned-first-party-deps',
+    spec: {
+      name: 'opena2a-qgf-dist-tag',
+      version: '0.0.0',
+      manifestExtra: { dependencies: { '@opena2a/cli-ui': 'latest' } },
+      files: { 'dist/index.js': 'module.exports = {};\n' },
+    },
+  },
+  {
     title: 'OPA-04.AC3 a dist/index.js that exits 1 on --version fails global-install-smoke',
     check: 'global-install-smoke',
     spec: {

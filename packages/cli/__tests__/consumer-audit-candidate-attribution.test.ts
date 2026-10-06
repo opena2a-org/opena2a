@@ -293,7 +293,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
           typescript: '^5.7.0',
           vitest: '^4.1.8',
         },
-        optionalDependencies: { '@opena2a/aim-core': '*' },
+        optionalDependencies: { '@opena2a/aim-core': '0.2.0' },
       },
       'cli-ui': {
         dependencies: { chalk: '^5.3.0' },

@@ -219,6 +219,11 @@ function checkNoInstallScripts(manifest) {
   return { status: 'pass', detail: ['no preinstall/install/postinstall in the packed package.json'] };
 }
 
+// A complete semver version and nothing else: no operator, no wildcard, no
+// dist-tag, no `v` prefix, no surrounding whitespace.
+const EXACT_VERSION =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
+
 function checkPinnedFirstPartyDeps(manifest) {
   if (!manifest) {
     return { status: 'precondition', detail: ['the tarball carries no package/package.json to read dependencies from'] };
@@ -229,13 +234,15 @@ function checkPinnedFirstPartyDeps(manifest) {
   for (const block of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
     for (const [name, range] of Object.entries(manifest[block] ?? {})) {
       const firstParty = name.startsWith(ROSTER_SCOPE) || name === 'hackmyagent';
-      if (firstParty && /^[\^~]/.test(String(range).trim())) {
+      // Admit what an exact pin is, rather than deny the range shapes someone
+      // thought of: "*", "latest", ">=1.0.0" and "1.x" float at least as far as a caret.
+      if (firstParty && !EXACT_VERSION.test(String(range))) {
         bad.push(`${block}: ${name}@"${range}" — first-party dependencies are exact pins, never ranges`);
       }
     }
   }
   if (bad.length > 0) return { status: 'fail', detail: bad };
-  return { status: 'pass', detail: ['no caret/tilde range on any @opena2a/* or hackmyagent dependency'] };
+  return { status: 'pass', detail: ['every @opena2a/* and hackmyagent dependency is an exact version'] };
 }
 
 // ---------------------------------------------------------------------------
