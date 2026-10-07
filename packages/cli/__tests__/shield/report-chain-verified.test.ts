@@ -181,3 +181,50 @@ describe('shield report — chain-verified read (#243)', () => {
     expect(text.out).not.toContain('Log integrity');
   });
 });
+
+describe('shield report — runtime protection from verified events', () => {
+  /** The posture and runtime-protection figures the HTML report embeds. */
+  function reportFigures(file: string): { score: number; factors: string; runtime: string } {
+    const html = fs.readFileSync(file, 'utf-8');
+    const score = /"posture":\{"score":(\d+)/.exec(html);
+    const factors = /"factors":(\[[^\]]*\])/.exec(html);
+    const runtime = /"runtimeProtection":(\{[^}]*\})/.exec(html);
+    if (!score || !factors || !runtime) throw new Error(`report figures not found in ${file}`);
+    return { score: Number(score[1]), factors: factors[1], runtime: runtime[1] };
+  }
+
+  it('an ARP line past the break raises neither the posture score nor ARP activity', async () => {
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    const intact = path.join(reportDir, 'intact.html');
+    await runReport({ report: intact });
+
+    appendForged({
+      source: 'arp', category: 'arp.process', severity: 'info', action: 'forged-arp',
+      detail: { arpEventId: 'forged', arpCategory: 'anomaly' },
+    });
+    const broken = path.join(reportDir, 'broken.html');
+    const { code } = await runReport({ report: broken });
+
+    expect(code).toBe(0);
+    const before = reportFigures(intact);
+    const after = reportFigures(broken);
+    expect(after.score).toBe(before.score);
+    expect(after.factors).toBe(before.factors);
+    expect(JSON.parse(after.runtime)).toEqual({
+      arpActive: false, processesSpawned: 0, networkConnections: 0, anomalies: 0,
+    });
+  });
+
+  it('a verified ARP event still marks ARP active', async () => {
+    writeEvent(makePartial({
+      source: 'arp', category: 'arp.process', severity: 'info', action: 'genuine-arp',
+      detail: { arpEventId: 'genuine', arpCategory: 'anomaly' },
+    }));
+    const file = path.join(reportDir, 'arp.html');
+    await runReport({ report: file });
+
+    expect(JSON.parse(reportFigures(file).runtime)).toEqual({
+      arpActive: true, processesSpawned: 1, networkConnections: 0, anomalies: 1,
+    });
+  });
+});

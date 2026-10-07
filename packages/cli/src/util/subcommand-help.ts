@@ -245,12 +245,33 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a shield suggest --analyze'],
   },
   explain: {
-    summary: 'Explain a Shield event, finding, or policy decision.',
-    examples: ['opena2a shield explain <event-id>'],
+    summary: 'Explain the newest Shield events that match the filters.',
+    options: [
+      { flag: '--count <n>', description: 'Number of newest events to explain (default 1; 0 for all)' },
+      { flag: '--severity <level>', description: 'Only events of exactly this severity' },
+      { flag: '--agent <name>', description: 'Only events from this agent' },
+    ],
+    examples: [
+      'opena2a shield explain',
+      'opena2a shield explain --count 5 --severity high',
+    ],
   },
   triage: {
     summary: 'Triage open security events into actionable groups.',
-    examples: ['opena2a shield triage'],
+    options: [
+      { flag: '--severity <level>', description: 'Lowest severity to triage (default high: high and critical)' },
+      { flag: '--count <n>', description: 'Number of newest matching events to triage (default 10)' },
+      { flag: '--agent <name>', description: 'Only events from this agent' },
+    ],
+    examples: ['opena2a shield triage', 'opena2a shield triage --severity medium'],
+  },
+  monitor: {
+    summary: 'Import ARP runtime events into the Shield event log and summarize runtime protection.',
+    options: [
+      { flag: '--dir <path>', description: 'Project directory whose ARP events are imported' },
+      { flag: '--since <timespec>', description: 'Period summarized (default 7d)' },
+    ],
+    examples: ['opena2a shield monitor', 'opena2a shield monitor --format json'],
   },
 };
 

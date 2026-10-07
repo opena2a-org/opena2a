@@ -295,7 +295,14 @@ export function writeEvent(
 export interface EventFilters {
   count?: number;
   source?: string;
+  /** Exactly this severity. */
   severity?: string;
+  /**
+   * This severity or above, in the order info, low, medium, high, critical.
+   * A value outside that order, and an event whose severity is outside it,
+   * match nothing.
+   */
+  minSeverity?: string;
   agent?: string;
   since?: string;   // ISO 8601 or relative: "7d", "1w", "1m"
   category?: string;
@@ -489,6 +496,9 @@ function parseEventLine(line: string): ShieldEvent | null {
   }
 }
 
+/** Event severities, lowest first: the order `minSeverity` compares in. */
+const SEVERITY_ORDER: readonly string[] = ['info', 'low', 'medium', 'high', 'critical'];
+
 /**
  * The EventFilters a caller asked for, applied to events as they stream
  * past: every match is kept, or only the newest `count` matches when a
@@ -502,11 +512,13 @@ function eventWindow(filters: EventFilters | null): {
   const count = filters?.count !== undefined && filters.count > 0 ? filters.count : null;
   const sinceDate = filters?.since ? parseSince(filters.since) : null;
   const sinceMs = sinceDate ? sinceDate.getTime() : null;
+  const minRank = filters?.minSeverity ? SEVERITY_ORDER.indexOf(filters.minSeverity) : null;
 
   const matches = (e: ShieldEvent): boolean => {
     if (filters === null) return false;
     if (filters.source && e.source !== filters.source) return false;
     if (filters.severity && e.severity !== filters.severity) return false;
+    if (minRank !== null && !(minRank >= 0 && SEVERITY_ORDER.indexOf(e.severity) >= minRank)) return false;
     if (filters.agent && e.agent !== filters.agent) return false;
     if (filters.category && e.category !== filters.category) return false;
     if (sinceMs !== null && !(new Date(e.timestamp).getTime() >= sinceMs)) return false;

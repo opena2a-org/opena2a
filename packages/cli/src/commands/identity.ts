@@ -1562,6 +1562,7 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
       }
       process.stdout.write('\n');
     }
+    writeUnverifiedShieldNotice(bridgeResults.total.unverified, '  ');
 
     process.stdout.write(bold('  Trust Score:') + '\n');
     const beforeColor = trustBefore.score >= 60 ? yellow : red;
@@ -1709,6 +1710,7 @@ async function handleSync(options: IdentityOptions): Promise<number> {
         synced: true,
         imported: bridgeResults.total.imported,
         skipped: bridgeResults.total.skipped,
+        unverified: bridgeResults.total.unverified,
         trustScore: score.score,
         trustGrade: score.grade,
       }, null, 2) + '\n');
@@ -1720,6 +1722,7 @@ async function handleSync(options: IdentityOptions): Promise<number> {
     if (bridgeResults.total.skipped > 0) {
       process.stdout.write(`  Skipped (dedup): ${bridgeResults.total.skipped}\n`);
     }
+    writeUnverifiedShieldNotice(bridgeResults.total.unverified, '  ');
 
     const scoreColor = score.score >= 80 ? green : score.score >= 60 ? yellow : red;
     process.stdout.write(`  Trust score:     ${scoreColor(bold(`${score.score}/100`))} (${scoreColor(score.grade)})\n`);
@@ -1745,6 +1748,19 @@ function scoreToGrade(score: number): string {
   if (score >= 40) return 'moderate';
   if (score >= 20) return 'improving';
   return 'needs-attention';
+}
+
+/**
+ * The Shield events an import left out because they lie at or after an
+ * event-log chain break, with the commands to inspect the log and start a
+ * fresh chain.  Prints nothing when there are none.
+ */
+function writeUnverifiedShieldNotice(count: number, indent: string): void {
+  if (count === 0) return;
+  const subject = count === 1 ? '1 Shield event' : `${count} Shield events`;
+  process.stdout.write(`${indent}${yellow(`${subject} past an event-log chain break not imported (unverified)`)}\n`);
+  process.stdout.write(`${indent}${dim('  Inspect:     opena2a shield selfcheck')}\n`);
+  process.stdout.write(`${indent}${dim('  Fresh chain: opena2a shield recover --archive-log')}\n\n`);
 }
 
 function progressBar(pct: number, width: number): string {

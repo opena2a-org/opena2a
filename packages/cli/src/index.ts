@@ -693,7 +693,7 @@ analysis runs and results can be shared with the community.
   // Shield command (unified security orchestration)
   program
     .command('shield [subcommand] [args...]')
-    .description('Unified security orchestration ("shield init" runs full 11-step setup; also:|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage)')
+    .description('Unified security orchestration ("shield init" runs full 11-step setup; also:|status|log|selfcheck|policy|evaluate|recover|report|session|baseline|suggest|explain|triage|monitor)')
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--dir <path>', 'Target directory')

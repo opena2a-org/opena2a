@@ -234,8 +234,11 @@ export interface ARPStats {
 }
 
 /**
- * Compute stats from ARP events in Shield's log (source === 'arp').
- * Used by shield report to populate runtimeProtection section.
+ * Compute stats from ARP events in Shield's log (source === 'arp'), read
+ * WITHOUT the chain check: an event past a chain break is counted.  No
+ * command reports these; `shield report` and `review` compute their stats
+ * with computeARPStats over the verified events they read, and
+ * `shield monitor` uses getVerifiedARPStats.
  */
 export function getARPStats(since?: string): ARPStats {
   return computeARPStats(readEvents({ source: 'arp', since, count: 10000 }));
@@ -245,14 +248,20 @@ export function getARPStats(since?: string): ARPStats {
  * ARP stats over verified events only, with the log's verification status:
  * an ARP event at or after a chain break is never counted.  Same window as
  * getARPStats (source filter, since, newest 10000).  Used by shield monitor.
+ *
+ * `unverifiedStats` counts the ARP events in the same window at or after
+ * the break, so a reader can see how many a break holds back.  COUNTS ONLY:
+ * no unverified event is listed or added to `stats`.
  */
 export function getVerifiedARPStats(since?: string): {
   stats: ARPStats;
+  unverifiedStats: ARPStats;
   verification: EventVerificationStatus;
 } {
   const verified = readVerifiedEvents({ source: 'arp', since, count: 10000 });
   return {
     stats: computeARPStats(verified.events),
+    unverifiedStats: computeARPStats(verified.untrusted),
     verification: eventVerificationStatus(verified),
   };
 }
