@@ -170,18 +170,20 @@ function readMachineIdRaw(): string | null {
  *
  * Privacy: the raw machine-id / hostname is never transmitted. SHA-256
  * is applied locally and only the hash is sent to the Registry. The
- * hash is irreversible. install_id is also user-rotatable via
- * `<tool> telemetry reset` (deletes the config file; next run picks a
- * fresh ID — or the same ID if the machine-id source is stable).
+ * hash cannot be run backwards, but anyone who knows or guesses its
+ * inputs can compute it again, so the install ID identifies the machine
+ * and is personal data. No `telemetry reset` command exists; deleting
+ * the config file re-derives the same ID while the machine-id source is
+ * stable.
  *
  * Rainbow-table resistance: machine-id values on Linux/macOS/Windows
  * are random per-install (Linux machine-id is a random 128-bit value
  * generated at install time; macOS IOPlatformUUID is per-device).
  * Hostname fallback is less resistant — predictable patterns like
- * `runner-12345` in CI environments are theoretically guessable — but
- * still a one-way hash. Users in privacy-sensitive environments should
- * prefer (1) by ensuring `/etc/machine-id` exists, or run
- * `<tool> telemetry reset` to opt into a random ID.
+ * `runner-12345` in CI environments are theoretically guessable — and
+ * a hash of a guessed hostname can be checked against a stored ID. Users
+ * in privacy-sensitive environments should turn telemetry off with
+ * OPENA2A_TELEMETRY=off or `<tool> telemetry off`.
  */
 function deriveInstallId(): string {
   const machineId = readMachineIdRaw();
