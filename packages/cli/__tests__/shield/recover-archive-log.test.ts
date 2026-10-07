@@ -133,8 +133,8 @@ function terminalControls(text: string): string[] {
 }
 
 /**
- * A read error that quotes a hostile log line: a clear-screen and an OSC 8
- * link, a CR LF that starts a forged "Inspect:" line, a bell, a C1 CSI, a
+ * A read error carrying hostile text: a clear-screen and an OSC 8 link, a
+ * CR LF that starts a forged "Inspect:" line, a bell, a C1 CSI, a
  * right-to-left override, a NUL, and 5,000 characters of filler.
  */
 const HOSTILE_READ_ERROR =
@@ -320,9 +320,9 @@ describe('shield recover --archive-log', () => {
     expect(text).not.toContain('intact');
   });
 
-  // The read error can quote the log it was raised on, and the log is
-  // untrusted: it is printed as one capped line with nothing in it that
-  // steers a terminal, and the line it tries to forge stays inert text.
+  // A read error carrying hostile text is printed as one capped line with
+  // nothing in it that steers a terminal, and the line it tries to forge
+  // stays inert text.
   it('prints a hostile read error as one capped line with no control characters', async () => {
     getShieldDir();
     writeEvent(makePartial({ action: 'genuine-1' }));
