@@ -14,12 +14,12 @@ import {
   redactProxyUrl,
   describeProxyRoute,
   resetEnvProxy,
+  routeThroughEnvProxy,
+  fetchWithEnvProxy,
 } from '../../src/util/env-proxy.js';
 import { AimClient, AimServerError } from '../../src/util/aim-client.js';
 
 const AIM_HOST = 'aim.scratch.invalid';
-const hasBuiltInProxy =
-  typeof (http as unknown as { setGlobalProxyFromEnv?: unknown }).setGlobalProxyFromEnv === 'function';
 
 describe('envProxyFor', () => {
   it('uses HTTPS_PROXY for https targets and HTTP_PROXY for http targets', () => {
@@ -88,10 +88,17 @@ describe('AimClient behind a proxy', () => {
   let aimPort: number;
   let proxyUrl: string;
   const proxyLog: string[] = [];
+  const proxyAuth: Array<string | undefined> = [];
 
   beforeAll(async () => {
     aim = http.createServer((req, res) => {
       res.setHeader('content-type', 'application/json');
+      if (req.url === '/echo') {
+        let body = '';
+        req.on('data', (c) => { body += c; });
+        req.on('end', () => res.end(JSON.stringify({ method: req.method, body, type: req.headers['content-type'] })));
+        return;
+      }
       res.end(req.url === '/health' ? JSON.stringify({ status: 'ok' }) : '{}');
     });
     await new Promise<void>((r) => aim.listen(0, '127.0.0.1', r));
@@ -102,6 +109,7 @@ describe('AimClient behind a proxy', () => {
     const direct = new http.Agent();
     proxy = http.createServer((req, res) => {
       proxyLog.push(`${req.method} ${req.url}`);
+      proxyAuth.push(req.headers['proxy-authorization']);
       const target = new URL(req.url ?? '');
       if (target.hostname !== AIM_HOST) { res.statusCode = 502; res.end(); return; }
       const upstream = http.request(
@@ -112,6 +120,12 @@ describe('AimClient behind a proxy', () => {
     });
     proxy.on('connect', (req, socket, head) => {
       proxyLog.push(`CONNECT ${req.url}`);
+      proxyAuth.push(req.headers['proxy-authorization']);
+      if (req.url === `hang.${AIM_HOST}:443`) {
+        // Never answers; lets go once the client closes its side.
+        socket.on('end', () => socket.destroy());
+        return;
+      }
       if (req.url !== `${AIM_HOST}:${aimPort}`) { socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'); return; }
       const upstream = net.connect(aimPort, '127.0.0.1', () => {
         socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
@@ -126,6 +140,7 @@ describe('AimClient behind a proxy', () => {
   });
 
   afterAll(async () => {
+    proxy.closeAllConnections();
     await new Promise((r) => aim.close(r));
     await new Promise((r) => proxy.close(r));
   });
@@ -134,15 +149,16 @@ describe('AimClient behind a proxy', () => {
     resetEnvProxy();
     vi.unstubAllEnvs();
     proxyLog.length = 0;
+    proxyAuth.length = 0;
   });
 
   function useProxyEnv(): void {
-    for (const name of ['http_proxy', 'https_proxy', 'no_proxy', 'NO_PROXY']) vi.stubEnv(name, '');
+    for (const name of ['http_proxy', 'https_proxy', 'no_proxy', 'NO_PROXY', 'NODE_USE_ENV_PROXY']) vi.stubEnv(name, '');
     vi.stubEnv('HTTP_PROXY', proxyUrl);
     vi.stubEnv('HTTPS_PROXY', proxyUrl);
   }
 
-  it.runIf(hasBuiltInProxy)('reaches AIM through HTTP_PROXY when direct access is impossible', async () => {
+  it('reaches AIM through HTTP_PROXY when direct access is impossible', async () => {
     useProxyEnv();
     const client = new AimClient(`http://${AIM_HOST}:${aimPort}`, { timeoutMs: 5000 });
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
@@ -150,7 +166,7 @@ describe('AimClient behind a proxy', () => {
     expect(proxyLog.every((line) => line.includes(AIM_HOST))).toBe(true);
   });
 
-  it.runIf(hasBuiltInProxy)('sends https requests to the proxy and names it when the proxy refuses', async () => {
+  it('sends https requests to the proxy and names it when the proxy refuses', async () => {
     useProxyEnv();
     const client = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
     const err = await client.health().then(() => null, (e: unknown) => e);
@@ -160,13 +176,98 @@ describe('AimClient behind a proxy', () => {
     expect((err as AimServerError).message).toContain(proxyUrl);
   });
 
-  it.skipIf(hasBuiltInProxy)('names the proxy and says the request went direct on runtimes without proxy support', async () => {
-    useProxyEnv();
-    const client = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
-    const err = await client.health().then(() => null, (e: unknown) => e);
-    expect(err).toBeInstanceOf(AimServerError);
-    expect((err as AimServerError).proxyRoute?.proxy.url).toBe(proxyUrl);
-    expect((err as AimServerError).message).toContain(proxyUrl);
+  describe('on a runtime without built-in proxy support', () => {
+    // Stands in for Node.js releases without http.setGlobalProxyFromEnv
+    // (20.x, 22.x and 24.x before 24.21 among them): the CLI connects to the
+    // proxy itself. On such a runtime these run the real path.
+    function withoutBuiltInSupport(): void {
+      resetEnvProxy({ builtInProxySupport: false });
+      useProxyEnv();
+    }
+
+    it('reaches AIM through HTTP_PROXY with its own connection to the proxy', async () => {
+      withoutBuiltInSupport();
+      const client = new AimClient(`http://${AIM_HOST}:${aimPort}`, { timeoutMs: 5000 });
+      await expect(client.health()).resolves.toEqual({ status: 'ok' });
+      expect(proxyLog).toEqual([`GET http://${AIM_HOST}:${aimPort}/health`]);
+      expect(proxyAuth).toEqual([undefined]);
+    });
+
+    it('connects to the proxy itself even when NODE_USE_ENV_PROXY=1 is set', async () => {
+      // Releases without http.setGlobalProxyFromEnv may ignore the variable.
+      withoutBuiltInSupport();
+      vi.stubEnv('NODE_USE_ENV_PROXY', '1');
+      const client = new AimClient(`http://${AIM_HOST}:${aimPort}`, { timeoutMs: 5000 });
+      await expect(client.health()).resolves.toEqual({ status: 'ok' });
+      expect(proxyLog).toEqual([`GET http://${AIM_HOST}:${aimPort}/health`]);
+    });
+
+    it('does not turn on a proxy for the rest of the process', async () => {
+      withoutBuiltInSupport();
+      expect(routeThroughEnvProxy(`http://${AIM_HOST}:${aimPort}`)?.routing).toBe('cli');
+      await expect(globalThis.fetch(`http://${AIM_HOST}:${aimPort}/health`)).rejects.toThrow();
+      expect(proxyLog).toEqual([]);
+    });
+
+    it('sends a request body and its headers through the proxy', async () => {
+      withoutBuiltInSupport();
+      const url = `http://${AIM_HOST}:${aimPort}/echo`;
+      const res = await fetchWithEnvProxy(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: 'opena2a-cli' }),
+      }, routeThroughEnvProxy(url));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ method: 'POST', body: '{"clientId":"opena2a-cli"}', type: 'application/json' });
+    });
+
+    it('opens a CONNECT tunnel for https and names the proxy and its answer when it refuses', async () => {
+      withoutBuiltInSupport();
+      const client = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
+      const err = await client.health().then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(AimServerError);
+      expect(proxyLog).toEqual([`CONNECT ${AIM_HOST}:443`]);
+      expect((err as AimServerError).proxyRoute).toEqual({ proxy: { url: proxyUrl, variable: 'HTTPS_PROXY' }, routing: 'cli' });
+      expect((err as AimServerError).message).toContain(proxyUrl);
+      expect((err as AimServerError).message).toContain('502');
+    });
+
+    it('sends the proxy user name and password as Proxy-Authorization and never prints them', async () => {
+      withoutBuiltInSupport();
+      const withCreds = proxyUrl.replace('http://', 'http://alice:' + 's3cret' + '@');
+      vi.stubEnv('HTTP_PROXY', withCreds);
+      vi.stubEnv('HTTPS_PROXY', withCreds);
+
+      const plain = new AimClient(`http://${AIM_HOST}:${aimPort}`, { timeoutMs: 5000 });
+      await expect(plain.health()).resolves.toEqual({ status: 'ok' });
+
+      const secure = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
+      const err = await secure.health().then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(AimServerError);
+      const expected = `Basic ${Buffer.from('alice:s3cret').toString('base64')}`;
+      expect(proxyAuth).toEqual([expected, expected]);
+      expect((err as AimServerError).message).toContain(proxyUrl);
+      expect((err as AimServerError).message).not.toMatch(/alice|s3cret/);
+    });
+
+    it('times out and names the proxy when the proxy never answers', async () => {
+      withoutBuiltInSupport();
+      const client = new AimClient(`https://hang.${AIM_HOST}`, { timeoutMs: 300 });
+      const err = await client.health().then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(AimServerError);
+      expect((err as AimServerError).message).toMatch(/timed out after 300ms/);
+      expect((err as AimServerError).message).toContain(proxyUrl);
+    });
+
+    it('goes direct, and says so, when the proxy URL is not an http or https URL', async () => {
+      withoutBuiltInSupport();
+      vi.stubEnv('HTTPS_PROXY', 'socks5://127.0.0.1:1080');
+      const client = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
+      const err = await client.health().then(() => null, (e: unknown) => e);
+      expect((err as AimServerError).proxyRoute?.routing).toBe('direct');
+      expect((err as AimServerError).message).toMatch(/went direct/);
+      expect(proxyLog).toEqual([]);
+    });
   });
 
   it('leaves requests alone when NO_PROXY exempts the AIM host', async () => {

@@ -8,7 +8,7 @@
  * Requests honour HTTPS_PROXY, HTTP_PROXY and NO_PROXY (see env-proxy.ts).
  */
 
-import { routeThroughEnvProxy, describeProxyRoute, type ProxyRoute } from './env-proxy.js';
+import { routeThroughEnvProxy, describeProxyRoute, fetchWithEnvProxy, type ProxyRoute } from './env-proxy.js';
 
 // ---------------------------------------------------------------------------
 // Types — mirror the AIM server API shapes (camelCase)
@@ -423,7 +423,7 @@ export class AimClient {
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      return await globalThis.fetch(url, { ...init, signal: controller.signal });
+      return await fetchWithEnvProxy(url, { ...init, signal: controller.signal }, route);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new AimServerError(
