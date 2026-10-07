@@ -448,11 +448,11 @@ function writeEvaluateVerdict(
 const MAX_READ_ERROR_CHARS = 300;
 
 /**
- * A read error made safe to print. It can quote the log it was raised on, and
- * the log is untrusted, so line breaks and other whitespace become spaces (the
- * error stays on its one line and cannot forge the lines printed after it),
- * control and format characters are removed (no escape sequence reaches the
- * terminal), and the text is cut at MAX_READ_ERROR_CHARS characters.
+ * A read error made safe to print: line breaks and other whitespace become
+ * spaces (the error stays on its one line and cannot forge the lines printed
+ * after it), control and format characters are removed (no escape sequence
+ * reaches the terminal), and the text is cut at MAX_READ_ERROR_CHARS
+ * characters.
  */
 function printableReadError(message: string): string {
   const oneLine = message
