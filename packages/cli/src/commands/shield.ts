@@ -444,6 +444,27 @@ function writeEvaluateVerdict(
   process.stdout.write('\n');
 }
 
+/** Longest read error `recover --archive-log` prints; the rest is cut. */
+const MAX_READ_ERROR_CHARS = 300;
+
+/**
+ * A read error made safe to print. It can quote the log it was raised on, and
+ * the log is untrusted, so line breaks and other whitespace become spaces (the
+ * error stays on its one line and cannot forge the lines printed after it),
+ * control and format characters are removed (no escape sequence reaches the
+ * terminal), and the text is cut at MAX_READ_ERROR_CHARS characters.
+ */
+function printableReadError(message: string): string {
+  const oneLine = message
+    .replace(/[^\S ]+/g, ' ')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
+    .trim();
+  const chars = Array.from(oneLine);
+  if (chars.length <= MAX_READ_ERROR_CHARS) return oneLine;
+  const hidden = chars.length - MAX_READ_ERROR_CHARS;
+  return `${chars.slice(0, MAX_READ_ERROR_CHARS).join('')}... (${hidden} more characters not shown)`;
+}
+
 /**
  * `shield recover --archive-log` -- retire a broken event log.
  *
@@ -493,8 +514,9 @@ async function handleArchiveLog(options: ShieldOptions): Promise<number> {
     verification = verifyEventLog(eventsPath, { countsOnly: true });
   } catch (err) {
     // A log that cannot be read is not known to be intact, and a log is
-    // never archived without its chain being checked.
-    const reason = err instanceof Error ? err.message : String(err);
+    // never archived without its chain being checked. The error reaches the
+    // terminal in both output modes, so it is made printable first.
+    const reason = printableReadError(err instanceof Error ? err.message : String(err));
     return refuse(
       'unreadable',
       'Event log could not be read, so its hash chain was not checked. Nothing archived.\n' +
