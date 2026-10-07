@@ -478,8 +478,9 @@ function printableReadError(message: string): string {
  * the new log carries a verifiable pointer back to the old one and the break
  * cannot be laundered by rotating it away.
  *
- * The chain check and the digest both read the log in fixed chunks and keep
- * no event, so a log of any size is checked and archived without being held.
+ * The chain check and the digest both read the log in fixed chunks. The check
+ * keeps at most one event, the first one past the break, and the digest keeps
+ * none, so a log of any size is checked and archived without being held whole.
  * A log that cannot be read is refused as unreadable, never as intact.
  */
 async function handleArchiveLog(options: ShieldOptions): Promise<number> {
@@ -507,8 +508,9 @@ async function handleArchiveLog(options: ShieldOptions): Promise<number> {
     return refuse('no_event_log', `No event log at ${eventsPath}. Nothing to archive.`);
   }
 
-  // Counts only: the verdict and the anchor need no event held, so the
-  // chain is checked in fixed chunks with no event kept, whatever the size.
+  // Counts only: the verdict and the anchor come from the counters, so the
+  // chain is checked in fixed chunks and at most one event, the first one
+  // past the break, is kept, whatever the size.
   let verification: ReturnType<typeof verifyEventLog>;
   try {
     verification = verifyEventLog(eventsPath, { countsOnly: true });
