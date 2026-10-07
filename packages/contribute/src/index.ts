@@ -10,7 +10,7 @@ import { queueEvent, shouldFlush, buildBatch, clearQueue } from './queue.js';
 import { submitBatch } from './client.js';
 
 /**
- * Main entry point for tools to contribute anonymized data.
+ * Main entry point for tools to contribute scan summaries.
  * Queues the event locally. If the queue reaches the flush threshold,
  * submits the batch to the Registry. No-op if contribution is disabled.
  *

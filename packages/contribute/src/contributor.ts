@@ -6,9 +6,9 @@ import { homedir, hostname, userInfo } from 'node:os';
 const SALT_PATH = join(homedir(), '.opena2a', 'contributor-salt');
 
 /**
- * Returns a stable anonymous contributor token derived from a locally-stored
- * random salt combined with machine identifiers. The token is a SHA-256 hex
- * digest -- no PII leaves the machine.
+ * Returns a stable contributor token: a SHA-256 of the hostname, the user name
+ * and a random salt stored on this machine. It cannot be recomputed without the
+ * salt, and the raw inputs do not leave the machine.
  */
 export function getContributorToken(): string {
   let salt: string;

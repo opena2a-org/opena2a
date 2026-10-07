@@ -37,7 +37,7 @@ export async function submitBatch(
     if (response.ok) {
       if (verbose) {
         process.stderr.write(
-          `  Shared: anonymized results for ${batch.events.length} event(s) (community trust)\n`,
+          `  Shared: scan summaries for ${batch.events.length} event(s) (community trust)\n`,
         );
       }
       return true;

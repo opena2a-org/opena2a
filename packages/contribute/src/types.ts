@@ -29,7 +29,7 @@ export interface ContributionEvent {
   };
 
   /**
-   * Anonymized scan summary (no raw findings). `totalChecks` is optional
+   * Scan summary (no raw findings). `totalChecks` is optional
    * since 0.2.0: a tool reports it from a measured coverage record or omits
    * it — a derived stand-in number is worse than no number.
    */

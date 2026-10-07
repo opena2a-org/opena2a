@@ -26,6 +26,11 @@
   summed to fewer findings than the Findings section under it
   (hackmyagent#393).
 
+### Changed
+- The `telemetry` help line reads "Inspect or toggle the persisted
+  usage-telemetry opt-out for <tool>." It called the telemetry anonymous,
+  and each event carries an install ID that identifies the machine.
+
 ## 0.6.0
 
 ### Added
