@@ -5,8 +5,9 @@
  * data is personal data. Contributed scans carry a contributor token, a hash
  * made on the machine from the hostname, the user name and a random salt. No
  * text listed below may call either of them anonymous, anonymised,
- * irreversible or free of personal data, because none of those is true of
- * the install ID and none has been established for the contributor token.
+ * irreversible or free of personal data (or of PII), because none of those is
+ * true of the install ID and none has been established for the contributor
+ * token.
  *
  * The list is explicit, not a walk of the repository: "irreversible" is the
  * correct word elsewhere (the `identity revoke` help, the skill templates),
@@ -24,10 +25,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 
 const BARRED =
-  /anonymous|anonymi[sz]ed|irreversib|no personally identif|no personal data|does not identify you|cannot identify you/gi;
+  /anonymous|anonymi[sz]ed|irreversib|no personally identif|no personal data|\bno PII\b|does not identify you|cannot identify you/gi;
 
 const TEXTS = [
   'packages/cli/README.md',
+  'packages/cli/docs/testing/release-smoke.md',
   'packages/cli/src/index.ts',
   'packages/cli/src/util/report-submission.ts',
   'packages/cli/src/contextual/advisor.ts',
@@ -38,6 +40,8 @@ const TEXTS = [
   'packages/contribute/src/contributor.ts',
   'packages/contribute/src/index.ts',
   'packages/contribute/src/types.ts',
+  'packages/shared/README.md',
+  'packages/shared/src/user-config.ts',
 ];
 
 // The sentence that replaces "anonymous" wherever a text describes the
@@ -73,6 +77,7 @@ test('the check catches each barred phrase when one is planted', () => {
     'the hash is irreversible',
     'no personally identifying information is collected',
     'No personal data, no source code.',
+    '# Registry intelligence (opt-in, no PII, no source code)',
     'a random value that does not identify you',
     'the token cannot identify you',
   ];

@@ -108,7 +108,7 @@ function serializeManifestYaml(m: AgentManifest): string {
     `  autoSync: ${m.bridging.autoSync}`,
     `  lastSyncAt: ${m.bridging.lastSyncAt ? `"${m.bridging.lastSyncAt}"` : 'null'}`,
     '',
-    '# Registry intelligence (opt-in, no PII, no source code)',
+    '# Registry intelligence (opt-in, no source code)',
     'registry:',
     `  contribute: ${m.registry.contribute}`,
     `  gtin: ${m.registry.gtin}`,

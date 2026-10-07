@@ -56,7 +56,7 @@ appendScanEntry({
 | `projectConfigSchema` | Zod schema for project configuration |
 | `loadUserConfig()` | Load user preferences from `~/.opena2a/` |
 | `saveUserConfig(config)` | Persist user preferences |
-| `isContributeEnabled()` | Check if anonymous data contribution is enabled |
+| `isContributeEnabled()` | Check if scan summary contribution is enabled |
 | `setContributeEnabled(bool)` | Toggle data contribution |
 | `loadScanHistory()` | Load local scan history |
 | `appendScanEntry(entry)` | Add a scan result to history |
