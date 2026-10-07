@@ -47,6 +47,7 @@ const TEXTS = [
   'packages/contribute/src/types.ts',
   'packages/shared/README.md',
   'packages/shared/src/user-config.ts',
+  'packages/telemetry/README.md',
   'packages/telemetry/package.json',
   'packages/telemetry/src/config.ts',
   'packages/telemetry/src/index.ts',
@@ -112,16 +113,21 @@ test('the check catches each barred phrase when one is planted', () => {
   }
 });
 
-test('the opena2a README states that each event carries an install ID that identifies the machine', () => {
-  assert.equal(
-    createHash('sha256').update(INSTALL_ID_SENTENCE).digest('hex').slice(0, 12),
-    INSTALL_ID_SENTENCE_SHA256_PREFIX,
-  );
-  // The README joins the sentence to a pointer at the privacy policy with a
-  // semicolon, so everything but its closing period must appear.
-  const readme = readFileSync(path.join(REPO_ROOT, 'packages/cli/README.md'), 'utf8');
-  assert.ok(readme.includes(INSTALL_ID_SENTENCE.slice(0, -1)));
-});
+// The READMEs that describe the usage events. Each joins the sentence to a
+// pointer at the privacy policy with a semicolon, so everything but its
+// closing period must appear.
+const EVENT_READMES = ['packages/cli/README.md', 'packages/telemetry/README.md'];
+
+for (const file of EVENT_READMES) {
+  test(`${file} states that each event carries an install ID that identifies the machine`, () => {
+    assert.equal(
+      createHash('sha256').update(INSTALL_ID_SENTENCE).digest('hex').slice(0, 12),
+      INSTALL_ID_SENTENCE_SHA256_PREFIX,
+    );
+    const readme = readFileSync(path.join(REPO_ROOT, file), 'utf8');
+    assert.ok(readme.includes(INSTALL_ID_SENTENCE.slice(0, -1)), `${file} lacks the install ID sentence`);
+  });
+}
 
 test('the telemetry CHANGELOG carries the install ID notice and the "irreversible" correction in its newest section', () => {
   assert.equal(

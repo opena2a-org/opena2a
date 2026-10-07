@@ -2,7 +2,7 @@
 
 Tier-1 usage telemetry SDK for OpenA2A CLIs and tools.
 
-Fires anonymous events (tool name, version, command name, success, duration, an optional outcome reason, platform, node major) to the OpenA2A Registry. **No content collection** — no file paths, no scanned content, no prompts, no responses, no env vars, no IP storage. Schema and rationale: [`opena2a.org/telemetry`](https://opena2a.org/telemetry) (canonical disclosure) + `opena2a-registry/docs/telemetry-spec.md` (engineering spec).
+Fires usage events (tool name, version, command name, success, duration, an optional outcome reason, platform, node major, install ID) to the OpenA2A Registry. Each event carries an install ID that identifies the machine, so the data is personal data; https://opena2a.org/privacy explains how the ID is made. **No content collection** — no file paths, no scanned content, no prompts, no responses, no env vars, no IP storage. Schema and rationale: [`opena2a.org/telemetry`](https://opena2a.org/telemetry) (canonical disclosure) + `opena2a-registry/docs/telemetry-spec.md` (engineering spec).
 
 ## Install
 
