@@ -15,6 +15,7 @@
  * - suggest:   LLM-powered policy suggestions from observed behavior
  * - explain:   LLM-powered anomaly explanations for events
  * - triage:    LLM-powered incident classification and response
+ * - monitor:   Import ARP events and summarize runtime protection
  */
 
 import * as fs from 'node:fs';
@@ -102,6 +103,7 @@ export async function shield(options: ShieldOptions): Promise<number> {
       process.stderr.write('  suggest    LLM-powered policy suggestions from observed behavior\n');
       process.stderr.write('  explain    LLM-powered anomaly explanations for events\n');
       process.stderr.write('  triage     LLM-powered incident classification and response\n');
+      process.stderr.write('  monitor    Import ARP events and summarize runtime protection\n');
       return 1;
   }
 }
@@ -220,11 +222,11 @@ async function handleLog(options: ShieldOptions): Promise<number> {
   }
 
   for (const { event, verified: isVerified } of rows) {
-    const ts = event.timestamp;
+    const ts = printableText(event.timestamp);
     const sev = colorSeverity(event.severity);
-    const action = event.action;
-    const target = event.target;
-    const outcome = event.outcome;
+    const action = printableText(event.action);
+    const target = printableText(event.target);
+    const outcome = printableText(event.outcome);
     const marker = isVerified ? '' : ' ' + yellow('UNVERIFIED');
 
     process.stdout.write(`[${ts}] [${sev}] ${action} -> ${target} (${outcome})${marker}\n`);
@@ -462,17 +464,11 @@ function writeEvaluateVerdict(
 const MAX_READ_ERROR_CHARS = 300;
 
 /**
- * A read error made safe to print: line breaks and other whitespace become
- * spaces (the error stays on its one line and cannot forge the lines printed
- * after it), control and format characters are removed (no escape sequence
- * reaches the terminal), and the text is cut at MAX_READ_ERROR_CHARS
- * characters.
+ * A read error made safe to print: printableText on one trimmed line, cut at
+ * MAX_READ_ERROR_CHARS characters.
  */
 function printableReadError(message: string): string {
-  const oneLine = message
-    .replace(/[^\S ]+/g, ' ')
-    .replace(/[\p{Cc}\p{Cf}]/gu, '')
-    .trim();
+  const oneLine = printableText(message).trim();
   const chars = Array.from(oneLine);
   if (chars.length <= MAX_READ_ERROR_CHARS) return oneLine;
   const hidden = chars.length - MAX_READ_ERROR_CHARS;
@@ -1042,7 +1038,7 @@ async function buildWeeklyReport(
   byAgent: Record<string, number>,
   topActions: { name: string; count: number }[],
 ): Promise<import('../shield/types.js').WeeklyReport> {
-  const { getARPStats } = await import('../shield/arp-bridge.js');
+  const { computeARPStats } = await import('../shield/arp-bridge.js');
   const { hostname } = await import('node:os');
 
   const now = new Date();
@@ -1165,7 +1161,11 @@ async function buildWeeklyReport(
   const mediumCount = threatSeverity['medium'] ?? 0;
   const blockedCount = events.filter(e => e.source !== 'shield' && e.outcome === 'blocked').length;
 
-  const arpStats = getARPStats(since);
+  // From the verified events this report already holds, as `review` does:
+  // an ARP event past a chain break never marks ARP active or raises the
+  // enforcement and coverage factors.  Same window as the raw read it
+  // replaces: source arp, the newest 10000 in the period.
+  const arpStats = computeARPStats(events.filter(e => e.source === 'arp').slice(0, 10000));
   const hasRealActivity = threatEvents.length > 0;
   const arpIsActive = arpStats.totalEvents > 0;
 
@@ -1293,12 +1293,13 @@ async function handleMonitor(options: ShieldOptions): Promise<number> {
   const result = importARPEvents(targetDir, options.agent);
 
   // Step 2: Get ARP stats from the verified events in Shield's unified log
-  const { stats, verification } = getVerifiedARPStats(options.since ?? '7d');
+  const { stats, unverifiedStats, verification } = getVerifiedARPStats(options.since ?? '7d');
 
   if (isJson) {
     process.stdout.write(JSON.stringify({
       import: result,
       stats,
+      unverifiedStats,
       verification,
     }, null, 2) + '\n');
     return 0;
@@ -1332,6 +1333,18 @@ async function handleMonitor(options: ShieldOptions): Promise<number> {
   }
 
   writeChainBreakNotice(verification, 'not counted', '  ');
+
+  // Counts only: what the break holds back, so a broken chain never reads
+  // as fewer detections without saying how many were left out.
+  if (unverifiedStats.totalEvents > 0) {
+    const counted = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+    const held = [counted(unverifiedStats.totalEvents, 'ARP event', 'ARP events')];
+    if (unverifiedStats.anomalies > 0) held.push(counted(unverifiedStats.anomalies, 'anomaly', 'anomalies'));
+    if (unverifiedStats.violations > 0) held.push(counted(unverifiedStats.violations, 'violation', 'violations'));
+    if (unverifiedStats.threats > 0) held.push(counted(unverifiedStats.threats, 'threat', 'threats'));
+    process.stdout.write(bold('  Unverified, not counted') + '\n');
+    process.stdout.write(`    ${yellow(held.join(', '))} ${dim('past the chain break in this period')}\n\n`);
+  }
 
   // ARP stats from Shield's unified log
   if (stats.totalEvents > 0) {
@@ -1576,6 +1589,10 @@ async function handleSuggest(options: ShieldOptions): Promise<number> {
   const events = verified.events;
 
   if (events.length === 0) {
+    if (isJson) {
+      writeNoResultJson(verification.chainBroken ? 'no-verified-events' : 'no-events', verification);
+      return 0;
+    }
     if (verification.chainBroken) {
       process.stdout.write(yellow('No verified events found.') + '\n');
       writeChainBreakNotice(verification, 'left out of the suggestion');
@@ -1630,6 +1647,11 @@ async function handleSuggest(options: ShieldOptions): Promise<number> {
   });
 
   if (!suggestion) {
+    if (isJson) {
+      writeNoResultJson('llm-unavailable', verification);
+      return 0;
+    }
+    writeChainBreakNotice(verification, 'left out of the suggestion');
     process.stdout.write(dim('LLM analysis unavailable. The backend may be unreachable.\n'));
     return 0;
   }
@@ -1715,6 +1737,10 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
   ].slice(0, limit);
 
   if (rows.length === 0) {
+    if (isJson) {
+      process.stdout.write('[]\n');
+      return 0;
+    }
     process.stdout.write(yellow('No events found matching the filters.') + ' ' + dim('Try: opena2a shield log --count 50') + '\n');
     return 0;
   }
@@ -1769,7 +1795,9 @@ async function handleExplain(options: ShieldOptions): Promise<number> {
   writeChainBreakNotice(verification, 'not explained');
   for (const { event, verified: isVerified, explanation } of results) {
     const sev = colorSeverity(event.severity);
-    process.stdout.write(`[${event.timestamp}] [${sev}] ${event.action} -> ${event.target}\n`);
+    process.stdout.write(
+      `[${printableText(event.timestamp)}] [${sev}] ${printableText(event.action)} -> ${printableText(event.target)}\n`,
+    );
 
     if (!isVerified) {
       process.stdout.write(`  ${yellow('UNVERIFIED')} ${dim('Past the event chain break; not explained.')}\n\n`);
@@ -1818,8 +1846,9 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   const count = options.count ? parseInt(options.count, 10) : 10;
 
   // Verified events only: an event past a chain break is never triaged.
+  // `--severity` is a threshold: the default `high` triages critical too.
   const verified = readVerifiedEvents({
-    severity,
+    minSeverity: severity,
     count,
     agent: options.agent,
   });
@@ -1827,6 +1856,10 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   const events = verified.events;
 
   if (events.length === 0) {
+    if (isJson) {
+      writeNoResultJson(verification.chainBroken ? 'no-verified-events' : 'no-events', verification);
+      return 0;
+    }
     if (verification.chainBroken) {
       process.stdout.write(yellow(`No verified ${severity}+ severity events found.`) + '\n');
       writeChainBreakNotice(verification, 'left out of the triage');
@@ -1852,6 +1885,11 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
   });
 
   if (!triage) {
+    if (isJson) {
+      writeNoResultJson('llm-unavailable', verification);
+      return 0;
+    }
+    writeChainBreakNotice(verification, 'left out of the triage');
     process.stdout.write(dim('LLM analysis unavailable. The backend may be unreachable.\n'));
     return 0;
   }
@@ -1888,6 +1926,16 @@ async function handleTriage(options: ShieldOptions): Promise<number> {
 // --- Formatting helpers ---
 
 /**
+ * The `--format json` output of suggest and triage when there is no result
+ * to print: why (`no-events`, `no-verified-events` or `llm-unavailable`)
+ * and the log's verification status, so the output stays JSON and still
+ * carries that status.
+ */
+function writeNoResultJson(status: string, verification: EventVerificationStatus): void {
+  process.stdout.write(JSON.stringify({ status, verification }, null, 2) + '\n');
+}
+
+/**
  * Printed by a feature that read events through the chain-verified reader
  * when the chain is broken: where it breaks, what the feature did with the
  * events from there on, and the commands to inspect it and start a fresh
@@ -1909,6 +1957,27 @@ function writeChainBreakNotice(
   process.stdout.write(indent + dim('  Fresh chain: opena2a shield recover --archive-log') + '\n\n');
 }
 
-function colorSeverity(severity: EventSeverity): string {
-  return severityColor(severity)(severity.toUpperCase());
+/**
+ * Text read from the event log or an error, made safe to print: line breaks
+ * and other whitespace become spaces (the value stays on its one line and
+ * cannot forge the lines printed after it), and control and format
+ * characters are removed (no escape sequence reaches the terminal, so a
+ * value cannot hide the text printed after it, such as an UNVERIFIED
+ * marker).  A value that is not a string is printed as its JSON text.
+ */
+function printableText(value: unknown): string {
+  const text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+  return text
+    .replace(/[^\S ]+/g, ' ')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '');
+}
+
+/**
+ * A severity label.  An event line is data, so its severity may be any JSON
+ * value; one that is not a string is printed as its JSON text, and never
+ * stops the listing.
+ */
+function colorSeverity(severity: unknown): string {
+  const label = printableText(severity ?? 'unknown');
+  return severityColor(label)(label.toUpperCase());
 }

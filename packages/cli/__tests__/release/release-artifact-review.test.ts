@@ -1,6 +1,7 @@
 /**
- * Behavioural tests for scripts/release-artifact-review.mjs (QGF OPA-04,
- * AC2 + AC3).
+ * Behavioural tests for scripts/release-artifact-review.mjs: every check is
+ * named in the census line whatever its verdict, fails on the defect it
+ * exists to catch, and passes on a clean tarball.
  *
  * Red first, per check: every blocking check is proven able to FAIL on a
  * tarball poisoned with exactly the defect it exists to catch, before the
@@ -19,7 +20,7 @@
  *    could not run is not a check that passed.
  *
  * There is NO offline tolerance and NO CI detection anywhere in this file
- * (OPA-04.AC3 revision 2: the own-tarball case reads neither `CI` nor
+ * (the own-tarball case reads neither `CI` nor
  * `GITHUB_ACTIONS`). The tag push is the publish event and it is made on a
  * machine where those variables are unset; a tolerance conditioned on them
  * would exempt the publish path itself. A precondition here is a test
@@ -37,7 +38,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'release-artifact-review.mjs');
 const CLI_DIR = path.join(REPO_ROOT, 'packages', 'cli');
 
-/** Every check AC2 defines, in the script's census order. */
+/** Every check the script runs, in the order its census line names them. */
 const ALL_CHECKS = [
   'entry-allowlist',
   'no-dotfiles',
@@ -50,7 +51,7 @@ const ALL_CHECKS = [
   'consumer-closure',
 ];
 
-/** The checks whose verdict needs no network reading (AC3's own-tarball list). */
+/** The checks whose verdict needs no network reading (the checks the own-tarball case must pass). */
 const NETWORK_FREE_CHECKS = [
   'entry-allowlist',
   'no-dotfiles',
@@ -63,7 +64,7 @@ const NETWORK_FREE_CHECKS = [
 
 /**
  * Commands that satisfy a check's precondition, where one exists. Used to
- * build the AC3-mandated failure message when a check reports `precondition`
+ * build the failure message when a check reports `precondition`
  * on a subject where that is never acceptable.
  */
 const PRECONDITION_REMEDY: Record<string, string> = {
@@ -73,7 +74,7 @@ const PRECONDITION_REMEDY: Record<string, string> = {
   'global-install-smoke': 'npm run build   (the packed tarball must carry a working dist/)',
 };
 
-/** The AC3 failure message for a precondition that is never tolerable. */
+/** The failure message for a precondition that is never tolerable. */
 function preconditionFailure(check: string, out: string): string {
   const detail = out
     .split('\n')
@@ -247,8 +248,8 @@ function getOwnPublishedResult(): ReviewResult {
 
 /**
  * consumer-closure findings on our own tarball that nothing in this repository
- * can clear, each held on an owner card rather than silently tolerated. Any
- * FAIL row not matched here blocks the release job, and so fails this file.
+ * can clear, each named here rather than silently tolerated. Any FAIL row not
+ * matched here blocks the release job, and so fails this file.
  *   - hackmyagent in GHSA-ccp3-g7fv-9cqr: published critical, range
  *     `>= 0.17.11` with no patched version, so every release matches.
  *   - hackmyagent@0.17.11 deprecated: reached only through ai-trust, whose
@@ -259,16 +260,15 @@ function getOwnPublishedResult(): ReviewResult {
  *     on every tree without a package.json (benchmark rates a clean project
  *     "Needs Improvement"); the fix (hackmyagent#756) is on main, unpublished.
  *     Moving the pin waits for the release that carries both.
- * Card: todo decisions, unit 9899 (opena2a-cli consumer closure).
  */
-const OWNER_RETAINED_CLOSURE_ROWS = [
+const UNCLEARABLE_CLOSURE_ROWS = [
   /^FAIL hackmyagent@\S+ inside GHSA-ccp3-g7fv-9cqr \(critical, ">= 0\.17\.11"\)$/,
   /^FAIL hackmyagent@0\.17\.11 is deprecated on the registry: /,
   /^FAIL @opena2a\/aim-sdk@1\.0\.2 inside GHSA-r2hq-x5w4-5v63 \(low, [^)]*\) and GHSA-m735-6r63-9h7q \(high, [^)]*\)$/,
 ];
 
 // ---------------------------------------------------------------------------
-// AC3 — red, one poisoned tarball per check.
+// Red: one poisoned tarball per check.
 // ---------------------------------------------------------------------------
 
 interface PoisonCase {
@@ -279,7 +279,7 @@ interface PoisonCase {
 
 const POISON_CASES: PoisonCase[] = [
   {
-    title: 'OPA-04.AC3 a dotfile entry fails no-dotfiles',
+    title: 'a dotfile entry fails no-dotfiles',
     check: 'no-dotfiles',
     spec: {
       name: 'opena2a-qgf-dotfile',
@@ -290,7 +290,7 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
-    title: 'OPA-04.AC3 a fixtures/ entry fails no-test-material',
+    title: 'a fixtures/ entry fails no-test-material',
     check: 'no-test-material',
     spec: {
       name: 'opena2a-qgf-fixtures',
@@ -299,7 +299,7 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
-    title: 'OPA-04.AC3 a postinstall script fails no-install-scripts',
+    title: 'a postinstall script fails no-install-scripts',
     check: 'no-install-scripts',
     spec: {
       name: 'opena2a-qgf-postinstall',
@@ -309,7 +309,7 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
-    title: 'OPA-04.AC3 a caret range on an @opena2a/ dependency fails pinned-first-party-deps',
+    title: 'a caret range on an @opena2a/ dependency fails pinned-first-party-deps',
     check: 'pinned-first-party-deps',
     spec: {
       name: 'opena2a-qgf-caret-scope',
@@ -319,7 +319,7 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
-    title: 'OPA-04.AC3 a caret range on hackmyagent fails pinned-first-party-deps',
+    title: 'a caret range on hackmyagent fails pinned-first-party-deps',
     check: 'pinned-first-party-deps',
     spec: {
       name: 'opena2a-qgf-caret-hma',
@@ -351,7 +351,7 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
-    title: 'OPA-04.AC3 a dist/index.js that exits 1 on --version fails global-install-smoke',
+    title: 'a dist/index.js that exits 1 on --version fails global-install-smoke',
     check: 'global-install-smoke',
     spec: {
       // Packed name opena2a-cli, because the smoke check only exercises the
@@ -364,7 +364,7 @@ const POISON_CASES: PoisonCase[] = [
   },
   {
     title:
-      'OPA-04.AC3 a first-party pin that neither the registry nor a tarball beside the target serves fails global-install-smoke',
+      'a first-party pin that neither the registry nor a tarball beside the target serves fails global-install-smoke',
     check: 'global-install-smoke',
     spec: {
       // A well-behaved bin, so the pin alone is what fires. The fixture sits
@@ -379,7 +379,7 @@ const POISON_CASES: PoisonCase[] = [
     },
   },
   {
-    title: 'OPA-04.AC3 a dist/ file carrying a value of the control class fails credential-scan',
+    title: 'a dist/ file carrying a value of the control class fails credential-scan',
     check: 'credential-scan',
     spec: {
       name: 'opena2a-qgf-cred',
@@ -389,7 +389,7 @@ const POISON_CASES: PoisonCase[] = [
   },
 ];
 
-describe('release-artifact-review: poisoned tarballs go red (OPA-04.AC3)', () => {
+describe('release-artifact-review: poisoned tarballs go red', () => {
   for (const { title, check, spec } of POISON_CASES) {
     it(
       title,
@@ -406,7 +406,7 @@ describe('release-artifact-review: poisoned tarballs go red (OPA-04.AC3)', () =>
   }
 
   it(
-    'OPA-04.AC3 a dependency on a deprecated hackmyagent version fails consumer-closure',
+    'a dependency on a deprecated hackmyagent version fails consumer-closure',
     () => {
       const deprecated = findDeprecatedHackmyagentVersion();
       // No offline tolerance: this red case must actually run, everywhere.
@@ -441,7 +441,7 @@ describe('release-artifact-review: poisoned tarballs go red (OPA-04.AC3)', () =>
   );
 
   it(
-    'OPA-04.AC3 a tarball with no dist/ exits non-zero with a precondition',
+    'a tarball with no dist/ exits non-zero with a precondition',
     () => {
       const r = runReview(
         buildTarball(scratch, {
@@ -499,12 +499,12 @@ function findDeprecatedHackmyagentVersion(): { version: string; notice: string }
 }
 
 // ---------------------------------------------------------------------------
-// AC3 — green: the clean fixture, then the tarball this tree would publish.
+// Green: the clean fixture, then the tarball this tree would publish.
 // ---------------------------------------------------------------------------
 
-describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', () => {
+describe('release-artifact-review: clean subjects go green', () => {
   it(
-    'OPA-04.AC3 a clean fixture tarball exits 0 with every check pass',
+    'a clean fixture tarball exits 0 with every check pass',
     () => {
       const r = getCleanResult();
       for (const check of ALL_CHECKS) {
@@ -519,7 +519,7 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
   );
 
   it(
-    'OPA-04.AC2 the census line names every check, whatever its verdict',
+    'the census line names every check, whatever its verdict',
     () => {
       const r = getCleanResult();
       expect(Object.keys(r.census).sort()).toEqual([...ALL_CHECKS].sort());
@@ -527,7 +527,7 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
     840_000
   );
 
-  it('OPA-04.AC2 --advisory-states is honoured and the states read are printed', { timeout: 840_000 }, () => {
+  it('--advisory-states is honoured and the states read are printed', { timeout: 840_000 }, () => {
     // The clean run above passed `--advisory-states published`.
     expect(getCleanResult().out).toContain('advisory-states read: published');
     // And an unknown value is refused rather than silently defaulted.
@@ -538,7 +538,7 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
   });
 
   it(
-    'OPA-04.AC3 the opena2a-cli tarball packed from this tree passes every network-free check',
+    'the opena2a-cli tarball packed from this tree passes every network-free check',
     () => {
       // Never skipped, never conditioned on the environment: the tag push is
       // the publish event and it happens where CI variables are unset, so a
@@ -580,7 +580,7 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
   );
 
   it(
-    'unit 9899 the release job\'s consumer-closure on our own tarball fails only on owner-retained rows',
+    'the release job\'s consumer-closure on our own tarball fails only on rows this repository cannot clear',
     () => {
       const r = getOwnPublishedResult();
       if (r.census['consumer-closure'] === 'precondition') {
@@ -591,8 +591,8 @@ describe('release-artifact-review: clean subjects go green (OPA-04.AC2/AC3)', ()
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l.startsWith('FAIL '))
-        .filter((l) => !OWNER_RETAINED_CLOSURE_ROWS.some((re) => re.test(l)));
-      expect(unretained, `consumer-closure rows no card holds\n${r.out}`).toEqual([]);
+        .filter((l) => !UNCLEARABLE_CLOSURE_ROWS.some((re) => re.test(l)));
+      expect(unretained, `consumer-closure rows not listed as unclearable\n${r.out}`).toEqual([]);
     },
     840_000
   );

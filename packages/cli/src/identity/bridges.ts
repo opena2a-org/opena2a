@@ -12,6 +12,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { verifyEventLog, type EventLogVerification } from '../shield/events.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,6 +40,11 @@ export interface BridgeResult {
   imported: number;
   skipped: number;
   errors: number;
+  /**
+   * Shield events at or after an event-log chain break: unverified, so not
+   * imported.  Set by importShieldEvents only.
+   */
+  unverified?: number;
 }
 
 export interface BridgeResults {
@@ -47,7 +53,7 @@ export interface BridgeResults {
   hma: BridgeResult;
   configguard: BridgeResult;
   secretless: BridgeResult;
-  total: { imported: number; skipped: number; errors: number };
+  total: { imported: number; skipped: number; errors: number; unverified: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -71,36 +77,32 @@ function getImportedIds(aim: AIMCoreLike): Set<string> {
 // Shield Events -> AIM Audit
 // ---------------------------------------------------------------------------
 
+/**
+ * Import the Shield event log through the chain check, the read every Shield
+ * command uses: an event at or after the first chain break is unverified, so
+ * it is counted in `unverified` and never logged into the AIM audit log as a
+ * Shield event.
+ */
 export function importShieldEvents(aim: AIMCoreLike, opts?: { since?: string }): BridgeResult {
   const eventsPath = join(homedir(), '.opena2a', 'shield', 'events.jsonl');
-  if (!existsSync(eventsPath)) return { imported: 0, skipped: 0, errors: 0 };
+  if (!existsSync(eventsPath)) return { imported: 0, skipped: 0, errors: 0, unverified: 0 };
 
-  let content: string;
+  let log: EventLogVerification;
   try {
-    content = readFileSync(eventsPath, 'utf-8').trim();
+    log = verifyEventLog(eventsPath);
   } catch {
-    return { imported: 0, skipped: 0, errors: 0 };
+    return { imported: 0, skipped: 0, errors: 0, unverified: 0 };
   }
 
-  if (!content) return { imported: 0, skipped: 0, errors: 0 };
-
-  const lines = content.split('\n');
   const importedIds = getImportedIds(aim);
   const sinceMs = opts?.since ? new Date(opts.since).getTime() : 0;
 
   let imported = 0;
   let skipped = 0;
-  let errors = 0;
+  const errors = log.unreadableLines;
 
-  for (const line of lines) {
-    let event: any;
-    try {
-      event = JSON.parse(line.trim());
-    } catch {
-      errors++;
-      continue;
-    }
-
+  // The verified events in the order the log records them.
+  for (const event of [...log.events].reverse()) {
     // Skip already-imported
     if (importedIds.has(event.id)) {
       skipped++;
@@ -140,7 +142,7 @@ export function importShieldEvents(aim: AIMCoreLike, opts?: { since?: string }):
     imported++;
   }
 
-  return { imported, skipped, errors };
+  return { imported, skipped, errors, unverified: log.untrustedCount };
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +373,7 @@ export function importAllToolEvents(
 ): BridgeResults {
   const tools = enabledTools ?? { shield: true, arp: true, hma: true, configguard: true, secretless: true };
 
-  const shield = tools.shield ? importShieldEvents(aim) : { imported: 0, skipped: 0, errors: 0 };
+  const shield = tools.shield ? importShieldEvents(aim) : { imported: 0, skipped: 0, errors: 0, unverified: 0 };
   const arp = tools.arp ? importARPEvents(aim, targetDir) : { imported: 0, skipped: 0, errors: 0 };
   const hma = tools.hma ? importHMAScanResults(aim, targetDir) : { imported: 0, skipped: 0, errors: 0 };
   const configguard = tools.configguard ? importConfigGuardState(aim, targetDir) : { imported: 0, skipped: 0, errors: 0 };
@@ -381,6 +383,7 @@ export function importAllToolEvents(
     imported: shield.imported + arp.imported + hma.imported + configguard.imported + secretless.imported,
     skipped: shield.skipped + arp.skipped + hma.skipped + configguard.skipped + secretless.skipped,
     errors: shield.errors + arp.errors + hma.errors + configguard.errors + secretless.errors,
+    unverified: shield.unverified ?? 0,
   };
 
   return { shield, arp, hma, configguard, secretless, total };
