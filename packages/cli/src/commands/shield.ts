@@ -490,7 +490,10 @@ function printableReadError(message: string): string {
  *
  * The chain check and the digest both read the log in fixed chunks. The check
  * keeps at most one event, the first one past the break, and the digest keeps
- * none, so a log of any size is checked and archived without being held whole.
+ * none. The check does assemble each line whole before parsing it, so it
+ * holds one line at a time, up to the longest string the runtime can create
+ * (a longer line is counted as unreadable): a log that is one long line is
+ * held whole while that line is parsed.
  * A log that cannot be read is refused as unreadable, never as intact.
  */
 async function handleArchiveLog(options: ShieldOptions): Promise<number> {

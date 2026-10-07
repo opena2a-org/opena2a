@@ -10,9 +10,9 @@
  * token.
  *
  * The list is explicit, not a walk of the repository: "irreversible" is the
- * correct word elsewhere (the `identity revoke` help, the skill templates),
- * and a repository-wide check would fail on those uses. A file that starts
- * describing telemetry or contribution joins TEXTS.
+ * correct word elsewhere (the skill templates, the aim-core vault store's
+ * `destroy()`), and a repository-wide check would fail on those uses. A file
+ * that starts describing telemetry or contribution joins TEXTS.
  *
  * Change logs are records of what a release said, so they are fixed forward
  * and stay out of TEXTS: the telemetry library's 0.2.0 entry keeps the word
@@ -38,6 +38,7 @@ const TEXTS = [
   'packages/cli/docs/testing/release-smoke.md',
   'packages/cli/src/index.ts',
   'packages/cli/src/util/report-submission.ts',
+  'packages/cli/src/util/telemetry-help.ts',
   'packages/cli/src/contextual/advisor.ts',
   'packages/cli/src/identity/manifest.ts',
   'packages/cli-ui/src/telemetry-command.ts',
@@ -52,6 +53,7 @@ const TEXTS = [
   'packages/telemetry/package.json',
   'packages/telemetry/src/config.ts',
   'packages/telemetry/src/index.ts',
+  'packages/telemetry/src/types.ts',
 ];
 
 // The sentence that replaces "anonymous" wherever a text describes the
@@ -143,4 +145,17 @@ test('the telemetry CHANGELOG carries the install ID notice and the "irreversibl
 test('the CHANGELOG check fails when the notice sits under an older release only', () => {
   const planted = ['# Changelog', '', '## Unreleased', '', '## 0.3.0', '', RELEASE_NOTICE, ''].join('\n');
   assert.equal(newestSection(planted).includes(RELEASE_NOTICE), false);
+});
+
+// opena2a-cli's retired change log keeps its history as well: its 0.9.0 entry
+// still calls usage telemetry anonymous and its 0.9.1 entry calls a
+// contributed summary anonymized. The root change log, where opena2a-cli's
+// entries now go, carries the correction.
+const ROOT_CHANGELOG = 'CHANGELOG.md';
+const CLI_ANONYMITY_CORRECTION =
+  'The 0.9.0 entry in `packages/cli/CHANGELOG.md` called usage telemetry anonymous and its 0.9.1 entry called a contributed summary anonymized, which was misleading: each event carries the install ID, and each contributed summary carries a contributor token made on the machine.';
+
+test('the root CHANGELOG corrects the anonymity claims of the retired opena2a-cli change log', () => {
+  const root = readFileSync(path.join(REPO_ROOT, ROOT_CHANGELOG), 'utf8');
+  assert.ok(root.includes(CLI_ANONYMITY_CORRECTION), 'correction missing from the root CHANGELOG');
 });

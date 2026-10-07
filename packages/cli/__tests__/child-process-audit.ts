@@ -281,4 +281,17 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'on a pseudo-terminal (so 2 processes worst case), and spawnSync(node dist/index.js ' +
       'guard sign|verify), one at a time',
   },
+  'commands/review-global-quiet.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js --quiet review <dir> --skip-hma --no-open --report <path>) ' +
+      'once, under a scratch HOME; --skip-hma and --no-open keep review from starting ' +
+      'the scanner or a browser (#388)',
+  },
+  'help-telemetry-state.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js --help) per telemetry setting, one at a time (#388)',
+  },
 };

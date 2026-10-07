@@ -74,9 +74,9 @@ export interface Status {
   configPath: string;
   policyURL: string;
   /**
-   * The anonymous install ID, or null while telemetry is off. No ID is
-   * derived, read or kept while any opt-out is in force, so there is none
-   * to show.
+   * The install ID, which identifies the machine, or null while telemetry is
+   * off. No ID is derived, read or kept while any opt-out is in force, so
+   * there is none to show.
    */
   installId: string | null;
   /**

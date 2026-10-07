@@ -537,7 +537,10 @@ function eventWindow(filters: EventFilters | null): {
 export interface EventLogReadOptions {
   /** The events to keep, as readEvents filters them.  The rest are only counted. */
   filters?: EventFilters;
-  /** Keep no events: return only the verdict and the counts. */
+  /**
+   * Keep no events in the windows: return the verdict, the counts and
+   * `firstUntrusted`, the one event kept, the first past the break.
+   */
   countsOnly?: boolean;
   /** Bytes per read.  Tests lower it to move the chunk edges. */
   chunkBytes?: number;
