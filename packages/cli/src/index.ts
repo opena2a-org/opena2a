@@ -63,7 +63,7 @@ process.env.CRYPTOSERVE_CLI_PREFIX = 'opena2a crypto';
 process.env.AI_TRUST_CLI_PREFIX = 'opena2a registry';
 
 async function main(): Promise<void> {
-  // Tier-1 anonymous usage telemetry \u2014 default ON; opt-out via OPENA2A_TELEMETRY=off
+  // Tier-1 usage telemetry \u2014 default ON; opt-out via OPENA2A_TELEMETRY=off
   // or `opena2a telemetry off`. See README \u00a7Telemetry. Disclosure surfaces:
   // README, --version line, telemetry subcommand, opena2a.org/telemetry.
   const tele = await import('@opena2a/telemetry');
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, sarif', 'text')
     .option('--json', 'Shorthand for --format json')
-    .option('--contribute', 'Share anonymized scan results with OpenA2A community')
+    .option('--contribute', 'Share scan summaries with OpenA2A community')
     .option('--no-contribute', 'Skip community contribution for this invocation only')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
     .option('--analm', 'AI-powered threat analysis using AnaLM')
@@ -172,7 +172,7 @@ Smart Features:
   $ opena2a audit my project     Natural language command matching
 
 Telemetry:
-  Anonymous usage telemetry is on. Disable: OPENA2A_TELEMETRY=off
+  Usage telemetry is on and each event carries a persistent install ID. Disable: OPENA2A_TELEMETRY=off
   Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute
 
 Learn more: https://opena2a.org/docs`);
@@ -259,7 +259,7 @@ Learn more: https://opena2a.org/docs`);
   // Protect command (direct, not adapter-based)
   program
     .command('telemetry [action]')
-    .description('Inspect or toggle anonymous usage telemetry: on | off | status')
+    .description('Inspect or toggle usage telemetry: on | off | status')
     .action(async (action: TelemetryAction | undefined) => {
       // Scans this CLI contributes carry the contributor token, not the
       // install_id, so status shows both.
@@ -1032,7 +1032,7 @@ Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed
       if (!opts.package) {
         process.stderr.write('Usage: opena2a baselines --package <name>\n\n');
         process.stderr.write('Observe an AI agent package and contribute behavioral data\n');
-        process.stderr.write('to crowdsourced security profiles (opt-in, anonymized).\n\n');
+        process.stderr.write('to crowdsourced security profiles (opt-in).\n\n');
         process.stderr.write('Example: opena2a baselines --package langchain\n');
         process.stderr.write('         opena2a baselines --package crewai --duration 120\n');
         process.exitCode = 1;

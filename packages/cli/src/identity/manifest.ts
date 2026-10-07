@@ -32,7 +32,7 @@ export interface AgentManifest {
     lastSyncAt: string | null;
   };
   registry: {
-    /** Opt-in: share anonymized scan findings with OpenA2A Registry (POST /v1/telemetry/scan) */
+    /** Opt-in: share scan summaries with OpenA2A Registry (POST /v1/telemetry/scan) */
     contribute: boolean;
     /** Opt-in: join Global Threat Intelligence Network for ARP runtime telemetry (POST /v1/telemetry/runtime) */
     gtin: boolean;

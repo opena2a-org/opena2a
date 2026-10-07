@@ -459,7 +459,7 @@ async function submitLegacyScanReport(
 function printContributePrompt(): void {
   process.stderr.write('\n');
   process.stderr.write(cyan('  Your scans help the community detect unsafe tools.\n'));
-  process.stderr.write(dim('  Share anonymized scan reports with the OpenA2A registry?\n'));
+  process.stderr.write(dim('  Share scan summaries with the OpenA2A registry?\n'));
   process.stderr.write(dim('  Enable:  ') + yellow('opena2a config contribute --enable') + '\n');
   process.stderr.write(dim('  Details: https://opena2a.org/telemetry\n'));
   process.stderr.write('\n');

@@ -62,7 +62,7 @@ function renderHelp(input: TelemetryCommandInput): string {
   return [
     chalk.bold(`${tool} telemetry [on|off|status]`),
     "",
-    `Inspect or toggle the persisted anonymous-telemetry opt-out for ${tool}.`,
+    `Inspect or toggle the persisted usage-telemetry opt-out for ${tool}.`,
     "Default action (no args) is 'status'.",
     "",
     chalk.bold("Actions:"),

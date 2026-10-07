@@ -95,7 +95,7 @@ Full command reference, Shield subcommands, scope drift detection, behavioral go
 
 ## Telemetry
 
-`opena2a` sends anonymous tier-1 usage data to the OpenA2A Registry: tool name, version, command name (`check`, `scan`, `protect`, etc.), success, duration, platform, Node major version, and a stable per-machine `install_id`. **No content is collected** — no scanned packages, no findings, no file paths, no env-var values, no IPs.
+`opena2a` sends tier-1 usage data to the OpenA2A Registry: tool name, version, command name (`check`, `scan`, `protect`, etc.), success, duration, platform, Node major version, and a persistent `install_id`. Each event carries an install ID that identifies the machine, so the data is personal data; https://opena2a.org/privacy explains how the ID is made. **No content is collected** — no scanned packages, no findings, no file paths, no env-var values, no IPs.
 
 This is **separate** from the community-contribution data the Registry already collects via `--publish` flags; that flow continues to populate the public community page (scan submissions, findings, contributors). Telemetry just answers "is anyone running these commands at all?"
 

@@ -13,10 +13,10 @@ npm install @opena2a/contribute
 
 ## What It Does
 
-When users opt in, OpenA2A tools (HackMyAgent, opena2a-cli, Browser Guard) can contribute anonymized scan results to the [OpenA2A Registry](https://registry.opena2a.org). This package provides the shared client that all tools use to queue and submit that data.
+When users opt in, OpenA2A tools (HackMyAgent, opena2a-cli, Browser Guard) can contribute scan summaries to the [OpenA2A Registry](https://registry.opena2a.org). This package provides the shared client that all tools use to queue and submit that data.
 
 - **Opt-in only** -- no data is sent unless the user explicitly enables contribution
-- **Anonymized** -- only aggregate scan summaries are submitted, never source code or secrets
+- **Summaries only** -- aggregate scan summaries are submitted, never source code or secrets
 - **Batched** -- events are queued locally and flushed in batches to reduce network calls
 - **Consistent** -- all OpenA2A tools use this same client, ensuring uniform data format
 
@@ -71,7 +71,7 @@ await contribute.flush();
 | `shouldFlush()` | Check if the queue has reached the flush threshold |
 | `buildBatch()` | Build a submission batch from the queued events; returns `null` when the queue is empty |
 | `submitBatch(batch, registryUrl?, verbose?)` | Submit a batch to the Registry API. Resolves `true` only when the Registry accepted it; a `null` or empty batch makes no request and resolves `false` |
-| `getContributorToken()` | Get or create an anonymous contributor token |
+| `getContributorToken()` | Get or create the contributor token |
 
 ## Part of OpenA2A
 
