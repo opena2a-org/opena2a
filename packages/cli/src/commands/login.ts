@@ -12,6 +12,7 @@
 
 import { resolveServerUrl } from '../util/server-url.js';
 import { AimClient, AimServerError } from '../util/aim-client.js';
+import { describeProxyRoute } from '../util/env-proxy.js';
 import { loadAuth, saveAuth, removeAuth, isAuthValid, type AuthCredentials } from '../util/auth.js';
 
 export interface LoginOptions {
@@ -73,12 +74,19 @@ export async function login(options: LoginOptions): Promise<number> {
   // Step 1: Check server health
   try {
     await client.health();
-  } catch {
+  } catch (err) {
+    const route = err instanceof AimServerError ? err.proxyRoute : undefined;
     if (isJson) {
-      console.log(JSON.stringify({ error: 'server_unreachable', serverUrl }));
+      console.log(JSON.stringify({
+        error: 'server_unreachable',
+        serverUrl,
+        ...(route ? { proxy: { url: route.proxy.url, variable: route.proxy.variable, routing: route.routing } } : {}),
+      }));
     } else {
       console.error(`Cannot reach AIM server at ${serverUrl}`);
-      if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
+      if (route) {
+        console.error(describeProxyRoute(route, serverUrl));
+      } else if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
         console.error('Is the AIM server running? Start it with: docker compose up');
       } else {
         console.error('Check your network connection and try again.');

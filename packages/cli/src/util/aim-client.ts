@@ -5,7 +5,10 @@
  * server. Uses Node's built-in fetch (available in Node 18+).
  *
  * All methods return typed response objects or throw AimServerError on failure.
+ * Requests honour HTTPS_PROXY, HTTP_PROXY and NO_PROXY (see env-proxy.ts).
  */
+
+import { routeThroughEnvProxy, describeProxyRoute, type ProxyRoute } from './env-proxy.js';
 
 // ---------------------------------------------------------------------------
 // Types — mirror the AIM server API shapes (camelCase)
@@ -112,6 +115,8 @@ export class AimServerError extends Error {
     message: string,
     public readonly statusCode: number,
     public readonly serverMessage?: string,
+    /** Set when the request failed to connect while a proxy applied to it. */
+    public readonly proxyRoute?: ProxyRoute,
   ) {
     super(message);
     this.name = 'AimServerError';
@@ -412,6 +417,8 @@ export class AimClient {
 
   private async fetch(path: string, init: RequestInit): Promise<Response> {
     const url = `${this.baseUrl}${path}`;
+    const route = routeThroughEnvProxy(url) ?? undefined;
+    const proxyNote = route ? ` ${describeProxyRoute(route, url)}` : '';
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -420,16 +427,24 @@ export class AimClient {
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new AimServerError(
-          `Request timed out after ${this.timeoutMs}ms: ${init.method} ${path}`,
+          `Request timed out after ${this.timeoutMs}ms: ${init.method} ${path}${proxyNote}`,
           0,
+          undefined,
+          route,
         );
       }
-      // Connection refused, DNS failure, etc.
-      const msg = err instanceof Error ? err.message : String(err);
+      // Connection refused, DNS failure, proxy refusal, etc. fetch reports
+      // "fetch failed" and keeps the reason in `cause`.
+      let msg = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof Error ? (err as { cause?: unknown }).cause : undefined;
+      if (cause instanceof Error && cause.message && cause.message !== msg) {
+        msg = `${msg}: ${cause.message}`;
+      }
       throw new AimServerError(
-        `Cannot connect to AIM server at ${this.baseUrl}. ${msg}`,
+        `Cannot connect to AIM server at ${this.baseUrl}. ${msg}${proxyNote}`,
         0,
         msg,
+        route,
       );
     } finally {
       clearTimeout(timer);
