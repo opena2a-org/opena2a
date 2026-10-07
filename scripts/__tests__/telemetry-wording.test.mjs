@@ -13,6 +13,11 @@
  * correct word elsewhere (the `identity revoke` help, the skill templates),
  * and a repository-wide check would fail on those uses. A file that starts
  * describing telemetry or contribution joins TEXTS.
+ *
+ * Change logs are records of what a release said, so they are fixed forward
+ * and stay out of TEXTS: the telemetry library's 0.2.0 entry keeps the word
+ * "irreversible", and its newest section must carry the notice and the
+ * correction instead.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,6 +47,9 @@ const TEXTS = [
   'packages/contribute/src/types.ts',
   'packages/shared/README.md',
   'packages/shared/src/user-config.ts',
+  'packages/telemetry/package.json',
+  'packages/telemetry/src/config.ts',
+  'packages/telemetry/src/index.ts',
 ];
 
 // The sentence that replaces "anonymous" wherever a text describes the
@@ -49,6 +57,24 @@ const TEXTS = [
 const INSTALL_ID_SENTENCE =
   'Each event carries an install ID that identifies the machine, so the data is personal data.';
 const INSTALL_ID_SENTENCE_SHA256_PREFIX = 'b036246bc8a8';
+
+// The telemetry library's release notice, the first 12 hex digits of its
+// SHA-256 as approved, and the sentence that corrects the 0.2.0 entry.
+const TELEMETRY_CHANGELOG = 'packages/telemetry/CHANGELOG.md';
+const RELEASE_NOTICE =
+  "Privacy notice: since May 2026, `hackmyagent`, `opena2a` and `ai-trust` make a new telemetry install ID from the computer's hardware identifier or hostname where one can be used. The privacy policy promised to announce that change before it took effect, and we did not. Details, and how to turn telemetry off: https://opena2a.org/blogs/telemetry-install-id-late-notice";
+const RELEASE_NOTICE_SHA256_PREFIX = '9bef4e089611';
+const IRREVERSIBLE_CORRECTION =
+  'The 0.2.0 entry in this file called the hash irreversible, which was misleading: a hash cannot be run backwards, but anyone who knows or guesses its inputs can compute it again.';
+
+/** The text from the first `## ` heading of a change log up to the next one. */
+function newestSection(changelog) {
+  const lines = changelog.split('\n');
+  const start = lines.findIndex((l) => l.startsWith('## '));
+  if (start === -1) return '';
+  const next = lines.findIndex((l, i) => i > start && l.startsWith('## '));
+  return lines.slice(start, next === -1 ? undefined : next).join('\n');
+}
 
 /** One `<file>:<line>: <match>` entry per barred phrase in `text`. */
 function barredHits(file, text) {
@@ -95,4 +121,19 @@ test('the opena2a README states that each event carries an install ID that ident
   // semicolon, so everything but its closing period must appear.
   const readme = readFileSync(path.join(REPO_ROOT, 'packages/cli/README.md'), 'utf8');
   assert.ok(readme.includes(INSTALL_ID_SENTENCE.slice(0, -1)));
+});
+
+test('the telemetry CHANGELOG carries the install ID notice and the "irreversible" correction in its newest section', () => {
+  assert.equal(
+    createHash('sha256').update(RELEASE_NOTICE).digest('hex').slice(0, 12),
+    RELEASE_NOTICE_SHA256_PREFIX,
+  );
+  const newest = newestSection(readFileSync(path.join(REPO_ROOT, TELEMETRY_CHANGELOG), 'utf8'));
+  assert.ok(newest.includes(RELEASE_NOTICE), 'release notice missing from the newest section');
+  assert.ok(newest.includes(IRREVERSIBLE_CORRECTION), 'correction missing from the newest section');
+});
+
+test('the CHANGELOG check fails when the notice sits under an older release only', () => {
+  const planted = ['# Changelog', '', '## Unreleased', '', '## 0.3.0', '', RELEASE_NOTICE, ''].join('\n');
+  assert.equal(newestSection(planted).includes(RELEASE_NOTICE), false);
 });

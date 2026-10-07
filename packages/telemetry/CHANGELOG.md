@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Privacy notice: since May 2026, `hackmyagent`, `opena2a` and `ai-trust` make a new telemetry install ID from the computer's hardware identifier or hostname where one can be used. The privacy policy promised to announce that change before it took effect, and we did not. Details, and how to turn telemetry off: https://opena2a.org/blogs/telemetry-install-id-late-notice
+
+The 0.2.0 entry in this file called the hash irreversible, which was misleading: a hash cannot be run backwards, but anyone who knows or guesses its inputs can compute it again.
+
 ### Added
 
 - **`track()` forwards an optional `reason` field.** `TrackFields` and the
