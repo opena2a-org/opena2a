@@ -52,7 +52,7 @@ rm -f ~/.config/opena2a/telemetry.json
 | 2.3 | `opena2a telemetry off` | `Telemetry disabled for opena2a.` Then `--version` shows `Telemetry: off`. `~/.config/opena2a/telemetry.json` has `"enabled": false`. |
 | 2.4 | `opena2a telemetry on` | Re-enables persistently. |
 | 2.5 | `OPENA2A_TELEMETRY=off opena2a telemetry status` | `state: off` (env wins over file). |
-| 2.6 | `OPENA2A_TELEMETRY_DEBUG=print opena2a status` | Stderr contains a `[opena2a:telemetry]` line with the JSON payload (`tool: "opena2a-cli"`, `event: "command"`, `name: "status"`, `success: true`, `duration_ms: <int>`, no PII). The wire-format `tool` is `opena2a-cli` (npm name), not the brand `opena2a` — that's deliberate so tool_usage_events keys correlate with npm download counts. |
+| 2.6 | `OPENA2A_TELEMETRY_DEBUG=print opena2a status` | Stderr contains a `[opena2a:telemetry]` line with the JSON payload (`tool: "opena2a-cli"`, `event: "command"`, `name: "status"`, `success: true`, `duration_ms: <int>`, `install_id: <string>`). Each event carries an install ID that identifies the machine, so the data is personal data. The wire-format `tool` is `opena2a-cli` (npm name), not the brand `opena2a` — that's deliberate so tool_usage_events keys correlate with npm download counts. |
 | 2.7 | `opena2a status` (with the unreachable URL) | Command completes normally. Telemetry endpoint unreachable must not slow it perceptibly (≤2s timeout). |
 
 Fail the release if:

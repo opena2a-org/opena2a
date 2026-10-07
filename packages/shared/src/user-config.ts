@@ -218,7 +218,7 @@ export function getScanCount(): number {
 
 /**
  * Returns true if the user should be shown a one-time prompt to opt into
- * sharing anonymized scan reports. Only shown after the user has completed
+ * sharing scan summaries. Only shown after the user has completed
  * enough scans to have seen value, and not if they already opted in or
  * recently dismissed the prompt.
  */
