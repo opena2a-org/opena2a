@@ -14,6 +14,7 @@
  * digest is computed over the file in chunks.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { constants as bufferConstants } from 'node:buffer';
@@ -290,6 +291,62 @@ describe('chunked reading', () => {
     expect(counts.trustedCount).toBe(6);
     expect(counts.chainBroken).toBe(false);
   });
+
+  it('keeps the newest `count` matches once the window has trimmed a batch', () => {
+    // Four matches against a count of 2 reach the batch trim (at twice the
+    // count), which must leave exactly `count` events behind.
+    for (let i = 1; i <= 4; i++) writeEvent(makePartial({ action: `e${i}` }));
+
+    const result = verifyEventLog(getEventsPath(), { filters: { count: 2 } });
+    expect(result.events.map(e => e.action)).toEqual(['e4', 'e3']);
+    expect(readEvents({ count: 2 }).map(e => e.action)).toEqual(['e4', 'e3']);
+  });
+
+  it('reads a log holding only unreadable lines as empty, and says the lines were skipped', () => {
+    fs.writeFileSync(getEventsPath(), 'garbage\n', 'utf-8');
+
+    const check = eventChainCheck();
+    expect(check.status).toBe('pass');
+    expect(check.detail).toBe(
+      'Event chain valid across 0 events. 1 unreadable line was skipped, as review skips them.',
+    );
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a named pipe at the log path instead of blocking on it',
+    async () => {
+      execFileSync('mkfifo', [getEventsPath()]);
+      // A pipe with no writer blocks a plain open until one appears. This
+      // child opens the pipe read-write after RESCUE_MS and holds it, so a
+      // reader that blocks is released, and caught by the elapsed time,
+      // rather than hanging the run; every later open then returns at once.
+      const RESCUE_MS = 5_000;
+      const rescue = spawn(process.execPath, ['-e', `
+        const fs = require('node:fs');
+        setTimeout(() => {
+          try { fs.openSync(process.argv[1], 'r+'); } catch {}
+          setInterval(() => {}, 1000);
+        }, ${RESCUE_MS});
+      `, getEventsPath()], { stdio: 'ignore' });
+      try {
+        const started = Date.now();
+        expect(() => verifyEventLog(getEventsPath())).toThrow(/Not a regular file/);
+        expect(readVerifiedEvents().events).toEqual([]);
+        expect(readEvents()).toEqual([]);
+        const check = eventChainCheck();
+        expect(Date.now() - started).toBeLessThan(RESCUE_MS);
+        expect(check.status).toBe('fail');
+        // The pipe gets the verdict a directory at the same path gets, the
+        // log the reader already refused as unreadable.
+        fs.unlinkSync(getEventsPath());
+        fs.mkdirSync(getEventsPath());
+        expect({ ...check, checkedAt: '' }).toEqual({ ...eventChainCheck(), checkedAt: '' });
+      } finally {
+        rescue.kill();
+      }
+    },
+    15_000,
+  );
 
   it('hashes a file in chunks to the digest of its whole content', () => {
     for (let i = 0; i < 5; i++) writeEvent(makePartial({ detail: { text: `${MIXED}${i}` } }));

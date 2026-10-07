@@ -106,6 +106,14 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(probe) once to find an executable scratch dir; then the module ' +
       'under test runs execFileSync(which | claude) against stubs on PATH (#246)',
   },
+  'shield/event-log-any-size.test.ts': {
+    shape: 'async-bounded',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(mkfifo) once to put a named pipe at the log path, then spawn(node -e) ' +
+      'once: a child that opens the pipe read-write after a delay, so a reader that blocks on ' +
+      'it is released, and is killed when the case ends (#383)',
+  },
   'child-process-audit-merge.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,

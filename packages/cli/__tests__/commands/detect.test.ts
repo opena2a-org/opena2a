@@ -1,7 +1,32 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+// ---------------------------------------------------------------------------
+// Pinned process list.
+//
+// detect() lists running agents from `ps aux`, and every ungoverned agent
+// deducts from the governance score. A test that measures one deduction
+// against the live process list fails on any machine running enough agents
+// to floor the baseline near 0. When `hostPs.output` is set (only inside the
+// governance scoring block), `ps aux` returns it; every other command, and
+// every other block, runs for real.
+// ---------------------------------------------------------------------------
+
+const hostPs = vi.hoisted(() => ({ output: null as string | null }));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    execSync: ((command: string, options?: Parameters<typeof actual.execSync>[1]) =>
+      command === 'ps aux' && hostPs.output !== null
+        ? hostPs.output
+        : actual.execSync(command, options)) as typeof actual.execSync,
+  };
+});
+
 import {
   scanProcesses,
   parseMcpConfig,
@@ -786,6 +811,82 @@ describe('CSV export', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Output formats and file confirmations
+// ---------------------------------------------------------------------------
+
+describe('detect output formats', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-format-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  async function run(options: Parameters<typeof detect>[0]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    let stdout = '';
+    const { exitCode, output: stderr } = await captureStderr(async () => {
+      const captured = await captureStdout(() => detect(options));
+      stdout = captured.output;
+      return captured.exitCode;
+    });
+    return { exitCode, stdout, stderr };
+  }
+
+  it('--format json with --report keeps stdout one JSON document and names the report on stderr', async () => {
+    const reportPath = path.join(tempDir, 'detect.html');
+    const { exitCode, stdout, stderr } = await run({ targetDir: tempDir, format: 'json', ci: true, reportPath });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout).summary).toBeDefined();
+    expect(stdout).not.toContain('Report:');
+    expect(stderr).toContain(`Report: ${reportPath}`);
+    expect(fs.existsSync(reportPath)).toBe(true);
+  });
+
+  it('--format json with --export-csv keeps stdout one JSON document and names the CSV on stderr', async () => {
+    const csvPath = path.join(tempDir, 'assets.csv');
+    const { exitCode, stdout, stderr } = await run({ targetDir: tempDir, format: 'json', ci: true, exportCsv: csvPath });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout).summary).toBeDefined();
+    expect(stdout).not.toContain('Asset inventory:');
+    expect(stderr).toContain(`Asset inventory: ${csvPath}`);
+    expect(fs.existsSync(csvPath)).toBe(true);
+  });
+
+  it('--format text still prints the file confirmations on stdout', async () => {
+    const csvPath = path.join(tempDir, 'assets.csv');
+    const { exitCode, stdout } = await run({ targetDir: tempDir, format: 'text', ci: true, exportCsv: csvPath });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain(`Asset inventory: ${csvPath}`);
+  });
+
+  it('--format sarif is refused with exit 2 before any output or file is written', async () => {
+    const reportPath = path.join(tempDir, 'detect.sarif');
+    const { exitCode, stdout, stderr } = await run({ targetDir: tempDir, format: 'sarif', ci: true, reportPath });
+
+    expect(exitCode).toBe(2);
+    expect(stdout).toBe('');
+    expect(fs.existsSync(reportPath)).toBe(false);
+    expect(stderr).toContain('--format sarif');
+    expect(stderr).toContain('text');
+    expect(stderr).toContain('json');
+  });
+
+  it('strips control characters from an unsupported --format value it echoes', async () => {
+    const { exitCode, stderr } = await run({ targetDir: tempDir, format: 'sa\x1b[31mrif\nx', ci: true });
+
+    expect(exitCode).toBe(2);
+    expect(stderr).not.toContain('\x1b[31m');
+    expect(stderr).toContain('--format sa[31mrifx.');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Governance scoring (tested via detect --format json)
 // ---------------------------------------------------------------------------
 
@@ -794,9 +895,12 @@ describe('governance scoring', () => {
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-score-'));
+    // No running agents, so each deduction is measured from a known baseline.
+    hostPs.output = '';
   });
 
   afterEach(() => {
+    hostPs.output = null;
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 

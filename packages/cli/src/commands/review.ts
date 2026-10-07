@@ -69,6 +69,14 @@ export interface ReviewOptions {
  *  advertises `sarif`) is refused rather than falling through to text. */
 const REVIEW_FORMATS = ['text', 'json'] as const;
 
+/** A user-supplied value made safe to echo on one terminal line: control
+ *  characters (ESC, newline, the rest of C0 and C1, and DEL) are removed, so
+ *  a crafted `--format` or `--report` value cannot inject an escape sequence
+ *  or forge a line of its own. */
+function printable(value: string): string {
+  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+}
+
 export interface PhaseResult {
   name: string;
   status: 'pass' | 'warn' | 'fail' | 'skip';
@@ -357,7 +365,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // keeps a CI gate red and stays distinct from findings (exit 1).
   const format = options.format ?? 'text';
   if (!(REVIEW_FORMATS as readonly string[]).includes(format)) {
-    process.stderr.write(red(`opena2a review does not support --format ${format}.\n`));
+    process.stderr.write(red(`opena2a review does not support --format ${printable(format)}.\n`));
     process.stderr.write(dim('  Supported: --format text (summary plus HTML report) or --format json (report on stdout).\n'));
     return 2;
   }
@@ -376,9 +384,12 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   const targetDir = path.resolve(options.targetDir ?? process.cwd());
 
+  // A missing target is a command error (exit 2), not a score below 50
+  // (exit 1): a gate that reads only the exit code must not take a run that
+  // produced no result for a reviewed project.
   if (!fs.existsSync(targetDir)) {
-    process.stderr.write(red(`Directory not found: ${targetDir}\n`));
-    return 1;
+    process.stderr.write(red(`Directory not found: ${printable(targetDir)}\n`));
+    return 2;
   }
 
   const phases: PhaseResult[] = [];
@@ -655,10 +666,10 @@ export async function review(options: ReviewOptions): Promise<number> {
         writeReviewHtml(options.reportPath, report);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(red(`Report not written: ${msg}\n`));
+        process.stderr.write(red(`Report not written: ${printable(msg)}\n`));
         return 2;
       }
-      if (!quiet) process.stderr.write(dim(`  Report: ${options.reportPath}\n`));
+      if (!quiet) process.stderr.write(dim(`  Report: ${printable(options.reportPath)}\n`));
     }
     return compositeScore < 50 ? 1 : 0;
   }
@@ -771,9 +782,17 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Generate HTML report
   const reportPath = options.reportPath ??
     path.join(tmpdir(), `opena2a-review-${Date.now()}.html`);
-  writeReviewHtml(reportPath, report);
+  // An unwritable path exits 2, as it does under --format json: the summary
+  // above is printed, but the report the run was asked for was not produced.
+  try {
+    writeReviewHtml(reportPath, report);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(red(`Report not written: ${printable(msg)}\n`));
+    return 2;
+  }
 
-  process.stdout.write(`  Report: ${dim(reportPath)}`);
+  process.stdout.write(`  Report: ${dim(printable(reportPath))}`);
 
   // Auto-open
   const shouldOpen = options.autoOpen !== false && !options.ci;

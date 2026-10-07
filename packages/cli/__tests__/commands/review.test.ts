@@ -61,6 +61,19 @@ function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; o
   });
 }
 
+/** Run review with stdout and stderr captured; returns both and the exit code. */
+async function captureOutput(fn: () => Promise<number>): Promise<{ exitCode: number; output: string; stderr: string }> {
+  const stderrChunks: string[] = [];
+  const origStderr = process.stderr.write;
+  process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+  try {
+    const result = await captureStdout(fn);
+    return { ...result, stderr: stderrChunks.join('') };
+  } finally {
+    process.stderr.write = origStderr;
+  }
+}
+
 /**
  * Render one tab of a generated review report and return its HTML.
  *
@@ -535,18 +548,19 @@ describe('review', () => {
     expect(hmaPhase.status).toBe('skip');
   });
 
-  it('nonexistent directory returns exit code 1', async () => {
-    const stderrChunks: string[] = [];
-    const origStderr = process.stderr.write;
-    process.stderr.write = ((chunk: any) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    }) as any;
+  it('a target directory that does not exist exits 2, not the exit 1 of a low score', async () => {
+    // Exit 1 is the code for a score below 50; a run that reviewed nothing is
+    // a command error, which the CI exit-code table assigns exit 2.
+    const missing = path.join(tempDir, 'does-not-exist');
 
-    const exitCode = await review({ targetDir: '/nonexistent/path/xyz', autoOpen: false });
-    process.stderr.write = origStderr;
-
-    expect(exitCode).toBe(1);
+    for (const format of ['text', 'json']) {
+      const result = await captureOutput(() => review({
+        targetDir: missing, format, autoOpen: false, skipHma: true,
+      }));
+      expect(result.exitCode).toBe(2);
+      expect(result.output).toBe('');
+      expect(result.stderr).toContain(`Directory not found: ${missing}`);
+    }
   });
 
   it('report writes to custom path', async () => {
@@ -765,6 +779,108 @@ describe('review', () => {
     const stderr = stderrChunks.join('');
     expect(stderr).toContain('--quiet');
     expect(stderr).toContain('--verbose');
+  });
+
+  // The JSON path's report-write catch must return 2 for every cause, not
+  // only for a missing directory: a read-only location and a path that is a
+  // directory fail with other error codes.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    '--format json with a read-only --report location (EACCES) still prints the JSON, and exits 2',
+    async () => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'json-report-eacces' }));
+      const readOnly = path.join(tempDir, 'read-only');
+      fs.mkdirSync(readOnly);
+      fs.chmodSync(readOnly, 0o500);
+      const reportPath = path.join(readOnly, 'out.html');
+      try {
+        const result = await captureOutput(() => review({
+          targetDir: tempDir, reportPath, format: 'json', autoOpen: false, skipHma: true,
+        }));
+        expect(result.exitCode).toBe(2);
+        expect(JSON.parse(result.output).phases).toHaveLength(6);
+        expect(result.stderr).toContain('Report not written');
+        expect(result.stderr).toContain('EACCES');
+        expect(fs.existsSync(reportPath)).toBe(false);
+      } finally {
+        fs.chmodSync(readOnly, 0o700);
+      }
+    },
+  );
+
+  it('--format json with a --report path that is a directory (EISDIR) still prints the JSON, and exits 2', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'json-report-eisdir' }));
+    const reportPath = path.join(tempDir, 'a-directory');
+    fs.mkdirSync(reportPath);
+
+    const result = await captureOutput(() => review({
+      targetDir: tempDir, reportPath, format: 'json', autoOpen: false, skipHma: true,
+    }));
+
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.output).phases).toHaveLength(6);
+    expect(result.stderr).toContain('Report not written');
+    expect(result.stderr).toContain('EISDIR');
+    expect(fs.statSync(reportPath).isDirectory()).toBe(true);
+  });
+
+  it('--format text with a --report path that cannot be written prints the summary, names the cause, and exits 2', async () => {
+    // The text path wrote the report unguarded, so the error surfaced as
+    // exit 1 -- the code for a score below 50.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'text-report-unwritable' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    const reportPath = path.join(tempDir, 'no-such-dir', 'out.html');
+
+    const result = await captureOutput(() => review({
+      targetDir: tempDir, reportPath, format: 'text', autoOpen: false, skipHma: true,
+    }));
+
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toContain('Score');
+    expect(result.output).not.toContain('Report:');
+    expect(result.stderr).toContain('Report not written');
+    expect(result.stderr).toContain(reportPath);
+    expect(fs.existsSync(reportPath)).toBe(false);
+  });
+
+  it('strips control characters from an unsupported --format value it echoes', async () => {
+    const result = await captureOutput(() => review({
+      targetDir: tempDir, format: 'sa\x1b[31mrif\nx', autoOpen: false, skipHma: true,
+    }));
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).not.toContain('sa\x1b');
+    expect(result.stderr).not.toContain('rif\nx');
+    expect(result.stderr).toContain('--format sa[31mrifx.');
+  });
+
+  it('strips control characters from a --report path it echoes, written or not', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'report-path-controls' }));
+
+    const unwritable = path.join(tempDir, 'no-such-dir', 'a\x1b[2J\nb.html');
+    const refused = await captureOutput(() => review({
+      targetDir: tempDir, reportPath: unwritable, format: 'json', autoOpen: false, skipHma: true,
+    }));
+    expect(refused.exitCode).toBe(2);
+    expect(refused.stderr).toContain('Report not written');
+    expect(refused.stderr).not.toContain('\x1b[2J');
+    expect(refused.stderr).toContain('a[2Jb.html');
+
+    // A file name may hold an escape sequence on POSIX; Windows refuses one.
+    if (process.platform !== 'win32') {
+      const written = path.join(tempDir, 'r\x1b[2J\nx.html');
+      const json = await captureOutput(() => review({
+        targetDir: tempDir, reportPath: written, format: 'json', autoOpen: false, skipHma: true,
+      }));
+      expect(fs.existsSync(written)).toBe(true);
+      expect(json.stderr).not.toContain('\x1b[2J');
+      expect(json.stderr).toContain(`Report: ${path.join(tempDir, 'r[2Jx.html')}`);
+
+      const text = await captureOutput(() => review({
+        targetDir: tempDir, reportPath: written, format: 'text', autoOpen: false, skipHma: true,
+      }));
+      expect(text.output).not.toContain('\x1b[2J');
+      expect(text.output).toContain('r[2Jx.html');
+    }
   });
 
   it('renders the @opena2a/cli-ui Observations block with Surfaces/Checks/Categories/Verdict labels', async () => {
