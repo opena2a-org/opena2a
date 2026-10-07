@@ -192,6 +192,50 @@ describe('readVerifiedEvents', () => {
     expect(result.events.map(e => e.action)).toEqual(['genuine']);
   });
 
+  it('keeps every event after the first break untrusted, even one that links to the last trusted event', () => {
+    getShieldDir();
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    writeEvent(makePartial({ action: 'genuine-2' }));
+    writeEvent(makePartial({ action: 'genuine-3' }));
+
+    // Insert one forged line between the second and third events. The third
+    // event still names the second as its prevHash, so it links to the last
+    // trusted event -- but it sits after the break, and a break is final.
+    const eventsPath = getEventsPath();
+    const lines = fs.readFileSync(eventsPath, 'utf-8').trim().split('\n');
+    const second = JSON.parse(lines[1]) as ShieldEvent;
+    const third = JSON.parse(lines[2]) as ShieldEvent;
+    expect(third.prevHash).toBe(second.eventHash);
+    const forged = {
+      ...JSON.parse(lines[0]),
+      id: '00000000-0000-7000-8000-000000000000',
+      action: 'forged-inserted',
+      prevHash: 'f0'.repeat(32),
+      eventHash: '0f'.repeat(32),
+    };
+    fs.writeFileSync(eventsPath, [lines[0], lines[1], JSON.stringify(forged), lines[2]].join('\n') + '\n', 'utf-8');
+
+    const result = readVerifiedEvents();
+    expect(result.chainBroken).toBe(true);
+    expect(result.brokenAt).toBe(2);
+    expect(result.untrustedCount).toBe(2);
+    expect(result.events).toHaveLength(2);
+    expect(result.events.map(e => e.action)).toEqual(['genuine-2', 'genuine-1']);
+    expect(result.untrusted.map(e => e.action)).toEqual(['genuine-3', 'forged-inserted']);
+  });
+
+  it('readEvents, which does not verify, returns the events after a chain break too', () => {
+    getShieldDir();
+    writeEvent(makePartial({ action: 'genuine-1' }));
+    writeEvent(makePartial({ action: 'genuine-2' }));
+    appendForgedEvent({ action: 'forged-1' });
+
+    expect(readVerifiedEvents().events).toHaveLength(2);
+    const all = readEvents();
+    expect(all).toHaveLength(3);
+    expect(all.map(e => e.action)).toEqual(['forged-1', 'genuine-2', 'genuine-1']);
+  });
+
   it('a literal `null` line is skipped like any corrupted line, not crashed on', () => {
     // Regression: `null` is valid JSON, so it used to reach
     // verifyEventChain, throw on property access, and silently empty the

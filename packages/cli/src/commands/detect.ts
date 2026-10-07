@@ -18,6 +18,9 @@ import type { RegistryEnrichment } from '../util/registry-enrichment.js';
 // Types
 // ---------------------------------------------------------------------------
 
+/** Output formats detect produces. Anything else is refused with exit 2. */
+const DETECT_FORMATS = ['text', 'json'] as const;
+
 export interface DetectOptions {
   targetDir: string;
   ci?: boolean;
@@ -1192,6 +1195,18 @@ async function promptForScan(count: number): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export async function detect(options: DetectOptions): Promise<number> {
+  // Refuse an output format detect cannot produce before scanning anything.
+  // The global `--format` advertises `sarif`, and it used to fall through to
+  // the text audit with exit 0, so a SARIF consumer got neither SARIF nor an
+  // error. Exit 2 is the command-error code, as `review` uses for the same case.
+  const format = options.format ?? 'text';
+  if (!(DETECT_FORMATS as readonly string[]).includes(format)) {
+    const shown = format.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+    process.stderr.write(red(`opena2a detect does not support --format ${shown}.\n`));
+    process.stderr.write(dim('  Supported: --format text (audit summary) or --format json (result on stdout).\n'));
+    return 2;
+  }
+
   const dir = path.resolve(options.targetDir ?? process.cwd());
 
   try {
@@ -1358,6 +1373,10 @@ export async function detect(options: DetectOptions): Promise<number> {
     process.stdout.write(formatText(result, options.verbose ?? false, dir) + '\n');
   }
 
+  // File confirmations go to stderr under --format json, as `review` writes
+  // them, so stdout holds the JSON document and nothing after it.
+  const confirm = format === 'json' ? process.stderr : process.stdout;
+
   // Generate HTML report if requested
   if (options.reportPath) {
     const { generateDetectHtml } = await import('../report/detect-html.js');
@@ -1368,14 +1387,14 @@ export async function detect(options: DetectOptions): Promise<number> {
       const openCmd = os.platform() === 'darwin' ? 'open' : os.platform() === 'win32' ? 'start' : 'xdg-open';
       spawn(openCmd, [options.reportPath], { detached: true, stdio: 'ignore' }).unref();
     }
-    process.stdout.write(`Report: ${options.reportPath}\n`);
+    confirm.write(`Report: ${options.reportPath}\n`);
   }
 
   // Export CSV asset inventory if requested
   if (options.exportCsv) {
     const csv = generateAssetCsv(result);
     fs.writeFileSync(options.exportCsv, csv, 'utf-8');
-    process.stdout.write(`Asset inventory: ${options.exportCsv}\n`);
+    confirm.write(`Asset inventory: ${options.exportCsv}\n`);
   }
 
   // Community contribution: track scan count and submit when opted in.

@@ -13,6 +13,7 @@ import {
   appendFileSync,
   chmodSync,
   closeSync,
+  constants as fsConstants,
   existsSync,
   fstatSync,
   mkdirSync,
@@ -362,9 +363,12 @@ const MAX_LINE_CHARS = bufferConstants.MAX_STRING_LENGTH;
  *
  * Reads the size the file has when it is opened, as readFileSync does.
  * Anything that is not a regular file throws: a device has no end to stop at.
+ * The open is non-blocking, so a named pipe with no writer is refused here
+ * instead of blocking the open; a regular file reads the same either way.
  */
 function forEachChunk(path: string, chunkBytes: number, onChunk: (chunk: Buffer) => void): void {
-  const fd = openSync(path, 'r');
+  // O_NONBLOCK is absent where named pipes cannot sit at a file path (Windows).
+  const fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0));
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) {
