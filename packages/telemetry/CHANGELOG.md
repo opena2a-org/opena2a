@@ -141,13 +141,20 @@ The 0.2.0 entry in this file called the hash irreversible, which was misleading:
   A consumer that prints it should show that no ID is kept rather than the
   value; `@opena2a/cli-ui`'s `runTelemetryCommand` does.
 
+- **The README's `installId` row says how the ID is made**: a SHA-256 of the
+  OS machine ID, or of the hostname, platform and Node major where no machine
+  ID can be read, written as a UUID, and random only when neither can be read.
+  It said `<random UUID>`. The `Status.installId` doc comment now says the ID
+  identifies the machine, and the README and the package header no longer cite
+  an engineering spec in a repository readers cannot open.
+
 ## 0.3.0 — 2026-05-24
 
 ### Added
 
 - **`successFromExitCode(exitCode, semanticSuccessCodes?)`** — optional second argument lets each dispatcher declare exit codes ≥ 2 that represent semantic outcomes rather than crashes. Invocation telemetry's `success` field follows **crash-rate semantics**: a `success: false` event means the command itself failed to execute (config error, network failure, exception, integrity violation), not "the user got a result they didn't want." Tools whose exit codes ≥ 2 represent working outcomes — `ai-trust check <not-found-pkg>` exits 2 to signal "I checked, the package isn't in the registry" — pass those codes via the new argument so the dashboard signal reflects actual crash rate.
 
-  Surfaced by the first 60-day rollup query on `/admin/cli-usage`: `ai-trust audit` showed a 50% "failure" rate driven almost entirely by exit-2 not-found events in `requirements.txt` audits. Real crash rate was ~0%.
+  Surfaced by the first 60-day rollup of usage events: `ai-trust audit` showed a 50% "failure" rate driven almost entirely by exit-2 not-found events in `requirements.txt` audits. Real crash rate was ~0%.
 
   Validation still wins. Out-of-range values (< 0 or > 255), non-finite numbers, and unparseable strings continue to return `false` even when listed in `semanticSuccessCodes` — a programming-bug-tier value is treated as a programming bug, not a semantic override.
 
@@ -165,14 +172,14 @@ The 0.2.0 entry in this file called the hash irreversible, which was misleading:
 ### Guardrails
 
 - New CLIs joining the OpenA2A fleet MUST declare `semanticSuccessCodes` at telemetry-wiring time or accept the default `[]` (treat exit ≥ 2 as failure).
-- Exit-code contract toward end-users is unchanged — no shipping CLI changes its `process.exit(...)` codes as part of this rollout. Splitting an existing exit code (e.g. HMA exit 2 → 2-or-4) is a breaking CLI contract change that requires Abdel escalation.
+- Exit-code contract toward end-users is unchanged — no shipping CLI changes its `process.exit(...)` codes as part of this rollout. Splitting an existing exit code (e.g. HMA exit 2 → 2-or-4) is a breaking CLI contract change and is not part of this release.
 - Third-party SDK consumers: 0.3.0 is backward-compatible with 0.2.0 call sites — the second argument is optional. Existing dispatchers compile and behave identically without changes.
 
 ## 0.2.0 — 2026-05-11
 
 ### Changed (behavioural)
 
-- **`install_id` is now stable across container restarts and beyond the 30-day boundary.** The previous implementation derived `install_id` from `hash(platform + node-major + npm-cache-dir + floor(mtime/30days))`. That had two production bugs surfaced by the first `/admin/cli-usage` Registry dashboard query (Apr 27 – May 11): (a) `install_id` rotated every 30 days even on stable developer machines because the mtime bucket advanced; (b) ephemeral container envs (CI, dvaa's primary deploy surface) had no persistent npm cache, so the fallback `randomUUID()` fired on every invocation, producing `47 unique installs from 67 events` for dvaa.
+- **`install_id` is now stable across container restarts and beyond the 30-day boundary.** The previous implementation derived `install_id` from `hash(platform + node-major + npm-cache-dir + floor(mtime/30days))`. That had two production bugs surfaced by the first Registry query of usage events (Apr 27 – May 11): (a) `install_id` rotated every 30 days even on stable developer machines because the mtime bucket advanced; (b) ephemeral container envs (CI, dvaa's primary deploy surface) had no persistent npm cache, so the fallback `randomUUID()` fired on every invocation, producing `47 unique installs from 67 events` for dvaa.
   - New derivation, in priority order:
     1. **OS machine-id** — `/etc/machine-id` (Linux/systemd) or `/var/lib/dbus/machine-id` (older Linux); `IOPlatformUUID` via `ioreg` (macOS); `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` (Windows). Purpose-built per-machine identifier. High entropy, not predictable from hostnames, designed for this exact use case.
     2. **Hash of hostname + platform + node-major** — fallback when the machine-id probe fails (sandboxed environments, BSD/uncommon platforms, missing `ioreg` / `reg` binaries).

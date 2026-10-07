@@ -245,7 +245,7 @@ describe('shield recover --archive-log', () => {
     expect(payload.untrustedCount).toBe(1);
   });
 
-  it('checks the chain without holding any event of the log', async () => {
+  it('checks the chain keeping no event but the first one past the break', async () => {
     getShieldDir();
     writeEvent(makePartial({ action: 'genuine-1' }));
     writeEvent(makePartial({ action: 'genuine-2' }));
@@ -255,8 +255,8 @@ describe('shield recover --archive-log', () => {
 
     expect(await runArchive()).toBe(0);
 
-    // One pass over the log that keeps no event: every event is counted,
-    // none is held, trusted or not.
+    // One pass over the log that keeps no event in its windows: every event
+    // is counted, and the only one kept is the first past the break.
     expect(check).toHaveBeenCalledTimes(1);
     expect(check).toHaveBeenCalledWith(path.join(getShieldDir(), 'events.jsonl'), { countsOnly: true });
     const result = check.mock.results[0];
@@ -264,6 +264,7 @@ describe('shield recover --archive-log', () => {
     if (result.type !== 'return') return;
     expect(result.value.events).toEqual([]);
     expect(result.value.untrusted).toEqual([]);
+    expect(result.value.firstUntrusted?.action).toBe('forged-1');
     expect(result.value.trustedCount).toBe(2);
     expect(result.value.untrustedCount).toBe(40);
 

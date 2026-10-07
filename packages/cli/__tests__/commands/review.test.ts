@@ -77,6 +77,22 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
+// `review` passes `machineReadable` to recordScanAndMaybePrompt, which shows
+// the contribute prompt only when that is false and stdout is a terminal.
+// These tests run without a terminal, where the prompt never shows, so they
+// record the flag review passes instead of looking for the prompt.
+const recordScan = vi.hoisted(() => ({ calls: [] as unknown[] }));
+
+vi.mock('../../src/util/report-submission.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/report-submission.js')>();
+  return {
+    ...actual,
+    recordScanAndMaybePrompt: async (opts?: { machineReadable?: boolean }) => {
+      recordScan.calls.push(opts);
+    },
+  };
+});
+
 import {
   review,
   aggregateFindings,
@@ -188,6 +204,7 @@ describe('review', () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-test-'));
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-test-home-'));
     mockHome.dir = tempHome;
+    recordScan.calls = [];
   });
 
   afterEach(() => {
@@ -856,6 +873,74 @@ describe('review', () => {
     expect(fs.existsSync(reportPath)).toBe(true);
     // The provisional-verdict notice qualifies the score, so it is essential.
     expect(stderrChunks.join('')).toMatch(/Provisional verdict/);
+    // The contribute prompt is guidance, so --quiet suppresses it.
+    expect(recordScan.calls).toEqual([{ machineReadable: true }]);
+  });
+
+  it('without --quiet the contribute prompt is left to the terminal check', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'prompt-text' }));
+
+    const reportPath = path.join(tempDir, 'prompt.html');
+    const origStderr = process.stderr.write;
+    process.stderr.write = (() => true) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        autoOpen: false,
+        skipHma: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    expect(result.exitCode).toBe(0);
+    expect(recordScan.calls).toEqual([{ machineReadable: false }]);
+  });
+
+  it('--quiet with a broken Shield event log chain adds the excluded-events line', async () => {
+    const { writeEvent, getShieldDir, getEventsPath } = await import('../../src/shield/events.js');
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'quiet-chain' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+
+    const base = {
+      source: 'shield' as const, category: 'posture-assessment', severity: 'info' as const,
+      agent: null, sessionId: null, outcome: 'allowed' as const, detail: {},
+      orgId: null, managed: false, agentId: null,
+    };
+    getShieldDir();
+    for (let i = 1; i <= 10; i++) writeEvent({ ...base, action: `event-${i}`, target: 'baseline' });
+    // Edit the fifth event: its hash no longer matches its content, so the
+    // chain breaks there and it and the five events after it are excluded.
+    const lines = fs.readFileSync(getEventsPath(), 'utf-8').split('\n');
+    lines[4] = lines[4].replace('"event-5"', '"edited"');
+    fs.writeFileSync(getEventsPath(), lines.join('\n'), 'utf-8');
+
+    const reportPath = path.join(tempDir, 'quiet-chain.html');
+    const stderrChunks: string[] = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = ((chunk: any) => { stderrChunks.push(String(chunk)); return true; }) as any;
+    let result: { exitCode: number; output: string };
+    try {
+      result = await captureStdout(() => review({
+        targetDir: tempDir,
+        reportPath,
+        autoOpen: false,
+        skipHma: true,
+        quiet: true,
+      }));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+
+    const out = result.output.replace(/\x1b\[\d+m/g, '').split('\n').filter(l => l.trim() !== '');
+    expect(out).toHaveLength(4);
+    expect(out[0]).toMatch(/^ {2}Score: \d+\/100/);
+    expect(out[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium\)$/);
+    expect(out[2]).toBe('  6 shield events excluded — event log chain broken at index 4');
+    expect(out[3]).toBe(`  Report: ${reportPath}`);
+    expect(stderrChunks.join('')).toMatch(/chain broken/);
   });
 
   it('--quiet with --format json keeps stdout pure JSON and drops the report confirmation', async () => {

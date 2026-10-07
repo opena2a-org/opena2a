@@ -101,6 +101,24 @@ describe('identity revoke', () => {
     expect(Object.keys(out)).not.toContain('retentionDays');
   });
 
+  it('--json keeps the CLI action and agentId when the server sends members of the same name', async () => {
+    revokeAgent.mockResolvedValue({ action: 'deleted', agentId: 'agent-999', message: 'Agent revoked' });
+
+    const code = await identity({ subcommand: 'revoke', json: true });
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ action: 'revoked', agentId: 'agent-123', message: 'Agent revoked' });
+  });
+
+  it('--json is the CLI object alone when the server answers with an array', async () => {
+    revokeAgent.mockResolvedValue(['Agent revoked']);
+
+    const code = await identity({ subcommand: 'revoke', json: true });
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ action: 'revoked', agentId: 'agent-123' });
+  });
+
   it('--json is the CLI object alone when the server answers with no body', async () => {
     revokeAgent.mockResolvedValue(undefined);
 

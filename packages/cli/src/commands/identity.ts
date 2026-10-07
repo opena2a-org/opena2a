@@ -2425,9 +2425,11 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
 
     if (isJson) {
       // The CLI states no retention period of its own: any time value in the
-      // output is the server's, under the server's own member name.
+      // output is the server's, under the server's own member name. The CLI's
+      // own keys come last, so a server member of the same name cannot
+      // replace them.
       const serverFields = resp && typeof resp === 'object' && !Array.isArray(resp) ? resp : {};
-      process.stdout.write(JSON.stringify({ action: 'revoked', agentId, ...serverFields }, null, 2) + '\n');
+      process.stdout.write(JSON.stringify({ ...serverFields, action: 'revoked', agentId }, null, 2) + '\n');
       return 0;
     }
 

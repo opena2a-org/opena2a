@@ -19,6 +19,7 @@ import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
 import { HMA_CHECK_COUNT } from './util/canonical.js';
+import { telemetryHelpLine } from './util/telemetry-help.js';
 import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
 import { HELP_CONTRACTS, formatHelpContract } from './util/help-contract.js';
@@ -179,7 +180,7 @@ Smart Features:
   $ opena2a audit my project     Natural language command matching
 
 Telemetry:
-  Usage telemetry is on and each event carries a persistent install ID. Disable: OPENA2A_TELEMETRY=off
+  ${telemetryHelpLine(tele.status())}
   Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute
 
 Learn more: https://opena2a.org/docs`);
