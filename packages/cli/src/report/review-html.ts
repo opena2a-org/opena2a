@@ -94,7 +94,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 @media(max-width:900px){.data-table.hma-table col.col-check{width:14%}.data-table.hma-table col.col-name{width:40%}.data-table.hma-table col.col-severity{width:11%}.data-table.hma-table col.col-category{width:0}.data-table.hma-table th.col-category-th,.data-table.hma-table td.col-category-td{display:none}.data-table.hma-table col.col-occurrences{width:12%}.data-table.hma-table col.col-fix{width:23%;}}
 .gauge-card{display:flex;flex-direction:column;align-items:center;padding:10px;}
 .section-title{font-size:16px;font-weight:700;color:var(--text);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--card-border);}
-.expand-toggle{background:none;border:none;padding:0;font-family:var(--font);color:var(--primary);cursor:pointer;font-size:11px;display:inline-block;margin-top:2px;}.expand-toggle:hover{text-decoration:underline;}.file-list-full{display:none;}.file-list-full.open{display:block;}.export-btn{background:rgba(6,182,212,0.1);border:1px solid var(--primary);color:var(--primary);font-family:var(--font);font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;float:right;margin-top:-4px;}.export-btn:hover{background:rgba(6,182,212,0.2);}
+.expand-toggle{background:none;border:none;padding:0;font-family:var(--font);color:var(--primary);cursor:pointer;font-size:11px;line-height:inherit;display:inline-block;margin-top:2px;}.expand-toggle:hover{text-decoration:underline;}.file-list-full{display:none;}.file-list-full.open{display:block;}.export-btn{background:rgba(6,182,212,0.1);border:1px solid var(--primary);color:var(--primary);font-family:var(--font);font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;float:right;margin-top:-4px;}.export-btn:hover{background:rgba(6,182,212,0.2);}
 .copy-btn{background:none;border:1px solid var(--dim);color:var(--dim);font-family:var(--font);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:6px;transition:all 0.15s;}
 .copy-btn:hover{border-color:var(--primary);color:var(--primary);}
 .copy-btn.copied{border-color:var(--green);color:var(--green);}
@@ -105,7 +105,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .action-priority{font-size:10px;font-weight:700;color:var(--dim);min-width:20px;}
 .action-content{flex:1;}
 .action-desc{font-size:13px;margin-bottom:4px;}
-.action-link{background:none;border:none;padding:0;font-family:var(--font);font-size:12px;color:var(--primary);cursor:pointer;text-decoration:underline;}
+.action-link{background:none;border:none;padding:0;font-family:var(--font);font-size:12px;line-height:inherit;color:var(--primary);cursor:pointer;text-decoration:underline;}
 .empty-state{color:var(--dim);font-size:13px;padding:20px;text-align:center;}
 .cta-card{background:var(--card);border:1px dashed var(--primary);border-radius:6px;padding:20px;text-align:center;}
 .cta-title{font-size:16px;font-weight:700;color:var(--primary);margin-bottom:8px;}
@@ -115,7 +115,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 /* Phone widths: the score and its badge share the first line and the bar with
    its label takes the full second line, so the label never meets the score. */
 @media(max-width:600px){.nav-tab{padding:8px 10px;}.score-banner{flex-wrap:wrap;gap:12px 16px;padding:16px;}.score-banner-num{font-size:40px;}.score-banner-grade{margin-left:auto;font-size:16px;}.score-banner-bar{order:3;flex-basis:100%;}.data-table th,.data-table td{padding:6px 8px;}}
-.breakdown-row{display:grid;grid-template-columns:100px 1fr 60px 50px;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;color:inherit;font-family:var(--font);text-align:left;cursor:pointer;}
+.breakdown-row{display:grid;grid-template-columns:100px 1fr 60px 50px;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;color:inherit;font-family:var(--font);line-height:inherit;text-align:left;cursor:pointer;}
 .breakdown-row:hover .breakdown-name{color:var(--text);}
 button:focus-visible,.table-scroll:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
 .hygiene-row{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(51,65,85,0.3);font-size:13px;overflow-wrap:anywhere;}
