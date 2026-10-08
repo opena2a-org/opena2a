@@ -9,7 +9,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { platform, tmpdir } from 'node:os';
 import { childEnv } from '../adapters/registry.js';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
@@ -42,7 +42,8 @@ import { getShieldStatus } from '../shield/status.js';
 import { chainBreakEvent, readVerifiedEvents, type VerifiedEventsResult } from '../shield/events.js';
 import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
 import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
-import { verifyConfigIntegrity, type ConfigIntegritySummary } from './guard.js';
+import { verifyConfigIntegrity, defaultSigningFiles, type ConfigIntegritySummary } from './guard.js';
+import { collectEnvFileFacts, type EnvFileFact } from './review-facts.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -142,6 +143,8 @@ export interface InitPhaseData {
   hygieneChecks: HygieneCheck[];
   advisoryCount: number;
   matchedPackages: string[];
+  /** Env files in the tree with their git state, value count and mode. */
+  envFiles: EnvFileFact[];
 }
 
 export interface CredentialPhaseData {
@@ -153,12 +156,24 @@ export interface CredentialPhaseData {
   bySeverity: Record<string, number>;
   driftFindings: CredentialMatch[];
   envVarSuggestions: { finding: string; envVar: string }[];
+  /** What the built-in credential scan read and what it left out. */
+  coverage: CredentialCoverage;
+}
+
+export interface CredentialCoverage {
+  filesRead: number;
+  /** Matches dropped as published examples or placeholders. */
+  placeholdersSkipped: number;
+  /** Folder names the scan did not enter. */
+  skippedDirs: string[];
 }
 
 export interface GuardPhaseData {
   filesMonitored: number;
   tamperedFiles: string[];
   signatureStatus: 'valid' | 'tampered' | 'unsigned';
+  /** Files a bare `opena2a guard sign` would sign here. */
+  candidates: string[];
 }
 
 /** Classified-finding counts by severity, deduplicated the same way
@@ -286,6 +301,19 @@ export interface HmaPhaseData {
    *  in the HTML report; this field preserves the raw set so the Observations
    *  block and overview severity counts match `hackmyagent secure`. */
   allFailedFindings: HmaFinding[];
+  /** How the HMA run ended. `available` is false for every status but `ran`. */
+  run: HmaRunStatus;
+}
+
+export type HmaRunStatusCode = 'ran' | 'skipped' | 'notFound' | 'timedOut' | 'badOutput' | 'exitError';
+
+export interface HmaRunStatus {
+  status: HmaRunStatusCode;
+  /** One line on why HMA produced no result; null when it ran. */
+  reason: string | null;
+  /** First line of `hackmyagent --version` as npx resolved it; null when unknown. */
+  version: string | null;
+  durationMs: number;
 }
 
 export interface DetectPhaseData {
@@ -460,10 +488,9 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Phase 5: HMA Scan (optional)
   const phase5Start = Date.now();
   progress(5, 'Running HMA security scan...');
-  let hmaData: HmaPhaseData | null = null;
-  if (!options.skipHma) {
-    hmaData = await runHmaPhase(targetDir);
-  }
+  const hmaData: HmaPhaseData = options.skipHma
+    ? emptyHmaData({ status: 'skipped', reason: 'skipped by --skip-hma', version: null, durationMs: 0 })
+    : await runHmaPhase(targetDir);
   const phase5Ms = Date.now() - phase5Start;
   if (hmaData && hmaData.available) {
     phases.push({
@@ -855,6 +882,7 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
     hygieneChecks: checks,
     advisoryCount: advisoryCheck.advisories.length,
     matchedPackages: advisoryCheck.matchedPackages,
+    envFiles: collectEnvFileFacts(targetDir),
   };
 }
 
@@ -884,18 +912,29 @@ async function runCredentialPhase(targetDir: string): Promise<CredentialPhaseDat
     bySeverity,
     driftFindings,
     envVarSuggestions,
+    coverage: {
+      filesRead: scan.filesScanned,
+      placeholdersSkipped: scan.placeholdersSkipped,
+      skippedDirs: scan.skippedDirs,
+    },
   };
 }
 
 function runGuardPhase(targetDir: string): GuardPhaseData {
+  let candidates: string[] = [];
   try {
-    const result = verifyConfigIntegrity(targetDir);
-    return result;
+    candidates = defaultSigningFiles(targetDir);
+  } catch {
+    // Best-effort: an unreadable tree has no candidates to list.
+  }
+  try {
+    return { ...verifyConfigIntegrity(targetDir), candidates };
   } catch {
     return {
       filesMonitored: 0,
       tamperedFiles: [],
       signatureStatus: 'unsigned',
+      candidates,
     };
   }
 }
@@ -1103,40 +1142,134 @@ export function deriveHmaCounts(
   return { totalChecks: fullSet.length, passed };
 }
 
-/**
- * Exported so the child-environment wiring tests can run the real spawn under
- * a mocked `node:child_process` (#246); `review` is its only production caller.
- */
-export async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
-  const emptyResult: HmaPhaseData = {
+/** HMA phase data for a run that produced no result. */
+export function emptyHmaData(run: HmaRunStatus): HmaPhaseData {
+  return {
     available: false, score: 0, maxScore: 100,
     totalChecks: 0, passed: 0, failed: 0,
     bySeverity: {}, byCategory: {}, topFindings: [], allFailedFindings: [],
+    run,
   };
+}
+
+/** How long one HMA child process may run before review stops waiting. */
+export const HMA_TIMEOUT_MS = 120_000;
+
+interface ChildOutcome {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  spawnError: Error | null;
+  timedOut: boolean;
+}
+
+/** Run a child to completion or to the deadline, whichever comes first. At the
+ *  deadline the child is killed and the result returned at once, even if a
+ *  grandchild still holds the output pipes open. */
+function runChild(start: () => ChildProcess, timeoutMs: number): Promise<ChildOutcome> {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (code: number | null, spawnError: Error | null, timedOut: boolean): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ code, stdout, stderr, spawnError, timedOut });
+    };
+    let proc: ChildProcess;
+    try {
+      proc = start();
+    } catch (err) {
+      finish(null, err instanceof Error ? err : new Error(String(err)), false);
+      return;
+    }
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr?.on('data', (d: Buffer) => { if (stderr.length < 4096) stderr += d.toString(); });
+    proc.on('close', (code: number | null) => finish(code, null, false));
+    proc.on('error', (err: Error) => finish(null, err, false));
+    timer = setTimeout(() => {
+      proc.kill?.();
+      proc.stdout?.destroy?.();
+      proc.stderr?.destroy?.();
+      finish(null, null, true);
+    }, timeoutMs);
+  });
+}
+
+/** One printable line: escape sequences and control characters removed,
+ *  whitespace collapsed, clipped. */
+function oneLine(text: string, max = 200): string {
+  const clean = text
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean.length > max ? clean.slice(0, max) + '…' : clean;
+}
+
+function firstLine(text: string, max = 200): string | null {
+  const line = text.split(/\r?\n/).map(l => oneLine(l, max)).find(l => l.length > 0);
+  return line ?? null;
+}
+
+function seconds(ms: number): string {
+  return `${Number((ms / 1000).toFixed(1))} s`;
+}
+
+/**
+ * Exported so the child-environment wiring tests can run the real spawn under
+ * a mocked `node:child_process` (#246); `review` is its only production caller.
+ * `timeoutMs` exists for tests; review uses HMA_TIMEOUT_MS.
+ *
+ * Every way HMA can fail to produce a result is kept apart in `run.status`,
+ * with the reason, so a run that timed out or printed something unreadable is
+ * never reported as "not installed".
+ */
+export async function runHmaPhase(
+  targetDir: string,
+  options: { timeoutMs?: number } = {},
+): Promise<HmaPhaseData> {
+  const started = Date.now();
+  const timeoutMs = options.timeoutMs ?? HMA_TIMEOUT_MS;
+  let version: string | null = null;
+  const noResult = (status: HmaRunStatusCode, reason: string): HmaPhaseData =>
+    emptyHmaData({ status, reason, version, durationMs: Date.now() - started });
 
   try {
-    const versionCheck = await new Promise<boolean>((resolve) => {
-      const proc = spawn('npx', ['hackmyagent', '--version'], { stdio: 'pipe' });
-      proc.on('close', (code) => resolve(code === 0));
-      proc.on('error', () => resolve(false));
-    });
-    if (!versionCheck) return emptyResult;
+    const probe = await runChild(() => spawn('npx', ['hackmyagent', '--version'], { stdio: 'pipe' }), timeoutMs);
+    if (probe.timedOut) return noResult('timedOut', `hackmyagent --version did not finish within ${seconds(timeoutMs)}`);
+    if (probe.spawnError) return noResult('notFound', `npx could not be started (${oneLine(probe.spawnError.message)})`);
+    if (probe.code !== 0) {
+      return noResult('notFound', `npx could not start hackmyagent (${firstLine(probe.stderr) ?? `exit code ${probe.code}`})`);
+    }
+    version = firstLine(probe.stdout, 40);
 
-    const output = await new Promise<string>((resolve, reject) => {
-      const proc = spawn('npx', ['hackmyagent', 'secure', '--format', 'json', targetDir], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 120_000,
-        // The same `hackmyagent` contract every other route to the scanner
-        // uses (#246); previously this spawn inherited the whole environment.
-        env: childEnv('hackmyagent'),
-      });
-      let stdout = '';
-      proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-      proc.on('close', () => resolve(stdout));
-      proc.on('error', reject);
-    });
+    const run = await runChild(() => spawn('npx', ['hackmyagent', 'secure', '--format', 'json', targetDir], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // The same `hackmyagent` contract every other route to the scanner
+      // uses (#246); previously this spawn inherited the whole environment.
+      env: childEnv('hackmyagent'),
+    }), timeoutMs);
+    if (run.timedOut) return noResult('timedOut', `HMA stopped after ${seconds(timeoutMs)} on this tree`);
+    if (run.spawnError) return noResult('notFound', `npx could not be started (${oneLine(run.spawnError.message)})`);
 
-    const parsed = JSON.parse(output);
+    let parsed: { findings?: Record<string, unknown>[]; score?: number; maxScore?: number } & Record<string, unknown>;
+    try {
+      parsed = JSON.parse(run.stdout);
+    } catch {
+      // HMA exits non-zero when it finds critical issues, so the exit code
+      // alone is not a failure: only output that is not a report is.
+      if (run.code !== 0) {
+        return noResult('exitError', `hackmyagent secure exited with code ${run.code} (${firstLine(run.stderr) ?? 'no message'})`);
+      }
+      return noResult('badOutput', `HMA output could not be read (first 80 characters: ${oneLine(run.stdout.slice(0, 400), 80) || 'none'})`);
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return noResult('badOutput', 'HMA output is JSON but not a report object');
+    }
+
     const allFindings: HmaFinding[] = (parsed.findings || []).map(
       (f: Record<string, unknown>) => mapRawHmaFinding(f),
     );
@@ -1187,9 +1320,10 @@ export async function runHmaPhase(targetDir: string): Promise<HmaPhaseData> {
       byCategory,
       topFindings,
       allFailedFindings: failedFindings,
+      run: { status: 'ran', reason: null, version, durationMs: Date.now() - started },
     };
-  } catch {
-    return emptyResult;
+  } catch (err) {
+    return noResult('badOutput', `HMA output could not be read (${oneLine(err instanceof Error ? err.message : String(err))})`);
   }
 }
 

@@ -88,7 +88,7 @@ export interface ConfigIntegritySummary {
 
 // --- Default guarded files ---
 
-const GUARD_FILES = [
+export const GUARD_FILES = [
   'mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json',
   'package.json', 'package-lock.json',
   'arp.yaml', 'arp.yml', 'arp.json',
@@ -711,6 +711,11 @@ function gitIgnoredPaths(targetDir: string, candidates: string[]): Map<string, s
     ignored.set(matchedPath, source ? `${source}:${line}:${pattern}` : pattern);
   }
   return ignored;
+}
+
+/** The files a bare `opena2a guard sign` would sign in targetDir, in GUARD_FILES order. */
+export function defaultSigningFiles(targetDir: string): string[] {
+  return resolveDefaultFiles(targetDir).files;
 }
 
 function hasGitDirAncestor(dir: string): boolean {
