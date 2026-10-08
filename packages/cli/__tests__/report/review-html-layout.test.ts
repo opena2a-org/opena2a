@@ -76,6 +76,15 @@ describe('review report: keyboard', () => {
   it('focus is visible on every button', () => {
     expect(declarations(css, 'button:focus-visible,.table-scroll:focus-visible')).toContain('outline:2px solid');
   });
+
+  it('the controls that became buttons keep the line height of the text around them', () => {
+    // A button does not inherit line-height, so as buttons the Score
+    // Breakdown rows went from 22.5px to 18px tall and the file-list toggles
+    // from 17.5px to 14px at 1280px.
+    for (const selector of ['.breakdown-row', '.expand-toggle', '.action-link']) {
+      expect(declarations(css, selector), selector).toContain('line-height:inherit');
+    }
+  });
 });
 
 describe('review report: 375px', () => {
