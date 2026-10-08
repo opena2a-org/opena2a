@@ -29,3 +29,23 @@ export function readReviewAsset(relPath: string, dir: string = REVIEW_ASSETS_DIR
 }
 
 export const reviewReportCss = (): string => readReviewAsset('report.css');
+
+/**
+ * The report's client script files, in load order. review-html.ts still
+ * inlines its own copy of the script; it switches to these once every part of
+ * that script is here.
+ */
+export const REVIEW_CLIENT_FILES: readonly string[] = [
+  'client/00-core.js', // report data, tab switching, shared helpers
+  'client/10-overview.js',
+  'client/20-credentials.js',
+  'client/30-hygiene.js',
+];
+
+/** The client files concatenated in order inside one function scope, so their names stay off `window`. */
+export function assembleReviewClientScript(
+  files: readonly string[] = REVIEW_CLIENT_FILES,
+  dir: string = REVIEW_ASSETS_DIR,
+): string {
+  return '(function(){\n' + files.map(f => readReviewAsset(f, dir)).join('\n') + '})();';
+}

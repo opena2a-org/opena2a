@@ -7,7 +7,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { REVIEW_ASSETS_DIR, readReviewAsset, reviewReportCss } from '../../src/report/review-assets.js';
+import { Script } from 'node:vm';
+import {
+  REVIEW_ASSETS_DIR,
+  REVIEW_CLIENT_FILES,
+  assembleReviewClientScript,
+  readReviewAsset,
+  reviewReportCss,
+} from '../../src/report/review-assets.js';
 import { generateReviewHtml } from '../../src/report/review-html.js';
 import type { ReviewReport } from '../../src/commands/review.js';
 
@@ -51,5 +58,35 @@ describe('review report assets', () => {
     });
     const packed = (JSON.parse(out) as Array<{ files: Array<{ path: string }> }>)[0].files.map(f => f.path);
     for (const name of assets) expect(packed).toContain(`dist/report/review/assets/${name}`);
+  });
+});
+
+describe('review report client script', () => {
+  // Whitespace carries no meaning outside string literals, and the client
+  // files keep every string literal exactly as the inline script writes it.
+  // A semicolon before `}` is optional in JavaScript.
+  const squeeze = (js: string): string => js.replace(/\s+/g, '').replace(/;}/g, '}');
+
+  it('assembles every client file, in order, into one script that compiles and cannot end its <script> element', () => {
+    for (const name of assets.filter(a => a.startsWith('client/'))) expect(REVIEW_CLIENT_FILES).toContain(name);
+    const script = assembleReviewClientScript();
+    expect(script).toContain('function renderOverview('); // non-vacuity: the real client files
+    expect(script).not.toMatch(/<\/script/i);
+    expect(() => new Script(script, { filename: 'review-report-client.js' })).not.toThrow();
+  });
+
+  it('a missing client file throws an error that names its path', () => {
+    expect(() => assembleReviewClientScript(['client/missing.js'], scratch)).toThrow(join(scratch, 'client', 'missing.js'));
+  });
+
+  it('the client files hold the start of the script the report inlines today, unchanged but for layout', () => {
+    const html = generateReviewHtml({ projectName: 'demo', directory: '/tmp/demo' } as unknown as ReviewReport);
+    const inline = /<script>\n\(function\(\)\{([\s\S]*)\}\)\(\);\n<\/script>/.exec(html)?.[1];
+    expect(inline).toBeDefined();
+    const files = squeeze(REVIEW_CLIENT_FILES.map(f => readReviewAsset(f)).join('\n'));
+    expect(files.length).toBeGreaterThan(20_000); // non-vacuity
+    expect(squeeze(inline!).slice(0, files.length)).toBe(files);
+    // The rest of the inline script starts at the first statement no client file holds yet.
+    expect(squeeze(inline!).slice(files.length)).toMatch(/^functionrenderShield\(/);
   });
 });
