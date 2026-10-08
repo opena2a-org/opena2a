@@ -20,10 +20,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { REVIEW_ASSETS_DIR, REVIEW_CLIENT_FILES } from '../../src/report/review-assets.js';
 
 const SRC = join(__dirname, '..', '..', 'src');
 const reviewSrc = () => readFileSync(join(SRC, 'commands', 'review.ts'), 'utf-8');
-const htmlSrc = () => readFileSync(join(SRC, 'report', 'review-html.ts'), 'utf-8');
+const htmlSrc = () => // the page shell and its client script
+  [join(SRC, 'report', 'review-html.ts'), ...REVIEW_CLIENT_FILES.map(f => join(REVIEW_ASSETS_DIR, f))].map(f => readFileSync(f, 'utf-8')).join('\n');
 
 describe('score provenance', () => {
   it('the shield posture field names the posture it measures', () => {
