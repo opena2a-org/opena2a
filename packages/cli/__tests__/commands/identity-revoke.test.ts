@@ -61,8 +61,8 @@ describe('identity revoke', () => {
     expect(code).toBe(1);
     expect(revokeAgent).not.toHaveBeenCalled();
     expect(stderr).toContain('This will revoke the agent on the server.');
-    expect(stderr).toContain('To confirm, run: opena2a identity revoke --server cloud --ci');
-    expect(stderr).toContain('To temporarily disable instead: opena2a identity suspend --server cloud');
+    expect(stderr).toContain('To confirm, run: opena2a identity revoke --ci');
+    expect(stderr).toContain('To temporarily disable instead: opena2a identity suspend');
     expect(stderr).not.toMatch(RETENTION_OR_DELETION);
   });
 
@@ -74,7 +74,7 @@ describe('identity revoke', () => {
     expect(code).toBe(0);
     expect(revokeAgent).toHaveBeenCalledWith('agent-123');
     expect(stdout).toContain('Agent agent-123 revoked.');
-    expect(stdout).toContain('To reactivate: opena2a identity reactivate --server cloud');
+    expect(stdout).toContain('To reactivate: opena2a identity reactivate');
     expect(stdout).not.toMatch(RETENTION_OR_DELETION);
   });
 
