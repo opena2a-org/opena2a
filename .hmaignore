@@ -8,9 +8,10 @@
 # anything under packages/cli/src/. Fix real findings in source instead.
 
 # NEMO-007 (full process.env passthrough to subprocess): dev-only lock-trace
-# instrument, not published. Its measured purpose is spawning this repo's own
-# vitest in the full inherited environment to reproduce lock contention;
-# narrowing the env spread would change what the instrument measures.
+# instrument, not published. Since #397 it hands its vitest run an allowlisted
+# environment (scripts/shield-lock-trace-env.ts) instead of spreading
+# process.env, and the check no longer fires on it; retiring this rule also
+# means dropping its entry from hmaignore-scope.test.ts.
 # Triaged as a false positive: github.com/opena2a-org/opena2a/issues/188
 packages/cli/scripts/shield-lock-trace-loop.ts
 

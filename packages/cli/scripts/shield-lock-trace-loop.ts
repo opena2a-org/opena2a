@@ -8,6 +8,9 @@
  * paths. On N clean rounds it prints the round count, the host and the phrase
  * `not recurred` -- it never claims the fork is fixed, bounded or gone.
  *
+ * Each run gets the allowlisted environment from shield-lock-trace-env.ts,
+ * not the full process.env.
+ *
  *   npm run shield:lock-trace-loop -- 40          # N rounds (default 40)
  *   SHIELD_LOCK_TRACE_DIR=/path npm run shield:lock-trace-loop
  */
@@ -15,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { LOCK_TRACE_ENV } from '../src/shield/lock.js';
+import { lockTraceSuiteEnv } from './shield-lock-trace-env.js';
 
 const PKG = path.resolve(__dirname, '..');
 const SUITE = path.join('__tests__', 'shield', 'concurrent-write.test.ts');
@@ -50,6 +53,12 @@ function seqBounds(traceFile: string): { first: number | null; last: number | nu
 
 process.stdout.write(`shield-lock-trace-loop: ${rounds} round(s) on ${hostname()}, traces under ${keepDir}\n`);
 
+// OPENA2A_CHILD_ENV_ALLOW cannot change between rounds, so its notice is
+// printed for the first round only.
+const envNotice = (notice: string): void => {
+  process.stderr.write(`shield-lock-trace-loop: ${notice}\n`);
+};
+
 for (let round = 1; round <= rounds; round += 1) {
   const roundDir = path.join(keepDir, `round-${String(round).padStart(3, '0')}`);
   mkdirSync(roundDir, { recursive: true });
@@ -60,7 +69,7 @@ for (let round = 1; round <= rounds; round += 1) {
     cwd: PKG,
     encoding: 'utf-8',
     maxBuffer: 64 * 1024 * 1024,
-    env: { ...process.env, [LOCK_TRACE_ENV]: traceFile, SHIELD_CONCURRENT_ROUNDS: process.env.SHIELD_CONCURRENT_ROUNDS ?? '1' },
+    env: lockTraceSuiteEnv(traceFile, process.env, round === 1 ? envNotice : undefined),
   });
   const output = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
   writeFileSync(stderrFile, output);
