@@ -142,4 +142,9 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(turbo <the root test script\'s turbo arguments> --dry=json) once, with ' +
       'placeholder token values; a dry run executes no task (unit 10455)',
   },
+  'report/review-assets.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'execFileSync(npm pack --dry-run --json) once, to list the files the package ships',
+  },
 };

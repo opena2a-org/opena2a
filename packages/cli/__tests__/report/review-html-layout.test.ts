@@ -22,7 +22,14 @@ const html = generateReviewHtml({
   directory: '/tmp/demo',
   timestamp: '2026-10-06T00:00:00Z',
 } as unknown as ReviewReport);
-const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+// The stylesheet is kept formatted (review/assets/report.css). Rules are
+// matched with comments and formatting whitespace removed: `selector{a:b;}`.
+const css = html
+  .slice(html.indexOf('<style>'), html.indexOf('</style>'))
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\s+/g, ' ')
+  .replace(/\s*([{};:,>])\s*/g, '$1')
+  .replace(/@media \(/g, '@media(');
 const script = html.slice(html.lastIndexOf('<script>'), html.lastIndexOf('</script>'));
 
 /** Declarations of the first rule in `block` whose selector is exactly `selector`. */

@@ -8,7 +8,7 @@
     "opena2a": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc && cp src/semantic/command-index.json dist/semantic/",
+    "build": "tsc && cp src/semantic/command-index.json dist/semantic/ && rm -rf dist/report/review/assets && mkdir -p dist/report/review && cp -R src/report/review/assets dist/report/review/",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
