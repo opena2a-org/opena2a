@@ -8,6 +8,11 @@
  * confirmed the change. Now `--ci` is the one way to re-sign without a
  * prompt, a non-terminal stdin or `--format json` without `--ci` refuses and
  * names `--ci`, and the event records how consent was given.
+ *
+ * `guard sign` over an existing store re-signs every signed file whose
+ * contents changed, so it follows the same rule: without it, `guard sign
+ * --format json` from a script re-signed a changed file with no prompt and no
+ * `--ci`, which made the resign rule a formality.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -52,8 +57,9 @@ function withStdin(answer: string, isTTY: boolean): () => void {
 }
 
 async function run(
-  opts: { format?: string; ci?: boolean },
+  opts: { format?: 'text' | 'json'; ci?: boolean },
   stdin: { answer: string; isTTY: boolean },
+  subcommand: 'resign' | 'sign' = 'resign',
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const out: string[] = [];
   const err: string[] = [];
@@ -61,7 +67,7 @@ async function run(
   const errSpy = vi.spyOn(process.stderr, 'write').mockImplementation((c: any) => { err.push(String(c)); return true; });
   const restoreStdin = withStdin(stdin.answer, stdin.isTTY);
   try {
-    const exitCode = await guard({ subcommand: 'resign', targetDir, ...opts });
+    const exitCode = await guard({ subcommand, targetDir, ...opts });
     return { exitCode, stdout: out.join(''), stderr: err.join('') };
   } finally {
     restoreStdin();
@@ -166,5 +172,79 @@ describe('guard resign consent', () => {
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain('Nothing to re-sign.');
     expect(r.stderr).not.toContain('Refusing');
+  });
+});
+
+function signedEvents() {
+  return readEvents({ category: 'config.signed' });
+}
+
+describe('guard sign over a store whose signed files changed', () => {
+  it('refuses --format json from a non-terminal stdin, names --ci, and leaves the store and log unchanged', async () => {
+    await signThenChange();
+    const storeBefore = fs.readFileSync(storePath, 'utf-8');
+    const eventsBefore = signedEvents().length;
+
+    const r = await run({ format: 'json' }, { answer: '', isTTY: false }, 'sign');
+
+    expect(r.exitCode).toBe(1);
+    const body = JSON.parse(r.stdout);
+    expect(body.error).toContain('--ci');
+    expect(body.files).toEqual(['package.json']);
+    expect(body.signed).toBeUndefined();
+    expect(fs.readFileSync(storePath, 'utf-8')).toBe(storeBefore);
+    expect(signedEvents()).toHaveLength(eventsBefore);
+  });
+
+  it('refuses a yes piped from a non-terminal stdin and names the changed file', async () => {
+    await signThenChange();
+    const storeBefore = fs.readFileSync(storePath, 'utf-8');
+
+    const r = await run({}, { answer: 'y', isTTY: false }, 'sign');
+
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toContain('CHANGED package.json');
+    expect(r.stderr).toContain('Refusing to re-sign');
+    expect(r.stderr).toContain('--ci');
+    expect(r.stdout).not.toContain('Confirm re-sign?');
+    expect(fs.readFileSync(storePath, 'utf-8')).toBe(storeBefore);
+  });
+
+  it('re-signs with --ci and records consent "ci" and the re-signed files on config.signed', async () => {
+    await signThenChange();
+
+    const r = await run({ ci: true, format: 'json' }, { answer: '', isTTY: false }, 'sign');
+
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout)).toMatchObject({ signed: 1, files: ['package.json'], resigned: ['package.json'] });
+    const events = signedEvents();
+    expect(events).toHaveLength(2); // the first sign, then this one (newest first)
+    expect(events[0].detail).toMatchObject({ files: ['package.json'], resigned: ['package.json'], consent: 'ci' });
+  });
+
+  it('records consent "prompt" when the re-sign is confirmed by a yes typed at a terminal', async () => {
+    await signThenChange();
+
+    const r = await run({}, { answer: 'y', isTTY: true }, 'sign');
+
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('Confirm re-sign? [y/N]');
+    const events = signedEvents();
+    expect(events).toHaveLength(2); // the first sign, then this one (newest first)
+    expect(events[0].detail).toMatchObject({ resigned: ['package.json'], consent: 'prompt' });
+  });
+
+  it('does not ask when no signed file changed: a first sign, a repeat sign and a newly added file need no consent', async () => {
+    fs.writeFileSync(path.join(targetDir, 'package.json'), '{"name":"original"}');
+    expect((await run({ format: 'json' }, { answer: '', isTTY: false }, 'sign')).exitCode).toBe(0);
+    expect((await run({ format: 'json' }, { answer: '', isTTY: false }, 'sign')).exitCode).toBe(0);
+    fs.writeFileSync(path.join(targetDir, 'tsconfig.json'), '{}');
+
+    const r = await run({ format: 'json' }, { answer: '', isTTY: false }, 'sign');
+
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout).files).toEqual(['package.json', 'tsconfig.json']);
+    expect(JSON.parse(r.stdout).resigned).toBeUndefined();
+    for (const event of signedEvents()) expect(event.detail).not.toHaveProperty('consent');
   });
 });

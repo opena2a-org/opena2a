@@ -214,6 +214,25 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
 
   if (!isJson) spinner.stop();
 
+  // Signing over an existing store re-signs every signed file whose contents
+  // changed, so it asks for the same consent as `guard resign`.
+  const changed = changedSignedFiles(targetDir, signatures);
+  let consent: import('./guard-snapshots.js').ResignConsent | undefined;
+  if (changed.length > 0) {
+    if (!isJson) {
+      process.stdout.write(`Found ${changed.length} modified signed file${changed.length === 1 ? '' : 's'}:\n`);
+      for (const entry of changed) {
+        const sign = entry.sizeChange > 0 ? '+' : '';
+        const sizeInfo = entry.sizeChange !== 0 ? ` (${sign}${entry.sizeChange}b)` : '';
+        process.stdout.write(`  CHANGED ${entry.filePath}${sizeInfo}\n`);
+      }
+    }
+    const { resignConsent } = await import('./guard-snapshots.js');
+    const given = await resignConsent(changed.map(c => c.filePath), { isJson, isCi: options.ci ?? false });
+    if (!given) return 1;
+    consent = given;
+  }
+
   if (signatures.length === 0 && !options.skills && !options.heartbeats) {
     if (isJson) { process.stdout.write(JSON.stringify({ signed: 0, files: [], skipped }, null, 2) + '\n'); }
     else {
@@ -232,6 +251,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
 
     await emitEvent('config.signed', 'guard.sign', targetDir, 'info', 'allowed', {
       fileCount: signatures.length, files: signatures.map(s => s.filePath),
+      ...(consent ? { resigned: changed.map(c => c.filePath), consent } : {}),
     });
   }
 
@@ -247,6 +267,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
 
   if (isJson) {
     const result: Record<string, unknown> = { signed: signatures.length, files: signatures.map(s => s.filePath), skipped };
+    if (changed.length > 0) result.resigned = changed.map(c => c.filePath);
     if (skillResults.length > 0) result.skills = skillResults.map(s => s.filePath);
     if (heartbeatResults.length > 0) result.heartbeats = heartbeatResults.map(s => s.filePath);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -742,6 +763,31 @@ function loadStore(targetDir: string): SignatureStore | null {
     }
     return store;
   } catch { return null; }
+}
+
+/**
+ * The files in `signatures` that the existing store signed with a different
+ * hash: what a sign over that store would re-sign. Reads the store quietly;
+ * an absent or unparseable store has nothing to re-sign.
+ */
+function changedSignedFiles(targetDir: string, signatures: ConfigSignature[]): { filePath: string; sizeChange: number }[] {
+  let previous: unknown;
+  try { previous = JSON.parse(fs.readFileSync(path.join(targetDir, STORE_DIR, STORE_FILE), 'utf-8')); }
+  catch { return []; }
+  const entries = (previous as { signatures?: unknown })?.signatures;
+  if (!Array.isArray(entries)) return [];
+  const signed = new Map<string, ConfigSignature>();
+  for (const entry of entries as ConfigSignature[]) {
+    if (entry && typeof entry.filePath === 'string' && typeof entry.hash === 'string') signed.set(entry.filePath, entry);
+  }
+  const changed: { filePath: string; sizeChange: number }[] = [];
+  for (const sig of signatures) {
+    const before = signed.get(sig.filePath);
+    if (before && before.hash !== sig.hash) {
+      changed.push({ filePath: sig.filePath, sizeChange: sig.fileSize - (typeof before.fileSize === 'number' ? before.fileSize : sig.fileSize) });
+    }
+  }
+  return changed;
 }
 
 function buildReport(subcommand: string, targetDir: string, results: GuardResult[], totalSigned: number): GuardReport {

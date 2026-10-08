@@ -285,7 +285,7 @@ After the initial setup, use these commands as part of your regular workflow:
 |------|---------|---------|
 | Before commits | `opena2a protect --dry-run` | Check for new credential leaks |
 | Weekly | `opena2a detect` | Verify governance posture |
-| After config changes | `opena2a guard resign` | Re-sign modified config files |
+| After config changes | `opena2a guard resign` (`--ci` in a script or when stdin is not a terminal) | Re-sign modified config files |
 | In CI/CD | `opena2a review --format json` | Automated security gate |
 
 ---
