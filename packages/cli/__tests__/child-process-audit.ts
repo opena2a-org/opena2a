@@ -265,4 +265,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(openssl version) when the file loads, then execFileSync(openssl req / openssl ' +
       'x509) to write a throwaway CA and the server certificates of the tunnel tests, one at a time',
   },
+  'commands/guard-resign-pty.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(python3 -I -c "import pty, select") once to detect a pseudo-terminal; then ' +
+      'spawnSync(python3 -I -c <pty driver> ...) that forks node dist/index.js guard resign ' +
+      'on a pseudo-terminal (so 2 processes worst case), and spawnSync(node dist/index.js ' +
+      'guard sign|verify), one at a time',
+  },
 };
