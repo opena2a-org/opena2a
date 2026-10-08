@@ -19,10 +19,19 @@
  * state (not logged in, no server connection, a denied capability, no LLM
  * backend, nothing to archive) is a run; the handler's usage-error path is a
  * failure.
+ *
+ * The usage block `opena2a identity` prints for an unknown subcommand had
+ * drifted the same way: `policy load <file>` printed the policy instead of
+ * loading the file (the handler reads --file), its server-flag list named
+ * audit and log, which answer "--server is not supported". The hints
+ * suspend and revoke print named `--server cloud`, which they ignore: they
+ * act on the stored connection.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -159,6 +168,23 @@ function runCli(sandbox: string, args: string[]): { out: string; status: number 
   return { out: clean(res.stdout, res.stderr), status: res.status };
 }
 
+/** runCli without blocking the event loop, for commands that call a server in this process. */
+function runCliAsync(sandbox: string, args: string[]): Promise<{ out: string; status: number | null }> {
+  const { project, env } = sandboxes.get(sandbox)!;
+  return new Promise((done) => {
+    const child = spawn(process.execPath, [CLI_PATH, ...args], { cwd: project, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), RUN_TIMEOUT);
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('close', (status) => {
+      clearTimeout(timer);
+      done({ out: clean(stdout, stderr), status });
+    });
+  });
+}
+
 /** Runs a command that does not exit by itself and stops it once `ready` prints. */
 function runUntil(sandbox: string, args: string[], ready: RegExp): Promise<{ out: string; started: boolean }> {
   const { project, env } = sandboxes.get(sandbox)!;
@@ -190,6 +216,79 @@ function declaredFlags(help: string): Set<string> {
     for (const f of m[1].split(/[ ,]+/)) if (f.startsWith('-')) flags.add(f);
   }
   return flags;
+}
+
+/** Option flags a command parser declares, each with whether it takes a value. */
+function declaredOptions(help: string): Map<string, boolean> {
+  const options = new Map<string, boolean>();
+  for (const m of help.matchAll(/^ {2}(-[^ ].*?)(?: {2,}|$)/gm)) {
+    const takesValue = /[<[]/.test(m[1]);
+    for (const f of m[1].split(/[ ,]+/)) if (f.startsWith('-')) options.set(f, takesValue);
+  }
+  return options;
+}
+
+/**
+ * What is wrong with one command row of the identity usage block: its
+ * subcommand has no help entry, a flag the parser does not declare or that
+ * lacks its value, positional words the entry's usage does not take, or a
+ * flag the entry marks required left out.
+ */
+function usageRowProblems(synopsis: string, options: Map<string, boolean>): string[] {
+  const [sub, ...rest] = synopsis.replace(/[[\]]/g, '').split(' ');
+  const entry = IDENTITY_HELP[sub];
+  if (!entry) return [`${synopsis}: no help entry for ${sub}`];
+  const problems: string[] = [];
+  const positionals: string[] = [];
+  const flags = new Set<string>();
+  for (let i = 0; i < rest.length; i++) {
+    const token = rest[i];
+    if (!token.startsWith('-')) {
+      positionals.push(token);
+      continue;
+    }
+    flags.add(token);
+    if (!options.has(token)) {
+      problems.push(`${synopsis}: ${token} is not an identity option`);
+    } else if (options.get(token)) {
+      if (/^<[^>]+>$/.test(rest[i + 1] ?? '')) i++;
+      else problems.push(`${synopsis}: ${token} takes a value`);
+    }
+  }
+  const slots = (entry.usage ?? '').split(' ').filter(Boolean);
+  if (positionals.length > slots.length) {
+    problems.push(`${synopsis}: ${sub} takes ${slots.length} positional argument(s), not ${positionals.join(' ')}`);
+  }
+  slots.forEach((slot, i) => {
+    const word = positionals[i];
+    if (word === undefined) {
+      if (slot.startsWith('<')) problems.push(`${synopsis}: missing ${slot}`);
+      return;
+    }
+    const choices = /^<([^<>]*\|[^<>]*)>$/.exec(slot)?.[1].split('|');
+    if (choices ? !choices.includes(word) : !/^<[^>]+>$/.test(word)) {
+      problems.push(`${synopsis}: ${word} does not fit ${slot}`);
+    }
+  });
+  for (const opt of entry.options ?? []) {
+    const flag = opt.flag.split(' ')[0];
+    if (opt.description.includes('(required)') && !flags.has(flag)) {
+      problems.push(`${synopsis}: missing required ${flag}`);
+    }
+  }
+  return problems;
+}
+
+/** The command rows of the identity usage block, with their descriptions. */
+function usageRows(usage: string): Array<{ synopsis: string; description: string }> {
+  const lines = usage.split('\n');
+  const rows: Array<{ synopsis: string; description: string }> = [];
+  lines.forEach((line, i) => {
+    if (!/^ {2}[a-z]/.test(line)) return;
+    const [synopsis, description] = line.slice(2).split(/ {2,}/);
+    rows.push({ synopsis, description: description ?? (lines[i + 1] ?? '').trim() });
+  });
+  return rows;
 }
 
 function toArgs(example: string): string[] {
@@ -296,4 +395,121 @@ describe('--help prints help and never runs the command', () => {
     expect(status).toBe(0);
     expect(out.startsWith('Usage: opena2a guard status'), out).toBe(true);
   });
+});
+
+describe('the identity usage block shows commands that run as shown', () => {
+  const usage = () => runCli('help', ['identity', 'no-such-subcommand']);
+  const identityOptions = () =>
+    new Map([
+      ...declaredOptions(runCli('help', ['--help']).out),
+      ...declaredOptions(runCli('help', ['identity', '--help']).out),
+    ]);
+
+  it('prints the usage block and exits 1', () => {
+    const { out, status } = usage();
+    expect(status).toBe(1);
+    expect(out).toContain('Unknown identity subcommand: no-such-subcommand');
+    expect(out).toContain('Usage: opena2a identity <subcommand>');
+    expect(usageRows(out).length).toBeGreaterThan(20);
+  }, RUN_TIMEOUT);
+
+  it('fits 80 columns', () => {
+    const wide = usage().out.split('\n').filter((line) => line.length > 80);
+    expect(wide).toEqual([]);
+  }, RUN_TIMEOUT);
+
+  it('every row fits its help entry and the identity parser', () => {
+    const options = identityOptions();
+    const problems = usageRows(usage().out).flatMap((row) => usageRowProblems(row.synopsis, options));
+    expect(problems).toEqual([]);
+  }, RUN_TIMEOUT * 2);
+
+  it('the rows it showed before are flagged', () => {
+    const options = identityOptions();
+    for (const synopsis of ['policy load <file>', 'policy --server', 'log', 'connect <url>']) {
+      expect(usageRowProblems(synopsis, options), synopsis).not.toEqual([]);
+    }
+  }, RUN_TIMEOUT * 2);
+
+  it('names under Server Flags only commands that take --server', () => {
+    const names = /^Server Flags \(for ([^)]*)\):$/m.exec(usage().out)?.[1].split(/,\s*/) ?? [];
+    expect(names.length).toBeGreaterThan(0);
+    const refused = names.filter((name) =>
+      runCli('help', ['identity', name, '--server', 'http://127.0.0.1:9']).out.includes('is not supported'),
+    );
+    expect(refused).toEqual([]);
+    // The list it printed before named audit and log.
+    expect(runCli('help', ['identity', 'audit', '--server', 'http://127.0.0.1:9']).out).toContain('is not supported');
+  }, RUN_TIMEOUT * 6);
+
+  it('describes revoke without a retention period or a deletion the server does not report', () => {
+    const revoke = usageRows(usage().out).find((row) => row.synopsis === 'revoke');
+    expect(revoke?.description).toBe('Revoke agent on server');
+    expect(revoke?.description).not.toMatch(/30 days|retain|irreversible|permanent|delete/i);
+  }, RUN_TIMEOUT);
+});
+
+describe('identity suspend, reactivate and revoke print commands that act on the connected agent', () => {
+  let server: Server;
+  const requests: string[] = [];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready));
+    const { port } = server.address() as AddressInfo;
+    const sandbox = makeSandbox('lifecycle');
+    sandboxes.set('lifecycle', sandbox);
+    // The stored connection the lifecycle commands act on: this test's server.
+    const dir = join(sandbox.env.HOME!, '.opena2a', 'aim-core', 'identities');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'server.json'),
+      `${JSON.stringify({
+        serverUrl: `http://127.0.0.1:${port}`,
+        agentId: 'agent-1',
+        accessToken: 'test-access-token',
+        registeredAt: '2026-01-01T00:00:00.000Z',
+      })}\n`,
+    );
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((closed) => server.close(() => closed()));
+  });
+
+  it('revoke without --ci sends nothing, and every printed command reaches the stored server', async () => {
+    const warning = await runCliAsync('lifecycle', ['identity', 'revoke']);
+    expect(warning.status, warning.out).toBe(1);
+    expect(requests).toEqual([]);
+
+    const printed = new Set<string>();
+    const collect = (out: string) => {
+      for (const m of out.matchAll(/opena2a identity [a-z][^\n]*/g)) printed.add(m[0].trim());
+    };
+    collect(warning.out);
+    for (const args of [['identity', 'revoke', '--ci'], ['identity', 'suspend']]) {
+      const { out, status } = await runCliAsync('lifecycle', args);
+      expect(status, out).toBe(0);
+      collect(out);
+    }
+    // They act on the stored connection and ignore --server, so a --server in
+    // a hint can name another server than the one the command acts on.
+    expect([...printed].sort()).toEqual([
+      'opena2a identity reactivate',
+      'opena2a identity revoke --ci',
+      'opena2a identity suspend',
+    ]);
+
+    for (const command of printed) {
+      const action = command.split(' ')[2];
+      requests.length = 0;
+      const { out, status } = await runCliAsync('lifecycle', toArgs(command));
+      expect(status, out).toBe(0);
+      expect(requests).toEqual([`POST /api/v1/agents/agent-1/${action}`]);
+    }
+  }, RUN_TIMEOUT * 8);
 });

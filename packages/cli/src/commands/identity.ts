@@ -57,55 +57,59 @@ const USAGE = [
   'Usage: opena2a identity <subcommand>',
   '',
   'Identity & Keys',
-  '  list               Show local agent identity',
-  '  create <name>      Create a new agent identity (alias: init)',
-  '  sign --data <d>    Sign a string with agent private key',
-  '  sign --file <f>    Sign a file with agent private key',
-  '  verify             Verify a signature against a public key',
+  '  list                           Show local agent identity',
+  '  create <name>                  Create a new agent identity (alias: init)',
+  '  sign --data <data>             Sign a string with agent private key',
+  '  sign --file <path>             Sign a file with agent private key',
+  '  verify --data <data> --signature <sig> --public-key <key>',
+  '                                 Verify a signature against a public key',
   '',
   'Trust & Audit',
-  '  trust              Show trust score with factor breakdown',
-  '  audit [--limit N]  Show recent audit events',
-  '  log                Log an audit event manually',
+  '  trust                          Show trust score with factor breakdown',
+  '  audit [--limit <n>]            Show recent audit events',
+  '  log --action <action>          Log an audit event manually',
   '',
   'Policy',
-  '  policy             Show current capability policy',
-  '  policy load <file> Load a YAML capability policy',
-  '  policy --server    List server security policies',
-  '  check <capability> Check if a capability is allowed',
+  '  policy                         Show current capability policy',
+  '  policy --file <path>           Load a YAML or JSON capability policy',
+  '  policy --server <url>          List server security policies',
+  '  check <capability>             Check if a capability is allowed',
   '',
   'Cross-Tool Integration',
-  '  integrate [--tools <list>]  Wire tools to identity (audit + trust)',
-  '  integrate --all             Enable all detected tools',
-  '  detach                      Remove cross-tool wiring',
-  '  sync                        Sync events from enabled tools',
+  '  integrate [--tools <list>]     Wire tools to identity (audit + trust)',
+  '  integrate --all                Enable all detected tools',
+  '  detach                         Remove cross-tool wiring',
+  '  sync                           Sync events from enabled tools',
   '',
   'Server Integration',
-  '  connect <url>            Connect local identity to an AIM server',
-  '  disconnect               Remove server association (keep local identity)',
+  '  connect <url> --api-key <key>  Connect local identity to an AIM server',
+  '  disconnect                     Remove server association (keep local identity)',
   '',
   'Tags',
-  '  tag list                 List all tags in organization',
-  '  tag add <name>           Create a tag and add to current agent',
-  '  tag remove <name>        Remove a tag from current agent',
+  '  tag list                       List all tags in organization',
+  '  tag add <name>                 Create a tag and add to current agent',
+  '  tag remove <name>              Remove a tag from current agent',
   '',
   'MCPs',
-  '  mcp list                 List agent MCP server connections',
-  '  mcp add <id>             Add an MCP server to agent',
-  '  mcp remove <id>          Remove an MCP server from agent',
-  '  mcp attach               Auto-discover and attach all MCP servers',
+  '  mcp list                       List agent MCP server connections',
+  '  mcp add <id>                   Add an MCP server to agent',
+  '  mcp remove <id>                Remove an MCP server from agent',
+  '  mcp attach                     Auto-discover and attach all MCP servers',
   '',
   'Lifecycle',
-  '  suspend                  Suspend agent on server (stops all operations)',
-  '  reactivate               Reactivate a suspended agent',
-  '  revoke                   Revoke agent on server',
+  '  suspend                        Suspend agent on server (stops all operations)',
+  '  reactivate                     Reactivate a suspended or revoked agent',
+  '  revoke                         Revoke agent on server',
   '',
   'Activity',
-  '  activity [--limit N]     View recent agent activity events',
+  '  activity [--limit <n>]         View recent agent activity events',
   '',
-  'Server Flags (for create, list, trust, audit, log, tag, mcp, activity, policy, suspend, reactivate, revoke):',
-  '  --server <url>           AIM server URL (e.g. localhost:8080, cloud)',
-  '  --api-key <key>          AIM API key for authentication',
+  'Server Flags (for create, list, trust, policy):',
+  '  --server <url>                 AIM server URL (e.g. localhost:8080, cloud)',
+  '  --api-key <key>                AIM API key for that server',
+  '',
+  'tag, mcp, activity, suspend, reactivate and revoke act on the agent',
+  'connected to the AIM server. Log in first with opena2a login.',
   '',
 ].join('\n');
 
@@ -2338,7 +2342,7 @@ async function handleSuspend(options: IdentityOptions): Promise<number> {
 
     process.stdout.write(green(`Agent ${agentId} suspended.`) + '\n');
     process.stdout.write(dim('  All operations for this agent are now paused.') + '\n');
-    process.stdout.write(dim('  To reactivate: opena2a identity reactivate --server cloud') + '\n');
+    process.stdout.write(dim('  To reactivate: opena2a identity reactivate') + '\n');
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to suspend agent: ${formatServerError(err)}\n`);
@@ -2408,8 +2412,8 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
   if (!options.ci && !isJson) {
     process.stderr.write(red('WARNING: This will revoke the agent on the server.') + '\n');
     process.stderr.write('\n');
-    process.stderr.write(`To confirm, run: opena2a identity revoke --server cloud --ci\n`);
-    process.stderr.write(`To temporarily disable instead: opena2a identity suspend --server cloud\n`);
+    process.stderr.write(`To confirm, run: opena2a identity revoke --ci\n`);
+    process.stderr.write(`To temporarily disable instead: opena2a identity suspend\n`);
     return 1;
   }
 
@@ -2428,7 +2432,7 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
     }
 
     process.stdout.write(red(`Agent ${agentId} revoked.`) + '\n');
-    process.stdout.write(dim('  To reactivate: opena2a identity reactivate --server cloud') + '\n');
+    process.stdout.write(dim('  To reactivate: opena2a identity reactivate') + '\n');
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to revoke agent: ${formatServerError(err)}\n`);

@@ -631,7 +631,7 @@ analysis runs and results can be shared with the community.
   // Identity command (native, uses @opena2a/aim-core)
   program
     .command('identity [subcommand] [args...]')
-    .description('Agent identity management (list, init, create, trust, audit, log, policy, check, sign, verify, integrate, detach, sync, connect, disconnect, tag, mcp, activity, suspend, reactivate)')
+    .description('Agent identity management (list, init, create, trust, audit, log, policy, check, sign, verify, integrate, detach, sync, connect, disconnect, tag, mcp, activity, suspend, reactivate, revoke)')
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--name <name>', 'Agent name (for create)')
@@ -644,7 +644,7 @@ analysis runs and results can be shared with the community.
     .option('--target <target>', 'Audit event target (for log)')
     .option('--result <result>', 'Audit event result: allowed|denied|error (for log)')
     .option('--plugin <plugin>', 'Plugin name (for log, check)')
-    .option('--file <path>', 'Policy file path (for policy load)')
+    .option('--file <path>', 'File to sign (sign) or capability policy to load (policy)')
     .option('--data <data>', 'Data to sign or verify')
     .option('--signature <sig>', 'Base64 signature (for verify)')
     .option('--public-key <key>', 'Base64 public key (for verify)')
