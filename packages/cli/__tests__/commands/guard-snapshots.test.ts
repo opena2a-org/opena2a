@@ -111,9 +111,9 @@ describe('guard-snapshots', () => {
     const snapId = '2020-01-01T00-00-00Z';
     fs.writeFileSync(path.join(snapshotsDir, `${snapId}.json`), originalStoreContent, 'utf-8');
 
-    // Modify and re-sign
+    // Modify and re-sign (a sign over changed signed files needs --ci here)
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"modified","extra":true}');
-    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
+    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json', ci: true });
 
     // Store should now have a different hash
     const storeModified = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
@@ -351,9 +351,9 @@ describe('guard-snapshots', () => {
     await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
     const snap = _internals.createSnapshot(tempDir);
 
-    // Re-sign with different content
+    // Re-sign with different content (a sign over changed signed files needs --ci here)
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"v":2}');
-    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
+    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json', ci: true });
 
     const { exitCode, output } = await captureStdout(() => guard({
       subcommand: 'snapshot',

@@ -26,6 +26,14 @@
  * would exempt the publish path itself. A precondition here is a test
  * failure in every environment — the failure message names the check, what
  * was missing, and the command that satisfies it where one exists.
+ *
+ * One case is network-dependent and says so: the clean fixture's
+ * `consumer-closure` is skipped, never passed, when every one of its
+ * preconditions is api.github.com refusing this address for its rate limit
+ * (an unauthenticated address gets 60 requests an hour, and the refusal
+ * quoted in the output is the endpoint's own statement, not a guess from the
+ * environment). Any other precondition still fails it, and the own-tarball
+ * cases have no such exception.
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -88,6 +96,31 @@ function preconditionFailure(check: string, out: string): string {
     remedy ? `command that satisfies it: ${remedy}` : 'no known command satisfies this precondition; read the script output above',
     `full output:\n${out}`,
   ].join('\n');
+}
+
+/** api.github.com refusing a read for its rate limit, as the script quotes it. */
+const ADVISORY_RATE_LIMIT = /^advisories endpoint for \S+ returned (403|429): .*rate limit/i;
+/** The empty-feed canary, which refusals on every roster repository also trip. */
+const ADVISORY_EMPTY_FEED = /^the advisories feed returned zero advisories/;
+
+/**
+ * The rate-limit refusals behind a consumer-closure precondition, or null
+ * when anything else is among its preconditions. The script prints a
+ * precondition result's N preconditions right after its
+ * `rows: ..., N precondition` summary line; a precondition returned before
+ * the rows were examined has no such line and is never a rate limit.
+ */
+function advisoryRateLimitRefusals(out: string): string[] | null {
+  const section = out.split('check consumer-closure: precondition')[1]?.split('\ncensus: ')[0] ?? '';
+  const lines = section.split('\n').map((l) => l.trim());
+  const rowsAt = lines.findIndex((l) => /^rows: .*, \d+ precondition$/.test(l));
+  if (rowsAt === -1) return null;
+  const count = Number(/(\d+) precondition$/.exec(lines[rowsAt])![1]);
+  const preconditions = lines.slice(rowsAt + 1, rowsAt + 1 + count);
+  if (count === 0 || preconditions.length !== count) return null;
+  const refusals = preconditions.filter((l) => ADVISORY_RATE_LIMIT.test(l));
+  if (refusals.length === 0) return null;
+  return preconditions.every((l) => ADVISORY_RATE_LIMIT.test(l) || ADVISORY_EMPTY_FEED.test(l)) ? refusals : null;
 }
 
 interface ReviewResult {
@@ -553,10 +586,18 @@ function findDeprecatedHackmyagentVersion(): { version: string; notice: string }
 describe('release-artifact-review: clean subjects go green', () => {
   it(
     'a clean fixture tarball exits 0 with every check pass',
-    () => {
+    (ctx) => {
       const r = getCleanResult();
       for (const check of ALL_CHECKS) {
         if (r.census[check] === 'precondition') {
+          // consumer-closure is the last check, so every other one has
+          // already been asserted when this skips.
+          const refusals = check === 'consumer-closure' ? advisoryRateLimitRefusals(r.out) : null;
+          if (refusals) {
+            const note = `network-dependent: api.github.com refused consumer-closure's advisories reads for its rate limit, so the check could not run (refusal${refusals.length === 1 ? '' : 's'} below). Export GH_TOKEN for an authenticated limit, or re-run after the limit resets.`;
+            console.warn(`${note}\n${refusals.join('\n')}`);
+            ctx.skip(note);
+          }
           expect.fail(preconditionFailure(check, r.out));
         }
         expect(r.census[check], `${check} on the clean fixture\n${r.out}`).toBe('pass');
@@ -646,4 +687,54 @@ describe('release-artifact-review: clean subjects go green', () => {
     },
     840_000
   );
+});
+
+// ---------------------------------------------------------------------------
+// The clean fixture's one network-dependent skip: what counts as a rate limit.
+// ---------------------------------------------------------------------------
+
+describe('release-artifact-review: rate-limit triage of the clean fixture', () => {
+  const refusal = (repo: string, status = 403, message = "API rate limit exceeded for 192.0.2.1. (But here's the good news: Authenticated requests get a higher rate limit.)") =>
+    `advisories endpoint for ${repo} returned ${status}: {"message":"${message}"}`;
+  const EMPTY_FEED =
+    "the advisories feed returned zero advisories across the roster's repositories — a silently empty feed is indistinguishable from a broken one";
+  /** A consumer-closure section in the script's own layout. */
+  const output = (status: string, preconditions: string[]) =>
+    [
+      `  check consumer-closure: ${status}`,
+      '    advisory-states read: published',
+      `    note: ${refusal('opena2a-org/hackmyagent')} (canary-only repository)`,
+      '    examined opena2a-cli@0.0.0-qgf-clean (opena2a-org/opena2a): clean',
+      '    advisories read: 0 across 0 repositories (states: published)',
+      `    rows: 1 own copy examined, 0 fail, ${preconditions.length} precondition`,
+      ...preconditions.map((p) => `    ${p}`),
+      `census: entry-allowlist=pass consumer-closure=${status}`,
+    ].join('\n');
+
+  it('names the refusals when every precondition is the endpoint refusing for its rate limit', () => {
+    const primary = refusal('opena2a-org/opena2a');
+    const secondary = refusal('opena2a-org/ai-trust', 429, 'You have exceeded a secondary rate limit.');
+    expect(advisoryRateLimitRefusals(output('precondition', [primary, secondary, EMPTY_FEED]))).toEqual([primary, secondary]);
+  });
+
+  it('does not skip when another precondition sits beside the refusals', () => {
+    const deprecation = 'deprecation probe on known-deprecated hackmyagent@0.1.0 returned empty — the deprecation feed is not readable';
+    expect(advisoryRateLimitRefusals(output('precondition', [refusal('opena2a-org/opena2a'), deprecation, EMPTY_FEED]))).toBeNull();
+  });
+
+  it('does not skip a 403 that is not a rate limit, or an empty feed on its own', () => {
+    const denied = refusal('opena2a-org/opena2a', 403, 'Resource not accessible by integration');
+    expect(advisoryRateLimitRefusals(output('precondition', [denied, EMPTY_FEED]))).toBeNull();
+    expect(advisoryRateLimitRefusals(output('precondition', [EMPTY_FEED]))).toBeNull();
+  });
+
+  it('does not skip a precondition returned before the rows were examined, or a check that ran', () => {
+    const early = [
+      '  check consumer-closure: precondition',
+      `    the fresh-install closure did not resolve: ${refusal('opena2a-org/opena2a')}`,
+      'census: consumer-closure=precondition',
+    ].join('\n');
+    expect(advisoryRateLimitRefusals(early)).toBeNull();
+    expect(advisoryRateLimitRefusals(output('pass', []))).toBeNull();
+  });
 });

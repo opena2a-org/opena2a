@@ -152,6 +152,7 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
       { flag: '--files <files...>', description: 'Sign specific files, git-ignored ones included (defaults to scanning the directory)' },
       { flag: '--skills', description: 'Include SKILL.md files in the signing set' },
       { flag: '--heartbeats', description: 'Include HEARTBEAT.md files in the signing set' },
+      { flag: '--ci', description: 'Re-sign signed files that changed without confirmation (required when stdin is not a terminal or with --format json)' },
     ],
     examples: [
       'opena2a guard sign',
