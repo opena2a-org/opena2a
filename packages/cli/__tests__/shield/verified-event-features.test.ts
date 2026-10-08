@@ -644,7 +644,7 @@ describe('chain-break notice wording', () => {
 });
 
 describe('shield log and explain print event fields as inert text', () => {
-  const CONTROL = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/;
+  const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200B-\u200F\u202A-\u202E\u2066-\u2069]/;
 
   it('a control sequence in a field cannot hide the UNVERIFIED marker', async () => {
     writeEvent(makePartial());
@@ -660,7 +660,7 @@ describe('shield log and explain print event fields as inert text', () => {
 
   it('a line break or a format character in a field cannot forge a row', async () => {
     writeEvent(makePartial({
-      target: 'a\n[2026-01-01T00:00:00.000Z] [INFO] fake -> b (allowed)‮',
+      target: 'a\n[2026-01-01T00:00:00.000Z] [INFO] fake -> b (allowed)\u202E',
     }));
 
     const { out } = await run('log');
