@@ -30,11 +30,7 @@ export function readReviewAsset(relPath: string, dir: string = REVIEW_ASSETS_DIR
 
 export const reviewReportCss = (): string => readReviewAsset('report.css');
 
-/**
- * The report's client script files, in load order. review-html.ts still
- * inlines its own copy of the script; these hold all of it, and the report
- * switches over to them in a separate change.
- */
+/** The report's client script files, in load order. */
 export const REVIEW_CLIENT_FILES: readonly string[] = [
   'client/00-core.js', // report data, tab switching, shared helpers
   'client/10-overview.js',

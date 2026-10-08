@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateReviewHtml } from '../../src/report/review-html.js';
 import type { ReviewReport } from '../../src/commands/review.js';
+import { compactReportScript } from './compact-script.js';
 
 // The page shell reads only these fields; everything else comes from the JSON.
 const html = generateReviewHtml({
@@ -30,7 +31,7 @@ const css = html
   .replace(/\s+/g, ' ')
   .replace(/\s*([{};:,>])\s*/g, '$1')
   .replace(/@media \(/g, '@media(');
-const script = html.slice(html.lastIndexOf('<script>'), html.lastIndexOf('</script>'));
+const script = compactReportScript(html);
 
 /** Declarations of the first rule in `block` whose selector is exactly `selector`. */
 function declarations(block: string, selector: string): string {

@@ -6,6 +6,7 @@ import {
 } from '../../src/commands/review.js';
 import { generateReviewHtml } from '../../src/report/review-html.js';
 import type { ReviewReport } from '../../src/commands/review.js';
+import { compactReportScript } from '../report/compact-script.js';
 
 // HMA Finding v2 schema landed in hackmyagent commit dc8d344
 // (`src/types/finding-evidence.ts`). opena2a-cli is a wrapper consumer:
@@ -231,19 +232,19 @@ describe('generateReviewHtml — Finding v2 wiring (renderer source assertions)'
   });
 
   it('the renderer renders positive evidence lines when present', () => {
-    const html = generateReviewHtml(buildReport([]));
+    const html = compactReportScript(generateReviewHtml(buildReport([])));
     expect(html).toContain("f.evidence.kind==='positive'");
     expect(html).toContain('f.evidence.lines');
   });
 
   it('the renderer renders absence-of-defense evidence when present', () => {
-    const html = generateReviewHtml(buildReport([]));
+    const html = compactReportScript(generateReviewHtml(buildReport([])));
     expect(html).toContain("f.evidence.kind==='absence'");
     expect(html).toContain('f.evidence.observed');
   });
 
   it('the renderer renders mixed evidence (both positive and absence panels)', () => {
-    const html = generateReviewHtml(buildReport([]));
+    const html = compactReportScript(generateReviewHtml(buildReport([])));
     // Adversarial Phase 4.5 surfaced this: HMA's HmaMixedEvidence variant
     // had no renderer branch — silent display drop. Renderer must now route
     // through positivePanel + absencePanel helpers.
@@ -260,7 +261,7 @@ describe('generateReviewHtml — Finding v2 wiring (renderer source assertions)'
   });
 
   it('drops the legacy inline guidance ternary (replaced by whyAndEvidence)', () => {
-    const html = generateReviewHtml(buildReport([]));
+    const html = compactReportScript(generateReviewHtml(buildReport([])));
     expect(html).not.toContain("((f.guidance||legacyRiskKb[f.checkId])?'<div");
   });
 
