@@ -35,7 +35,7 @@ interface LocalVerdictFinding {
   line?: number;
 }
 import { detectProject } from '../util/detect.js';
-import { CREDENTIAL_PATTERNS, quickCredentialScan, scanCredentialsWithCoverage, type CredentialMatch } from '../util/credential-patterns.js';
+import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
@@ -76,6 +76,12 @@ const REVIEW_FORMATS = ['text', 'json'] as const;
 function printable(value: string): string {
   return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
 }
+
+/** Terminal Verdict when nothing was found because the credential check
+ *  opened no file. `opena2a review .` pastes and runs without editing. */
+const NO_FILES_SCANNED_VERDICT =
+  'No files were scanned for credentials, so this is not a clean result. '
+  + 'Run `opena2a review .` from the folder that holds your code.';
 
 export interface PhaseResult {
   name: string;
@@ -420,7 +426,10 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Phase 1: Init Scan
   const phase1Start = Date.now();
   progress(1, 'Scanning project...');
-  const initData = await runInitPhase(targetDir);
+  // One credential walk per review: Phase 1 scores what it found and Phase 2
+  // reports it, so the tree is read once, not once per phase.
+  const credentialScan = await scanCredentialsWithCoverage(targetDir);
+  const initData = await runInitPhase(targetDir, credentialScan.matches);
   const phase1Ms = Date.now() - phase1Start;
   const phase1Status = initData.trustScore >= 80 ? 'pass' : initData.trustScore >= 50 ? 'warn' : 'fail';
   phases.push({
@@ -435,7 +444,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // Phase 2: Credential Scan (reuses Phase 1 credential data)
   const phase2Start = Date.now();
   progress(2, 'Checking credentials...');
-  const credentialData = await runCredentialPhase(targetDir);
+  const credentialData = runCredentialPhase(credentialScan);
   const phase2Ms = Date.now() - phase2Start;
   const credScore = computeCredentialScore(credentialData);
   const phase2Status = credentialData.totalFindings === 0 ? 'pass'
@@ -735,8 +744,13 @@ export async function review(options: ReviewOptions): Promise<number> {
         name: f.title,
         checkId: f.id,
       }));
-      const categorySummaries = cliUi.buildCategorySummaries(categorizable);
-      const verdict = cliUi.buildVerdict(
+      // A credential check that opened no file found nothing because it read
+      // nothing. The block must not list credentials as clear, close the
+      // category list with "(all clear)" or call the directory safe to use.
+      const credentialsUnread = credentialData.filesScanned === 0;
+      const categorySummaries = cliUi.buildCategorySummaries(categorizable)
+        .filter(c => !(credentialsUnread && c.name === 'credentials'));
+      let verdict = cliUi.buildVerdict(
         { critical: sevCounts.critical, high: sevCounts.high, medium: sevCounts.medium, low: sevCounts.low },
         { kind: projectLabel },
         verdictFindings,
@@ -744,16 +758,29 @@ export async function review(options: ReviewOptions): Promise<number> {
         // with the headline band instead of disagreeing in direction (#221).
         compositeScore,
       );
+      if (credentialsUnread && verdict.status === 'safe') {
+        verdict = { status: 'unknown', message: NO_FILES_SCANNED_VERDICT };
+      }
       const { lines } = cliUi.renderObservationsBlock({
         surfaces: { kind: projectLabel },
         checks: {
           staticCount: phases.length,
           semanticCount: 0,
+          skipped: credentialsUnread
+            ? [{ category: 'credentials', reason: 'no files scanned' }]
+            : undefined,
         },
         categories: categorySummaries,
         verdict,
         verbose: !!options.verbose,
       });
+      if (credentialsUnread && categorySummaries.every(c => c.clear)) {
+        for (const line of lines) {
+          if (line.label !== 'Categories') continue;
+          line.value = 'no findings · credentials not examined (no files scanned)';
+          line.tone = 'default';
+        }
+      }
       process.stdout.write('\n');
       const toneColor = (tone: 'default' | 'good' | 'warning' | 'critical'): (s: string) => string => {
         if (tone === 'good') return green;
@@ -845,9 +872,8 @@ export async function review(options: ReviewOptions): Promise<number> {
 
 // --- Phase Implementations ---
 
-async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
+async function runInitPhase(targetDir: string, credentialMatches: CredentialMatch[]): Promise<InitPhaseData> {
   const project = detectProject(targetDir);
-  const credentialMatches = await quickCredentialScan(targetDir);
 
   const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
   const { score: trustScore, grade } = calculateTrustScore(checks);
@@ -901,14 +927,13 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   };
 }
 
-async function runCredentialPhase(targetDir: string): Promise<CredentialPhaseData> {
+function runCredentialPhase(scan: CredentialScanResult): CredentialPhaseData {
   // Redacted here, where the phase data is built, not per output format: this
   // object is serialised verbatim into `--json` and into the HTML report's
   // embedded payload, so any format that forgot to mask would ship the secret
   // (#267). The finding needs file:line and a recognisable preview, never the
   // value. The scan itself keeps the raw value: `protect` needs it
   // to rewrite the source.
-  const scan = await scanCredentialsWithCoverage(targetDir);
   const matches = scan.matches.map(m => ({ ...m, value: maskValue(m.value) }));
   const bySeverity: Record<string, number> = {};
   for (const m of matches) {
@@ -1885,7 +1910,7 @@ function scoreToGrade(score: number): string {
  *  Used to scope the prefer-HMA dedupe: only credential HMA findings
  *  suppress credential-scan matches. Non-credential HMA findings on the
  *  same file (e.g. GIT-002 on .gitignore) MUST NOT hide a credential that
- *  quickCredentialScan found in that file. */
+ *  the credential scan found in that file. */
 const HMA_CREDENTIAL_PREFIXES = [
   'CRED', 'AST-CRED', 'WEBCRED', 'SEM-CRED', 'AGENT-CRED',
   'ENVLEAK', 'CLIPASS', 'DRIFT',

@@ -26,6 +26,25 @@ vi.mock('node:os', async (importOriginal) => {
   };
 });
 
+// Counts entries into the credential walk through either export, so a test
+// can tell how many times one review read the tree. Behaviour is unchanged.
+const credentialWalks = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock('../../src/util/credential-patterns.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/credential-patterns.js')>();
+  return {
+    ...actual,
+    quickCredentialScan: (dir: string) => {
+      credentialWalks.count++;
+      return actual.quickCredentialScan(dir);
+    },
+    scanCredentialsWithCoverage: (dir: string) => {
+      credentialWalks.count++;
+      return actual.scanCredentialsWithCoverage(dir);
+    },
+  };
+});
+
 import {
   review,
   aggregateFindings,
@@ -485,12 +504,14 @@ describe('review', () => {
       const { output } = await captureStdout(() => review({
         targetDir: dir, format: 'json', autoOpen: false, skipHma: true,
       }));
-      await captureStdout(() => review({
+      const { output: terminal } = await captureStdout(() => review({
         targetDir: dir, reportPath, autoOpen: false, skipHma: true, ci: true,
       }));
       const html = fs.readFileSync(reportPath, 'utf-8');
       return {
         report: JSON.parse(output),
+        terminalLine: (label: string) => terminal.split('\n').find(l => l.includes(label)) ?? '',
+        terminal,
         credentialsTab: renderReportPage(html, 'credentials'),
         overviewTab: renderReportPage(html, 'overview'),
       };
@@ -506,7 +527,7 @@ describe('review', () => {
     fs.writeFileSync(path.join(tempDir, 'guide.pdf'), '%PDF-1.4');
     fs.writeFileSync(path.join(tempDir, '.toolrc'), 'x=1\n');
 
-    const { report, credentialsTab, overviewTab } = await reviewBothFormats(tempDir);
+    const { report, terminal, terminalLine, credentialsTab, overviewTab } = await reviewBothFormats(tempDir);
 
     expect(report.credentialData.filesScanned).toBe(0);
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
@@ -518,17 +539,56 @@ describe('review', () => {
     expect(credentialsTab).toContain('opena2a review');
     expect(overviewTab).toContain('0 files read for credentials.');
     expect(overviewTab).not.toContain('No hardcoded credentials');
+
+    // The terminal summary says the same thing as the report.
+    expect(terminal).not.toContain('all clear');
+    expect(terminal).not.toContain('No security issues detected');
+    expect(terminal).not.toContain('looks safe to use');
+    expect(terminalLine('Checks')).toContain('1 skipped (credentials — no files scanned)');
+    expect(terminalLine('Categories')).toContain('no findings · credentials not examined (no files scanned)');
+    expect(terminalLine('Verdict')).toContain('No files were scanned for credentials, so this is not a clean result.');
+    expect(terminalLine('Verdict')).toContain('Run `opena2a review .` from the folder that holds your code.');
+  });
+
+  it('the no-files Credentials tab names every scanned .env file, the other skips, and a command that pastes as-is', async () => {
+    // An empty directory reads nothing too, and gets the same tab.
+    const { credentialsTab } = await reviewBothFormats(tempDir);
+
+    for (const name of ['.env,', '.env.local', '.env.development', '.env.production', '.env.staging', '.env.test']) {
+      expect(credentialsTab).toContain(name);
+    }
+    expect(credentialsTab).toContain('files over 1 MiB');
+    expect(credentialsTab).toContain('files it cannot read');
+    expect(credentialsTab).toContain('This directory is empty or holds only files the check skips.');
+    expect(credentialsTab).toContain('data-cmd="opena2a review ."');
+    expect(credentialsTab).not.toContain('project-dir');
   });
 
   it('a directory with a readable source file and no credential keeps the clean wording', async () => {
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
 
-    const { report, credentialsTab } = await reviewBothFormats(tempDir);
+    const { report, terminalLine, credentialsTab } = await reviewBothFormats(tempDir);
 
     expect(report.credentialData.filesScanned).toBeGreaterThanOrEqual(1);
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
     expect(credPhase.detail).toBe('No hardcoded credentials');
     expect(credentialsTab).toContain('No hardcoded credentials found. Your project is clean.');
+    expect(terminalLine('Checks')).toContain('0 skipped');
+    expect(terminalLine('Categories')).toContain('credentials');
+    expect(terminalLine('Categories')).toContain('(all clear)');
+    expect(terminalLine('Verdict')).toContain('No security issues detected');
+  });
+
+  it('reads the project for credentials once per review', async () => {
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
+    credentialWalks.count = 0;
+
+    const { exitCode } = await captureStdout(() => review({
+      targetDir: tempDir, format: 'json', autoOpen: false, skipHma: true,
+    }));
+
+    expect(exitCode).toBe(0);
+    expect(credentialWalks.count).toBe(1);
   });
 
   it('HMA unavailable gracefully skips', async () => {
