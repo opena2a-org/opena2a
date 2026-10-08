@@ -565,6 +565,7 @@ export function collectCatalogMatches(
   isKnownExample: IsKnownExample | null,
   seen: Set<string>,
   matches: CredentialMatch[],
+  suppressed?: Set<string>,
 ): void {
   if (!isKnownExample || catalog.length === 0) return;
   const breadth = catalog.filter(cp => BREADTH_DETECT_IDS.has(cp.id));
@@ -579,7 +580,10 @@ export function collectCatalogMatches(
         : new RegExp(cp.regex.source, cp.regex.flags + 'g');
       re.lastIndex = 0;
       for (const m of line.matchAll(re)) {
-        if (isKnownExample(line, m)) continue;
+        if (isKnownExample(line, m)) {
+          suppressed?.add(`${m[1] ?? m[0]}:${filePath}`);
+          continue;
+        }
         const value = m[1] ?? m[0];
         const dedupKey = `${value}:${filePath}`;
         if (seen.has(dedupKey)) continue;
@@ -651,7 +655,11 @@ export const SKIP_EXTENSIONS = new Set([
 
 // --- File walker ---
 
-export function walkFiles(dir: string, callback: (filePath: string) => void): void {
+export function walkFiles(
+  dir: string,
+  callback: (filePath: string) => void,
+  onSkippedDir?: (name: string) => void,
+): void {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -685,11 +693,17 @@ export function walkFiles(dir: string, callback: (filePath: string) => void): vo
   const SCAN_DOTFILES = new Set(['.env', '.env.local', '.env.development', '.env.production', '.env.staging', '.env.test']);
 
   for (const entry of entries) {
-    if (entry.name.startsWith('.') && !SCAN_DOTFILES.has(entry.name)) continue;
+    if (entry.name.startsWith('.') && !SCAN_DOTFILES.has(entry.name)) {
+      if (entry.isDirectory()) onSkippedDir?.(entry.name);
+      continue;
+    }
 
     if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      walkFiles(path.join(dir, entry.name), callback);
+      if (SKIP_DIRS.has(entry.name)) {
+        onSkippedDir?.(entry.name);
+        continue;
+      }
+      walkFiles(path.join(dir, entry.name), callback, onSkippedDir);
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (SKIP_EXTENSIONS.has(ext)) continue;
@@ -718,12 +732,21 @@ export interface CredentialScanResult {
   /** Files the scan opened and read. Zero means nothing under the directory
    *  was examined, so an empty `matches` is not a clean result. */
   filesScanned: number;
+  /** Distinct value-and-file pairs that a pattern matched and that were then
+   *  dropped as a published example or a placeholder (`example`, `fake`, low
+   *  entropy). Counted, never kept. */
+  placeholdersSkipped: number;
+  /** Names of the folders the walk did not enter (dependency, build, test and
+   *  hidden folders), sorted. */
+  skippedDirs: string[];
 }
 
 export async function scanCredentialsWithCoverage(targetDir: string): Promise<CredentialScanResult> {
   const matches: CredentialMatch[] = [];
   let filesScanned = 0;
   const seen = new Set<string>();
+  const suppressed = new Set<string>();
+  const skippedDirs = new Set<string>();
   // Loaded once before the walk so per-value label refinement + catalog
   // detection stay synchronous inside the walkFiles callback.
   const catalog = await loadCanonicalPatterns();
@@ -752,7 +775,10 @@ export async function scanCredentialsWithCoverage(targetDir: string): Promise<Cr
           // itself as an example is not an exposure, whatever matched it.
           // Name-gated patterns also get the entropy floor (see
           // isSuppressedCredentialValue).
-          if (isSuppressedCredentialValue(value, pattern, knownExampleKeys)) continue;
+          if (isSuppressedCredentialValue(value, pattern, knownExampleKeys)) {
+            suppressed.add(`${value}:${filePath}`);
+            continue;
+          }
           const dedupKey = `${value}:${filePath}`;
 
           if (seen.has(dedupKey)) continue;
@@ -796,10 +822,14 @@ export async function scanCredentialsWithCoverage(targetDir: string): Promise<Cr
     // Breadth pass: catch the catalog credential types the local patterns miss
     // (Slack, Stripe, Groq, GitLab, …), deduped against the local matches above
     // so overlapping providers keep their richer local label (#130).
-    collectCatalogMatches(lines, filePath, catalog, isKnownExample, seen, matches);
-  });
+    collectCatalogMatches(lines, filePath, catalog, isKnownExample, seen, matches, suppressed);
+  }, (name) => skippedDirs.add(name));
 
-  return { matches, filesScanned };
+  // A value one pattern dropped and another reported is a finding, not a skip.
+  let placeholdersSkipped = 0;
+  for (const key of suppressed) if (!seen.has(key)) placeholdersSkipped++;
+
+  return { matches, filesScanned, placeholdersSkipped, skippedDirs: [...skippedDirs].sort() };
 }
 
 // --- Template env leak posture scan (used by init, NOT by protect) ---
