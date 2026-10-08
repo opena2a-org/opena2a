@@ -44,6 +44,7 @@ import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '..
 import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, defaultSigningFiles, type ConfigIntegritySummary } from './guard.js';
 import { collectEnvFileFacts, type EnvFileFact } from './review-facts.js';
+import { buildReviewFindings, type HardeningItem, type ReportFinding, type ScoreModel } from './review-findings.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -104,6 +105,12 @@ export interface ReviewReport {
   recoverySummary: RecoverySummary;
   findings: ReviewFinding[];
   actionItems: ActionItem[];
+  /** Every analyzer's findings in one prioritized list (review-findings.ts). */
+  reportFindings: ReportFinding[];
+  /** Fingerprints of at most three findings to fix first. */
+  fixFirst: string[];
+  optionalHardening: HardeningItem[];
+  scoreModel: ScoreModel;
   // Phase data
   initData: InitPhaseData;
   credentialData: CredentialPhaseData;
@@ -143,6 +150,8 @@ export interface InitPhaseData {
   hygieneChecks: HygieneCheck[];
   advisoryCount: number;
   matchedPackages: string[];
+  /** Published advisories that match this project's packages. */
+  advisories: { id: string; summary: string; severity: string | null; packages: string[] }[];
   /** Env files in the tree with their git state, value count and mode. */
   envFiles: EnvFileFact[];
 }
@@ -529,7 +538,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   progressDone(6, 'Detecting shadow AI...       ', formatMs(phase6Ms));
 
   // Composite score
-  const hmaAvailable = hmaData?.available ?? false;
+  const hmaAvailable = hmaData.available;
   // Adoption-as-recovery (not penalty): a clean target must not be scored down
   // for opt-in OpenA2A tooling it simply hasn't adopted. Shield posture and the
   // raw governance score conflate "the target is dangerous" with "the developer
@@ -537,50 +546,34 @@ export async function review(options: ReviewOptions): Promise<number> {
   // composite we use risk-only views — neutral-high unless a genuine target-risk
   // signal fired — and surface adoption as recovery opportunities instead. See
   // shieldCompositeScore / governanceCompositeScore.
-  const projectGovernance = targetGovernanceFloorScore(detectData);
-  const shieldComposite = shieldCompositeScore(shieldData);
-  const shieldRisk = shieldRiskFloorScore(shieldData);
-  const governanceComposite = governanceCompositeScore(projectGovernance);
-  const credFloorScore = credentialFloorScore(credScore, credentialData.bySeverity);
-  const weightedComposite = computeCompositeScore(
-    initData.trustScore,
-    credScore,
-    guardScore,
-    shieldComposite,
-    hmaAvailable ? hmaData!.score : 0,
-    hmaAvailable,
-    governanceComposite,
-  );
   // Dominant-analyzer floor (#175): force the composite verdict to agree in
   // direction with the harshest *target-malice* analyzer. Only analyzers whose
   // critical-band score unambiguously means "the target itself is dangerous"
   // participate — see buildFloorParticipants for which are in/out and why.
-  const compositeScore = applyDominantAnalyzerFloor(
-    weightedComposite,
-    buildFloorParticipants({
-      trustScore: initData.trustScore,
-      credScore: credFloorScore,
-      guardScore,
-      hmaScore: hmaAvailable ? hmaData!.score : 0,
-      hmaAvailable,
-      projectGovernanceScore: projectGovernance.score,
-      projectGovernanceRan: projectGovernance.ran,
-      shieldRiskScore: shieldRisk.score,
-      shieldRiskRan: shieldRisk.ran,
-    }),
-  );
+  const scoreState: ScoreState = {
+    hygieneChecks: initData.hygieneChecks,
+    credentials: credentialData,
+    guard: guardData,
+    shield: shieldData,
+    hma: { available: hmaAvailable, score: hmaData.score },
+    detect: detectData,
+  };
+  const scored = scoreReview(scoreState);
+  const compositeScore = scored.composite;
   const grade = scoreToGrade(compositeScore);
-  const recoverySummary = computeRecoverySummary(
-    initData.trustScore, credScore, guardScore,
-    shieldComposite, hmaAvailable ? hmaData!.score : 0,
-    hmaAvailable, compositeScore, governanceComposite,
-  );
 
   // Aggregate findings
   const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData);
 
   // Action items
   const actionItems = generateActionItems(credentialData, guardData, shieldData, initData);
+
+  // One findings list, Fix first, optional hardening and recovery re-scored
+  // with scoreReview itself.
+  const { reportFindings, fixFirst, optionalHardening, scoreModel, recoverySummary } = buildReviewFindings({
+    targetDir, initData, credentialData, guardData, shieldData, hmaData, detectData, findings,
+    state: scoreState, score: scoreReview, floorBand: CRITICAL_BAND,
+  });
 
   // Build report
   const report: ReviewReport = {
@@ -595,6 +588,10 @@ export async function review(options: ReviewOptions): Promise<number> {
     recoverySummary,
     findings,
     actionItems,
+    reportFindings,
+    fixFirst,
+    optionalHardening,
+    scoreModel,
     initData,
     credentialData,
     guardData,
@@ -833,13 +830,9 @@ export async function review(options: ReviewOptions): Promise<number> {
 async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
   const project = detectProject(targetDir);
   const credentialMatches = await quickCredentialScan(targetDir);
-  const credsBySeverity: Record<string, number> = {};
-  for (const m of credentialMatches) {
-    credsBySeverity[m.severity] = (credsBySeverity[m.severity] || 0) + 1;
-  }
 
   const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
-  const { score: trustScore, grade } = calculateTrustScore(credsBySeverity, checks, targetDir);
+  const { score: trustScore, grade } = calculateTrustScore(checks);
 
   let advisoryCheck: AdvisoryCheck = { advisories: [], matchedPackages: [], total: 0, fromCache: false };
   try {
@@ -882,6 +875,10 @@ async function runInitPhase(targetDir: string): Promise<InitPhaseData> {
     hygieneChecks: checks,
     advisoryCount: advisoryCheck.advisories.length,
     matchedPackages: advisoryCheck.matchedPackages,
+    advisories: advisoryCheck.advisories.map(a => ({
+      id: a.id, summary: a.summary, severity: a.severity?.[0]?.score ?? null,
+      packages: [...new Set((a.affected ?? []).map(x => x.package?.name).filter((n): n is string => !!n))],
+    })),
     envFiles: collectEnvFileFacts(targetDir),
   };
 }
@@ -1581,34 +1578,89 @@ export function credentialFloorScore(credScore: number, bySeverity: Record<strin
   return credScore;
 }
 
-function computeCompositeScore(
-  trustScore: number,
-  credScore: number,
-  guardScore: number,
-  shieldScore: number,
-  hmaScore: number,
-  hmaAvailable: boolean,
-  shadowAiScore: number,
-): number {
-  if (hmaAvailable) {
-    // With HMA: 25% trust + 18% cred + 12% integrity + 22% shield + 8% HMA + 15% shadowAI
-    return Math.round(
-      trustScore * 0.25 +
-      credScore * 0.18 +
-      guardScore * 0.12 +
-      shieldScore * 0.22 +
-      hmaScore * 0.08 +
-      shadowAiScore * 0.15,
-    );
-  }
-  // Without HMA: 30% trust + 20% cred + 15% integrity + 20% shield + 15% shadowAI
+export type ScoreDimension = 'trust' | 'credentials' | 'integrity' | 'shield' | 'hma' | 'shadowAi';
+
+/** The composite's weights, by whether HMA ran. The one table the composite,
+ *  the recovery simulation and the report's score model read. */
+export const COMPOSITE_WEIGHTS: Readonly<Record<'withHma' | 'withoutHma', Readonly<Record<ScoreDimension, number>>>> = {
+  withHma: { trust: 0.25, credentials: 0.18, integrity: 0.12, shield: 0.22, hma: 0.08, shadowAi: 0.15 },
+  withoutHma: { trust: 0.30, credentials: 0.20, integrity: 0.15, shield: 0.20, hma: 0, shadowAi: 0.15 },
+};
+
+function computeCompositeScore(inputs: Record<ScoreDimension, number>, hmaAvailable: boolean): number {
+  const w = hmaAvailable ? COMPOSITE_WEIGHTS.withHma : COMPOSITE_WEIGHTS.withoutHma;
   return Math.round(
-    trustScore * 0.30 +
-    credScore * 0.20 +
-    guardScore * 0.15 +
-    shieldScore * 0.20 +
-    shadowAiScore * 0.15,
+    inputs.trust * w.trust +
+    inputs.credentials * w.credentials +
+    inputs.integrity * w.integrity +
+    inputs.shield * w.shield +
+    (hmaAvailable ? inputs.hma * w.hma : 0) +
+    inputs.shadowAi * w.shadowAi,
   );
+}
+
+/** The analyzer results the composite is computed from. Recovery is simulated
+ *  by changing what a fix changes here and scoring again. */
+export interface ScoreState {
+  hygieneChecks: HygieneCheck[];
+  credentials: CredentialPhaseData;
+  guard: GuardPhaseData;
+  shield: Pick<ShieldPhaseData, 'classifiedFindings' | 'preExclusionCounts'>;
+  hma: { available: boolean; score: number };
+  detect: Pick<DetectPhaseData, 'mcpServers' | 'aiConfigs'>;
+}
+
+export interface ScoreResult {
+  composite: number;
+  /** The weighted average before the dominant-analyzer floor. */
+  weighted: number;
+  weightSet: 'withHma' | 'withoutHma';
+  weights: Readonly<Record<ScoreDimension, number>>;
+  /** Each dimension's input to the weighted average. */
+  inputs: Record<ScoreDimension, number>;
+  participants: FloorParticipant[];
+}
+
+/** The composite exactly as review() reports it: risk-only dimension views,
+ *  the weighted average, then the dominant-analyzer floor (see the notes where
+ *  review() calls it). */
+export function scoreReview(state: ScoreState): ScoreResult {
+  const trustScore = calculateTrustScore(state.hygieneChecks).score;
+  const credScore = computeCredentialScore(state.credentials);
+  const guardScore = computeGuardScore(state.guard);
+  const hmaAvailable = state.hma.available;
+  const hmaScore = hmaAvailable ? state.hma.score : 0;
+  const projectGovernance = targetGovernanceFloorScore(state.detect);
+  const shieldRisk = shieldRiskFloorScore(state.shield);
+  const inputs: Record<ScoreDimension, number> = {
+    trust: trustScore,
+    credentials: credScore,
+    integrity: guardScore,
+    shield: shieldCompositeScore(state.shield),
+    hma: hmaScore,
+    shadowAi: governanceCompositeScore(projectGovernance),
+  };
+  const weighted = computeCompositeScore(inputs, hmaAvailable);
+  const participants = buildFloorParticipants({
+    trustScore,
+    credScore: credentialFloorScore(credScore, state.credentials.bySeverity),
+    guardScore,
+    hmaScore,
+    hmaAvailable,
+    projectGovernanceScore: projectGovernance.score,
+    projectGovernanceRan: projectGovernance.ran,
+    shieldRiskScore: shieldRisk.score,
+    shieldRiskRan: shieldRisk.ran,
+  });
+  const weightSet = hmaAvailable ? 'withHma' : 'withoutHma';
+  return {
+    composite: applyDominantAnalyzerFloor(weighted, participants),
+    weighted,
+    weightSet,
+    weights: COMPOSITE_WEIGHTS[weightSet],
+    inputs,
+    participants,
+  };
 }
 
 /** The critical band. An analyzer scoring below this is reporting a critical
@@ -1758,63 +1810,6 @@ function scoreToGrade(score: number): string {
   if (score >= 70) return 'moderate';
   if (score >= 60) return 'improving';
   return 'needs-attention';
-}
-
-function computeRecoverySummary(
-  trustScore: number,
-  credScore: number,
-  guardScore: number,
-  shieldScore: number,
-  hmaScore: number,
-  hmaAvailable: boolean,
-  compositeScore: number,
-  shadowAiScore: number,
-): RecoverySummary {
-  const opportunities: RecoveryOpportunity[] = [];
-
-  // Compute how many composite points each dimension could recover (score gap * weight)
-  const dims = hmaAvailable
-    ? [
-        { name: 'Credentials', score: credScore, weight: 0.18, action: 'opena2a protect' },
-        { name: 'Shield', score: shieldScore, weight: 0.22, action: 'opena2a shield init' },
-        { name: 'Hygiene', score: trustScore, weight: 0.25, action: 'opena2a init' },
-        { name: 'Config integrity', score: guardScore, weight: 0.12, action: 'opena2a guard sign' },
-        { name: 'HMA scan', score: hmaScore, weight: 0.08, action: 'opena2a scan' },
-        { name: 'Shadow AI', score: shadowAiScore, weight: 0.15, action: 'opena2a detect' },
-      ]
-    : [
-        { name: 'Credentials', score: credScore, weight: 0.20, action: 'opena2a protect' },
-        { name: 'Shield', score: shieldScore, weight: 0.20, action: 'opena2a shield init' },
-        { name: 'Hygiene', score: trustScore, weight: 0.30, action: 'opena2a init' },
-        { name: 'Config integrity', score: guardScore, weight: 0.15, action: 'opena2a guard sign' },
-        { name: 'Shadow AI', score: shadowAiScore, weight: 0.15, action: 'opena2a detect' },
-      ];
-
-  for (const d of dims) {
-    const gap = 100 - d.score;
-    if (gap <= 0) continue;
-    const recoverable = Math.round(gap * d.weight);
-    if (recoverable > 0) {
-      opportunities.push({
-        dimension: d.name,
-        pointsRecoverable: recoverable,
-        action: d.action,
-      });
-    }
-  }
-
-  // Sort by most recoverable first
-  opportunities.sort((a, b) => b.pointsRecoverable - a.pointsRecoverable);
-
-  const totalRecoverable = opportunities.reduce((s, o) => s + o.pointsRecoverable, 0);
-  const potentialScore = Math.min(100, compositeScore + totalRecoverable);
-
-  return {
-    currentScore: compositeScore,
-    potentialScore,
-    totalRecoverable,
-    opportunities,
-  };
 }
 
 // --- Findings Aggregation ---
@@ -2115,11 +2110,7 @@ function runHygieneChecks(
   return checks;
 }
 
-function calculateTrustScore(
-  credsBySeverity: Record<string, number>,
-  checks: HygieneCheck[],
-  dir: string,
-): { score: number; grade: string } {
+function calculateTrustScore(checks: HygieneCheck[]): { score: number; grade: string } {
   let score = 100;
 
   // Credential penalties removed -- credentials have their own 22% dimension.
