@@ -103,4 +103,11 @@ describe('review report: 375px', () => {
     expect(declarations(css, '.cred-card')).toContain('overflow-wrap:anywhere');
     expect(declarations(css, '.cmd-text')).toContain('overflow-wrap:anywhere');
   });
+
+  it('a Hygiene row breaks its value instead of widening the page', () => {
+    // The "Security config" row prints the signature store path
+    // (.opena2a/guard/signatures.json) as one flex item. Unbreakable, it set
+    // the Hygiene tab to 382px at a 375px viewport on a project with a store.
+    expect(declarations(css, '.hygiene-row')).toContain('overflow-wrap:anywhere');
+  });
 });
