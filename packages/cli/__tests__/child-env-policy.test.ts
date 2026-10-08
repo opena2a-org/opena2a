@@ -88,9 +88,10 @@ describe('ignore files and dev scripts (#246)', () => {
     expect(fs.existsSync(path.join(CLI_ROOT, '.hmaignore')), 'packages/cli/.hmaignore is retired').toBe(false);
   });
 
-  it('OPA-14.AC9 shield-lock-trace-loop.ts keeps its line-63 spread as the declared dev-script site', () => {
-    const lines = read('packages/cli/scripts/shield-lock-trace-loop.ts').split('\n');
-    expect(lines[62]).toContain('...process.env');
+  it('shield-lock-trace-loop.ts hands its vitest run lockTraceSuiteEnv instead of spreading process.env (#397)', () => {
+    const text = read('packages/cli/scripts/shield-lock-trace-loop.ts');
+    expect(text).not.toContain('...process.env');
+    expect(text).toMatch(/env: lockTraceSuiteEnv\(traceFile\b/);
   });
 
   it('OPA-14.AC9 release-smoke-corpus.ts keeps its spread, under a comment stating both sides get the identical environment by design', () => {
