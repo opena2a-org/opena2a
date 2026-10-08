@@ -8,6 +8,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { Script } from 'node:vm';
+import ts from 'typescript';
 import {
   REVIEW_ASSETS_DIR,
   REVIEW_CLIENT_FILES,
@@ -62,15 +63,32 @@ describe('review report assets', () => {
 });
 
 describe('review report client script', () => {
-  // Whitespace carries no meaning outside string literals, and the client
-  // files keep every string literal exactly as the inline script writes it.
-  // A semicolon before `}` is optional in JavaScript.
-  const squeeze = (js: string): string => js.replace(/\s+/g, '').replace(/;}/g, '}');
+  // The syntax tree of a script, one entry per node: its kind, a unary
+  // operator, and the source text of every leaf (names, keywords, and string,
+  // number and regex literals exactly as written). Parentheses are nodes;
+  // layout and optional semicolons are not.
+  const syntaxTree = (js: string): string[] => {
+    const sf = ts.createSourceFile('client.js', js, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    const out: string[] = [];
+    const visit = (n: ts.Node): void => {
+      const kids: ts.Node[] = [];
+      n.forEachChild(c => {
+        kids.push(c);
+      });
+      const op = ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n) ? ' ' + ts.tokenToString(n.operator) : '';
+      // Only a statement leaf (`return;`, `break;`) can end in a semicolon.
+      out.push(ts.SyntaxKind[n.kind] + op + (kids.length === 0 ? ' ' + n.getText(sf).replace(/;$/, '') : ''));
+      kids.forEach(visit);
+    };
+    visit(sf);
+    return out;
+  };
 
   it('assembles every client file, in order, into one script that compiles and cannot end its <script> element', () => {
     for (const name of assets.filter(a => a.startsWith('client/'))) expect(REVIEW_CLIENT_FILES).toContain(name);
     const script = assembleReviewClientScript();
     expect(script).toContain('function renderOverview('); // non-vacuity: the real client files
+    expect(script).toContain('function renderShadowAi(');
     expect(script).not.toMatch(/<\/script/i);
     expect(() => new Script(script, { filename: 'review-report-client.js' })).not.toThrow();
   });
@@ -79,14 +97,12 @@ describe('review report client script', () => {
     expect(() => assembleReviewClientScript(['client/missing.js'], scratch)).toThrow(join(scratch, 'client', 'missing.js'));
   });
 
-  it('the client files hold the start of the script the report inlines today, unchanged but for layout', () => {
+  it('the client files hold the whole script the report inlines today, unchanged but for layout', () => {
     const html = generateReviewHtml({ projectName: 'demo', directory: '/tmp/demo' } as unknown as ReviewReport);
-    const inline = /<script>\n\(function\(\)\{([\s\S]*)\}\)\(\);\n<\/script>/.exec(html)?.[1];
+    const inline = /<script>\n(\(function\(\)\{[\s\S]*\}\)\(\);)\n<\/script>/.exec(html)?.[1];
     expect(inline).toBeDefined();
-    const files = squeeze(REVIEW_CLIENT_FILES.map(f => readReviewAsset(f)).join('\n'));
-    expect(files.length).toBeGreaterThan(20_000); // non-vacuity
-    expect(squeeze(inline!).slice(0, files.length)).toBe(files);
-    // The rest of the inline script starts at the first statement no client file holds yet.
-    expect(squeeze(inline!).slice(files.length)).toMatch(/^functionrenderShield\(/);
+    const files = syntaxTree(assembleReviewClientScript());
+    expect(files.length).toBeGreaterThan(5_000); // non-vacuity
+    expect(files).toEqual(syntaxTree(inline!));
   });
 });

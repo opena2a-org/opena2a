@@ -32,14 +32,18 @@ export const reviewReportCss = (): string => readReviewAsset('report.css');
 
 /**
  * The report's client script files, in load order. review-html.ts still
- * inlines its own copy of the script; it switches to these once every part of
- * that script is here.
+ * inlines its own copy of the script; these hold all of it, and the report
+ * switches over to them in a separate change.
  */
 export const REVIEW_CLIENT_FILES: readonly string[] = [
   'client/00-core.js', // report data, tab switching, shared helpers
   'client/10-overview.js',
   'client/20-credentials.js',
   'client/30-hygiene.js',
+  'client/40-shield.js',
+  'client/50-hma.js',
+  'client/60-shadowai.js',
+  'client/99-init.js', // renders the first tab; runs last
 ];
 
 /** The client files concatenated in order inside one function scope, so their names stay off `window`. */
