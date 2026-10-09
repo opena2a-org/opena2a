@@ -1264,7 +1264,7 @@ export async function runHmaPhase(
       if (run.code !== 0) {
         return noResult('exitError', `hackmyagent secure exited with code ${run.code} (${firstLine(run.stderr) ?? 'no message'})`);
       }
-      return noResult('badOutput', `HMA output could not be read (first 80 characters: ${oneLine(run.stdout.slice(0, 400), 80) || 'none'})`);
+      return noResult('badOutput', `HMA output is not a JSON report (${run.stdout.length} characters, exit code ${run.code}); run hackmyagent secure --format json on this directory to see it`);
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       return noResult('badOutput', 'HMA output is JSON but not a report object');

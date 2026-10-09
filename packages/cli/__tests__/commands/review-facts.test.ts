@@ -70,6 +70,23 @@ describe('env-file facts in a git repository', () => {
     ]);
   });
 
+  it('a relative directory whose name starts with a dash reaches git as an absolute path', () => {
+    const dashed = path.join(dir, '-reviewed');
+    fs.mkdirSync(dashed);
+    git(dashed, 'init', '-q');
+    write(dashed, '.env', 'A=1\n');
+    git(dashed, 'add', '.env');
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      expect(collectEnvFileFacts('-reviewed')).toMatchObject([
+        { path: '.env', assignments: 1, gitTracked: true, stagedByAddAll: true },
+      ]);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
   posixOnly('a fsmonitor hook named in the repository config is never executed', () => {
     git(dir, 'init', '-q');
     write(dir, '.env', 'A=1\n');
