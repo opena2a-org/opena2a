@@ -170,12 +170,6 @@ body {
   justify-content: space-between;
   gap: 0 12px;
 }
-.phase-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit,minmax(160px,1fr));
-  gap: 8px;
-  margin-bottom: 16px;
-}
 .phase-card {
   background: var(--card);
   border: 1px solid var(--card-border);
@@ -417,40 +411,6 @@ body {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.action-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(51,65,85,0.3);
-}
-.action-item:last-child {
-  border-bottom: none;
-}
-.action-priority {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--dim);
-  min-width: 20px;
-}
-.action-content {
-  flex: 1;
-}
-.action-desc {
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-.action-link {
-  background: none;
-  border: none;
-  padding: 0;
-  font-family: var(--font);
-  font-size: 12px;
-  line-height: inherit;
-  color: var(--primary);
-  cursor: pointer;
-  text-decoration: underline;
-}
 .empty-state {
   color: var(--dim);
   font-size: 13px;
@@ -485,9 +445,6 @@ body {
   .overview-top {
     grid-template-columns: 1fr;
   }
-  .phase-grid {
-    grid-template-columns: repeat(2,1fr);
-  }
   .stats-grid {
     grid-template-columns: repeat(2,1fr);
   }
@@ -518,27 +475,135 @@ body {
     padding: 6px 8px;
   }
 }
-.breakdown-row {
-  display: grid;
-  grid-template-columns: 100px 1fr 60px 50px;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 0;
-  color: inherit;
-  font-family: var(--font);
-  line-height: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.breakdown-row:hover .breakdown-name {
-  color: var(--text);
-}
 button:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* Summary: the verdict, notices, counts, score and what was checked. */
+.summary {
+  font-size: 13px;
+}
+.sum-verdict {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.sum-notice {
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--amber);
+  background: rgba(245,158,11,0.08);
+}
+.sum-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+.sum-zero {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.sum-score {
+  margin-top: 8px;
+}
+.sum-checked {
+  margin-top: 6px;
+  color: var(--muted);
+}
+/* Fix first: one card per finding, its commands in labelled rows. */
+.ff-card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12px;
+}
+.ff-num {
+  font-weight: 700;
+}
+.ff-conf, .ff-key, .ff-note, .cmd-tool, .ff-more {
+  color: var(--muted);
+}
+.ff-rec {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--primary);
+}
+.ff-title {
+  font-size: 15px;
+  line-height: 1.4;
+  margin: 6px 0 4px;
+}
+.ff-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0,1fr);
+  gap: 0 10px;
+  margin-top: 6px;
+}
+.ff-note {
+  font-size: 12px;
+}
+.cmd-tool {
+  font-size: 11px;
+  margin-left: 8px;
+}
+.ff-card code {
+  font-family: var(--font);
+  white-space: pre-wrap;
+}
+.ff-details {
+  margin-top: 8px;
+}
+.ff-details summary {
+  cursor: pointer;
+  color: var(--primary);
+}
+.ff-more {
+  font-size: 13px;
+}
+.ff-tab-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 8px;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: inherit;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  /* The timestamp takes its own line so the subtitle keeps the full width. */
+  .header {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .header-title {
+    font-size: 18px;
+  }
+  .sum-verdict {
+    font-size: 16px;
+  }
+  .ff-row {
+    grid-template-columns: minmax(0,1fr);
+  }
 }
 .hygiene-row {
   display: flex;

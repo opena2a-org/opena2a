@@ -503,7 +503,7 @@ describe('review', () => {
     expect(credentialsTab).not.toContain('Your project is clean');
     expect(credentialsTab).toContain('No files were scanned for credentials');
     expect(credentialsTab).toContain('opena2a review');
-    expect(overviewTab).toContain('No files scanned for credentials');
+    expect(overviewTab).toContain('0 files read for credentials.');
     expect(overviewTab).not.toContain('No hardcoded credentials');
   });
 
