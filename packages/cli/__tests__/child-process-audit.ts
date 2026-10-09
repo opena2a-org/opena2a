@@ -147,4 +147,22 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'execFileSync(npm pack --dry-run --json) once, to list the files the package ships',
   },
+  'commands/review-facts.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git init | add | config) fixture setup in a scratch dir; then the modules ' +
+      'under test run execFileSync(git rev-parse | ls-files | check-ignore) on that dir, one ' +
+      'at a time',
+  },
+  'commands/review-hma-run.test.ts': {
+    shape: 'async-bounded',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'the HMA phase under test runs spawn(npx hackmyagent --version) then spawn(npx ' +
+      'hackmyagent secure --format json) against a shell stub named npx on PATH, each awaited ' +
+      'before the next (the deadline case stops a stub that execs sleep); then ' +
+      'execFileSync(git init) once for a fixture, on which review with the scanner skipped ' +
+      'runs execFileSync(git | which | <found tool> --version) probes, one at a time',
+  },
 };
