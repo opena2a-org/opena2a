@@ -1198,7 +1198,7 @@ function runChild(start: () => ChildProcess, timeoutMs: number): Promise<ChildOu
   });
 }
 
-/** The password of a URL with user information, `scheme://user:password@`. */
+/** The password of a URL with user information: the part between the user name's colon and the `@`. */
 const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:)[^\s@/]+@/gi;
 
 /** Text a child process printed may carry a credential: a scanner that
