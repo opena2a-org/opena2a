@@ -165,4 +165,9 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git init) once for a fixture, on which review with the scanner skipped ' +
       'runs execFileSync(git | which | <found tool> --version) probes, one at a time',
   },
+  'commands/review-findings.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js <cited command> --help) per cited opena2a command, one at a time',
+  },
 };
