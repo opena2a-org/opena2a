@@ -82,6 +82,27 @@ posix('runHmaPhase records why HMA produced no result', () => {
     expect(JSON.stringify(hma)).not.toContain(printed);
   });
 
+  it('a credential the scanner printed on stderr is redacted from the reason', async () => {
+    const key = `sk-ant-api03-FAKE${randomBytes(24).toString('hex')}`;
+    const password = `FAKE${randomBytes(8).toString('hex')}`;
+    stubNpx(`${VERSION_OK}\necho "cannot read postgres://app:${password}@db.local/app with key ${key}" >&2\nexit 3`);
+    const hma = await runHmaPhase('.');
+    expect(hma.run.status).toBe('exitError');
+    expect(hma.run.reason).toContain('cannot read postgres://app:[redacted]@db.local/app with key [redacted]');
+    const serialized = JSON.stringify(hma);
+    expect(serialized).not.toContain(password);
+    expect(serialized).not.toContain(key);
+  });
+
+  it('a credential printed where the version goes is redacted too', async () => {
+    const token = `ghp_FAKE${randomBytes(20).toString('hex')}`;
+    stubNpx(`if [ "$2" = "--version" ]; then echo "${token}"; exit 0; fi\necho '{"findings":[],"score":90,"maxScore":100}'`);
+    const hma = await runHmaPhase('.');
+    expect(hma.run.status).toBe('ran');
+    expect(hma.run.version).toBe('[redacted]');
+    expect(JSON.stringify(hma)).not.toContain(token);
+  });
+
   it('timedOut when the scan outlives the deadline, and returns at the deadline', async () => {
     stubNpx(`${VERSION_OK}\nexec sleep 20`);
     const hma = await runHmaPhase('.', { timeoutMs: 500 });

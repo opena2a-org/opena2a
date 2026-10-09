@@ -101,6 +101,24 @@ describe('env-file facts in a git repository', () => {
     expect(facts[0].gitTracked).toBe(true);
     expect(fs.existsSync(marker)).toBe(false);
   });
+
+  posixOnly('hooks named through core.hooksPath are never executed', () => {
+    git(dir, 'init', '-q');
+    write(dir, '.env', 'A=1\n');
+    git(dir, 'add', '.env');
+    const marker = path.join(dir, 'hook-ran');
+    const hooks = path.join(dir, 'hooks');
+    fs.mkdirSync(hooks);
+    for (const name of ['pre-commit', 'post-index-change', 'post-checkout', 'pre-auto-gc', 'reference-transaction']) {
+      fs.writeFileSync(path.join(hooks, name), `#!/bin/sh\necho ${name} >> '${marker}'\nexit 1\n`, { mode: 0o755 });
+    }
+    git(dir, 'config', 'core.hooksPath', hooks);
+
+    const facts = collectEnvFileFacts(dir);
+
+    expect(facts).toMatchObject([{ path: '.env', gitTracked: true, stagedByAddAll: true }]);
+    expect(fs.existsSync(marker)).toBe(false);
+  });
 });
 
 describe('env-file discovery', () => {
@@ -113,9 +131,17 @@ describe('env-file discovery', () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-facts-outside-'));
     try {
       write(outside, 'secret.env', 'A=1\n');
+      write(outside, 'linked/.env', 'A=1\n');
       fs.symlinkSync(path.join(outside, 'secret.env'), path.join(dir, '.env.prod'));
+      fs.symlinkSync(path.join(outside, 'linked'), path.join(dir, 'linked'));
 
-      expect(findEnvFiles(dir)).toEqual(['.env.local', 'packages/api/.env']);
+      const found = findEnvFiles(dir);
+      expect(found).toEqual(['.env.local', 'packages/api/.env']);
+      // The symlinked file and the folder behind the symlinked directory hold
+      // env files; neither is listed, so neither is read.
+      expect(found).not.toContain('.env.prod');
+      expect(found).not.toContain('linked/.env');
+      expect(collectEnvFileFacts(dir).map((f) => f.path)).toEqual(found);
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }

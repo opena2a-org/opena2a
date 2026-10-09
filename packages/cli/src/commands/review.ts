@@ -35,7 +35,7 @@ interface LocalVerdictFinding {
   line?: number;
 }
 import { detectProject } from '../util/detect.js';
-import { quickCredentialScan, scanCredentialsWithCoverage, type CredentialMatch } from '../util/credential-patterns.js';
+import { CREDENTIAL_PATTERNS, quickCredentialScan, scanCredentialsWithCoverage, type CredentialMatch } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
@@ -1198,12 +1198,24 @@ function runChild(start: () => ChildProcess, timeoutMs: number): Promise<ChildOu
   });
 }
 
+/** The password of a URL with user information, `scheme://user:password@`. */
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:)[^\s@/]+@/gi;
+
+/** Text a child process printed may carry a credential: a scanner that
+ *  fails on a line names that line. Every URL password and every value the
+ *  credential catalog recognises is replaced, so the report never carries one. */
+function redactCredentials(text: string): string {
+  let out = text.replace(URL_PASSWORD, '$1[redacted]@');
+  for (const p of CREDENTIAL_PATTERNS) out = out.replace(p.pattern, '[redacted]');
+  return out;
+}
+
 /** One printable line: escape sequences and control characters removed,
- *  whitespace collapsed, clipped. */
+ *  credentials redacted, whitespace collapsed, clipped. */
 function oneLine(text: string, max = 200): string {
-  const clean = text
+  const clean = redactCredentials(text
     .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/[\x00-\x1f\x7f]+/g, ' '))
     .replace(/\s+/g, ' ')
     .trim();
   return clean.length > max ? clean.slice(0, max) + '…' : clean;

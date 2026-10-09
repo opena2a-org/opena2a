@@ -38,9 +38,15 @@ export interface EnvFileFact {
   mode: string | null;
 }
 
-/** How deep below the reviewed directory env files are looked for. */
+/** How deep below the reviewed directory env files are looked for: the
+ *  root, a workspace package and two folders below it. The walk is bounded
+ *  so a tree built to be deep cannot make the review recurse without end. */
 const MAX_DEPTH = 4;
+/** At most this many env files are listed, so a tree planted with thousands
+ *  of them cannot grow the report or the git queries without bound. */
 const MAX_ENV_FILES = 50;
+/** An env file over 1 MiB is not read: its count stays unknown rather than
+ *  the review holding a file of that size in memory to count its lines. */
 const MAX_ENV_BYTES = 1_048_576;
 
 /** `.env` and `.env.<suffix>`, except the template names that hold placeholders. */
