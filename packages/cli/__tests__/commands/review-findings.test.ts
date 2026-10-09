@@ -117,7 +117,7 @@ describe('review findings on the envcase tree', () => {
 describe('maskEvidenceLine on one long line', () => {
   it('masks a 200 KB line in time linear in its length, whatever the line is made of', () => {
     const size = 200_000;
-    for (const unit of ['a', '-', 'key', 'a-', 'key=', 'http://u:p@h/', '"key":"v",']) {
+    for (const unit of ['a', '-', 'key', 'a-', 'key=', 'http://u:FAKE@h/', '"key":"v",']) {
       const line = unit.repeat(Math.ceil(size / unit.length)).slice(0, size) + ' api_key=' + SECRET;
       const started = performance.now();
       const out = maskEvidenceLine(line, true);
