@@ -94,6 +94,38 @@ posix('runHmaPhase records why HMA produced no result', () => {
     expect(serialized).not.toContain(key);
   });
 
+  it('a URL password holding a slash or an at sign, or following an empty user name, is redacted whole', async () => {
+    const [a, b, c, d, e] = [0, 1, 2, 3, 4].map(() => `FAKE${randomBytes(6).toString('hex')}`);
+    stubNpx(`${VERSION_OK}\necho "cannot read postgres://app:${a}/${b}@db.local/app, redis://default:${c}@${d}@cache.local or redis://:${e}@queue.local" >&2\nexit 3`);
+    const hma = await runHmaPhase('.');
+    expect(hma.run.status).toBe('exitError');
+    expect(hma.run.reason).toContain('cannot read postgres://app:[redacted]@db.local/app, redis://default:[redacted]@cache.local or redis://:[redacted]@queue.local');
+    const serialized = JSON.stringify(hma);
+    for (const part of [a, b, c, d, e]) expect(serialized).not.toContain(part);
+  });
+
+  // A run of URL-scheme characters with no `://` after it made the password
+  // pattern backtrack over the whole run from every word boundary, so the
+  // time grew with the square of the line's length.
+  const SCHEME_RUN = `awk 'BEGIN { for (i = 0; i < 40000; i++) printf "a+b.c-"; print "" }'`;
+
+  it('a long version line of URL-scheme characters is read in linear time', async () => {
+    stubNpx(`if [ "$2" = "--version" ]; then ${SCHEME_RUN}; exit 0; fi\necho '{"findings":[],"score":90,"maxScore":100}'`);
+    const started = Date.now();
+    const hma = await runHmaPhase('.');
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(hma.run.status).toBe('ran');
+    expect(hma.run.version).toMatch(/^a\+b\.c-/);
+  });
+
+  it('only the first non-empty line of the version output is read', async () => {
+    stubNpx(`if [ "$2" = "--version" ]; then echo; echo "9.9.9-stub"; ${SCHEME_RUN}; exit 0; fi\necho '{"findings":[],"score":90,"maxScore":100}'`);
+    const started = Date.now();
+    const hma = await runHmaPhase('.');
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(hma.run.version).toBe('9.9.9-stub');
+  });
+
   it('a credential printed where the version goes is redacted too', async () => {
     const token = `ghp_FAKE${randomBytes(20).toString('hex')}`;
     stubNpx(`if [ "$2" = "--version" ]; then echo "${token}"; exit 0; fi\necho '{"findings":[],"score":90,"maxScore":100}'`);
@@ -103,12 +135,55 @@ posix('runHmaPhase records why HMA produced no result', () => {
     expect(JSON.stringify(hma)).not.toContain(token);
   });
 
-  it('timedOut when the scan outlives the deadline, and returns at the deadline', async () => {
-    stubNpx(`${VERSION_OK}\nexec sleep 20`);
+  it('timedOut when the scan outlives the deadline, returns at the deadline and stops the scan', async () => {
+    const pidFile = path.join(bin, 'scan.pid');
+    stubNpx(`${VERSION_OK}\necho $$ > '${pidFile}'\nexec sleep 20`);
     const hma = await runHmaPhase('.', { timeoutMs: 500 });
     expect(hma.run.status).toBe('timedOut');
     expect(hma.run.reason).toBe('HMA stopped after 0.5 s on this tree');
     expect(hma.run.durationMs).toBeLessThan(10_000);
+
+    const pid = Number(fs.readFileSync(pidFile, 'utf-8').trim());
+    const alive = (): boolean => {
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    };
+    try {
+      for (let waited = 0; alive() && waited < 3_000; waited += 50) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(alive()).toBe(false);
+    } finally {
+      if (alive()) process.kill(pid, 'SIGKILL');
+    }
+  });
+
+  it('the terminal names a failed scan as failed, not as skipped or not installed', async () => {
+    stubNpx(`${VERSION_OK}\necho "scanner crashed: out of memory" >&2\nexit 3`);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-hma-terminal-'));
+    mockHome.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-hma-terminal-home-'));
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'terminal', version: '1.0.0' }));
+    const out: string[] = [];
+    const err: string[] = [];
+    const origOut = process.stdout.write;
+    const origErr = process.stderr.write;
+    process.stdout.write = ((c: unknown) => { out.push(String(c)); return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((c: unknown) => { err.push(String(c)); return true; }) as typeof process.stderr.write;
+    try {
+      await review({ targetDir: dir, autoOpen: false, reportPath: path.join(dir, 'report.html') });
+    } finally {
+      process.stdout.write = origOut;
+      process.stderr.write = origErr;
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(mockHome.dir, { recursive: true, force: true });
+      mockHome.dir = '';
+    }
+    const stdout = out.join('');
+    const stderr = err.join('');
+    expect(stdout).toMatch(/\[5\/6\] Running HMA security scan\.\.\. +\S*failed/);
+    expect(stdout).not.toMatch(/\[5\/6\] Running HMA security scan\.\.\. +\S*skipped/);
+    expect(stderr).toContain('deep scan (HMA) produced no result');
+    expect(stderr).toContain('hackmyagent secure exited with code 3 (scanner crashed: out of memory)');
+    expect(stderr).not.toContain('npm i -g hackmyagent');
   });
 
   it('ran when the scan prints a report, whatever its exit code', async () => {
