@@ -130,14 +130,15 @@ const BUNDLED_CITATION = /\b(?:hackmyagent|secretless-ai|ai-trust|cryptoserve)\b
 
 const MASK = '••••';
 const SECRET_WORD = '(?:key|token|secret|passw|pwd|auth|credential|private)';
-const URL_PASSWORD = /(\b[a-z][\w+.-]*:\/\/[^\s:/@]+:)[^\s@]+@/gi;
-const NAMED_VALUE = new RegExp(`(["']?[\\w.-]*${SECRET_WORD}[\\w.-]*["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,;}]+)`, 'gi');
-const FLAG_VALUE = new RegExp(`(--?[\\w-]*${SECRET_WORD}[\\w-]*[ =])(\\S+)`, 'gi');
+const URL_PASSWORD = /(\b[a-z][\w+.-]{0,64}:\/\/[^\s:/@]+:)[^\s@]+@/gi;
+const NAMED_VALUE = new RegExp(`(["']?[\\w.-]{0,64}${SECRET_WORD}[\\w.-]{0,64}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,;}]+)`, 'gi');
+const FLAG_VALUE = new RegExp(`(--?[\\w-]{0,64}${SECRET_WORD}[\\w-]{0,64}[ =])(\\S+)`, 'gi');
 const ASSIGNMENT = /^(\s*(?:export\s+)?["']?[\w.-]+["']?\s*[:=]\s*)(\S.*)$/;
 const LONG_TOKEN = /[A-Za-z0-9_+/-]{16,}/g;
 
 /** A line from the tree with URL passwords and secret-named values masked; for
- *  a secret finding, every assigned value or long token too. */
+ *  a secret finding, every assigned value or long token too. The identifier runs
+ *  in the patterns are bounded so one long line costs time linear in its length. */
 export function maskEvidenceLine(line: string, secret: boolean): string {
   let out = line.replace(URL_PASSWORD, `$1${MASK}@`).replace(NAMED_VALUE, `$1${MASK}`).replace(FLAG_VALUE, `$1${MASK}`);
   if (secret) {
@@ -213,14 +214,17 @@ function hmaEvidence(f: HmaFinding, secret: boolean): Draft['evidence'] {
   const ev = f.evidence;
   if (!ev) return [];
   const file = f.file ?? null;
-  const line = (l: { n: number; content: string }) => ({ file, line: l.n, text: maskEvidenceLine(String(l.content ?? ''), secret) });
   const positive = ev.kind === 'positive' ? ev.lines : ev.kind === 'mixed' ? ev.positive?.lines : [];
   const absence = ev.kind === 'absence' ? ev : ev.kind === 'mixed' ? ev.absence : null;
-  return [
-    ...(positive ?? []).map(line),
-    ...(absence?.observed?.lines ?? []).map(line),
-    ...(absence?.expected ?? []).map(e => ({ file, line: null, text: `missing: ${e.constraint}` })),
-  ].slice(0, 3);
+  const entries: Array<{ n: number; content: string } | { constraint: string }> = [
+    ...(positive ?? []),
+    ...(absence?.observed?.lines ?? []),
+    ...(absence?.expected ?? []),
+  ];
+  // Only the three lines the report keeps are masked.
+  return entries.slice(0, 3).map(e => 'constraint' in e
+    ? { file, line: null, text: `missing: ${e.constraint}` }
+    : { file, line: e.n, text: maskEvidenceLine(String(e.content ?? ''), secret) });
 }
 
 function draft(fields: Pick<Draft, DraftFields> & Partial<Draft>): Draft {
