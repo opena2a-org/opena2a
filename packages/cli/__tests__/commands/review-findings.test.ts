@@ -7,6 +7,7 @@ import type { EnvFileFact } from '../../src/commands/review-facts.js';
 
 const CLI_PATH = resolve(__dirname, '../../dist/index.js');
 const SECRET = 'q7Zr2Lw9Kx4Vb8Nm3Tc6'; // synthetic; must never reach the output
+const MASK = '••••'; // what the report prints in place of a value
 
 const hma = (checkId: string, severity: string, category: string, file?: string, extra: Partial<HmaFinding> = {}): HmaFinding => ({
   checkId, name: checkId, description: '', category, severity, passed: false, message: '', file,
@@ -105,7 +106,7 @@ describe('review findings on the envcase tree', () => {
   it('masks the secret in evidence and fingerprints are unique and stable', () => {
     const r = envcase();
     expect(JSON.stringify(r)).not.toContain(SECRET);
-    expect(r.reportFindings[1].evidence[0].text).toBe('DATABASE_URL=postgres://app:••••@localhost:5432/app');
+    expect(r.reportFindings[1].evidence[0].text).toBe(`DATABASE_URL=postgres://app:${MASK}@localhost:5432/app`);
     const fps = r.reportFindings.map(f => f.fingerprint);
     expect(new Set(fps).size).toBe(fps.length);
     expect(fps.every(fp => /^[0-9a-f]{8}$/.test(fp))).toBe(true);
