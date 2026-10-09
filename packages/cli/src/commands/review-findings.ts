@@ -130,15 +130,16 @@ const BUNDLED_CITATION = /\b(?:hackmyagent|secretless-ai|ai-trust|cryptoserve)\b
 
 const MASK = '••••';
 const SECRET_WORD = '(?:key|token|secret|passw|pwd|auth|credential|private)';
-const URL_PASSWORD = /(\b[a-z][\w+.-]{0,64}:\/\/[^\s:/@]+:)[^\s@]+@/gi;
+const URL_PASSWORD = /(\b[a-z][\w+.-]{0,64}:\/\/[^\s:/@]+:)[^\s@]{1,256}@/gi;
 const NAMED_VALUE = new RegExp(`(["']?[\\w.-]{0,64}${SECRET_WORD}[\\w.-]{0,64}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,;}]+)`, 'gi');
 const FLAG_VALUE = new RegExp(`(--?[\\w-]{0,64}${SECRET_WORD}[\\w-]{0,64}[ =])(\\S+)`, 'gi');
 const ASSIGNMENT = /^(\s*(?:export\s+)?["']?[\w.-]+["']?\s*[:=]\s*)(\S.*)$/;
 const LONG_TOKEN = /[A-Za-z0-9_+/-]{16,}/g;
 
 /** A line from the tree with URL passwords and secret-named values masked; for
- *  a secret finding, every assigned value or long token too. The identifier runs
- *  in the patterns are bounded so one long line costs time linear in its length. */
+ *  a secret finding, every assigned value or long token too. The identifier, scheme
+ *  and URL-password runs in the patterns are bounded so one long line costs time
+ *  linear in its length. */
 export function maskEvidenceLine(line: string, secret: boolean): string {
   let out = line.replace(URL_PASSWORD, `$1${MASK}@`).replace(NAMED_VALUE, `$1${MASK}`).replace(FLAG_VALUE, `$1${MASK}`);
   if (secret) {

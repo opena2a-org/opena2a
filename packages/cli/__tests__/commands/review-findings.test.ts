@@ -115,17 +115,23 @@ describe('review findings on the envcase tree', () => {
 });
 
 describe('maskEvidenceLine on one long line', () => {
+  /** A line of `size` characters built from `unit`, then a secret, masked within the time bound. */
+  const masksInTime = (unit: string, size: number) => {
+    const line = unit.repeat(Math.ceil(size / unit.length)).slice(0, size) + ' api_key=' + SECRET;
+    const started = performance.now();
+    const out = maskEvidenceLine(line, true);
+    const ms = performance.now() - started;
+    expect(ms, `${JSON.stringify(unit)} run took ${ms.toFixed(0)} ms`).toBeLessThan(5000);
+    expect(out).not.toContain(SECRET);
+    expect(out.length).toBeLessThanOrEqual(160);
+  };
+
   it('masks a 200 KB line in time linear in its length, whatever the line is made of', () => {
-    const size = 200_000;
-    for (const unit of ['a', '-', 'key', 'a-', 'key=', 'http://u:FAKE@h/', '"key":"v",']) {
-      const line = unit.repeat(Math.ceil(size / unit.length)).slice(0, size) + ' api_key=' + SECRET;
-      const started = performance.now();
-      const out = maskEvidenceLine(line, true);
-      const ms = performance.now() - started;
-      expect(ms, `${JSON.stringify(unit)} run took ${ms.toFixed(0)} ms`).toBeLessThan(5000);
-      expect(out).not.toContain(SECRET);
-      expect(out.length).toBeLessThanOrEqual(160);
-    }
+    for (const unit of ['a', '-', 'key', 'a-', 'key=', 'http://u:FAKE@h/', '"key":"v",']) masksInTime(unit, 200_000);
+  });
+
+  it('masks a 400 KB line of URL prefixes that no `@` follows in time linear in its length', () => {
+    for (const unit of ['http://u:p/', 'x://y:']) masksInTime(unit, 400_000);
   });
 });
 
