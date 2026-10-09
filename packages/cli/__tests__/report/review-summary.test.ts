@@ -40,6 +40,7 @@ function text(html: string): string {
 
 const PHASES = ['Project Scan', 'Credentials', 'Config Integrity', 'Shield Analysis', 'HMA Scan', 'Shadow AI']
   .map(name => ({ name, status: 'pass', score: 90, durationMs: 700, detail: '' }));
+const MASK = '••••'; // what the report prints in place of a value
 
 // Values from a review of a tree whose .env git would stage (3 values; HMA ran).
 const ENV_GROUP = {
@@ -71,7 +72,7 @@ const URL_PASSWORD = {
   confidence: null,
   foundBy: [{ source: 'hma', checkId: 'SEM-CRED-001', lines: [1] }],
   locations: [{ file: '.env', line: 1 }],
-  evidence: [{ file: '.env', line: 1, text: 'DATABASE_URL=postgres://app:••••@localhost:5432/app' }],
+  evidence: [{ file: '.env', line: 1, text: `DATABASE_URL=postgres://app:${MASK}@localhost:5432/app` }],
   reason: 'URL-embedded credentials are logged by proxies, shell history, and process listings.',
   fix: { command: 'opena2a protect .', tool: 'opena2a', changes: null },
   then: null,
