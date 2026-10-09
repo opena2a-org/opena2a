@@ -68,7 +68,18 @@ posix('runHmaPhase records why HMA produced no result', () => {
     const hma = await runHmaPhase('.');
     expect(hma.available).toBe(false);
     expect(hma.run.status).toBe('badOutput');
-    expect(hma.run.reason).toContain('first 80 characters: HackMyAgent banner line');
+    expect(hma.run.reason).toContain('is not a JSON report');
+    expect(hma.run.reason).toContain('exit code 0');
+    expect(hma.run.reason).not.toContain('HackMyAgent banner line');
+  });
+
+  it('badOutput never quotes the output, so a value the scanner printed stays out of the report', async () => {
+    const printed = `FAKE-${randomBytes(12).toString('hex')}`;
+    stubNpx(`${VERSION_OK}\necho "token=${printed}"\necho "not json"`);
+    const hma = await runHmaPhase('.');
+    expect(hma.run.status).toBe('badOutput');
+    expect(hma.run.reason).toContain(`${`token=${printed}\nnot json\n`.length} characters`);
+    expect(JSON.stringify(hma)).not.toContain(printed);
   });
 
   it('timedOut when the scan outlives the deadline, and returns at the deadline', async () => {

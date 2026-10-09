@@ -105,7 +105,9 @@ export function symbolicMode(mode: number): string {
 const GIT_SAFE_ARGS = ['--no-optional-locks', '-c', 'core.fsmonitor=false'];
 
 function git(targetDir: string, args: string[], input?: string): string {
-  return execFileSync('git', ['-C', targetDir, ...GIT_SAFE_ARGS, ...args], {
+  // Absolute, so git only ever receives a path here, never a value that
+  // could read as an option (a relative directory named `-foo`).
+  return execFileSync('git', ['-C', path.resolve(targetDir), ...GIT_SAFE_ARGS, ...args], {
     input,
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'ignore'],
