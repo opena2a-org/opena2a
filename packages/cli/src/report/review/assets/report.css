@@ -631,20 +631,21 @@ summary:focus-visible {
     grid-template-columns: minmax(0,1fr);
   }
 }
-.hygiene-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(51,65,85,0.3);
-  font-size: 13px;
+/* Inventory, Optional hardening and Scan details. */
+.inv-none, .data-table td.path {
   overflow-wrap: anywhere;
 }
-.hygiene-row:last-child {
-  border-bottom: none;
-}
-.hygiene-label {
+.inv-none {
   color: var(--muted);
+  font-size: 13px;
+}
+.data-table td.path {
+  min-width: 72px;
+}
+@media (min-width: 601px) {
+  .sd .ff-row {
+    grid-template-columns: 150px minmax(0,1fr);
+  }
 }
 .arp-grid {
   display: grid;

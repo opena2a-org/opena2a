@@ -79,8 +79,7 @@ describe('score provenance', () => {
    * matched nothing at all and the tile became invisible to the guard — a
    * collision could be hidden by wrapping one side in any two-argument call.
    */
-  const tiles = () => {
-    const src = htmlSrc();
+  const tiles = (src = htmlSrc()) => {
     const out: Array<{ value: string; label: string }> = [];
     for (const m of src.matchAll(/statCard\(/g)) {
       let i = m.index! + m[0].length;
@@ -111,15 +110,11 @@ describe('score provenance', () => {
   it('the tile parser survives a wrapped first argument', () => {
     // Non-vacuity for the parser itself: a comma inside the value expression
     // must not make the tile invisible.
-    const parsed = tiles();
-    expect(parsed.length).toBeGreaterThan(2);
-    expect(parsed.every(t => t.label.length > 0)).toBe(true);
+    expect(tiles("statCard(Math.max(a,0),'Findings')")).toEqual([{ value: 'Math.max(a,0)', label: 'Findings' }]);
   });
 
   it('no two report tiles claim the same label for different quantities', () => {
-    const parsed = tiles();
-    expect(parsed.length).toBeGreaterThan(2); // non-vacuity: tiles were actually parsed
-
+    const parsed = tiles(); // none today: the tabs that had tiles are retired; this holds for any tile added later
     const byLabel = new Map<string, Set<string>>();
     for (const t of parsed) {
       if (!byLabel.has(t.label)) byLabel.set(t.label, new Set());
@@ -131,11 +126,9 @@ describe('score provenance', () => {
     expect(collisions).toEqual([]);
   });
 
-  it('the posture tile says which posture it is; the Shield posture is not shown', () => {
+  it('the HTML report shows neither posture: both measure which OpenA2A tools are set up', () => {
     const src = htmlSrc();
-    expect(src).toContain("'Project Posture'");
-    expect(src).not.toContain('shieldPostureScore');
-    // The ambiguous label is gone, not merely supplemented.
-    expect(src).not.toContain("'Posture Score'");
+    expect(src).toContain('function renderScanDetails('); // non-vacuity: the client script was read
+    expect(src).not.toMatch(/postureScore|Posture|riskLevel/);
   });
 });

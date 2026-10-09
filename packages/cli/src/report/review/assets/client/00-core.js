@@ -30,11 +30,14 @@ function renderPage(pg) {
     case 'findings':
       el.innerHTML = renderFindings();
       break;
-    case 'hygiene':
-      el.innerHTML = renderHygiene();
+    case 'inventory':
+      el.innerHTML = renderInventory();
       break;
-    case 'shadowai':
-      el.innerHTML = renderShadowAi();
+    case 'hardening':
+      el.innerHTML = renderHardening();
+      break;
+    case 'details':
+      el.innerHTML = renderScanDetails();
       break;
   }
   wrapTables(el);

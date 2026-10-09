@@ -117,11 +117,13 @@ describe('review report: Findings', () => {
 describe('review report: no all-clear beside a secret', () => {
   it('no tab claims "clean" while a Secrets finding exists', () => {
     const page = load(report([ENV_GROUP], {
-      initData: { trustScore: 70, postureScore: 40, riskLevel: 'MEDIUM', activeTools: 0, totalTools: 6, hygieneChecks: [{ label: 'Credential scan', status: 'pass', detail: 'no findings' }] },
+      phases: [{ name: 'Project Scan', status: 'pass', durationMs: 300 }, { name: 'Credentials', status: 'pass', durationMs: 40 }],
+      initData: { hygieneChecks: [{ label: 'Credential scan', status: 'pass', detail: 'no findings' }] },
+      credentialData: { filesScanned: 28, totalFindings: 0 },
     }));
-    const all = ['overview', 'findings', 'hygiene'].map(tab => text(page.open(tab))).join(' ');
+    const all = ['overview', 'findings', 'inventory', 'hardening', 'details'].map(tab => text(page.open(tab))).join(' ');
     expect(all).toContain('.env is not ignored by git'); // non-vacuity: the Secrets finding is on the page
-    expect(all).toContain('Hygiene Checks'); // non-vacuity: the Hygiene tab rendered
+    expect(all).toContain('Credential patterns: 28 files read, 0 provider-format keys.'); // non-vacuity: Scan details shows the pattern scan's coverage
     expect(all).not.toMatch(/\bclean\b|no hardcoded credentials|Credential scan/i);
   });
 });

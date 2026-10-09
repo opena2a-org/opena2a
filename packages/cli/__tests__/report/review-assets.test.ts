@@ -88,7 +88,7 @@ describe('review report client script', () => {
     for (const name of assets.filter(a => a.startsWith('client/'))) expect(REVIEW_CLIENT_FILES).toContain(name);
     const script = assembleReviewClientScript();
     expect(script).toContain('function renderOverview('); // non-vacuity: the real client files
-    expect(script).toContain('function renderShadowAi(');
+    expect(script).toContain('function renderScanDetails(');
     expect(script).not.toMatch(/<\/script/i);
     expect(() => new Script(script, { filename: 'review-report-client.js' })).not.toThrow();
   });
