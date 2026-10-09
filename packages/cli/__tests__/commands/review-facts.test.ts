@@ -70,7 +70,7 @@ describe('env-file facts in a git repository', () => {
     ]);
   });
 
-  it('a relative directory whose name starts with a dash reaches git as an absolute path', () => {
+  it('a relative directory whose name starts with a dash is reviewed', () => {
     const dashed = path.join(dir, '-reviewed');
     fs.mkdirSync(dashed);
     git(dashed, 'init', '-q');
@@ -122,7 +122,8 @@ describe('env-file facts in a git repository', () => {
 });
 
 describe('env-file discovery', () => {
-  it('finds nested env files and skips templates, dependency and hidden folders, and symlinks', () => {
+  // A directory symlink needs a privilege on Windows.
+  posixOnly('finds nested env files and skips templates, dependency and hidden folders, and symlinks', () => {
     write(dir, '.env.local', 'A=1\n');
     write(dir, '.env.example', 'A=your-key\n');
     write(dir, 'packages/api/.env', 'A=1\n');
@@ -188,6 +189,16 @@ describe('credential scan coverage', () => {
     expect(scan.filesScanned).toBe(1);
     expect(scan.placeholdersSkipped).toBe(1);
     expect(scan.skippedDirs).toEqual(['.claude', 'node_modules', 'test']);
+  });
+
+  it('does not count a value one pattern dropped as a placeholder when another pattern reported it', async () => {
+    const FAKE_SECRET = 'FAKE'.padEnd(40, 'q7Zr2Lm9'); // fake: the secret-key pattern drops it, the generic assignment pattern reports it
+    write(dir, 'config.yaml', `aws_secret_key: "${FAKE_SECRET}"\n`);
+
+    const scan = await scanCredentialsWithCoverage(dir);
+
+    expect(scan.matches.map((m) => [m.findingId, m.value])).toContainEqual(['CRED-004', FAKE_SECRET]);
+    expect(scan.placeholdersSkipped).toBe(0);
   });
 });
 

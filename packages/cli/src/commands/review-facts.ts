@@ -111,8 +111,8 @@ export function symbolicMode(mode: number): string {
 const GIT_SAFE_ARGS = ['--no-optional-locks', '-c', 'core.fsmonitor=false'];
 
 function git(targetDir: string, args: string[], input?: string): string {
-  // Absolute, so git only ever receives a path here, never a value that
-  // could read as an option (a relative directory named `-foo`).
+  // `-C` reads its next argument as a path even when it starts with a dash;
+  // resolving it only makes the path git receives absolute.
   return execFileSync('git', ['-C', path.resolve(targetDir), ...GIT_SAFE_ARGS, ...args], {
     input,
     encoding: 'utf-8',
@@ -120,9 +120,9 @@ function git(targetDir: string, args: string[], input?: string): string {
     timeout: 10_000,
     // Git needs no credential here. The narrow probe environment also drops
     // GIT_DIR and friends, so a review started from a git hook still asks
-    // about the reviewed tree. XDG_CONFIG_HOME keeps the user's global
-    // ignore file where git looks for it.
-    env: probeEnv(['XDG_CONFIG_HOME']),
+    // about the reviewed tree. It keeps XDG_CONFIG_HOME, so git finds the
+    // user's global ignore file where it always does.
+    env: probeEnv(),
   });
 }
 

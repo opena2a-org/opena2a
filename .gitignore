@@ -9,6 +9,9 @@ dist/
 .pre-push-review-passed
 coverage/
 
+# Package tarballs `npm pack` writes into the package directory
+packages/cli/*.tgz
+
 # Secrets and credentials
 secrets.json
 *.pem

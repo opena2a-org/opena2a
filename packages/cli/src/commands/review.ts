@@ -511,14 +511,15 @@ export async function review(options: ReviewOptions): Promise<number> {
     });
     progressDone(5, 'Running HMA security scan... ', formatMs(phase5Ms));
   } else {
+    const noResult = describeHmaNoResult(hmaData.run);
     phases.push({
       name: 'HMA Scan',
       status: 'skip',
       score: 0,
       durationMs: phase5Ms,
-      detail: options.skipHma ? 'Skipped (--skip-hma)' : 'Not installed',
+      detail: noResult.detail,
     });
-    progressDone(5, 'Running HMA security scan... ', 'skipped');
+    progressDone(5, 'Running HMA security scan... ', noResult.label);
   }
 
   // Phase 6: Shadow AI Detection
@@ -617,12 +618,10 @@ export async function review(options: ReviewOptions): Promise<number> {
   // the verdict rather than scrolling past below it (CISO Rule 11 — no
   // misleading verdicts).
   if (!hmaAvailable) {
-    const how = options.skipHma
-      ? 'Re-run without --skip-hma'
-      : 'Install it: npm i -g hackmyagent';
+    const noResult = describeHmaNoResult(hmaData.run);
     process.stderr.write(
-      yellow('  Provisional verdict — deep scan (HMA) did not run.\n') +
-      dim(`  Lightweight checks only; HMA-only threats are not reflected. ${how}.\n\n`),
+      yellow(`  Provisional verdict — deep scan (HMA) ${noResult.headline}.\n`) +
+      dim(`  Lightweight checks only; HMA-only threats are not reflected. ${noResult.next}.\n\n`),
     );
   }
 
@@ -1149,6 +1148,30 @@ export function emptyHmaData(run: HmaRunStatus): HmaPhaseData {
   };
 }
 
+/**
+ * How the terminal names an HMA run that produced no result, read from
+ * `run.status`: the word on the progress line, the phase detail, and the
+ * headline and next step of the provisional-verdict notice. A scan that timed
+ * out, failed or printed no report is never named as skipped or not installed.
+ */
+export function describeHmaNoResult(run: HmaRunStatus): {
+  label: string; detail: string; headline: string; next: string;
+} {
+  const seeOutput = 'Run npx hackmyagent secure on this directory to see its output';
+  switch (run.status) {
+    case 'skipped':
+      return { label: 'skipped', detail: 'Skipped (--skip-hma)', headline: 'did not run', next: 'Re-run without --skip-hma' };
+    case 'timedOut':
+      return { label: 'timed out', detail: 'Timed out', headline: 'produced no result', next: `${run.reason}. ${seeOutput}` };
+    case 'exitError':
+      return { label: 'failed', detail: 'Scan failed', headline: 'produced no result', next: `${run.reason}. ${seeOutput}` };
+    case 'badOutput':
+      return { label: 'output unreadable', detail: 'Output not readable', headline: 'produced no result', next: `${run.reason}` };
+    default:
+      return { label: 'not installed', detail: 'Not installed', headline: 'did not run', next: 'Install it: npm i -g hackmyagent' };
+  }
+}
+
 /** How long one HMA child process may run before review stops waiting. */
 export const HMA_TIMEOUT_MS = 120_000;
 
@@ -1162,7 +1185,9 @@ interface ChildOutcome {
 
 /** Run a child to completion or to the deadline, whichever comes first. At the
  *  deadline the child is killed and the result returned at once, even if a
- *  grandchild still holds the output pipes open. */
+ *  grandchild still holds the output pipes open. Only the direct child (`npx`)
+ *  is signalled: a process it started stops only if `npx` passes the signal
+ *  on, and may otherwise outlive the result. */
 function runChild(start: () => ChildProcess, timeoutMs: number): Promise<ChildOutcome> {
   return new Promise((resolve) => {
     let stdout = '';
@@ -1195,14 +1220,32 @@ function runChild(start: () => ChildProcess, timeoutMs: number): Promise<ChildOu
   });
 }
 
-/** The password of a URL with user information: the part between the user name's colon and the `@`. */
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:)[^\s@/]+@/gi;
+/** Replace the password of every URL with user information: the part after
+ *  the user name's colon (the name may be empty, as in `redis://:…@host`), up
+ *  to the last `@` before whitespace. A scanner's error text need not be a
+ *  valid URL, so the password may hold `/` or `@`. Each run of text without
+ *  whitespace is read once, front to back, so the time grows with the length
+ *  of the text rather than its square. */
+function redactUrlPasswords(text: string): string {
+  return text.replace(/\S+/g, (run) => {
+    const lastAt = run.lastIndexOf('@');
+    for (let sep = run.indexOf('://'); sep !== -1 && sep < lastAt; sep = run.indexOf('://', sep + 3)) {
+      if (sep === 0 || !/[a-z0-9+.-]/i.test(run[sep - 1])) continue;
+      let end = sep + 3;
+      while (end < run.length && !'/@:'.includes(run[end])) end++;
+      if (run[end] !== ':' || end + 1 >= lastAt) continue;
+      return `${run.slice(0, end + 1)}[redacted]${run.slice(lastAt)}`;
+    }
+    return run;
+  });
+}
 
 /** Text a child process printed may carry a credential: a scanner that
  *  fails on a line names that line. Every URL password and every value the
- *  credential catalog recognises is replaced, so the report never carries one. */
+ *  credential catalog recognises is replaced, so the `hmaData.run` reason and
+ *  version never carry one. */
 function redactCredentials(text: string): string {
-  let out = text.replace(URL_PASSWORD, '$1[redacted]@');
+  let out = redactUrlPasswords(text);
   for (const p of CREDENTIAL_PATTERNS) out = out.replace(p.pattern, '[redacted]');
   return out;
 }
@@ -1218,9 +1261,14 @@ function oneLine(text: string, max = 200): string {
   return clean.length > max ? clean.slice(0, max) + '…' : clean;
 }
 
+/** The first line with printable text, cleaned by {@link oneLine}. Lines after
+ *  it are not read. */
 function firstLine(text: string, max = 200): string | null {
-  const line = text.split(/\r?\n/).map(l => oneLine(l, max)).find(l => l.length > 0);
-  return line ?? null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = oneLine(raw, max);
+    if (line.length > 0) return line;
+  }
+  return null;
 }
 
 function seconds(ms: number): string {
