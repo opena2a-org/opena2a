@@ -112,7 +112,7 @@ describe('env-file discovery', () => {
   });
 
   it('never carries an env-file value into the facts', () => {
-    const values = ['s3cr3t-value-one-9f8e7d', 'postgres://app:pw-4c3b2a@localhost/app'];
+    const values = ['s3cr3t-value-one-9f8e7d', 'postgres://app:FAKEpw-4c3b2a@localhost/app'];
     write(dir, '.env', `ONE=${values[0]}\nDATABASE_URL=${values[1]}\n`);
 
     const json = JSON.stringify(collectEnvFileFacts(dir));
@@ -133,7 +133,8 @@ describe('env-file discovery', () => {
 
 describe('credential scan coverage', () => {
   it('counts placeholders it dropped and names the folders it did not enter', async () => {
-    write(dir, 'config.yaml', 'aws_access_key_id: AKIAIOSFODNN7EXAMPLE\n');
+    const FAKE_AWS_EXAMPLE_KEY = 'AKIAIOSFODNN7EXAMPLE'; // the documented example key, which the scan treats as a placeholder
+    write(dir, 'config.yaml', `aws_access_key_id: ${FAKE_AWS_EXAMPLE_KEY}\n`);
     write(dir, 'node_modules/pkg/index.js', 'module.exports = 1;\n');
     write(dir, '.claude/settings.json', '{}\n');
     write(dir, 'test/a.js', 'x\n');
