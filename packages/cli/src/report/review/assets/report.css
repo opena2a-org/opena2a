@@ -486,6 +486,7 @@ summary:focus-visible {
 /* Summary: the verdict, notices, counts, score and what was checked. */
 .summary {
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .sum-verdict {
   font-size: 18px;

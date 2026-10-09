@@ -124,6 +124,13 @@ describe('review report: 375px', () => {
     expect(declarations(css, '.cmd-text')).toContain('overflow-wrap:anywhere');
   });
 
+  it('a Summary notice breaks a file path instead of widening the page', () => {
+    // The provisional notice quotes the scanner's reason for having no result,
+    // which can hold a file path with no space in it. Unbreakable, a path of
+    // 92 characters set the Overview to 791px at a 375px viewport.
+    expect(declarations(css, '.summary')).toContain('overflow-wrap:anywhere');
+  });
+
   it('a Hygiene row breaks its value instead of widening the page', () => {
     // The "Security config" row prints the signature store path
     // (.opena2a/guard/signatures.json) as one flex item. Unbreakable, it set
