@@ -4,9 +4,8 @@
 // At 375px every tab of the report scrolled sideways to 518px (the six-tab bar
 // did not wrap) and the Overview to 578px (a five-column findings table). The
 // score banner squeezed "Composite Score" against "0/100" with no gap, and the
-// "+N recoverable" badge spilled out of the banner. The Score Breakdown rows,
-// "View details" and "+ N more files" were `div`/`span` elements with an
-// onclick: a mouse could open them, Tab never reached them.
+// "+N recoverable" badge spilled out of the banner. "+ N more files" was a
+// `span` with an onclick: a mouse could open it, Tab never reached it.
 //
 // The tabs are rendered in the browser from the embedded report JSON, so these
 // tests pin the markup the renderer emits and the CSS that keeps it inside the
@@ -59,13 +58,18 @@ describe('review report: keyboard', () => {
     expect(mouseOnly).toEqual([]);
   });
 
-  it('each Score Breakdown row is a button that opens its tab', () => {
-    expect(script).toContain('<button type="button" class="breakdown-row" onclick="goToTab(');
-    const start = script.indexOf('class="breakdown-row"');
-    const row = script.slice(start, script.indexOf('</button>', start));
+  it('each Fix-first Copy button is a labelled button, after the command it copies', () => {
+    const start = script.indexOf('function commandRow(');
+    const row = script.slice(start, script.indexOf('function textRow(', start));
     expect(row.length).toBeGreaterThan(100); // non-vacuity: the row template was found
-    // A button may hold only phrasing content.
-    expect(row).not.toContain('<div');
+    expect(row).toContain('<button type="button" class="copy-btn" aria-label="Copy ');
+    // Reading order is tab order: the command, its tool, then its Copy button.
+    expect(row.indexOf('class="cmd-text"')).toBeLessThan(row.indexOf('class="copy-btn"'));
+  });
+
+  it('a Fix-first card opens its locations and evidence with a native disclosure', () => {
+    expect(script).toContain('<details class="ff-details"><summary>Where and evidence</summary>');
+    expect(declarations(css, 'summary:focus-visible')).toContain('outline:2px solid');
   });
 
   it('opening a tab from inside the page moves focus to that tab', () => {
@@ -74,8 +78,8 @@ describe('review report: keyboard', () => {
     expect(script.slice(start, script.indexOf('};', start))).toContain('.focus()');
   });
 
-  it('"View details" and the file-list toggles are buttons that report their state', () => {
-    expect(script).toContain('<button type="button" class="action-link"');
+  it('the links to other tabs and the file-list toggles are buttons that report their state', () => {
+    expect(script).toContain('<button type="button" class="ff-tab-link" onclick="goToTab(');
     expect(script.match(/<button type="button" class="expand-toggle" aria-expanded="false"/g)).toHaveLength(2);
     const start = script.indexOf('window.toggleExpand=function');
     expect(script.slice(start, script.indexOf('};', start))).toContain("setAttribute('aria-expanded'");
@@ -86,10 +90,9 @@ describe('review report: keyboard', () => {
   });
 
   it('the controls that became buttons keep the line height of the text around them', () => {
-    // A button does not inherit line-height, so as buttons the Score
-    // Breakdown rows went from 22.5px to 18px tall and the file-list toggles
-    // from 17.5px to 14px at 1280px.
-    for (const selector of ['.breakdown-row', '.expand-toggle', '.action-link']) {
+    // A button does not inherit line-height, so as buttons the file-list
+    // toggles went from 17.5px to 14px tall at 1280px.
+    for (const selector of ['.expand-toggle', '.ff-tab-link']) {
       expect(declarations(css, selector), selector).toContain('line-height:inherit');
     }
   });
