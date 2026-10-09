@@ -78,11 +78,10 @@ describe('review report: keyboard', () => {
     expect(script.slice(start, script.indexOf('};', start))).toContain('.focus()');
   });
 
-  it('the links to other tabs and the file-list toggles are buttons that report their state', () => {
-    expect(script).toContain('<button type="button" class="ff-tab-link" onclick="goToTab(');
-    expect(script.match(/<button type="button" class="expand-toggle" aria-expanded="false"/g)).toHaveLength(2);
-    const start = script.indexOf('window.toggleExpand=function');
-    expect(script.slice(start, script.indexOf('};', start))).toContain("setAttribute('aria-expanded'");
+  it('the link to Findings is a button, and each finding opens with a native disclosure', () => {
+    expect(script).toContain('<button type="button" class="ff-tab-link" onclick="goToTab(&quot;findings&quot;)">');
+    expect(script).toContain('<details class="fd" id="f-');
+    expect(script).toContain('<summary>');
   });
 
   it('focus is visible on every button', () => {
@@ -120,7 +119,7 @@ describe('review report: 375px', () => {
   });
 
   it('long file paths and commands break inside their card', () => {
-    expect(declarations(css, '.cred-card')).toContain('overflow-wrap:anywhere');
+    expect(declarations(css, '.fd')).toContain('overflow-wrap:anywhere');
     expect(declarations(css, '.cmd-text')).toContain('overflow-wrap:anywhere');
   });
 

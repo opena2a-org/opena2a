@@ -12,16 +12,6 @@ var SOURCE_LABEL = {
   'guard': 'guard',
   'advisories': 'advisories'
 };
-var SOURCE_TAB = {
-  'hma': 'hma',
-  'credential-scan': 'credentials',
-  'shield': 'shield',
-  'shadow-ai': 'shadowai',
-  'hygiene': 'hygiene',
-  'guard': 'hygiene',
-  'advisories': 'hygiene'
-};
-var TAB_LABEL = { hma: 'HMA', credentials: 'Credentials', shield: 'Shield', shadowai: 'Shadow AI', hygiene: 'Hygiene' };
 var FLOOR_LABEL = { 'HMA Scan': 'HMA' };
 /** Escaped text with `code` spans marked up. */
 function richText(s) {
@@ -146,6 +136,7 @@ function renderSummary(findings, top) {
   var h = '<section class="card summary" aria-labelledby="summary-title"><h2 class="sum-verdict" id="summary-title">' + esc(verdictSentence(counts, findings.length)) + '</h2>';
   var notes = summaryNotices();
   for (var i = 0; i < notes.length; i++) h += '<p class="sum-notice">' + esc(notes[i]) + '</p>';
+  if (report.shieldData && report.shieldData.chainBroken) h += commandRow('Check', { command: 'opena2a shield selfcheck', tool: 'opena2a' }, "Runs Shield's integrity checks.");
   h += countsLine(counts);
   h += '<p class="sum-score">' + esc(scoreSentences(top)) + '</p>';
   h += '<p class="sum-checked">' + esc(checkedSentence()) + '</p>';
@@ -172,6 +163,19 @@ function foundByText(f) {
 function place(file, line) {
   return file == null ? '' : file + (line != null ? ':' + line : '');
 }
+function evidenceRow(ev) {
+  if (!ev || ev.length === 0) return '';
+  return textRow('Evidence', ev.map(function(e) {
+    var at = place(e.file, e.line);
+    return '<code>' + (at ? esc(at) + '  ' : '') + esc(e.text) + '</code>';
+  }).join('<br>'));
+}
+/** Recovery that was re-scored; other kinds are named in the card's head only. */
+function recoveryRow(r) {
+  if (r && r.kind === 'computed') return textRow('Recovery', esc('+' + r.points + ' (' + r.from + ' -> ' + r.to + ', re-scored)'));
+  if (r && r.kind === 'atLeast') return textRow('Recovery', esc('at least +' + r.points + ' (' + r.from + ' -> ' + r.to + ' re-scored; the rest is measured on the next run)'));
+  return '';
+}
 function fixFirstCard(f, n) {
   var h = '<article class="ff-card" id="ff-' + esc(f.fingerprint) + '" aria-labelledby="ff-title-' + n + '">';
   h += '<div class="ff-head"><span class="ff-num">' + n + '</span><span class="sev-badge sev-' + esc(f.severity) + '">' + esc(f.severity) + '</span><span class="ff-conf">' + esc(f.confidence || 'not rated') + '</span><span class="ff-rec">' + esc(recoveryLabel(f.recovery)) + '</span></div>';
@@ -181,9 +185,7 @@ function fixFirstCard(f, n) {
   else if (f.advice) h += textRow('Fix', richText(f.advice));
   if (f.then) h += commandRow('Then', f.then, f.then.changes);
   if (f.verify) h += commandRow('Verify', f.verify, f.verify.expect ? 'Expect: ' + f.verify.expect : '');
-  var r = f.recovery;
-  if (r && r.kind === 'computed') h += textRow('Recovery', esc('+' + r.points + ' (' + r.from + ' -> ' + r.to + ', re-scored)'));
-  if (r && r.kind === 'atLeast') h += textRow('Recovery', esc('at least +' + r.points + ' (' + r.from + ' -> ' + r.to + ' re-scored; the rest is measured on the next run)'));
+  h += recoveryRow(f.recovery);
   h += textRow('Found by', esc(foundByText(f)));
   var locs = f.locations || [];
   var ev = f.evidence || [];
@@ -193,33 +195,11 @@ function fixFirstCard(f, n) {
       var shown = locs.slice(0, 5).map(function(l) { return esc(place(l.file, l.line)); }).join('<br>');
       h += textRow('Where', shown + (locs.length > 5 ? '<br>+' + (locs.length - 5) + ' more' : ''));
     }
-    if (ev.length > 0) {
-      h += textRow('Evidence', ev.map(function(e) {
-        var at = place(e.file, e.line);
-        return '<code>' + (at ? esc(at) + '  ' : '') + esc(e.text) + '</code>';
-      }).join('<br>'));
-    }
+    h += evidenceRow(ev);
     if (f.occurrences > 1) h += textRow('Occurrences', String(f.occurrences));
     h += '</details>';
   }
   return h + '</article>';
-}
-/** The findings after Fix first, counted by the tab that lists them. */
-function moreFindings(rest) {
-  var byTab = {};
-  var order = [];
-  for (var i = 0; i < rest.length; i++) {
-    var src = rest[i].foundBy && rest[i].foundBy[0] ? rest[i].foundBy[0].source : '';
-    var tab = SOURCE_TAB[src];
-    if (!tab) continue;
-    if (!byTab[tab]) order.push(tab);
-    byTab[tab] = (byTab[tab] || 0) + 1;
-  }
-  var h = '<p class="ff-more">' + esc(plural(rest.length, 'more finding')) + ':';
-  for (var j = 0; j < order.length; j++) {
-    h += ' <button type="button" class="ff-tab-link" onclick="goToTab(&quot;' + order[j] + '&quot;)">' + TAB_LABEL[order[j]] + ' ' + byTab[order[j]] + '</button>';
-  }
-  return h + '</p>';
 }
 function renderOverview() {
   var findings = report.reportFindings || [];
@@ -230,6 +210,8 @@ function renderOverview() {
   h += '<section aria-labelledby="fix-first-title"><h2 class="section-title" id="fix-first-title">Fix first</h2>';
   if (top.length === 0) h += '<p class="empty-state">No findings to fix.</p>';
   for (var j = 0; j < top.length; j++) h += fixFirstCard(top[j], j + 1);
-  if (findings.length > top.length) h += moreFindings(findings.slice(top.length));
+  if (findings.length > top.length) {
+    h += '<p class="ff-more">' + esc(plural(findings.length - top.length, 'more finding')) + '.<button type="button" class="ff-tab-link" onclick="goToTab(&quot;findings&quot;)">View all ' + plural(findings.length, 'finding') + '</button></p>';
+  }
   return h + '</section>';
 }

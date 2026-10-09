@@ -34,10 +34,8 @@ export const reviewReportCss = (): string => readReviewAsset('report.css');
 export const REVIEW_CLIENT_FILES: readonly string[] = [
   'client/00-core.js', // report data, tab switching, shared helpers
   'client/10-overview.js',
-  'client/20-credentials.js',
   'client/30-hygiene.js',
-  'client/40-shield.js',
-  'client/50-hma.js',
+  'client/40-findings.js',
   'client/60-shadowai.js',
   'client/99-init.js', // renders the first tab; runs last
 ];

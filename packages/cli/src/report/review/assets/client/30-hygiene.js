@@ -22,7 +22,8 @@ function renderHygiene() {
   h += statCard(init.riskLevel, 'Risk Level', init.riskLevel === 'SECURE' || init.riskLevel === 'LOW' ? 'var(--green)' : init.riskLevel === 'MEDIUM' ? 'var(--medium)' : 'var(--red)');
   h += '</div>';
   h += '<div class="overview-top"><div class="gauge-card">' + gaugeCircle(init.trustScore, 'out of 100') + '</div><div><h2 class="section-title">Hygiene Checks</h2><div class="card">';
-  var checks = init.hygieneChecks || [];
+  // Findings lists every credential finding, not only this pattern scan's.
+  var checks = (init.hygieneChecks || []).filter(function(c) { return c.label !== 'Credential scan'; });
   for (var i = 0; i < checks.length; i++) {
     var c = checks[i];
     var statusClr = c.status === 'pass' ? 'var(--green)' : c.status === 'fail' ? 'var(--red)' : c.status === 'warn' ? 'var(--medium)' : 'var(--dim)';

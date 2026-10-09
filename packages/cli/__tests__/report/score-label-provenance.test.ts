@@ -131,10 +131,10 @@ describe('score provenance', () => {
     expect(collisions).toEqual([]);
   });
 
-  it('the two posture tiles say which posture they are', () => {
+  it('the posture tile says which posture it is; the Shield posture is not shown', () => {
     const src = htmlSrc();
     expect(src).toContain("'Project Posture'");
-    expect(src).toContain("'Shield Posture'");
+    expect(src).not.toContain('shieldPostureScore');
     // The ambiguous label is gone, not merely supplemented.
     expect(src).not.toContain("'Posture Score'");
   });

@@ -214,55 +214,12 @@ function buildReport(topFindings: ReviewReport['hmaData']['topFindings']): Revie
 }
 
 describe('generateReviewHtml — Finding v2 wiring (renderer source assertions)', () => {
-  // The HMA tab content is rendered client-side via `renderHma()` inside the
-  // bundled JS. Server-side we can only verify that the renderer source
-  // contains the expected v2 helpers and field references — the actual visual
-  // output is covered by the new-user walkthrough.
-
-  it('embeds the whyAndEvidence helper definition', () => {
-    const html = generateReviewHtml(buildReport([]));
-    expect(html.includes('function whyAndEvidence(f)')).toBe(true);
-  });
-
-  it('the renderer prefers rationale.plainEnglish over guidance', () => {
-    const html = generateReviewHtml(buildReport([]));
-    // Helper logic: `(f.rationale&&f.rationale.plainEnglish)||f.guidance||legacyRiskKb[f.checkId]`
-    expect(html).toContain('f.rationale.plainEnglish');
-    expect(html).toContain('legacyRiskKb[f.checkId]');
-  });
-
-  it('the renderer renders positive evidence lines when present', () => {
-    const html = compactReportScript(generateReviewHtml(buildReport([])));
-    expect(html).toContain("f.evidence.kind==='positive'");
-    expect(html).toContain('f.evidence.lines');
-  });
-
-  it('the renderer renders absence-of-defense evidence when present', () => {
-    const html = compactReportScript(generateReviewHtml(buildReport([])));
-    expect(html).toContain("f.evidence.kind==='absence'");
-    expect(html).toContain('f.evidence.observed');
-  });
-
-  it('the renderer renders mixed evidence (both positive and absence panels)', () => {
-    const html = compactReportScript(generateReviewHtml(buildReport([])));
-    // Adversarial Phase 4.5 surfaced this: HMA's HmaMixedEvidence variant
-    // had no renderer branch — silent display drop. Renderer must now route
-    // through positivePanel + absencePanel helpers.
-    expect(html).toContain("f.evidence.kind==='mixed'");
-    expect(html).toContain('f.evidence.positive');
-    expect(html).toContain('f.evidence.absence');
-    expect(html).toContain('function positivePanel');
-    expect(html).toContain('function absencePanel');
-  });
-
-  it('the renderer surfaces attackClass next to category', () => {
-    const html = generateReviewHtml(buildReport([]));
-    expect(html).toContain('f.attackClass');
-  });
-
-  it('drops the legacy inline guidance ternary (replaced by whyAndEvidence)', () => {
-    const html = compactReportScript(generateReviewHtml(buildReport([])));
-    expect(html).not.toContain("((f.guidance||legacyRiskKb[f.checkId])?'<div");
+  // HMA results are listed in the Findings tab from reportFindings, whose
+  // evidence rows and reason carry the v2 fields (review-findings.test.ts).
+  it('the Findings renderer prints each finding\'s evidence rows and reason', () => {
+    const script = compactReportScript(generateReviewHtml(buildReport([])));
+    expect(script).toContain('h+=evidenceRow(f.evidence)');
+    expect(script).toContain("if(f.reason)h+=textRow('Why here',richText(f.reason))");
   });
 
   it('embeds Finding v2 fields in the report data block', () => {

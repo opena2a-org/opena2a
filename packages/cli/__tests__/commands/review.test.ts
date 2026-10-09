@@ -296,11 +296,10 @@ describe('review', () => {
     expect(output).toMatch(/2 shield events excluded/); // the forged line and the spawn
     expect(output).toMatch(/chain broken at index 1/);
 
-    // HTML Shield tab, actually rendered (not merely present in the template).
-    const shieldHtml = renderReportPage(fs.readFileSync(reportPath, 'utf-8'), 'shield');
-    expect(shieldHtml).toContain('Excluded (Chain Break)');
-    expect(shieldHtml).toContain('Event log hash chain broken');
-    expect(shieldHtml).toContain('opena2a shield selfcheck');
+    // HTML Summary, actually rendered (not merely present in the template).
+    const summaryHtml = renderReportPage(fs.readFileSync(reportPath, 'utf-8'), 'overview');
+    expect(summaryHtml).toContain('Event log hash chain broken at index 1; 2 untrusted events were excluded');
+    expect(summaryHtml).toContain('opena2a shield selfcheck');
   });
 
   it('C6: an intact event chain leaves the Shield phase non-provisional and silent', async () => {
@@ -412,7 +411,7 @@ describe('review', () => {
       expect(text.output).not.toContain(s);
       expect(html).not.toContain(s);
     }
-    expect(renderReportPage(html, 'credentials')).toContain('config.js');
+    expect(renderReportPage(html, 'findings')).toContain('config.js');
     if (process.platform !== 'win32') {
       expect(fs.statSync(reportPath).mode & 0o077).toBe(0);
     }
@@ -478,7 +477,7 @@ describe('review', () => {
       const html = fs.readFileSync(reportPath, 'utf-8');
       return {
         report: JSON.parse(output),
-        credentialsTab: renderReportPage(html, 'credentials'),
+        findingsTab: renderReportPage(html, 'findings'),
         overviewTab: renderReportPage(html, 'overview'),
       };
     } finally {
@@ -493,29 +492,31 @@ describe('review', () => {
     fs.writeFileSync(path.join(tempDir, 'guide.pdf'), '%PDF-1.4');
     fs.writeFileSync(path.join(tempDir, '.toolrc'), 'x=1\n');
 
-    const { report, credentialsTab, overviewTab } = await reviewBothFormats(tempDir);
+    const { report, findingsTab, overviewTab } = await reviewBothFormats(tempDir);
 
     expect(report.credentialData.filesScanned).toBe(0);
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
     expect(credPhase.detail).toBe('No files scanned for credentials');
 
-    expect(credentialsTab).not.toContain('No hardcoded credentials found');
-    expect(credentialsTab).not.toContain('Your project is clean');
-    expect(credentialsTab).toContain('No files were scanned for credentials');
-    expect(credentialsTab).toContain('opena2a review');
+    expect(findingsTab).not.toContain('No hardcoded credentials found');
+    expect(findingsTab).not.toContain('Your project is clean');
+    expect(findingsTab).toContain('No files were scanned for credentials in ' + tempDir);
+    expect(findingsTab).toContain('opena2a review');
     expect(overviewTab).toContain('0 files read for credentials.');
     expect(overviewTab).not.toContain('No hardcoded credentials');
   });
 
-  it('a directory with a readable source file and no credential keeps the clean wording', async () => {
+  it('a directory with a readable source file and no credential says what was read, not that it is clean', async () => {
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
 
-    const { report, credentialsTab } = await reviewBothFormats(tempDir);
+    const { report, findingsTab, overviewTab } = await reviewBothFormats(tempDir);
 
     expect(report.credentialData.filesScanned).toBeGreaterThanOrEqual(1);
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
     expect(credPhase.detail).toBe('No hardcoded credentials');
-    expect(credentialsTab).toContain('No hardcoded credentials found. Your project is clean.');
+    expect(overviewTab).toContain(`${report.credentialData.filesScanned} file${report.credentialData.filesScanned === 1 ? '' : 's'} read for credentials.`);
+    expect(findingsTab).toContain('Findings ('); // non-vacuity: the Findings tab rendered
+    expect(overviewTab + findingsTab).not.toMatch(/clean/i);
   });
 
   it('HMA unavailable gracefully skips', async () => {

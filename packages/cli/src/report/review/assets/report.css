@@ -564,9 +564,34 @@ summary:focus-visible {
   font-size: 11px;
   margin-left: 8px;
 }
-.ff-card code {
+.ff-card code, .fd code {
   font-family: var(--font);
   white-space: pre-wrap;
+}
+.fd a {
+  color: var(--primary);
+}
+/* Findings: one native disclosure per finding. */
+.fd {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.fd > summary {
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.fd > .ff-row {
+  padding: 0 14px;
+}
+.fd[open] {
+  padding-bottom: 10px;
+}
+.fd-title {
+  font-weight: 600;
 }
 .ff-details {
   margin-top: 8px;

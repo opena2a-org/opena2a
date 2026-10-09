@@ -191,7 +191,7 @@ describe('review report: Fix first', () => {
     expect(t).toContain('Recovery at least +3 (88 -> 91 re-scored; the rest is measured on the next run)');
     expect(t).toContain('Expect: the line starts with -rw-------');
     expect(t).not.toContain('No dependency lock file'); // the fourth finding stays out of Fix first
-    expect(t).toContain('1 more finding: Hygiene 1');
+    expect(t).toContain('1 more finding. View all 4 findings');
   });
 
   it('the first command on the page is the first card\'s fix', () => {

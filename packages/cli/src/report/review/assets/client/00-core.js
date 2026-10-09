@@ -27,17 +27,11 @@ function renderPage(pg) {
     case 'overview':
       el.innerHTML = renderOverview();
       break;
-    case 'credentials':
-      el.innerHTML = renderCredentials();
+    case 'findings':
+      el.innerHTML = renderFindings();
       break;
     case 'hygiene':
       el.innerHTML = renderHygiene();
-      break;
-    case 'shield':
-      el.innerHTML = renderShield();
-      break;
-    case 'hma':
-      el.innerHTML = renderHma();
       break;
     case 'shadowai':
       el.innerHTML = renderShadowAi();

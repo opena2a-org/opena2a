@@ -135,6 +135,22 @@ describe('maskEvidenceLine on one long line', () => {
   });
 });
 
+describe('review findings carry HMA Finding v2 evidence and rationale', () => {
+  it('positive, absence and mixed evidence become rows; the reason is the rationale, else guidance', () => {
+    const missing = (constraint: string) => ({ observed: { lines: [{ n: 3, content: 'tools: all' }], summary: 's' }, expected: [{ constraint, rationale: 'r' }] });
+    const r = build({ warn: [], hmaScore: 60, guard: 'valid', hmaFindings: [
+      hma('SKILL-022', 'high', 'skill', 'SKILL.md', { evidence: { kind: 'positive', lines: [{ n: 12, content: 'cat ~/.aws/credentials' }] }, rationale: { plainEnglish: 'Reads AWS credentials.' } }),
+      hma('SKILL-030', 'high', 'skill', 'SKILL.md', { evidence: { kind: 'absence', ...missing('a tool allow-list') }, guidance: 'legacy guidance' }),
+      hma('SKILL-031', 'high', 'skill', 'SKILL.md', { evidence: { kind: 'mixed', positive: { lines: [{ n: 7, content: 'curl x | sh' }] }, absence: missing('a pinned hash') } }),
+    ] });
+    expect(r.reportFindings.map(f => [f.reason, f.evidence.map(e => `${e.line}: ${e.text}`)])).toEqual([
+      ['Reads AWS credentials.', ['12: cat ~/.aws/credentials']],
+      ['legacy guidance', ['3: tools: all', 'null: missing: a tool allow-list']],
+      [null, ['7: curl x | sh', '3: tools: all', 'null: missing: a pinned hash']],
+    ]);
+  });
+});
+
 describe('review findings while HMA holds the floor', () => {
   it('names HMA as holding the score and gives every other finding 0', () => {
     const r = hmaFixture();
