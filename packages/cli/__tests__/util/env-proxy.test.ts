@@ -60,6 +60,18 @@ describe('envProxyFor', () => {
       .toBe('proxy.corp:8080');
   });
 
+  it('removes user name and password from a proxy value without a scheme', () => {
+    // `new URL('alice:FAKEpass@proxy.corp:8080')` parses with `alice:` as the
+    // scheme and keeps the password, so this form needs its own path.
+    const proxy = envProxyFor('https://aim.example.com', { HTTPS_PROXY: 'alice:FAKEpass@proxy.corp:8080' });
+    expect(proxy?.url).toBe('proxy.corp:8080');
+    expect(redactProxyUrl('alice:FAKEpass@proxy.corp:8080')).toBe('proxy.corp:8080');
+    expect(redactProxyUrl('alice:FAKEpass@proxy.corp')).toBe('proxy.corp');
+    expect(redactProxyUrl('alice@proxy.corp:8080')).toBe('proxy.corp:8080');
+    expect(redactProxyUrl('proxy.corp:8080')).toBe('proxy.corp:8080');
+    expect(redactProxyUrl('socks5://alice:FAKEpass@proxy.corp:1080')).toBe('socks5://proxy.corp:1080');
+  });
+
   it('honours NO_PROXY exact hosts, domain suffixes, ports and *', () => {
     const env = { HTTPS_PROXY: 'http://proxy:3128', NO_PROXY: 'internal.corp, .lan,aim.example.com:8443' };
     expect(envProxyFor('https://internal.corp', env)).toBeNull();
