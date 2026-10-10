@@ -153,7 +153,7 @@ describe('Shield finding text', () => {
     const def = FINDING_CATALOG['SHIELD-INT-001'];
     expect(def.title).toBe('Configuration file changed');
     expect(def.severity).toBe('critical');
-    expect(def.remediation).toBe('opena2a guard diff && opena2a guard resign');
+    expect(def.remediation).toBe('opena2a guard diff');
     expect(def.description).toBe(
       'A monitored configuration file was changed or removed after its SHA-256 hash was recorded. '
         + 'The check cannot tell an authorized change from an unauthorized one.',

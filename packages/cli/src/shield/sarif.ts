@@ -111,7 +111,11 @@ function buildRule(finding: FindingDefinition): SarifReportingDescriptor {
     id: finding.id,
     shortDescription: { text: finding.title },
     fullDescription: { text: finding.description },
-    help: { text: `Remediation: ${finding.remediation}` },
+    help: {
+      text: finding.remediationNote
+        ? `Remediation: ${finding.remediationNote} Command: ${finding.remediation}`
+        : `Remediation: ${finding.remediation}`,
+    },
     properties: {
       'security-severity': SEVERITY_SCORES[finding.severity],
       tags: frameworkTags(finding),

@@ -384,7 +384,9 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       category: 'Runtime',
       foundBy: [{ source: 'shield', checkId: cf.finding.id, lines: [] }],
       evidence: [{ file: null, line: null, text: `${plural(cf.count, 'event')}, ${cf.firstSeen} to ${cf.lastSeen}` }],
-      reason: cf.finding.description || null,
+      // The step no command performs (revoking a key, or the condition for a
+      // follow-up step) comes before the Fix command, as on the Shield page.
+      reason: [cf.finding.description, cf.finding.remediationNote].filter(Boolean).join(' ') || null,
       ...parseRemediation(cf.finding.remediation),
       verify: null,
       occurrences: cf.count,

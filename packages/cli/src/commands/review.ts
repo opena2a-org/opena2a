@@ -40,7 +40,7 @@ import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
 import { getShieldStatus } from '../shield/status.js';
 import { chainBreakEvent, readVerifiedEvents, type VerifiedEventsResult } from '../shield/events.js';
-import { classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
+import { FINDING_CATALOG, classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
 import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, defaultSigningFiles, type ConfigIntegritySummary } from './guard.js';
 import { collectEnvFileFacts, type EnvFileFact } from './review-facts.js';
@@ -2043,7 +2043,7 @@ export function aggregateFindings(
 
 // --- Action Items ---
 
-function generateActionItems(
+export function generateActionItems(
   credData: CredentialPhaseData,
   guardData: GuardPhaseData,
   shieldData: ShieldPhaseData,
@@ -2063,11 +2063,14 @@ function generateActionItems(
   }
 
   if (guardData.signatureStatus === 'tampered') {
+    // Same steps as SHIELD-INT-001: inspect, then resign only if every change
+    // is the user's. Chaining the two never reached resign (diff exits 1).
+    const changed = FINDING_CATALOG['SHIELD-INT-001'];
     items.push({
       priority: priority++,
       severity: 'high',
-      description: `${guardData.tamperedFiles.length} config file(s) tampered since signing`,
-      command: 'opena2a guard diff && opena2a guard resign',
+      description: `${guardData.tamperedFiles.length} config file(s) changed since signing. ${changed.remediationNote}`,
+      command: changed.remediation,
       tab: 'hygiene',
     });
   }

@@ -21,7 +21,7 @@ function renderShield() {
       var badges = '';
       if (f.finding.owaspAgentic) badges += '<span class="badge-owasp">' + esc(f.finding.owaspAgentic) + '</span>';
       if (f.finding.mitreAtlas) badges += '<span class="badge-mitre">' + esc(f.finding.mitreAtlas) + '</span>';
-      h += '<tr><td>' + esc(f.finding.id) + '</td><td>' + esc(f.finding.title) + (badges ? ' ' + badges : '') + '</td><td><span class="sev-badge sev-' + esc(f.finding.severity) + '">' + esc(f.finding.severity) + '</span></td><td>' + f.count + '</td><td>' + cmdBlock(f.finding.remediation) + '</td></tr>';
+      h += '<tr><td>' + esc(f.finding.id) + '</td><td>' + esc(f.finding.title) + (badges ? ' ' + badges : '') + '</td><td><span class="sev-badge sev-' + esc(f.finding.severity) + '">' + esc(f.finding.severity) + '</span></td><td>' + f.count + '</td><td>' + (f.finding.remediationNote ? '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:6px">' + esc(f.finding.remediationNote) + '</div>' : '') + cmdBlock(f.finding.remediation) + '</td></tr>';
       if (f.finding.description) h += '<tr><td colspan="5" class="finding-desc">' + esc(f.finding.description) + '</td></tr>';
     }
     h += '</tbody></table></div>';
