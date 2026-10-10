@@ -120,7 +120,30 @@ function sha256(data: string): string {
 }
 
 /**
+ * Read a regular file's whole text, or return null when the path holds
+ * something else.  Throws when the path cannot be opened or read.
+ *
+ * The open is non-blocking, so a named pipe with no writer is answered with
+ * null instead of blocking the open until a writer appears; a regular file
+ * reads the same either way.
+ */
+export function readRegularFileText(path: string): string | null {
+  // O_NONBLOCK is absent where named pipes cannot sit at a file path (Windows).
+  const fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0));
+  try {
+    if (!fstatSync(fd).isFile()) return null;
+    return readFileSync(fd, 'utf-8');
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
  * Read the chain tail the next event links to.
+ *
+ * Throws when the log path holds something other than a regular file, as
+ * the reader refuses it: a named pipe there would otherwise block this read
+ * until a writer appears and the append until a reader does.
  *
  * `prevHash` is the eventHash of the last VALID event in the file.  A
  * trailing line that does not parse, is not an object, or carries no
@@ -139,11 +162,14 @@ function sha256(data: string): string {
 function readChainTail(eventsPath: string): { prevHash: string; unterminated: boolean } {
   if (!existsSync(eventsPath)) return { prevHash: GENESIS_HASH, unterminated: false };
 
-  let content: string;
+  let content: string | null;
   try {
-    content = readFileSync(eventsPath, 'utf-8');
+    content = readRegularFileText(eventsPath);
   } catch {
     return { prevHash: GENESIS_HASH, unterminated: false };
+  }
+  if (content === null) {
+    throw new Error(`Not a regular file: ${eventsPath}`);
   }
 
   const unterminated = content.length > 0 && !content.endsWith('\n');

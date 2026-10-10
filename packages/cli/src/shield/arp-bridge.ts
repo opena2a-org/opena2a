@@ -9,10 +9,11 @@
  * Shield events live in ~/.opena2a/shield/events.jsonl (hash-chained).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  readRegularFileText,
   writeEvent,
   readEvents,
   readVerifiedEvents,
@@ -157,10 +158,16 @@ export function importARPEvents(targetDir: string, agentName?: string): ARPImpor
     return none;
   }
 
-  let content: string;
+  // A path that holds something other than a regular file imports nothing,
+  // as an unreadable one does; a named pipe is answered at once rather than
+  // blocking the read until a writer appears.
+  let content: string | null;
   try {
-    content = readFileSync(arpEventsPath, 'utf-8');
+    content = readRegularFileText(arpEventsPath);
   } catch {
+    return none;
+  }
+  if (content === null) {
     return none;
   }
 

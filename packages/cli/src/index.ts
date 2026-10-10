@@ -102,7 +102,7 @@ async function main(): Promise<void> {
     .option('--ci', 'CI mode (no interactive prompts, machine-readable output)')
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
-    .option('--format <type>', 'Output format: text, json, sarif', 'text')
+    .option('--format <type>', 'Output format: text, json, or sarif where a command produces it', 'text')
     .option('--json', 'Shorthand for --format json')
     .option('--contribute', 'Share scan summaries with OpenA2A community')
     .option('--no-contribute', 'Skip community contribution for this invocation only')
@@ -763,6 +763,11 @@ analysis runs and results can be shared with the community.
     .option('--report <path>', 'Output path for HTML report (also written with --format json)')
     .option('--no-open', 'Do not auto-open report in browser')
     .option('--skip-hma', 'Skip HMA scan even if available')
+    .addHelpText('after', `
+Output formats:
+  --format text   Summary plus HTML report (default)
+  --format json   Report on stdout
+  Any other --format value, sarif included, exits 2.`)
     .action(async (directory: string | undefined, opts) => {
       const { review } = await import('./commands/review.js');
       const globalOpts = program.opts();
@@ -1065,6 +1070,11 @@ Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed
     .option('--export-csv <path>', 'Export asset inventory as CSV for import into CMDB/ServiceNow')
     .option('--registry', 'Enrich results with community trust data from OpenA2A Registry')
     .option('--auto-scan', 'Auto-scan unknown packages with HackMyAgent (no prompt)')
+    .addHelpText('after', `
+Output formats:
+  --format text   Audit summary (default)
+  --format json   Result on stdout
+  Any other --format value, sarif included, exits 2.`)
     .action(async (directory: string | undefined, opts) => {
       const { detect } = await import('./commands/detect.js');
       const globalOpts = program.opts();
