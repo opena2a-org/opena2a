@@ -197,7 +197,46 @@ function gaugeCircle(score, label) {
   s += '</svg>';
   return s;
 }
+function placeholders(cmd) {
+  return String(cmd).match(/<[A-Za-z][A-Za-z0-9_.:-]*>/g) || [];
+}
+function destructive(cmd) {
+  var segs = String(cmd).split(/&&|[|;]+/);
+  for (var i = 0; i < segs.length; i++) {
+    var t = segs[i].trim().split(/ +/);
+    if (t[0] === 'sudo') t.shift();
+    var x = t[0], sub = t[1] || '';
+    if (x === 'rm' || x === 'shred' || x === 'dd' || x === 'bfg' || x === 'git-filter-repo' || /^mkfs/.test(x)) return true;
+    if (x === 'git') {
+      if (sub === 'filter-repo' || sub === 'filter-branch') return true;
+      if (sub === 'reset' && t.indexOf('--hard') > 1) return true;
+      if (sub === 'clean' && t.some(function(a) { return a === '--force' || /^-[a-zA-Z]*f/.test(a); })) return true;
+      if (sub === 'branch' && t.indexOf('-D') > 1) return true;
+      if (sub === 'stash' && (t[2] === 'drop' || t[2] === 'clear')) return true;
+    }
+    if (x === 'npm' && sub === 'unpublish') return true;
+  }
+  return false;
+}
+/** Why `cmd` is shown without a Copy control, or '' when it runs as pasted. */
+function copyWithheld(cmd) {
+  if (destructive(cmd)) return 'No Copy control: this step deletes data or rewrites history and cannot be undone. Run it by hand only after you have read it and confirmed it applies to this repository.';
+  var ph = placeholders(cmd);
+  if (ph.length) return 'No Copy control: replace ' + ph.join(', ') + ' with your own value first. Pasted as shown, the shell reads ' + ph[0] + ' as a file redirection.';
+  return '';
+}
+/** `s` as one shell word: quoted when it holds a shell character, and never read as an option. */
+function shellArg(s) {
+  s = String(s);
+  if (s.charAt(0) === '-') s = './' + s;
+  if (/^[A-Za-z0-9_.,:=+@%/-]+$/.test(s)) return s;
+  var q = String.fromCharCode(39);
+  return q + s.split(q).join(q + '"' + q + '"' + q) + q;
+}
 function cmdBlock(cmd) {
+  if (cmd == null || !String(cmd).trim()) return '';
+  var why = copyWithheld(cmd);
+  if (why) return '<div class="cmd-block cmd-manual"><span class="cmd-text">' + esc(cmd) + '</span></div><div class="cmd-note">' + esc(why) + '</div>';
   return '<div class="cmd-block"><span class="cmd-text">' + esc(cmd) + '</span><button class="copy-btn" data-cmd="' + esc(cmd) + '" onclick="copyCmd(this)">Copy</button></div>';
 }
 function statCard(value, label, color) {

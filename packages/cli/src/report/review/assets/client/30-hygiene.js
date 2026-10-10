@@ -86,7 +86,7 @@ function renderHygiene() {
   var guard = report.guardData;
   if (guard) {
     h += '<h2 class="section-title">Config Integrity</h2>';
-    if (guard.signatureStatus === 'valid') {
+    if (guard.signatureStatus === 'valid' || guard.signatureStatus === 'tampered') {
       h += '<div class="card"><div class="stats-grid">';
       h += statCard('Active', 'ConfigGuard', 'var(--green)');
       h += statCard(guard.filesMonitored, 'Files Monitored', 'var(--primary)');
