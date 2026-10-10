@@ -116,7 +116,8 @@ window.toggleExpand = function(el) {
   var target = el.nextElementSibling;
   if (target) {
     var open = target.classList.toggle('open');
-    el.textContent = open ? 'collapse' : '+ show all';
+    if (!el.hasAttribute('data-closed-label')) el.setAttribute('data-closed-label', el.textContent);
+    el.textContent = open ? 'collapse' : el.getAttribute('data-closed-label');
     el.setAttribute('aria-expanded', String(open));
   }
 };
