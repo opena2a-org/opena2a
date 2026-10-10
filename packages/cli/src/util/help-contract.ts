@@ -204,8 +204,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   review: {
     exit: [
       ['0', 'the composite score is 50 or higher'],
-      ['1', 'the score is below 50, or the directory does not exist'],
-      ['2', 'an unsupported --format, --quiet together with --verbose, or a --report that could not be written under --json'],
+      ['1', 'the score is below 50'],
+      ['2', 'the directory does not exist, an unsupported --format, --quiet together with --verbose, or the HTML report could not be written'],
     ],
     json: 'prints the results as JSON; the HTML report is written only with --report',
     ci: 'does not open the report in a browser',
@@ -295,6 +295,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     exit: [
       ['0', 'discovery finished'],
       ['1', 'the directory cannot be read'],
+      ['2', 'an unsupported --format'],
     ],
     json: 'prints the result as JSON',
     ci: 'never asks before scanning unknown MCP packages, does not open the --report file, and does not share the summary; with --auto-scan and contributions enabled, each unknown server scan is still shared',
