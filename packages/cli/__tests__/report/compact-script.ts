@@ -6,6 +6,9 @@ export function compactJs(js: string): string {
   const sf = ts.createSourceFile('client.js', js, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   let out = '';
   const visit = (n: ts.Node): void => {
+    // getChildren also returns a node's attached `/** */` comments; drop them
+    // like every other comment.
+    if (ts.isJSDoc(n)) return;
     const kids = n.getChildren(sf);
     if (kids.length > 0) return kids.forEach(visit);
     const text = n.getText(sf);

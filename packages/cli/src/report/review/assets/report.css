@@ -303,7 +303,17 @@ body {
 .data-table.hma-table col.col-fix {
   width: 25%;
 }
+/* Below 900px the Category column is dropped. Its <col> goes with its cells:
+   a cell with display:none leaves the table grid, so with the <col> kept the
+   Occurrences cell sat in the zero-width Category column and Fix in the
+   Occurrences one, which put the "+ N more" toggle over a command wrapping one
+   character per line. The min-width keeps the Fix column wide enough for a
+   command and its Copy button; a narrower screen scrolls the table inside its
+   .table-scroll wrapper. */
 @media (max-width: 900px) {
+  .data-table.hma-table {
+    min-width: 640px;
+  }
   .data-table.hma-table col.col-check {
     width: 14%;
   }
@@ -314,7 +324,7 @@ body {
     width: 11%;
   }
   .data-table.hma-table col.col-category {
-    width: 0;
+    display: none;
   }
   .data-table.hma-table th.col-category-th, .data-table.hma-table td.col-category-td {
     display: none;

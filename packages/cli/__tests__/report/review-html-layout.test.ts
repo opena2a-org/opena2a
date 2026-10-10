@@ -131,6 +131,31 @@ describe('review report: 375px', () => {
     expect(declarations(css, '.summary')).toContain('overflow-wrap:anywhere');
   });
 
+  it('the HMA table drops the Category <col> with the Category cells, so every other cell keeps its column', () => {
+    // A cell with display:none leaves the table grid. With its <col> kept at
+    // width 0, Occurrences sat in the zero-width Category column and Fix in
+    // the Occurrences column, and the Fix column stayed empty: at 375px the
+    // "+ N more" toggle covered a command wrapping one character per line.
+    expect(script).toContain('<col class="col-category">');
+    const narrow = mediaBlock('max-width:900px');
+    expect(narrow.length).toBeGreaterThan(0); // non-vacuity: the narrow block exists
+    expect(declarations(narrow, '.data-table.hma-table th.col-category-th,.data-table.hma-table td.col-category-td'))
+      .toContain('display:none');
+    expect(declarations(narrow, '.data-table.hma-table col.col-category')).toContain('display:none');
+    // The columns left share the whole table.
+    const widths = ['col-check', 'col-name', 'col-severity', 'col-occurrences', 'col-fix']
+      .map((c) => Number(declarations(narrow, '.data-table.hma-table col.' + c).match(/width:(\d+)%/)?.[1]));
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it('the HMA table scrolls inside its wrapper instead of squeezing the Fix column', () => {
+    // Measured at 375px: a 640px table leaves a command 61px beside its Copy
+    // button; the full-width 301px table left it 0px.
+    const narrow = mediaBlock('max-width:900px');
+    const minWidth = Number(declarations(narrow, '.data-table.hma-table').match(/min-width:(\d+)px/)?.[1]);
+    expect(minWidth).toBeGreaterThanOrEqual(640);
+  });
+
   it('a Hygiene row breaks its value instead of widening the page', () => {
     // The "Security config" row prints the signature store path
     // (.opena2a/guard/signatures.json) as one flex item. Unbreakable, it set
