@@ -34,7 +34,7 @@ interface LocalVerdictFinding {
   file?: string;
   line?: number;
 }
-import { detectProject } from '../util/detect.js';
+import { detectProject, type ProjectType } from '../util/detect.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
@@ -844,10 +844,11 @@ export async function review(options: ReviewOptions): Promise<number> {
 
     if (await isContributeEnabled()) {
       const registryUrl = await getRegistryUrl();
-      if (registryUrl) {
+      const contribution = contributionPackage(detectProject(targetDir));
+      if (registryUrl && contribution) {
         await submitScanReport(registryUrl, {
-          packageName: report.projectName ?? 'unknown',
-          packageType: report.projectType ?? 'unknown',
+          packageName: contribution.name,
+          packageType: contribution.type,
           scannerName: 'opena2a-review',
           scannerVersion: '0.6.3',
           overallScore: compositeScore,
@@ -2132,6 +2133,23 @@ function openInBrowser(filePath: string): void {
     : platform() === 'win32' ? 'start'
     : 'xdg-open';
   spawn(cmd, [filePath], { detached: true, stdio: 'ignore' }).unref();
+}
+
+/**
+ * The package a review contributes to the Registry, or null when there is
+ * none to contribute. The Registry keeps a community scan only for a named
+ * npm or PyPI package: its contribute endpoint drops an event whose ecosystem
+ * is anything else, and a scan of a nameless tree would publish under the
+ * name "unknown". So a review of a Go, Rust, Java or generic tree, or of a
+ * tree whose manifest carries no name, sends nothing.
+ */
+export function contributionPackage(
+  project: { type: ProjectType; name: string | null },
+): { name: string; type: 'npm' | 'pypi' } | null {
+  if (!project.name) return null;
+  if (project.type === 'node') return { name: project.name, type: 'npm' };
+  if (project.type === 'python') return { name: project.name, type: 'pypi' };
+  return null;
 }
 
 function formatProjectType(project: ReturnType<typeof detectProject>): string {
