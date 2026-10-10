@@ -219,7 +219,7 @@ Expected output:
   Report: security-review.html (opened in browser)
 ```
 
-The HTML dashboard provides an interactive 6-tab view with drill-down into each finding. Each finding includes a description of the issue, a verification command to see it yourself, and a fix command to resolve it.
+The HTML dashboard provides an interactive 5-tab view with drill-down into each finding. Each finding includes a description of the issue, a verification command to see it yourself, and a fix command to resolve it.
 
 To generate the report without opening a browser:
 
