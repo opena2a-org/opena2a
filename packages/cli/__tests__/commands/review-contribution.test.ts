@@ -77,6 +77,19 @@ describe('contributionPackage', () => {
     }
   });
 
+  // Regression (#420): both names have the npm form but npm refuses them as
+  // package names, so no npm package can carry them.
+  it('a name npm reserves contributes nothing', () => {
+    for (const name of ['node_modules', 'favicon.ico']) {
+      expect(contributionPackage({ type: 'node', name }), name).toBeNull();
+    }
+  });
+
+  it('a reserved name under a scope is an npm name and contributes', () => {
+    expect(contributionPackage({ type: 'node', name: '@scope/node_modules' }))
+      .toEqual({ name: '@scope/node_modules', type: 'npm' });
+  });
+
   it('a named Python project contributes nothing', () => {
     expect(contributionPackage({ type: 'python', name: 'revfix' })).toBeNull();
   });
@@ -163,6 +176,8 @@ describe('review contribution', () => {
     mockHome.dir = tempHome;
     submission.isContributeEnabled.mockClear();
     submission.submitScanReport.mockClear();
+    // The advisory check reads the Registry; this file tests contribution only.
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
   });
 
   // Each negative case checks that review reached the contribution step and
@@ -174,6 +189,7 @@ describe('review contribution', () => {
   }
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     mockHome.dir = '';
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
@@ -244,6 +260,15 @@ describe('review contribution', () => {
   it('a named package.json beside a Python marker is not sent under its npm name', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'revfix-front', version: '1.0.0' }));
     fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'requests\n');
+    fs.mkdirSync(path.join(tempDir, '.git'));
+
+    await runReview(tempDir);
+
+    expectNothingSent();
+  });
+
+  it('a package.json named with a name npm reserves is not sent', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'node_modules', version: '1.0.0' }));
     fs.mkdirSync(path.join(tempDir, '.git'));
 
     await runReview(tempDir);

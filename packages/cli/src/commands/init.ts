@@ -12,7 +12,8 @@ import { detectProject, type ProjectInfo, type ProjectType } from '../util/detec
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
 import { scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
 import { shellWord } from '../util/shell-word.js';
-import { checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
+import { advisoriesNotChecked, checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
+import { getRegistryUrl } from '../util/report-submission.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
 import { Spinner } from '../util/spinner.js';
@@ -92,7 +93,9 @@ interface InitReport {
   findings: GroupedFinding[];
   actions: ActionItem[];
   nextSteps: NextStep[];
-  advisories: { count: number; matchedPackages: string[] };
+  /** `checked` is false when no advisory list was read from the Registry:
+   *  `count` is then 0 because nothing was compared. */
+  advisories: { checked: boolean; count: number; matchedPackages: string[] };
   hmaAvailable: boolean;
   // Backward compat aliases (v1 consumers)
   trustScore: number;
@@ -186,11 +189,12 @@ export async function init(options: InitOptions): Promise<number> {
   const checks = await runHygieneChecks(targetDir, project, credentialMatches.length, credentialFilesScanned);
 
   // 4. Check advisories (non-blocking)
-  let advisoryCheck: AdvisoryCheck = { advisories: [], matchedPackages: [], total: 0, fromCache: false };
+  let advisoryCheck: AdvisoryCheck = advisoriesNotChecked();
   try {
-    advisoryCheck = await checkAdvisories(targetDir);
+    advisoryCheck = await checkAdvisories(targetDir, await getRegistryUrl());
   } catch {
-    // Advisory check is best-effort
+    // Advisory check is best-effort: a configured Registry URL that fails
+    // validation leaves the advisories not checked.
   }
 
   // 5. HMA integration (optional dynamic import)
@@ -304,6 +308,7 @@ export async function init(options: InitOptions): Promise<number> {
     actions,
     nextSteps,
     advisories: {
+      checked: advisoryCheck.checked,
       count: advisoryCheck.advisories.length,
       matchedPackages: advisoryCheck.matchedPackages,
     },

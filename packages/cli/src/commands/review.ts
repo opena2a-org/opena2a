@@ -37,7 +37,8 @@ interface LocalVerdictFinding {
 import { detectProject, type ProjectType } from '../util/detect.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
-import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
+import { advisoriesNotChecked, checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
+import { getRegistryUrl } from '../util/report-submission.js';
 import { getShieldStatus } from '../shield/status.js';
 import { chainBreakEvent, readVerifiedEvents, type VerifiedEventsResult } from '../shield/events.js';
 import { FINDING_CATALOG, classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
@@ -162,6 +163,10 @@ export interface InitPhaseData {
   activeTools: number;
   totalTools: number;
   hygieneChecks: HygieneCheck[];
+  /** Whether an advisory list was read from the Registry. When false,
+   *  `advisoryCount` is 0 because nothing was compared, not because no
+   *  advisory matched. */
+  advisoriesChecked: boolean;
   advisoryCount: number;
   matchedPackages: string[];
   /** Published advisories that match this project's packages. */
@@ -836,7 +841,7 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   // Community contribution
   try {
-    const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
+    const { recordScanAndMaybePrompt, isContributeEnabled, submitScanReport } =
       await import('../util/report-submission.js');
     // The contribute prompt is guidance, so --quiet suppresses it the same way
     // machine-readable mode does; the scan is still counted.
@@ -884,11 +889,12 @@ async function runInitPhase(targetDir: string, credentialMatches: CredentialMatc
   const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
   const { score: trustScore, grade } = calculateTrustScore(checks);
 
-  let advisoryCheck: AdvisoryCheck = { advisories: [], matchedPackages: [], total: 0, fromCache: false };
+  let advisoryCheck: AdvisoryCheck = advisoriesNotChecked();
   try {
-    advisoryCheck = await checkAdvisories(targetDir);
+    advisoryCheck = await checkAdvisories(targetDir, await getRegistryUrl());
   } catch {
-    // Best-effort
+    // Best-effort: a configured Registry URL that fails validation leaves the
+    // advisories not checked.
   }
 
   const shieldStatus = getShieldStatus(targetDir);
@@ -923,6 +929,7 @@ async function runInitPhase(targetDir: string, credentialMatches: CredentialMatc
     activeTools,
     totalTools,
     hygieneChecks: checks,
+    advisoriesChecked: advisoryCheck.checked,
     advisoryCount: advisoryCheck.advisories.length,
     matchedPackages: advisoryCheck.matchedPackages,
     advisories: advisoryCheck.advisories.map(a => ({
@@ -2143,11 +2150,14 @@ function openInBrowser(filePath: string): void {
  */
 const NPM_NAME_FORM = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 const NPM_NAME_MAX_LENGTH = 214;
+/** Names of that form which npm refuses for any package. */
+const NPM_RESERVED_NAMES = new Set(['node_modules', 'favicon.ico']);
 
 /**
  * The package a review contributes to the Registry, or null when there is
  * none to contribute. Only a Node.js project whose package.json name has the
- * form of an npm package name is contributed, as an npm package. Every other
+ * form of an npm package name, and is not a name npm reserves, is
+ * contributed, as an npm package. Every other
  * tree sends nothing, so that no project label and no placeholder name
  * reaches the Registry as a package.
  *
@@ -2163,7 +2173,12 @@ export function contributionPackage(
 ): { name: string; type: 'npm' } | null {
   if (project.type !== 'node') return null;
   const { name } = project;
-  if (typeof name !== 'string' || name.length > NPM_NAME_MAX_LENGTH || !NPM_NAME_FORM.test(name)) {
+  if (
+    typeof name !== 'string'
+    || name.length > NPM_NAME_MAX_LENGTH
+    || !NPM_NAME_FORM.test(name)
+    || NPM_RESERVED_NAMES.has(name)
+  ) {
     return null;
   }
   return { name, type: 'npm' };

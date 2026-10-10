@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+// The advisory list is cached in the user's home, so each test gets its own.
+const mockHome = vi.hoisted(() => ({ dir: '' }));
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    homedir: () => mockHome.dir || actual.homedir(),
+  };
+});
+
 import { checkAdvisories, printAdvisoryWarnings } from '../../src/util/advisories.js';
 
 const mockFetch = vi.fn();
@@ -17,13 +29,18 @@ afterEach(() => {
 
 describe('advisories', () => {
   let tempDir: string;
+  let tempHome: string;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-advisory-test-'));
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-advisory-home-'));
+    mockHome.dir = tempHome;
   });
 
   afterEach(() => {
+    mockHome.dir = '';
     fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
   it('returns empty when no advisories exist', async () => {
@@ -133,6 +150,81 @@ describe('advisories', () => {
     expect(result.matchedPackages).toContain('flask');
   });
 
+  // Regression (#420): review and init called the check with no Registry URL,
+  // so the request never left the process and the empty result read as
+  // "no matching advisories found". The result now says whether a list was
+  // read at all.
+  it('requests the list from the Registry URL it is given', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ advisories: [], total: 0, format: 'osv' }),
+    });
+
+    await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(String(mockFetch.mock.calls[0][0])).toMatch(/^https:\/\/registry\.test\/api\/v1\/trust\/advisories\?/);
+  });
+
+  it('is checked when a list was read, including an empty one', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ advisories: [], total: 0, format: 'osv' }),
+    });
+
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).checked).toBe(true);
+    // The second read comes from the cache: still a list that was read.
+    const cached = await checkAdvisories(tempDir, 'https://registry.test');
+    expect(cached.fromCache).toBe(true);
+    expect(cached.checked).toBe(true);
+  });
+
+  it('is not checked when no list was read', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).checked).toBe(false);
+
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ ok: false, status: 503 });
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).checked).toBe(false);
+
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ error: 'maintenance' }) });
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).checked).toBe(false);
+  });
+
+  it('an empty Registry URL is not checked and sends nothing', async () => {
+    const result = await checkAdvisories(tempDir, '');
+    expect(result.checked).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('caches the list in the home directory and writes nothing into the scanned tree', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ advisories: [], total: 0, format: 'osv' }),
+    });
+
+    await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(fs.readdirSync(tempDir)).toEqual(['package.json']);
+    expect(fs.existsSync(path.join(tempHome, '.opena2a', 'cache', 'advisories.json'))).toBe(true);
+  });
+
+  it('does not answer from a list cached for another Registry', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ advisories: [], total: 0, format: 'osv' }),
+    });
+
+    await checkAdvisories(tempDir, 'https://registry.test');
+    const other = await checkAdvisories(tempDir, 'https://other-registry.test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(String(mockFetch.mock.calls[1][0])).toMatch(/^https:\/\/other-registry\.test\//);
+    expect(other.fromCache).toBe(false);
+  });
+
   it('printAdvisoryWarnings outputs to stdout', () => {
     const chunks: string[] = [];
     const origWrite = process.stdout.write;
@@ -151,6 +243,7 @@ describe('advisories', () => {
       matchedPackages: ['test-pkg'],
       total: 1,
       fromCache: false,
+      checked: true,
     });
 
     process.stdout.write = origWrite;
