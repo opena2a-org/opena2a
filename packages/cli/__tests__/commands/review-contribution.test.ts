@@ -137,11 +137,37 @@ describe('review contributes a scan under a package name and an ecosystem the Re
     expect(sent.events).toEqual([]);
   });
 
-  it('maps only Node.js and Python projects to a Registry ecosystem', () => {
-    expect(registryEcosystem('node')).toBe('npm');
-    expect(registryEcosystem('python')).toBe('pypi');
-    for (const type of ['go', 'rust', 'java', 'ruby', 'docker', 'generic'] as const) {
-      expect(registryEcosystem(type)).toBeNull();
+  it('sends a package.json name as npm when a requirements.txt makes the project type Python', async () => {
+    // detectProject keeps the package.json name when a later Python marker
+    // sets the type; the ecosystem follows the manifest the name came from.
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'contribution-mixed-fixture', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'requests==2.32.0\n');
+
+    await runReview(tempDir);
+
+    expect(sent.publishes).toHaveLength(1);
+    expect(sent.publishes[0]).toMatchObject({ name: 'contribution-mixed-fixture', ecosystem: 'npm' });
+    expect(sent.events).toHaveLength(1);
+    expect(sent.events[0]).toMatchObject({ packageName: 'contribution-mixed-fixture', ecosystem: 'npm' });
+    for (const body of [...sent.publishes, ...sent.events]) {
+      expect(body.ecosystem).not.toBe('pypi');
     }
+  });
+
+  it('sends nothing for a go.mod name when a requirements.txt makes the project type Python', async () => {
+    fs.writeFileSync(path.join(tempDir, 'go.mod'), 'module github.com/example/contribution-go-fixture\n\ngo 1.22\n');
+    fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'requests==2.32.0\n');
+
+    await runReview(tempDir);
+
+    expect(sent.publishes).toEqual([]);
+    expect(sent.events).toEqual([]);
+  });
+
+  it('maps a name to a Registry ecosystem by the manifest it was read from', () => {
+    expect(registryEcosystem('package.json')).toBe('npm');
+    expect(registryEcosystem('pyproject.toml')).toBe('pypi');
+    expect(registryEcosystem('go.mod')).toBeNull();
+    expect(registryEcosystem(null)).toBeNull();
   });
 });

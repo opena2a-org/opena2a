@@ -134,6 +134,22 @@ describe('detectProject', () => {
     expect(info.hasEnv).toBe(true);
   });
 
+  it('records the manifest the name came from, even when a later marker sets the type', () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'mixed' }));
+    fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'requests\n');
+    const info = detectProject(tempDir);
+    expect(info.type).toBe('python');
+    expect(info.name).toBe('mixed');
+    expect(info.nameSource).toBe('package.json');
+  });
+
+  it('nameSource is null when no manifest supplied a name', () => {
+    fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'requests\n');
+    const info = detectProject(tempDir);
+    expect(info.name).toBeNull();
+    expect(info.nameSource).toBeNull();
+  });
+
   it('frameworkHints is empty array when no secondary signals', () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'bare' }));
     const info = detectProject(tempDir);
