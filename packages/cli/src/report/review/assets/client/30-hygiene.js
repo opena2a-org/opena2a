@@ -93,7 +93,7 @@ function renderHygiene() {
         for (var i = 0; i < guard.tamperedFiles.length; i++) {
           h += '<div style="font-size:12px;color:var(--red)">' + esc(guard.tamperedFiles[i]) + '</div>';
         }
-        h += cmdBlock('opena2a guard diff && opena2a guard resign') + '</div>';
+        h += cmdBlock('opena2a guard diff') + '<div style="font-size:12px;color:var(--muted);margin:6px 0 4px">Only if every change is yours:</div>' + cmdBlock('opena2a guard resign') + '</div>';
       } else {
         h += '<div style="font-size:12px;color:var(--muted);margin-top:4px">All monitored files have valid signatures.</div>';
       }

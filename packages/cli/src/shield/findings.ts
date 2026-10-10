@@ -32,7 +32,13 @@ export interface FindingDefinition {
    * mitigation, tactic or case-study id, and never a placeholder string.
    */
   mitreAtlas: string | null;
+  /** One command, printed as written and runnable as written. */
   remediation: string;
+  /**
+   * The step no command performs, shown before `remediation`: revoking a key
+   * at its provider, or the condition under which a follow-up step is safe.
+   */
+  remediationNote?: string;
   description: string;
 }
 
@@ -64,7 +70,13 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'cred',
     owaspAgentic: 'ASI04',
     mitreAtlas: 'AML.T0025',
-    remediation: 'opena2a protect --dir . && git filter-repo --path <file> --invert-paths',
+    remediation: 'opena2a protect --dir .',
+    remediationNote:
+      'Revoke this key in the Anthropic Console and create a new one; a key that reached source may already '
+      + 'be copied, and moving it does not stop that.'
+      + ' Then run the command below: it takes the value out of the source file and leaves an environment '
+      + 'variable reference, which you set to the new key. Removing the old value from git history is '
+      + 'optional, comes after revoking, and does not by itself make the key safe.',
     description: 'An Anthropic API key was found hardcoded in source files. This key grants full API access and can result in unauthorized billing.',
   },
   'SHIELD-CRED-002': {
@@ -74,7 +86,13 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'cred',
     owaspAgentic: 'ASI04',
     mitreAtlas: 'AML.T0025',
-    remediation: 'opena2a protect --dir . && git filter-repo --path <file> --invert-paths',
+    remediation: 'opena2a protect --dir .',
+    remediationNote:
+      'Revoke this key in your OpenAI API keys settings and create a new one; a key that reached source may '
+      + 'already be copied, and moving it does not stop that.'
+      + ' Then run the command below: it takes the value out of the source file and leaves an environment '
+      + 'variable reference, which you set to the new key. Removing the old value from git history is '
+      + 'optional, comes after revoking, and does not by itself make the key safe.',
     description: 'An OpenAI API key was found hardcoded in source files. Exposed keys are exploited within minutes of public disclosure.',
   },
   'SHIELD-CRED-003': {
@@ -84,7 +102,13 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'cred',
     owaspAgentic: 'ASI04',
     mitreAtlas: 'AML.T0025',
-    remediation: 'opena2a protect --dir . && gh auth refresh',
+    remediation: 'opena2a protect --dir .',
+    remediationNote:
+      'Revoke this token in your GitHub token settings and create a new one with only the access it needs; a '
+      + 'token that reached source may already be copied, and moving it does not stop that.'
+      + ' Then run the command below: it takes the value out of the source file and leaves an environment '
+      + 'variable reference, which you set to the new key. Removing the old value from git history is '
+      + 'optional, comes after revoking, and does not by itself make the key safe.',
     description: 'A GitHub token was found hardcoded in source files. This token may grant repository access including private repos and org resources.',
   },
   'SHIELD-CRED-004': {
@@ -95,6 +119,12 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     owaspAgentic: 'ASI04',
     mitreAtlas: 'AML.T0025',
     remediation: 'opena2a protect --dir .',
+    remediationNote:
+      'Revoke this credential with the service that issued it and create a new one; a secret that reached '
+      + 'source may already be copied, and moving it does not stop that.'
+      + ' Then run the command below: it takes the value out of the source file and leaves an environment '
+      + 'variable reference, which you set to the new key. Removing the old value from git history is '
+      + 'optional, comes after revoking, and does not by itself make the key safe.',
     description: 'A generic API key or secret was found in a variable assignment. Move it to environment variables or a secrets manager.',
   },
   'SHIELD-POL-001': {
@@ -160,7 +190,15 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'int',
     owaspAgentic: 'ASI10',
     mitreAtlas: 'AML.T0011',
-    remediation: 'opena2a guard diff && opena2a guard resign',
+    // `guard diff` exits 1 whenever a signed file changed, which is the state
+    // this finding reports, so `guard diff && guard resign` never reached
+    // resign. The two steps are printed separately, and resign is conditional.
+    remediation: 'opena2a guard diff',
+    remediationNote:
+      'Inspect what changed with the command below. Only if every change is yours, run opena2a guard resign '
+      + 'and confirm the prompt; for changed files, opena2a guard verify then passes. Do not re-sign a change '
+      + 'you cannot account for. opena2a review reads the last 7 days of events, so it keeps listing this '
+      + 'finding until the change event is older than that.',
     description: 'A monitored configuration file was changed or removed after its SHA-256 hash was recorded. The check cannot tell an authorized change from an unauthorized one.',
   },
   'SHIELD-INT-002': {

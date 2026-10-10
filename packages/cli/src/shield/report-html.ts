@@ -361,6 +361,7 @@ a:hover{text-decoration:underline}
 @keyframes highlightPulse{0%{background:rgba(6,182,212,0.2)}100%{background:transparent}}
 
 /* Remediation command */
+.remediation-note{color:var(--muted);font-size:12px;line-height:1.5;margin-bottom:6px;max-width:420px}
 .remediation-cmd{display:flex;align-items:center;gap:6px}
 .remediation-code{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:4px;padding:3px 8px;font-size:11px;font-family:var(--font);color:var(--text);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .copy-btn{background:transparent;border:1px solid var(--card-border);border-radius:4px;padding:3px 6px;color:var(--muted);cursor:pointer;font-family:var(--font);font-size:10px;transition:all .2s;flex-shrink:0}
@@ -548,7 +549,7 @@ const JS = `
       h+='<td><span class="finding-id">'+esc(f.finding.id)+'</span></td><td>'+esc(f.finding.title)+'</td>';
       h+='<td><span class="sev-badge sev-'+esc(f.finding.severity)+'">'+esc(f.finding.severity)+'</span></td><td>'+f.count+'</td>';
       h+='<td><span class="badge-owasp">'+esc(f.finding.owaspAgentic)+'</span></td><td>'+mitreCell(f.finding.mitreAtlas)+'</td>';
-      h+='<td><div class="remediation-cmd"><code class="remediation-code" title="'+esc(f.finding.remediation)+'">'+esc(f.finding.remediation)+'</code><button class="copy-btn" data-cmd="'+esc(f.finding.remediation)+'" onclick="event.stopPropagation();copyCmd(this)">Copy</button></div></td></tr>';
+      h+='<td>'+(f.finding.remediationNote?'<div class="remediation-note">'+esc(f.finding.remediationNote)+'</div>':'')+'<div class="remediation-cmd"><code class="remediation-code" title="'+esc(f.finding.remediation)+'">'+esc(f.finding.remediation)+'</code><button class="copy-btn" data-cmd="'+esc(f.finding.remediation)+'" onclick="event.stopPropagation();copyCmd(this)">Copy</button></div></td></tr>';
       h+='<tr class="finding-expand" id="finding-detail-'+i+'"><td colspan="7"><div class="finding-detail"><div class="finding-detail-grid">';
       h+='<div><div class="finding-meta">Description</div><div class="finding-val">'+esc(f.finding.description)+'</div></div>';
       h+='<div><div class="finding-meta">Category</div><div class="finding-val">'+esc(f.finding.category)+'</div><div class="finding-meta" style="margin-top:8px">Time Range</div><div class="finding-val">'+esc(formatTs(f.firstSeen))+' to '+esc(formatTs(f.lastSeen))+'</div></div></div>';

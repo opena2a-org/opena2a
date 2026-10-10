@@ -69,7 +69,7 @@ const IMPLICIT_INHERIT: readonly string[] = [
   'commands/protect.ts:931',
   'commands/protect.ts:1450',
   'commands/review.ts:1347',
-  'commands/review.ts:2131',
+  'commands/review.ts:2134',
   'shield/detect.ts:33',
   'shield/status.ts:15',
   'shield/status.ts:24',
