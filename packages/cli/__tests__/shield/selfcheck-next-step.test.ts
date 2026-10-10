@@ -62,7 +62,7 @@ function sha256(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
 }
 
-/** Record the policy and sign it, as init does, then edit it (cell RB). */
+/** Record the policy and sign it, as init does, then edit it. */
 function editRecordedPolicy(): void {
   const policy = 'mode: monitor\nrules: []\n';
   fs.writeFileSync(path.join(shieldDir, 'policy.yaml'), policy);
@@ -108,7 +108,7 @@ const SCENARIOS: Scenario[] = [
     setup: () => enterLockdown('policy tampered'),
   },
   {
-    state: 'policy edited after it was recorded and signed (cell RB)',
+    state: 'policy edited after it was recorded and signed',
     failing: ['policy', 'artifact-signatures'],
     setup: editRecordedPolicy,
   },
@@ -309,7 +309,7 @@ describe('every selfcheck FAIL detail names one next command', () => {
     });
   }
 
-  it('cell RB: policy and artifact-signatures each carry a next step', () => {
+  it('policy and artifact-signatures each carry a next step', () => {
     editRecordedPolicy();
     const fails = failsOf(runIntegrityChecks({ shell: 'zsh' }).checks);
     const policy = fails.find((c) => c.name === 'policy');
