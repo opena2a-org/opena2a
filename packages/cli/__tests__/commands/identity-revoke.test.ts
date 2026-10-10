@@ -29,6 +29,7 @@ vi.mock('../../src/util/aim-client.js', async (importOriginal) => {
 });
 
 const { identity } = await import('../../src/commands/identity.js');
+const { printSubcommandHelp, IDENTITY_HELP } = await import('../../src/util/subcommand-help.js');
 
 const RETENTION_OR_DELETION = /30 days|retain|permanently|all data|delete/i;
 
@@ -116,5 +117,14 @@ describe('identity revoke', () => {
     expect(revokeLine).toBeDefined();
     expect(revokeLine).not.toMatch(RETENTION_OR_DELETION);
     expect(revokeLine).not.toMatch(/irreversible/i);
+  });
+
+  it('--help states no retention period and no deletion', () => {
+    const printed = printSubcommandHelp('identity', 'revoke', IDENTITY_HELP);
+
+    expect(printed).toBe(true);
+    expect(stdout.startsWith('Usage: opena2a identity revoke')).toBe(true);
+    expect(stdout).not.toMatch(RETENTION_OR_DELETION);
+    expect(stdout).not.toMatch(/irreversible|within that window/i);
   });
 });

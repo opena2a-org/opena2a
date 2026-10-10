@@ -513,7 +513,7 @@ export const IDENTITY_HELP: SubcommandHelpRegistry = {
   },
   revoke: {
     summary:
-      'Revoke the agent connected to the AIM server. Its data is kept for 30 days, and reactivate restores it within that window. Without --ci or --json it only prints a warning and exits 1. Log in first with opena2a login.',
+      'Revoke the agent connected to the AIM server; reactivate restores it. Without --ci or --json it only prints a warning and exits 1. Log in first with opena2a login.',
     examples: ['opena2a identity revoke'],
   },
 };
