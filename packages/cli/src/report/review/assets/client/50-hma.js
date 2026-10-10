@@ -6,14 +6,14 @@ function renderHma() {
   function isCommand(s) {
     if (!s) return false;
     var lc = s.trim().toLowerCase();
-    return /^(hackmyagent|npx |npm |opena2a |git |run |curl |mkdir )/.test(lc);
+    return /^(hackmyagent|npx |npm |opena2a |git |curl |mkdir )/.test(lc);
   }
   function fixCell(f) {
     if (!f.fix) return '<span style="color:var(--dim);font-size:11px">No fix available</span>';
     if (isCommand(f.fix)) return cmdBlock(f.fix);
     var h = '<div style="font-size:12px;color:var(--muted);line-height:1.4">' + esc(f.fix) + '</div>';
     if (f.category === 'skill' || f.category === 'supply') {
-      h += '<div style="margin-top:4px">' + cmdBlock('hackmyagent check ' + (f.sampleFiles && f.sampleFiles[0] ? esc(f.sampleFiles[0].split(':')[0]) : '<skill-path>')) + '</div>';
+      h += '<div style="margin-top:4px">' + cmdBlock('hackmyagent check ' + (f.sampleFiles && f.sampleFiles[0] ? shellArg(f.sampleFiles[0].split(':')[0]) : '<skill-path>')) + '</div>';
     }
     return h;
   }

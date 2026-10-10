@@ -421,6 +421,14 @@ body {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.cmd-manual {
+  border: 1px dashed var(--dim);
+}
+.cmd-note {
+  font-size: 11px;
+  color: var(--dim);
+  margin: 2px 0 6px;
+}
 .empty-state {
   color: var(--dim);
   font-size: 13px;

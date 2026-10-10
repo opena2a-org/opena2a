@@ -208,6 +208,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(node dist/index.js <cited command> --help) per cited opena2a command, one at a time',
   },
+  'report/review-html-copy-control.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      "spawnSync(/bin/sh -c printf '%s' <argument>) per shell-quoted skill path, one at a " +
+      'time, with PATH limited to /usr/bin:/bin, to read the argument the shell passes',
+  },
   'shield/selfcheck-next-step.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
