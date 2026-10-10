@@ -34,7 +34,8 @@ interface LocalVerdictFinding {
   file?: string;
   line?: number;
 }
-import { detectProject } from '../util/detect.js';
+import { detectProject, type ProjectType } from '../util/detect.js';
+import { getVersion } from '../util/version.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
@@ -865,12 +866,17 @@ export async function review(options: ReviewOptions): Promise<number> {
 
     if (await isContributeEnabled()) {
       const registryUrl = await getRegistryUrl();
-      if (registryUrl) {
+      // The Registry files a contributed scan by package name and ecosystem,
+      // and files one without an ecosystem under npm, so only a project with
+      // a package name in npm or PyPI is sent.
+      const project = detectProject(targetDir);
+      const ecosystem = registryEcosystem(project.type);
+      if (registryUrl && typeof project.name === 'string' && project.name !== '' && ecosystem) {
         await submitScanReport(registryUrl, {
-          packageName: report.projectName ?? 'unknown',
-          packageType: report.projectType ?? 'unknown',
+          packageName: project.name,
+          ecosystem,
           scannerName: 'opena2a-review',
-          scannerVersion: '0.6.3',
+          scannerVersion: getVersion(),
           overallScore: compositeScore,
           scanDurationMs: phases.reduce((sum, p) => sum + p.durationMs, 0),
           criticalCount: sevCounts.critical,
@@ -2204,6 +2210,17 @@ function formatProjectType(project: ReturnType<typeof detectProject>): string {
   }
   if (project.hasMcp) parts.push('+ MCP server');
   return parts.join(' ');
+}
+
+/**
+ * The Registry ecosystem a reviewed project's package name belongs to: npm
+ * for a Node.js project, pypi for a Python one, null for any other type. The
+ * Registry accepts npm, pypi and github as a contributed scan's ecosystem.
+ */
+export function registryEcosystem(type: ProjectType): 'npm' | 'pypi' | null {
+  if (type === 'node') return 'npm';
+  if (type === 'python') return 'pypi';
+  return null;
 }
 
 // --- Hygiene (reused from init logic) ---

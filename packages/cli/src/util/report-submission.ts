@@ -38,6 +38,11 @@ export interface ScanReport {
   packageVersion?: string;
   /** Package type (npm, pypi, go, mcp_server, a2a_agent) */
   packageType?: string;
+  /**
+   * Registry ecosystem of packageName (npm or pypi). Sent as `ecosystem` to
+   * the publish endpoint, and in place of packageType in the contribute event.
+   */
+  ecosystem?: string;
   /** Scanner name */
   scannerName: string;
   /** Scanner version */
@@ -149,7 +154,7 @@ export async function submitScanReport(
       toolVersion: report.scannerVersion ?? '0.1.0',
       packageName: report.packageName,
       packageVersion: report.packageVersion,
-      ecosystem: report.packageType,
+      ecosystem: report.ecosystem ?? report.packageType,
       totalChecks: (report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount) || 0,
       passed: 0, // not available from ScanReport shape
       critical: report.criticalCount,
@@ -192,6 +197,7 @@ export async function submitScanReport(
         name: report.packageName,
         version: report.packageVersion,
         type: report.packageType,
+        ecosystem: report.ecosystem,
         score: report.overallScore,
         maxScore: 100,
         tool: report.scannerName || 'opena2a-cli',
