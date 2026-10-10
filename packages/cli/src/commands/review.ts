@@ -2136,20 +2136,37 @@ function openInBrowser(filePath: string): void {
 }
 
 /**
+ * The form of an npm package name: lowercase letters, digits, "-", "." and
+ * "_", the first character a letter or digit, optionally scoped as
+ * "@scope/name" with both parts in that form. The length limit of 214
+ * characters is checked beside it.
+ */
+const NPM_NAME_FORM = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+const NPM_NAME_MAX_LENGTH = 214;
+
+/**
  * The package a review contributes to the Registry, or null when there is
- * none to contribute. The Registry keeps a community scan only for a named
- * npm or PyPI package: its contribute endpoint drops an event whose ecosystem
- * is anything else, and a scan of a nameless tree would publish under the
- * name "unknown". So a review of a Go, Rust, Java or generic tree, or of a
- * tree whose manifest carries no name, sends nothing.
+ * none to contribute. Only a Node.js project whose package.json name has the
+ * form of an npm package name is contributed, as an npm package. Every other
+ * tree sends nothing, so that no project label and no placeholder name
+ * reaches the Registry as a package.
+ *
+ * A Python tree sends nothing although the Registry keeps PyPI packages: its
+ * name is the first `name = "..."` line anywhere in pyproject.toml, which can
+ * belong to a package index or a tool setting instead of the project, and a
+ * package.json beside a Python marker can leave its npm name on a tree typed
+ * as Python. The name is typed unknown because package.json is JSON and
+ * `name` can hold any value.
  */
 export function contributionPackage(
-  project: { type: ProjectType; name: string | null },
-): { name: string; type: 'npm' | 'pypi' } | null {
-  if (!project.name) return null;
-  if (project.type === 'node') return { name: project.name, type: 'npm' };
-  if (project.type === 'python') return { name: project.name, type: 'pypi' };
-  return null;
+  project: { type: ProjectType; name: unknown },
+): { name: string; type: 'npm' } | null {
+  if (project.type !== 'node') return null;
+  const { name } = project;
+  if (typeof name !== 'string' || name.length > NPM_NAME_MAX_LENGTH || !NPM_NAME_FORM.test(name)) {
+    return null;
+  }
+  return { name, type: 'npm' };
 }
 
 function formatProjectType(project: ReturnType<typeof detectProject>): string {
