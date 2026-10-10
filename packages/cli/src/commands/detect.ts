@@ -19,8 +19,8 @@ import { registryNameFor } from '../util/mcp-registry-name.js';
 // Types
 // ---------------------------------------------------------------------------
 
-/** Output formats detect produces. Anything else is refused with exit 2. */
-const DETECT_FORMATS = ['text', 'json'] as const;
+/** Output formats detect produces, as `detect --help` names them (index.ts); others exit 2. */
+export const DETECT_FORMATS = ['text', 'json'] as const;
 
 export interface DetectOptions {
   targetDir: string;

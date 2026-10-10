@@ -349,6 +349,38 @@ describe('chunked reading', () => {
     15_000,
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'refuses to write to a named pipe at the log path instead of blocking on it',
+    async () => {
+      execFileSync('mkfifo', [getEventsPath()]);
+      // A writer that blocks waits twice: reading the chain tail until the
+      // pipe has a writer and reaches end of file, then appending until it
+      // has a reader. After RESCUE_MS this child opens the pipe for writing
+      // and closes it at once (end of file for the read), then opens it for
+      // reading and holds it (a reader for the append), so a writer that
+      // blocks is released, and caught by the elapsed time, rather than
+      // hanging the run.
+      const RESCUE_MS = 5_000;
+      const rescue = spawn(process.execPath, ['-e', `
+        const fs = require('node:fs');
+        setTimeout(() => {
+          try { fs.closeSync(fs.openSync(process.argv[1], 'w')); } catch {}
+          try { fs.openSync(process.argv[1], 'r'); } catch {}
+          setInterval(() => {}, 1000);
+        }, ${RESCUE_MS});
+      `, getEventsPath()], { stdio: 'ignore' });
+      try {
+        const started = Date.now();
+        expect(() => writeEvent(makePartial())).toThrow(`Not a regular file: ${getEventsPath()}`);
+        expect(Date.now() - started).toBeLessThan(RESCUE_MS);
+        expect(fs.statSync(getEventsPath()).isFIFO()).toBe(true);
+      } finally {
+        rescue.kill();
+      }
+    },
+    15_000,
+  );
+
   it('hashes a file in chunks to the digest of its whole content', () => {
     for (let i = 0; i < 5; i++) writeEvent(makePartial({ detail: { text: `${MIXED}${i}` } }));
     const whole = createHash('sha256').update(fs.readFileSync(getEventsPath())).digest('hex');

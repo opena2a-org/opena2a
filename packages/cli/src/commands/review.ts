@@ -66,9 +66,9 @@ export interface ReviewOptions {
   quiet?: boolean;
 }
 
-/** Output formats review produces. Anything else (the global `--format`
- *  advertises `sarif`) is refused rather than falling through to text. */
-const REVIEW_FORMATS = ['text', 'json'] as const;
+/** Output formats review produces, as `review --help` names them (index.ts).
+ *  Anything else, `sarif` included, is refused rather than run as text. */
+export const REVIEW_FORMATS = ['text', 'json'] as const;
 
 /** A user-supplied value made safe to echo on one terminal line: control
  *  characters (ESC, newline, the rest of C0 and C1, and DEL) are removed, so

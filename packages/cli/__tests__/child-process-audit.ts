@@ -335,4 +335,17 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(env -u <NAME> bash|zsh|dash -c <printed command>) per printed command and ' +
       'shell, with a PATH that holds only stub scripts, one at a time',
   },
+  'commands/format-help.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js <command> --help) per command whose --format help it reads, one at a time (#412)',
+  },
+  'shield/arp-bridge.test.ts': {
+    shape: 'async-bounded',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(mkfifo) once to put a named pipe at the ARP events path, then spawn(node -e) ' +
+      'once: a child that opens the pipe for writing after a delay and closes it, so a read that ' +
+      'blocks on it reaches end of file, and is killed when the case ends (#412)',
+  },
 };
