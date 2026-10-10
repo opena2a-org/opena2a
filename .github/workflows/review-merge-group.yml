@@ -1,0 +1,268 @@
+# Automated code review on a merge group.
+#
+# A merge group commit M carries no pull request in its event and gets no
+# review of its own: no model runs here. This workflow recovers the pull
+# request M was built from, binds M to it with the same bind block that
+# gate-file-approval.yml runs (byte for byte), and passes only when every
+# pull_request run of pr-review.yml on that pull request's head commit H
+# completed, and every attempt of every such run concluded with success. A
+# review that failed on H and was re-run to success does not pass. M carries
+# H's review verdict only because M changes exactly the files the pull
+# request changes, blob for blob.
+#
+# The verdict is read from the Actions runs API by workflow path, never from a
+# check run by name, so a same-named job elsewhere cannot stand in for it.
+# This workflow checks out nothing, uses no repository secret and writes
+# nothing: its token reads contents, pull requests and Actions runs only.
+# pr-review.yml has no merge_group trigger, so on a merge group the "review"
+# context is this job's alone. The job carries no name, like the job in
+# pr-review.yml, so its context is its id.
+name: Merge group review
+
+on:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: review-merge-group-${{ github.event.merge_group.head_sha }}
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      EVENT_NAME: ${{ github.event_name }}
+      MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+      MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+      MG_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+      MG_BASE_REF: ${{ github.event.merge_group.base_ref }}
+    steps:
+      - name: Bind the merge group and read the pull request review
+        run: |
+          set -euo pipefail
+          # The reads the bind block needs, as in gate-file-approval.yml. A
+          # failed read leaves its variable empty and the block refuses
+          # empty inputs.
+          mg_pr_number=""
+          mg_pr_state=""
+          mg_pr_base_ref=""
+          mg_pr_head_sha=""
+          mg_pr_changed_files=""
+          mg_pr_head_sha_again=""
+          mg_parents=""
+          mg_compare_files=""
+          mg_pr_files=""
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            # A candidate number for the reads only. The bind block judges
+            # the full ref, and that the pull request read is that number.
+            mg_candidate="${MG_HEAD_REF#refs/heads/gh-readonly-queue/main/pr-}"
+            mg_candidate="${mg_candidate%%-*}"
+            case "$mg_candidate" in ''|*[!0-9]*) mg_candidate="" ;; esac
+            if [ -n "$mg_candidate" ]; then
+              mg_pr=$(gh api "repos/$REPO/pulls/$mg_candidate") || mg_pr=""
+              mg_pr_number=$(printf '%s' "$mg_pr" | jq -r '.number // empty') || mg_pr_number=""
+              mg_pr_state=$(printf '%s' "$mg_pr" | jq -r '.state // empty') || mg_pr_state=""
+              mg_pr_base_ref=$(printf '%s' "$mg_pr" | jq -r '.base.ref // empty') || mg_pr_base_ref=""
+              mg_pr_head_sha=$(printf '%s' "$mg_pr" | jq -r '.head.sha // empty') || mg_pr_head_sha=""
+              mg_pr_changed_files=$(printf '%s' "$mg_pr" | jq -r '.changed_files // empty') || mg_pr_changed_files=""
+              # The pull request's changes, read from the same comparison
+              # endpoint as M's and pinned to the head commit just read, so
+              # the list belongs to that commit and not to whatever the head
+              # is at the moment of the read.
+              if [[ "$mg_pr_head_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                mg_pr_files=$(gh api "repos/$REPO/compare/$MG_BASE_SHA...$mg_pr_head_sha" | jq -c '.files // []') || mg_pr_files=""
+              fi
+              # Read again after the file list: the head must not have moved.
+              mg_pr_head_sha_again=$(gh api "repos/$REPO/pulls/$mg_candidate" --jq '.head.sha') || mg_pr_head_sha_again=""
+            fi
+            mg_parents=$(gh api "repos/$REPO/commits/$MG_HEAD_SHA" --jq '[.parents[].sha] | join(" ")') || mg_parents=""
+            mg_compare_files=$(gh api "repos/$REPO/compare/$MG_BASE_SHA...$MG_HEAD_SHA" | jq -c '.files // []') || mg_compare_files=""
+          fi
+
+          # --- BEGIN MERGE-GROUP BIND ---
+          # Pure shell over the merge group payload and the reads above: no
+          # API call and no workflow expression. Every clause that does not
+          # hold leaves bind_ok=false and names itself in bind_reason.
+          # Inputs:  EVENT_NAME MG_HEAD_SHA MG_BASE_SHA MG_HEAD_REF MG_BASE_REF
+          #          mg_pr_number mg_pr_state mg_pr_base_ref mg_pr_head_sha
+          #          mg_pr_changed_files mg_pr_head_sha_again mg_parents
+          #          mg_compare_files mg_pr_files
+          # Outputs: bind_ok bind_reason bind_pr bind_head
+          bind_ok=false
+          bind_reason=""
+          bind_pr=""
+          bind_head=""
+          bind_sha_re='^[0-9a-f]{40}$'
+          bind_count_re='^[0-9]{1,9}$'
+          bind_queue_prefix='refs/heads/gh-readonly-queue/main/'
+          bind_numbered_re='^refs/heads/gh-readonly-queue/main/pr-[1-9][0-9]*-'
+          bind_ref_re='^refs/heads/gh-readonly-queue/main/pr-([1-9][0-9]*)-[0-9a-f]{40}$'
+
+          # The event and its payload. The ref must match in full; the three
+          # later tests only name which part of a non-matching ref is wrong.
+          if [ "$EVENT_NAME" != "merge_group" ]; then
+            bind_reason="The event is '$EVENT_NAME', not merge_group."
+          elif [ "$MG_BASE_REF" != "refs/heads/main" ]; then
+            bind_reason="The merge group targets '$MG_BASE_REF', not refs/heads/main."
+          elif ! [[ "$MG_HEAD_SHA" =~ $bind_sha_re ]]; then
+            bind_reason="The merge group head commit '$MG_HEAD_SHA' is not a 40-character hexadecimal SHA."
+          elif ! [[ "$MG_BASE_SHA" =~ $bind_sha_re ]]; then
+            bind_reason="The merge group base commit '$MG_BASE_SHA' is not a 40-character hexadecimal SHA."
+          elif [[ "$MG_HEAD_REF" =~ $bind_ref_re ]]; then
+            bind_pr="${BASH_REMATCH[1]}"
+          elif [[ "$MG_HEAD_REF" != "$bind_queue_prefix"* ]]; then
+            bind_reason="The merge group ref '$MG_HEAD_REF' is not a queue ref for main."
+          elif ! [[ "$MG_HEAD_REF" =~ $bind_numbered_re ]]; then
+            bind_reason="The merge group ref '$MG_HEAD_REF' does not name a pull request number."
+          else
+            bind_reason="The merge group ref '$MG_HEAD_REF' carries more than a pull request number and one 40-character SHA."
+          fi
+
+          # The pull request, read before and after its file list.
+          if [ -z "$bind_reason" ]; then
+            if [ "$mg_pr_number" != "$bind_pr" ]; then
+              bind_reason="The pull request read for the merge group is '$mg_pr_number', not #$bind_pr."
+            elif [ "$mg_pr_state" != "open" ]; then
+              bind_reason="Pull request #$bind_pr is '$mg_pr_state', not open."
+            elif [ "$mg_pr_base_ref" != "main" ]; then
+              bind_reason="Pull request #$bind_pr targets '$mg_pr_base_ref', not main."
+            elif ! [[ "$mg_pr_head_sha" =~ $bind_sha_re ]]; then
+              bind_reason="Pull request #$bind_pr has no 40-character head commit: '$mg_pr_head_sha'."
+            elif ! [[ "$mg_pr_changed_files" =~ $bind_count_re ]] || [ "$mg_pr_changed_files" -ge 3000 ]; then
+              bind_reason="Pull request #$bind_pr changes '$mg_pr_changed_files' files, not a count below the 3000-entry listing cap."
+            elif [ "$mg_pr_head_sha_again" != "$mg_pr_head_sha" ]; then
+              bind_reason="Pull request #$bind_pr moved from $mg_pr_head_sha to '$mg_pr_head_sha_again' while its files were read."
+            else
+              bind_head="$mg_pr_head_sha"
+            fi
+          fi
+
+          # M's parents: the queue base first, then H when there is a second.
+          if [ -z "$bind_reason" ]; then
+            bind_parents=()
+            read -r -a bind_parents <<< "$mg_parents" || true
+            if [ "${#bind_parents[@]}" -lt 1 ] || [ "${#bind_parents[@]}" -gt 2 ]; then
+              bind_reason="Merge group commit $MG_HEAD_SHA has ${#bind_parents[@]} parents; one or two are expected."
+            elif [ "${bind_parents[0]}" != "$MG_BASE_SHA" ]; then
+              bind_reason="The first parent of $MG_HEAD_SHA is ${bind_parents[0]}, not the merge group base $MG_BASE_SHA."
+            elif [ "${#bind_parents[@]}" -eq 2 ] && [ "${bind_parents[1]}" != "$bind_head" ]; then
+              bind_reason="The second parent of $MG_HEAD_SHA is ${bind_parents[1]}, not the pull request head $bind_head."
+            fi
+          fi
+
+          # M's changes against the base equal the pull request's changes:
+          # the same set of path, status, previous path and blob. The
+          # comparison lists at most 300 files, so 300 is refused as possibly
+          # truncated. Fields that name a commit (URLs) are not compared.
+          if [ -z "$bind_reason" ]; then
+            bind_list_ok='type == "array" and all(.[]; type == "object" and (.filename | type) == "string" and ((.sha // "") | test("^[0-9a-f]{40}$")))'
+            if ! printf '%s' "$mg_compare_files" | jq -e "$bind_list_ok" > /dev/null 2>&1; then
+              bind_reason="The files $MG_HEAD_SHA changes against its base could not be read."
+            elif ! printf '%s' "$mg_pr_files" | jq -e "$bind_list_ok" > /dev/null 2>&1; then
+              bind_reason="The files pull request #$bind_pr changes could not be read."
+            else
+              bind_canon='map({filename, status, previous_filename: (.previous_filename // ""), sha: (.sha // "")}) | unique | sort_by(.filename, .previous_filename)'
+              bind_m_count=$(printf '%s' "$mg_compare_files" | jq 'length') || bind_m_count=300
+              bind_m_set=$(printf '%s' "$mg_compare_files" | jq -S -c "$bind_canon") || bind_m_set="unreadable merge group set"
+              bind_p_set=$(printf '%s' "$mg_pr_files" | jq -S -c "$bind_canon") || bind_p_set="unreadable pull request set"
+              if ! [[ "$bind_m_count" =~ $bind_count_re ]] || [ "$bind_m_count" -ge 300 ]; then
+                bind_reason="The comparison of $MG_HEAD_SHA with its base lists '$bind_m_count' files; at 300 the listing may be truncated."
+              elif [ "$bind_m_set" = "$bind_p_set" ]; then
+                bind_ok=true
+                bind_reason="Merge group commit $MG_HEAD_SHA is bound to pull request #$bind_pr at $bind_head."
+              else
+                # Equality above is the decision. This only names the first
+                # difference, so the failure says what to look at.
+                # shellcheck disable=SC2016 # jq variables, not shell ones
+                bind_explain='(.[0] | map({key: .filename, value: .}) | from_entries) as $m
+                  | (.[1] | map({key: .filename, value: .}) | from_entries) as $p
+                  | ([$m | keys[] | select($p[.] == null)] | first) as $extra
+                  | ([$p | keys[] | select($m[.] == null)] | first) as $missing
+                  | ([$m | keys[] | select($m[.] != $p[.])] | first) as $f
+                  | if $extra != null then "\($extra) is changed in the merge group but not in the pull request."
+                    elif $missing != null then "\($missing) is changed in the pull request but not in the merge group."
+                    elif $f == null then empty
+                    elif $m[$f].status != $p[$f].status then "The status of \($f) is \($m[$f].status | tojson) in the merge group and \($p[$f].status | tojson) in the pull request."
+                    elif $m[$f].previous_filename != $p[$f].previous_filename then "The previous path of \($f) is \($m[$f].previous_filename | tojson) in the merge group and \($p[$f].previous_filename | tojson) in the pull request."
+                    elif $m[$f].sha != $p[$f].sha then "The blob of \($f) is \($m[$f].sha | tojson) in the merge group and \($p[$f].sha | tojson) in the pull request."
+                    else empty end'
+                bind_reason=$(printf '%s\n%s\n' "$bind_m_set" "$bind_p_set" | jq -s -r "$bind_explain" 2> /dev/null) || bind_reason=""
+                if [ -z "$bind_reason" ]; then
+                  bind_reason="The files $MG_HEAD_SHA changes differ from the files pull request #$bind_pr changes."
+                fi
+              fi
+            fi
+          fi
+          # --- END MERGE-GROUP BIND ---
+
+          # Workflow commands are read per line, so a reason that quotes a
+          # path is printed on one line.
+          if [ "$bind_ok" != "true" ]; then
+            printf '::error::%s\n' "${bind_reason//$'\n'/ }"
+            exit 1
+          fi
+          echo "$bind_reason"
+
+          # The review verdict on H, from every pull_request run of
+          # pr-review.yml for that head commit. The list must be complete
+          # (its total equals the runs it lists) and hold at least one run of
+          # pr-review.yml by workflow path. Every run must be completed, and
+          # every attempt of every run, read one by one, must have concluded
+          # with success: a failed attempt re-run to success on the same head
+          # does not pass. Any read that fails also fails the check.
+          H="$bind_head"
+          review_path=".github/workflows/pr-review.yml"
+          runs=$(gh api "repos/$REPO/actions/workflows/pr-review.yml/runs?head_sha=$H&event=pull_request&per_page=100") || runs=""
+          runs_listed=$(printf '%s' "$runs" | jq -e '.workflow_runs | if type == "array" then length else error("no run list") end' 2> /dev/null) || runs_listed=""
+          runs_total=$(printf '%s' "$runs" | jq -r '.total_count // empty' 2> /dev/null) || runs_total=""
+          if ! [[ "$runs_listed" =~ ^[0-9]+$ ]]; then
+            echo "::error::The review runs of pull request #$bind_pr at $H could not be read."
+            exit 1
+          fi
+          if ! [[ "$runs_total" =~ ^[0-9]+$ ]] || [ "$runs_total" -ne "$runs_listed" ]; then
+            echo "::error::The review runs of pull request #$bind_pr at $H list $runs_listed runs of a total of '$runs_total'; the list is not complete."
+            exit 1
+          fi
+          if ! printf '%s' "$runs" | jq -e --arg p "$review_path" 'any(.workflow_runs[]; .path == $p)' > /dev/null 2>&1; then
+            echo "::error::No run of $review_path is listed for pull request #$bind_pr at $H."
+            exit 1
+          fi
+          for ((run_index = 0; run_index < runs_listed; run_index++)); do
+            run=$(printf '%s' "$runs" | jq -c --argjson i "$run_index" '.workflow_runs[$i]') || run=""
+            run_id=$(printf '%s' "$run" | jq -r '.id // empty' 2> /dev/null) || run_id=""
+            run_status=$(printf '%s' "$run" | jq -r '.status // empty' 2> /dev/null) || run_status=""
+            run_attempts=$(printf '%s' "$run" | jq -r '.run_attempt // empty' 2> /dev/null) || run_attempts=""
+            run_url=$(printf '%s' "$run" | jq -r '.html_url // empty' 2> /dev/null) || run_url=""
+            if ! [[ "$run_id" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Run $((run_index + 1)) of the review runs of pull request #$bind_pr at $H carries no run id: '$run_id'."
+              exit 1
+            fi
+            if ! [[ "$run_attempts" =~ ^[1-9][0-9]{0,8}$ ]]; then
+              echo "::error::Review run $run_id at $H carries no attempt number: '$run_attempts'. $run_url"
+              exit 1
+            fi
+            if [ "$run_status" != "completed" ]; then
+              echo "::error::Review run $run_id at $H, attempt $run_attempts, is status '${run_status:-none}', not completed. $run_url"
+              exit 1
+            fi
+            for ((attempt = 1; attempt <= run_attempts; attempt++)); do
+              attempt_read=$(gh api "repos/$REPO/actions/runs/$run_id/attempts/$attempt") || attempt_read=""
+              attempt_conclusion=$(printf '%s' "$attempt_read" | jq -r '.conclusion // empty' 2> /dev/null) || attempt_conclusion=""
+              if [ -z "$attempt_read" ]; then
+                echo "::error::Review run $run_id at $H, attempt $attempt of $run_attempts, could not be read. $run_url"
+                exit 1
+              fi
+              if [ "$attempt_conclusion" != "success" ]; then
+                echo "::error::Review run $run_id at $H, attempt $attempt of $run_attempts, concluded '${attempt_conclusion:-none}', not success. $run_url"
+                exit 1
+              fi
+            done
+          done
+          echo "The review of pull request #$bind_pr at $H passed: $runs_listed run(s), every attempt concluded with success."
+          exit 0

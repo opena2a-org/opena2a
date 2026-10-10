@@ -11,6 +11,8 @@ on:
   # Lets a red or missing run on main's tip be re-checked without an empty
   # commit, which cannot re-trigger a workflow anyway.
   workflow_dispatch:
+  merge_group:
+    types: [checks_requested]
 
 # The paths filter is deliberately absent from BOTH triggers.
 #
