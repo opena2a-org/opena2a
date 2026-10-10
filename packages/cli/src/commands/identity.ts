@@ -11,6 +11,7 @@ import {
   type ServerConfig,
 } from '../util/aim-client.js';
 import { loadAuth, saveAuth, isAuthValid } from '../util/auth.js';
+import { describeProxyRoute } from '../util/env-proxy.js';
 
 interface PolicyRule {
   capability: string;
@@ -272,7 +273,13 @@ async function checkServerHealth(client: AimClient, serverUrl: string): Promise<
     await client.health();
     return true;
   } catch (err) {
-    if (err instanceof AimServerError && err.serverMessage) {
+    if (err instanceof AimServerError && err.proxyRoute) {
+      // The request failed to connect while a proxy applied: name the proxy
+      // and the variable it came from, as `opena2a login` does.
+      process.stderr.write(`Cannot connect to AIM server at ${serverUrl}.\n`);
+      process.stderr.write(`  ${describeProxyRoute(err.proxyRoute, serverUrl)}\n`);
+      if (err.serverMessage) process.stderr.write(`  Detail: ${err.serverMessage}\n`);
+    } else if (err instanceof AimServerError && err.serverMessage) {
       process.stderr.write(`Cannot connect to AIM server at ${serverUrl}. Verify the server is running.\n`);
       process.stderr.write(`  Detail: ${err.serverMessage}\n`);
     } else {
