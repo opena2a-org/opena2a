@@ -12,6 +12,7 @@
 import { bold, green, yellow, red, dim, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { validateRegistryUrl } from '../util/validate-registry-url.js';
+import { trustBadgeMarkdown } from '../util/trust-badge.js';
 import type {
   TrustLookupResponse,
   OwnershipProof,
@@ -457,9 +458,12 @@ export async function claim(options: ClaimOptions): Promise<number> {
       process.stdout.write(bold('Next steps:') + '\n');
       process.stdout.write(`  Run \`opena2a scan . --publish\` to improve your trust score\n`);
 
-      const badgeUrl = claimData.profileUrl.replace('/agents/', '/v1/trust/') + '/badge.svg';
-      process.stdout.write(`  Add badge to README:\n`);
-      process.stdout.write(dim(`    [![Trust](${badgeUrl})](${claimData.profileUrl})`) + '\n');
+      // Badge URLs come from the lookup response; none there means no snippet.
+      const badge = trustBadgeMarkdown(lookupData);
+      if (badge) {
+        process.stdout.write(`  Add badge to README:\n`);
+        process.stdout.write(dim(`    ${badge}`) + '\n');
+      }
     }
 
     return 0;

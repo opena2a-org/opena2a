@@ -56,10 +56,10 @@ const HELPER_RETURNS = [...RESOLVERS, 'buildChildEnv'];
  * to a resolver removes its line from this roster in the same diff.
  */
 const IMPLICIT_INHERIT: readonly string[] = [
-  'commands/claim.ts:80',
-  'commands/claim.ts:84',
-  'commands/claim.ts:120',
-  'commands/claim.ts:139',
+  'commands/claim.ts:81',
+  'commands/claim.ts:85',
+  'commands/claim.ts:121',
+  'commands/claim.ts:140',
   'commands/detect.ts:207',
   'commands/detect.ts:1062',
   'commands/detect.ts:1388',
@@ -68,8 +68,8 @@ const IMPLICIT_INHERIT: readonly string[] = [
   'commands/onepassword-migration.ts:213',
   'commands/protect.ts:931',
   'commands/protect.ts:1450',
-  'commands/review.ts:1347',
-  'commands/review.ts:2131',
+  'commands/review.ts:1377',
+  'commands/review.ts:2203',
   'shield/detect.ts:33',
   'shield/status.ts:15',
   'shield/status.ts:24',

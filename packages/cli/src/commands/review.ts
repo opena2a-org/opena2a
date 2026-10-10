@@ -34,7 +34,8 @@ interface LocalVerdictFinding {
   file?: string;
   line?: number;
 }
-import { detectProject } from '../util/detect.js';
+import { detectProject, type NameSource } from '../util/detect.js';
+import { getVersion } from '../util/version.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
@@ -345,8 +346,24 @@ export interface DetectPhaseData {
   mcpServers: { name: string; transport: string; source: string; verified: boolean; capabilities: string[]; risk: string }[];
   aiConfigs: { file: string; tool: string; risk: string; details: string }[];
   identity: { aimIdentities: number; mcpIdentities: number; soulFiles: number; capabilityPolicies: number };
-  findings: { severity: string; title: string; whyItMatters: string; remediation: string }[];
+  findings: DetectFinding[];
   recoverablePoints: number;
+}
+
+export interface DetectFinding {
+  /** Stable identifier, also used as the finding id in the review findings list. */
+  id: string;
+  severity: string;
+  title: string;
+  /** `project`: the signal is in the scanned tree itself (the same signals
+   *  targetGovernanceFloorScore floors the composite on), so review counts it
+   *  as a finding. `host`: it reflects AI tools running on the developer's
+   *  machine, not the target, so it stays in the Shadow AI phase only. */
+  scope: 'project' | 'host';
+  /** What the finding points at (files, server names), when it has one. */
+  detail?: string;
+  whyItMatters: string;
+  remediation: string;
 }
 
 export interface RecoveryOpportunity {
@@ -584,7 +601,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   const grade = scoreToGrade(compositeScore);
 
   // Aggregate findings
-  const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData);
+  const findings = aggregateFindings(credentialData, shieldData, targetDir, hmaData, detectData);
 
   // Action items
   const actionItems = generateActionItems(credentialData, guardData, shieldData, initData);
@@ -699,15 +716,18 @@ export async function review(options: ReviewOptions): Promise<number> {
   // critical band, so a single critical credential legitimately drags the whole
   // review down while `scan` (static code checks only) stays high. Saying so
   // turns an apparent contradiction between commands into two stated scopes.
-  // The floor is driven by risk-only dimension views, not by the phase scores
-  // shown above, so the capping dimension cannot be named from `phases`. What
-  // IS observable and worth saying: the composite sits below every phase, which
-  // is the signal that a critical dimension capped it rather than an average
-  // producing it.
-  const lowestPhase = phases.length > 0 ? Math.min(...phases.map(ph => ph.score)) : 0;
-  const scopeNote = compositeScore < lowestPhase
-    ? `  (composite across ${phases.length} dimensions; capped by a critical dimension)`
-    : `  (composite across ${phases.length} dimensions)`;
+  // The floor is driven by risk-only views, not by the phase scores shown
+  // above, so the count, the average and the check that capped it all come
+  // from scoreModel, the record the JSON and HTML reports carry. A skipped
+  // phase is not a dimension of the composite.
+  const usedDimensions = scoreModel.weights.filter(w => w.weight > 0).length;
+  const heldBy = scoreModel.floorHeldBy;
+  const cappedBy = heldBy.length === 1
+    ? `a critical ${heldBy[0]} result`
+    : `critical ${heldBy.slice(0, -1).join(', ')} and ${heldBy[heldBy.length - 1]} results`;
+  const scopeNote = heldBy.length > 0
+    ? `  (${usedDimensions} dimensions average ${scoreModel.weightedScore}; capped at ${compositeScore} by ${cappedBy})`
+    : `  (composite across ${usedDimensions} dimensions)`;
   // The finding count above is what survived chain verification. When events
   // were excluded, the summary must say so on the same screen as the count it
   // qualifies, not only on stderr.
@@ -729,7 +749,9 @@ export async function review(options: ReviewOptions): Promise<number> {
   if (!quiet) {
     try {
       const cliUi = await import('@opena2a/cli-ui');
-      const projectLabel = report.projectType && report.projectType !== 'unknown'
+      // formatProjectType reports an undetected type as "Unknown" (or
+      // "Unknown + MCP server"); never print that as the noun of the verdict.
+      const projectLabel = report.projectType && !/^unknown\b/i.test(report.projectType)
         ? report.projectType
         : 'project';
       const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
@@ -827,7 +849,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   process.stdout.write(`  Report: ${dim(printable(reportPath))}`);
 
   // Auto-open
-  const shouldOpen = options.autoOpen !== false && !options.ci;
+  const shouldOpen = shouldAutoOpenReport(options, isTTY);
   if (shouldOpen) {
     openInBrowser(reportPath);
     process.stdout.write(` ${dim('(opened in browser)')}`);
@@ -844,12 +866,20 @@ export async function review(options: ReviewOptions): Promise<number> {
 
     if (await isContributeEnabled()) {
       const registryUrl = await getRegistryUrl();
-      if (registryUrl) {
+      // The Registry files a contributed scan by package name and ecosystem,
+      // and files one without an ecosystem under npm, so only a project with
+      // a package name in npm or PyPI is sent. The ecosystem follows the
+      // manifest the name was read from, not the project type: a tree with a
+      // package.json and a requirements.txt is a Python project whose name is
+      // the npm package name.
+      const project = detectProject(targetDir);
+      const ecosystem = registryEcosystem(project.nameSource);
+      if (registryUrl && typeof project.name === 'string' && project.name !== '' && ecosystem) {
         await submitScanReport(registryUrl, {
-          packageName: report.projectName ?? 'unknown',
-          packageType: report.projectType ?? 'unknown',
+          packageName: project.name,
+          ecosystem,
           scannerName: 'opena2a-review',
-          scannerVersion: '0.6.3',
+          scannerVersion: getVersion(),
           overallScore: compositeScore,
           scanDurationMs: phases.reduce((sum, p) => sum + p.durationMs, 0),
           criticalCount: sevCounts.critical,
@@ -1477,7 +1507,9 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   const ungovernedAgents = detectedAgents.filter(a => a.governanceStatus === 'no governance');
   if (ungovernedAgents.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-AGENTS',
       severity: 'high',
+      scope: 'host',
       title: `${ungovernedAgents.length} AI agent${ungovernedAgents.length !== 1 ? 's' : ''} running without governance`,
       whyItMatters: 'These agents can take actions in your project but have no rules defining what they should or should not do.',
       remediation: 'opena2a init && opena2a harden-soul',
@@ -1485,7 +1517,9 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   }
   if (detectedIdentity.aimIdentities === 0 && detectedAgents.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-IDENTITY',
       severity: 'high',
+      scope: 'host',
       title: 'No agent identity registered for this project',
       whyItMatters: 'Without an identity, agent actions cannot be traced back to a specific tool or session.',
       remediation: 'opena2a identity create --name my-agent',
@@ -1496,8 +1530,11 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   );
   if (projectCriticalMcp.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-MCP',
       severity: 'critical',
+      scope: 'project',
       title: `${projectCriticalMcp.length} project MCP server${projectCriticalMcp.length !== 1 ? 's' : ''} with sensitive access`,
+      detail: projectCriticalMcp.map(s => s.name).join(', '),
       whyItMatters: 'These MCP servers grant access to sensitive operations like running commands or accessing databases.',
       remediation: 'opena2a mcp audit',
     });
@@ -1505,15 +1542,20 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   const criticalConfigs = detectedAiConfigs.filter(c => c.risk === 'critical');
   if (criticalConfigs.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-CONFIG',
       severity: 'critical',
+      scope: 'project',
       title: 'AI config files contain credential references',
+      detail: criticalConfigs.map(c => c.file).join(', '),
       whyItMatters: 'API keys or tokens appear to be stored directly in configuration files.',
       remediation: 'opena2a protect',
     });
   }
   if (detectedIdentity.soulFiles === 0 && detectedAgents.length > 0) {
     detectFindings.push({
+      id: 'SHADOW-AI-SOUL',
       severity: 'medium',
+      scope: 'host',
       title: 'No SOUL.md governance file in this project',
       whyItMatters: 'Without a SOUL.md, agents rely entirely on their defaults which may not match your expectations.',
       remediation: 'opena2a harden-soul',
@@ -1940,6 +1982,7 @@ export function aggregateFindings(
   shieldData: ShieldPhaseData,
   targetDir: string,
   hmaData: HmaPhaseData | null,
+  detectData?: Pick<DetectPhaseData, 'findings'> | null,
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
@@ -2034,6 +2077,23 @@ export function aggregateFindings(
     });
   }
 
+  // Shadow AI findings about the scanned tree itself. These are the signals
+  // that floor the composite (targetGovernanceFloorScore), so leaving them out
+  // printed "0 findings" and a safe verdict beside the 0/100 they caused.
+  // Host-scoped findings describe the developer's machine and stay in the
+  // Shadow AI phase.
+  for (const f of detectData?.findings ?? []) {
+    if (f.scope !== 'project') continue;
+    findings.push({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      source: 'shadow-ai',
+      detail: f.detail || f.whyItMatters,
+      remediation: f.remediation,
+    });
+  }
+
   // Sort by severity
   const sevOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
   findings.sort((a, b) => (sevOrder[a.severity] ?? 4) - (sevOrder[b.severity] ?? 4));
@@ -2124,6 +2184,18 @@ function writeReviewHtml(reportPath: string, report: ReviewReport): void {
   fs.writeFileSync(reportPath, generateReviewHtml(report), { encoding: 'utf-8', mode: 0o600 });
 }
 
+/**
+ * Open the HTML report only for a person at a terminal. A pipe, a redirect or
+ * a CI job has nobody to look at the browser window, so stdout must be a TTY
+ * as well as auto-open being on and --ci being off.
+ */
+export function shouldAutoOpenReport(
+  options: Pick<ReviewOptions, 'autoOpen' | 'ci'>,
+  stdoutIsTTY: boolean,
+): boolean {
+  return options.autoOpen !== false && !options.ci && stdoutIsTTY;
+}
+
 function openInBrowser(filePath: string): void {
   const cmd = platform() === 'darwin' ? 'open'
     : platform() === 'win32' ? 'start'
@@ -2141,6 +2213,18 @@ function formatProjectType(project: ReturnType<typeof detectProject>): string {
   }
   if (project.hasMcp) parts.push('+ MCP server');
   return parts.join(' ');
+}
+
+/**
+ * The Registry ecosystem a reviewed project's package name belongs to: npm
+ * when the name was read from package.json, pypi when it was read from
+ * pyproject.toml, null for any other source or none. The Registry accepts
+ * npm, pypi and github as a contributed scan's ecosystem.
+ */
+export function registryEcosystem(nameSource: NameSource | null): 'npm' | 'pypi' | null {
+  if (nameSource === 'package.json') return 'npm';
+  if (nameSource === 'pyproject.toml') return 'pypi';
+  return null;
 }
 
 // --- Hygiene (reused from init logic) ---
