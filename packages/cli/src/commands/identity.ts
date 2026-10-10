@@ -11,6 +11,7 @@ import {
   type ServerConfig,
 } from '../util/aim-client.js';
 import { loadAuth, saveAuth, isAuthValid } from '../util/auth.js';
+import { getVersion } from '../util/version.js';
 
 interface PolicyRule {
   capability: string;
@@ -757,7 +758,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
             packageName: 'agent-trust',
             packageType: 'trust',
             scannerName: 'opena2a-identity',
-            scannerVersion: '0.6.3',
+            scannerVersion: getVersion(),
             overallScore: displayScore,
             scanDurationMs: 0,
             criticalCount: 0,

@@ -39,8 +39,9 @@ export interface ScanReport {
   /** Package type (npm, pypi, go, mcp_server, a2a_agent) */
   packageType?: string;
   /**
-   * Registry ecosystem of packageName (npm or pypi). Sent as `ecosystem` to
-   * the publish endpoint, and in place of packageType in the contribute event.
+   * Registry ecosystem of packageName (npm or pypi). Sent as `ecosystem` in
+   * the contribute event and the publish request; a report without one is
+   * not sent.
    */
   ecosystem?: string;
   /** Scanner name */
@@ -146,6 +147,12 @@ export async function submitScanReport(
   report: ScanReport,
   verbose?: boolean,
 ): Promise<boolean> {
+  // The Registry files a contributed scan by package name and ecosystem, and
+  // files one without an ecosystem under npm. A report without one names a
+  // label rather than a package (`shadow-ai-audit`, `agent-trust`, an MCP
+  // server's key in .mcp.json), so it is not sent.
+  if (!report.ecosystem) return false;
+
   // Also queue via @opena2a/contribute for buffered submission
   try {
     const { contribute } = await import('@opena2a/contribute');
@@ -154,7 +161,7 @@ export async function submitScanReport(
       toolVersion: report.scannerVersion ?? '0.1.0',
       packageName: report.packageName,
       packageVersion: report.packageVersion,
-      ecosystem: report.ecosystem ?? report.packageType,
+      ecosystem: report.ecosystem,
       totalChecks: (report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount) || 0,
       passed: 0, // not available from ScanReport shape
       critical: report.criticalCount,
@@ -412,7 +419,7 @@ export function normalizeDetectReport(result: {
     packageName: 'shadow-ai-audit',
     packageType: 'detect',
     scannerName: 'opena2a-detect',
-    scannerVersion: '0.6.3',
+    scannerVersion: getVersion(),
     overallScore: score,
     scanDurationMs: 0,
     criticalCount,
@@ -445,7 +452,7 @@ async function submitLegacyScanReport(
       body: JSON.stringify({
         ...report,
         submittedAt: new Date().toISOString(),
-        clientVersion: '0.1.0',
+        clientVersion: getVersion(),
       }),
       signal: AbortSignal.timeout(10_000),
     });
