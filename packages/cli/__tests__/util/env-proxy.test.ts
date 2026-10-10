@@ -46,10 +46,10 @@ describe('envProxyFor', () => {
   });
 
   it('removes user name and password from the printed proxy URL', () => {
-    const proxyWithUser = 'http://alice:' + 's3cret' + '@proxy.corp:8080';
+    const proxyWithUser = 'http://alice:FAKEpass@proxy.corp:8080';
     const proxy = envProxyFor('https://aim.example.com', { HTTPS_PROXY: proxyWithUser });
     expect(proxy?.url).toBe('http://proxy.corp:8080');
-    expect(redactProxyUrl(proxyWithUser + '/')).not.toMatch(/alice|s3cret/);
+    expect(redactProxyUrl(proxyWithUser + '/')).not.toMatch(/alice|FAKEpass/);
   });
 
   it('removes user name and password from a proxy URL without a scheme or with a / in the password', () => {
@@ -249,7 +249,7 @@ describe('AimClient behind a proxy', () => {
 
     it('sends the proxy user name and password as Proxy-Authorization and never prints them', async () => {
       withoutBuiltInSupport();
-      const withCreds = proxyUrl.replace('http://', 'http://alice:' + 's3cret' + '@');
+      const withCreds = proxyUrl.replace('http://', 'http://alice:FAKEpass@');
       vi.stubEnv('HTTP_PROXY', withCreds);
       vi.stubEnv('HTTPS_PROXY', withCreds);
 
@@ -259,10 +259,10 @@ describe('AimClient behind a proxy', () => {
       const secure = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
       const err = await secure.health().then(() => null, (e: unknown) => e);
       expect(err).toBeInstanceOf(AimServerError);
-      const expected = `Basic ${Buffer.from('alice:s3cret').toString('base64')}`;
+      const expected = `Basic ${Buffer.from('alice:FAKEpass').toString('base64')}`;
       expect(proxyAuth).toEqual([expected, expected]);
       expect((err as AimServerError).message).toContain(proxyUrl);
-      expect((err as AimServerError).message).not.toMatch(/alice|s3cret/);
+      expect((err as AimServerError).message).not.toMatch(/alice|FAKEpass/);
     });
 
     it('times out and names the proxy when the proxy never answers', async () => {
