@@ -69,13 +69,17 @@ function renderHygiene() {
   h += '</div></div>';
   h += '<div class="stats-grid">';
   h += statCard(init.activeTools + '/' + init.totalTools, 'OpenA2A Tools Active', 'var(--primary)');
-  var advLabel = init.advisoryCount > 0 ? init.advisoryCount + ' found' : '0 found';
-  h += statCard(advLabel, 'Advisories', init.advisoryCount > 0 ? 'var(--amber)' : 'var(--green)');
+  // No advisory list read means nothing was compared: "not checked", never "0 found".
+  var advChecked = init.advisoriesChecked === true;
+  var advLabel = !advChecked ? 'not checked' : init.advisoryCount + ' found';
+  h += statCard(advLabel, 'Advisories', !advChecked ? 'var(--dim)' : init.advisoryCount > 0 ? 'var(--amber)' : 'var(--green)');
   h += '</div>';
   if (init.matchedPackages && init.matchedPackages.length > 0) {
     h += '<div class="card"><div class="card-title">Affected Packages</div><div style="font-size:12px;color:var(--muted)">' + init.matchedPackages.map(function(p) {
       return esc(p);
     }).join(', ') + '</div></div>';
+  } else if (!advChecked) {
+    h += '<div class="card" style="font-size:12px;color:var(--dim)">Advisories not checked: no advisory list was read from the OpenA2A Registry, so no dependency was compared. Run the review again when the Registry is reachable.</div>';
   } else {
     h += '<div class="card" style="font-size:12px;color:var(--dim)">Advisories checked against project dependencies via the OpenA2A Registry. No matching advisories found.</div>';
   }

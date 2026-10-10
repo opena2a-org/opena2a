@@ -2,11 +2,12 @@
  * Advisory check utility -- fetches security advisories from the OpenA2A Registry
  * and warns users about flagged tools in their project.
  *
- * Called during `opena2a init` and `opena2a scan` to surface intelligence from
+ * Called during `opena2a init` and `opena2a review` to surface intelligence from
  * community scan reports.
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { bold, red, yellow, dim, cyan, orange } from './colors.js';
 import { validateRegistryUrl } from './validate-registry-url.js';
@@ -50,31 +51,46 @@ export interface AdvisoryCheck {
   matchedPackages: string[];
   total: number;
   fromCache: boolean;
+  /** Whether an advisory list was read, from the Registry or the cache. When
+   *  false no dependency was compared, so the result is "not checked", not
+   *  "no advisories found". */
+  checked: boolean;
+}
+
+/** The result when no advisory list was read. */
+export function advisoriesNotChecked(): AdvisoryCheck {
+  return { advisories: [], matchedPackages: [], total: 0, fromCache: false, checked: false };
 }
 
 // --- Cache ---
 
-const CACHE_DIR = '.opena2a/cache';
-const CACHE_FILE = 'advisories.json';
+// The advisory list is the Registry's, not the project's, so it is cached in
+// the user's home: a review or init of a tree writes no cache into that tree.
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface CachedAdvisories {
   fetchedAt: number;
+  registryUrl: string;
   data: AdvisoryResponse;
 }
 
-function getCachePath(dir: string): string {
-  return path.join(dir, CACHE_DIR, CACHE_FILE);
+function getCachePath(): string {
+  return path.join(os.homedir(), '.opena2a', 'cache', 'advisories.json');
 }
 
-function readCache(dir: string): CachedAdvisories | null {
-  const cachePath = getCachePath(dir);
+function readCache(registryUrl: string): CachedAdvisories | null {
+  const cachePath = getCachePath();
   if (!fs.existsSync(cachePath)) return null;
 
   try {
     const raw = fs.readFileSync(cachePath, 'utf-8');
     const cached = JSON.parse(raw) as CachedAdvisories;
-    if (Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    // A list read from another Registry is not this Registry's list.
+    if (
+      cached.registryUrl === registryUrl
+      && Array.isArray(cached.data?.advisories)
+      && Date.now() - cached.fetchedAt < CACHE_TTL_MS
+    ) {
       return cached;
     }
   } catch {
@@ -83,13 +99,14 @@ function readCache(dir: string): CachedAdvisories | null {
   return null;
 }
 
-function writeCache(dir: string, data: AdvisoryResponse): void {
-  const cachePath = getCachePath(dir);
+function writeCache(registryUrl: string, data: AdvisoryResponse): void {
+  const cachePath = getCachePath();
   const cacheDir = path.dirname(cachePath);
   try {
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.writeFileSync(cachePath, JSON.stringify({
       fetchedAt: Date.now(),
+      registryUrl,
       data,
     } as CachedAdvisories), 'utf-8');
   } catch {
@@ -100,6 +117,8 @@ function writeCache(dir: string, data: AdvisoryResponse): void {
 // --- Fetch ---
 
 async function fetchAdvisories(registryUrl: string): Promise<AdvisoryResponse | null> {
+  // The validator accepts an empty URL, which would build a relative one.
+  if (!registryUrl) return null;
   try {
     validateRegistryUrl(registryUrl);
     // Fetch advisories from the last 30 days
@@ -112,7 +131,10 @@ async function fetchAdvisories(registryUrl: string): Promise<AdvisoryResponse | 
     });
 
     if (!response.ok) return null;
-    return await response.json() as AdvisoryResponse;
+    const body = await response.json() as Partial<AdvisoryResponse> | null;
+    // A body without an advisory list is not a list that was read.
+    if (!body || !Array.isArray(body.advisories)) return null;
+    return body as AdvisoryResponse;
   } catch {
     return null;
   }
@@ -179,14 +201,18 @@ function detectProjectPackages(dir: string): string[] {
 
 // --- Main check ---
 
+/**
+ * Read the Registry's advisory list and match it against the packages `dir`
+ * depends on. The Registry URL is required: the caller passes the one
+ * `getRegistryUrl()` resolved, so the check cannot run against no Registry
+ * and report an empty list as "no advisories".
+ */
 export async function checkAdvisories(
   dir: string,
-  registryUrl?: string,
+  registryUrl: string,
 ): Promise<AdvisoryCheck> {
-  const url = registryUrl ?? '';
-
   // Check cache first
-  const cached = readCache(dir);
+  const cached = readCache(registryUrl);
   let data: AdvisoryResponse;
   let fromCache = false;
 
@@ -194,16 +220,14 @@ export async function checkAdvisories(
     data = cached.data;
     fromCache = true;
   } else {
-    const fetched = await fetchAdvisories(url);
-    if (!fetched) {
-      return { advisories: [], matchedPackages: [], total: 0, fromCache: false };
-    }
+    const fetched = await fetchAdvisories(registryUrl);
+    if (!fetched) return advisoriesNotChecked();
     data = fetched;
-    writeCache(dir, data);
+    writeCache(registryUrl, data);
   }
 
   if (data.advisories.length === 0) {
-    return { advisories: [], matchedPackages: [], total: 0, fromCache };
+    return { advisories: [], matchedPackages: [], total: 0, fromCache, checked: true };
   }
 
   // Match advisories against project packages
@@ -229,6 +253,7 @@ export async function checkAdvisories(
     matchedPackages: matchedNames,
     total: data.total,
     fromCache,
+    checked: true,
   };
 }
 
