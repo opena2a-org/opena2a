@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -221,6 +222,43 @@ describe('importARPEvents', () => {
     expect(result.errors).toBe(0);
     expect(result.total).toBe(0);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'imports nothing from a named pipe at the ARP events path instead of blocking on it',
+    async () => {
+      getShieldDir();
+      const arpDir = path.join(tempDir, '.opena2a', 'arp');
+      fs.mkdirSync(arpDir, { recursive: true });
+      const arpEventsPath = path.join(arpDir, 'events.jsonl');
+      execFileSync('mkfifo', [arpEventsPath]);
+      // A pipe with no writer blocks a plain read until one appears and
+      // closes it. After RESCUE_MS this child opens the pipe for writing and
+      // closes it at once, so a read that blocks reaches end of file, and is
+      // caught by the elapsed time, rather than hanging the run.
+      const RESCUE_MS = 5_000;
+      const rescue = spawn(process.execPath, ['-e', `
+        const fs = require('node:fs');
+        setTimeout(() => {
+          try { fs.closeSync(fs.openSync(process.argv[1], 'w')); } catch {}
+          setInterval(() => {}, 1000);
+        }, ${RESCUE_MS});
+      `, arpEventsPath], { stdio: 'ignore' });
+      try {
+        const started = Date.now();
+        const result = importARPEvents(tempDir);
+        expect(Date.now() - started).toBeLessThan(RESCUE_MS);
+        // The answer a directory at the same path gets: nothing to import.
+        expect(result).toEqual({ imported: 0, skipped: 0, skippedUnverified: 0, errors: 0, total: 0 });
+        fs.unlinkSync(arpEventsPath);
+        fs.mkdirSync(arpEventsPath);
+        expect(importARPEvents(tempDir)).toEqual(result);
+        expect(readEvents({ source: 'arp' })).toEqual([]);
+      } finally {
+        rescue.kill();
+      }
+    },
+    15_000,
+  );
 
   it('imports ARP events into Shield log', () => {
     getShieldDir();

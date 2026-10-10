@@ -18,8 +18,9 @@ import type { RegistryEnrichment } from '../util/registry-enrichment.js';
 // Types
 // ---------------------------------------------------------------------------
 
-/** Output formats detect produces. Anything else is refused with exit 2. */
-const DETECT_FORMATS = ['text', 'json'] as const;
+/** Output formats detect produces. Anything else is refused with exit 2.
+ *  `detect --help` names the same list (index.ts). */
+export const DETECT_FORMATS = ['text', 'json'] as const;
 
 export interface DetectOptions {
   targetDir: string;

@@ -214,4 +214,17 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git ls-files) over the package sources, and execFileSync(git init / git add) ' +
       'to build each planted scratch tree, one at a time',
   },
+  'commands/format-help.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js <command> --help) per command whose --format help it reads, one at a time (#412)',
+  },
+  'shield/arp-bridge.test.ts': {
+    shape: 'async-bounded',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(mkfifo) once to put a named pipe at the ARP events path, then spawn(node -e) ' +
+      'once: a child that opens the pipe for writing after a delay and closes it, so a read that ' +
+      'blocks on it reaches end of file, and is killed when the case ends (#412)',
+  },
 };
