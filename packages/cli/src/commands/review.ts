@@ -747,8 +747,13 @@ export async function review(options: ReviewOptions): Promise<number> {
       // A credential check that opened no file found nothing because it read
       // nothing. The block must not list credentials as clear, close the
       // category list with "(all clear)" or call the directory safe to use.
-      const credentialsUnread = credentialData.filesScanned === 0;
-      const categorySummaries = cliUi.buildCategorySummaries(categorizable)
+      // A credential finding another check (HMA) reported in the same run is
+      // still a finding: it stays on the Categories line, and the check is
+      // not reported as skipped next to it.
+      const allCategories = cliUi.buildCategorySummaries(categorizable);
+      const credentialsUnread = credentialData.filesScanned === 0
+        && !allCategories.some(c => c.name === 'credentials' && !c.clear);
+      const categorySummaries = allCategories
         .filter(c => !(credentialsUnread && c.name === 'credentials'));
       let verdict = cliUi.buildVerdict(
         { critical: sevCounts.critical, high: sevCounts.high, medium: sevCounts.medium, low: sevCounts.low },
