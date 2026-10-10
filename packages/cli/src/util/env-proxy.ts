@@ -47,8 +47,12 @@ type Env = Record<string, string | undefined>;
  * password ends the host part before the '@'.
  */
 export function redactProxyUrl(raw: string): string {
-  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(raw)?.[0] ?? '';
-  const rest = raw.slice(scheme.length);
+  // `new URL` ignores surrounding whitespace, so the scheme test must too, or
+  // an `http://` URL with a leading space would miss it and be printed
+  // without its scheme.
+  const value = raw.trim();
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(value)?.[0] ?? '';
+  const rest = value.slice(scheme.length);
   const hostPart = rest.slice(rest.lastIndexOf('@') + 1);
   if (!scheme) return hostPart.replace(/\/$/, '');
   try {
