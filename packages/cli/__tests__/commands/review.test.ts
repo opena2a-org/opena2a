@@ -45,6 +45,38 @@ vi.mock('../../src/util/credential-patterns.js', async (importOriginal) => {
   };
 });
 
+// Stands in for the bundled hackmyagent when a test sets `fakeHma.report`:
+// `npx hackmyagent --version` answers with a version and `npx hackmyagent
+// secure --format json <dir>` answers with that report. Every other child
+// start, and every start while `report` is null, goes to the real spawn.
+const fakeHma = vi.hoisted(() => ({ report: null as Record<string, unknown> | null }));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  const { EventEmitter } = await import('node:events');
+  const fakeChild = (stdout: string, code: number) => {
+    const child = new EventEmitter() as any;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => true;
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(stdout));
+      child.emit('close', code);
+    });
+    return child;
+  };
+  return {
+    ...actual,
+    spawn: (cmd: string, args?: readonly string[], opts?: unknown) => {
+      if (fakeHma.report && cmd === 'npx' && args?.[0] === 'hackmyagent') {
+        if (args[1] === '--version') return fakeChild('0.30.0\n', 0);
+        return fakeChild(JSON.stringify(fakeHma.report), 1);
+      }
+      return (actual.spawn as any)(cmd, args, opts);
+    },
+  };
+});
+
 import {
   review,
   aggregateFindings,
@@ -160,6 +192,7 @@ describe('review', () => {
 
   afterEach(() => {
     mockHome.dir = '';
+    fakeHma.report = null;
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
@@ -577,6 +610,50 @@ describe('review', () => {
     expect(terminalLine('Categories')).toContain('credentials');
     expect(terminalLine('Categories')).toContain('(all clear)');
     expect(terminalLine('Verdict')).toContain('No security issues detected');
+  });
+
+  it('a credential finding HMA reports stays on the Categories line when the local credential check read no file', async () => {
+    // The local walker skips .env.example, so it reads no file here; the
+    // bundled scanner flags the key in it. The summary must list that finding
+    // under credentials and must not call the credentials check skipped.
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    fs.writeFileSync(path.join(tempDir, '.env.example'), 'OPENAI_API_KEY=sk-proj-FAKE\n');
+    fakeHma.report = {
+      score: 40,
+      maxScore: 100,
+      findings: [{
+        checkId: 'CRED-001', name: 'Plaintext API Keys', category: 'credentials',
+        severity: 'critical', passed: false, file: '.env.example', line: 1,
+        message: 'API key in .env.example',
+      }],
+    };
+
+    const origStderr = process.stderr.write;
+    process.stderr.write = (() => true) as any;
+    let report: any;
+    let terminal = '';
+    try {
+      const { output } = await captureStdout(() => review({
+        targetDir: tempDir, format: 'json', autoOpen: false,
+      }));
+      report = JSON.parse(output);
+      ({ output: terminal } = await captureStdout(() => review({
+        targetDir: tempDir, autoOpen: false, ci: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+    const terminalLine = (label: string) => terminal.split('\n').find(l => l.includes(label)) ?? '';
+
+    expect(report.credentialData.filesScanned).toBe(0);
+    expect(report.hmaData.available).toBe(true);
+    expect(report.findings.some((f: any) => f.id === 'CRED-001')).toBe(true);
+
+    expect(terminalLine('Categories')).toContain('credentials (1 critical)');
+    expect(terminalLine('Checks')).toContain('0 skipped');
+    expect(terminalLine('Checks')).not.toContain('no files scanned');
+    expect(terminalLine('Verdict')).not.toContain('No files were scanned for credentials');
+    expect(terminal).not.toContain('all clear');
   });
 
   it('reads the project for credentials once per review', async () => {
