@@ -72,6 +72,21 @@ describe('envProxyFor', () => {
     expect(redactProxyUrl('socks5://alice:FAKEpass@proxy.corp:1080')).toBe('socks5://proxy.corp:1080');
   });
 
+  it('removes user name and password from a value with leading whitespace or an @ in the password', () => {
+    // `new URL` ignores surrounding whitespace, so the scheme test has to as
+    // well, or the value falls through to the scheme-less path and loses its scheme.
+    expect(redactProxyUrl(' http://alice:FAKEpass@proxy.corp:8080')).toBe('http://proxy.corp:8080');
+    expect(envProxyFor('https://aim.example.com', { HTTPS_PROXY: ' http://alice:FAKEpass@proxy.corp:8080' })?.url)
+      .toBe('http://proxy.corp:8080');
+    // User info ends at the last `@` of the authority, as `new URL` reads it,
+    // so a password that contains `@` is removed whole.
+    expect(redactProxyUrl('alice:FAKEp@ss@proxy.corp:8080')).toBe('proxy.corp:8080');
+    expect(redactProxyUrl('alice:FAKEp@ss@proxy.corp:8080/path')).toBe('proxy.corp:8080/path');
+    expect(redactProxyUrl('http://alice:FAKEp@ss@proxy.corp:8080')).toBe('http://proxy.corp:8080');
+    // A value `new URL` rejects takes the fallback path, which splits the same way.
+    expect(redactProxyUrl('http://alice:FAKEp@ss@proxy corp:8080')).toBe('http://proxy corp:8080');
+  });
+
   it('honours NO_PROXY exact hosts, domain suffixes, ports and *', () => {
     const env = { HTTPS_PROXY: 'http://proxy:3128', NO_PROXY: 'internal.corp, .lan,aim.example.com:8443' };
     expect(envProxyFor('https://internal.corp', env)).toBeNull();
