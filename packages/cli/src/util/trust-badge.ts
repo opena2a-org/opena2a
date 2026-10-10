@@ -1,10 +1,10 @@
 /**
  * Trust badge snippet for `opena2a trust` and `opena2a claim`.
  *
- * The badge URLs come from the Registry's lookup response. The CLI never
- * builds one itself: the badge is keyed by package and source on the Registry
- * side, and a URL derived from profileUrl pointed at a host that does not
- * serve badges.
+ * The badge URLs come only from the lookup response (`badgeImageUrl` and
+ * `badgeLinkUrl`); without both, no badge is printed. The Registry does not
+ * return these fields yet. The CLI never builds a badge URL itself: one
+ * derived from profileUrl pointed at a host that does not serve badges.
  */
 
 import type { TrustLookupResponse } from '../commands/atp-types.js';
