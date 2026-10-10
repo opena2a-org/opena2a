@@ -67,7 +67,7 @@ export interface TrustLookupResponse {
   scanSummary?: ScanSummary;
   lastScanned: string;
   profileUrl: string;
-  /** Trust badge image for this package and source, as served by the Registry. */
+  /** Trust badge image URL, when the lookup response carries one. */
   badgeImageUrl?: string;
   /** Page the trust badge links to. */
   badgeLinkUrl?: string;
