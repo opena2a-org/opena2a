@@ -69,7 +69,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   train: engineContract(
     'the opena2a/dvaa container',
-    'Docker is not running or the container could not start',
+    'Docker is not installed or not running; a docker run that fails passes its own status through',
     'passed to the container as --format json',
   ),
   crypto: engineContract(
@@ -83,19 +83,22 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     'passed to secretless-ai broker as --format json',
   ),
   telemetry: {
-    exit: [['0', 'always, also for an unknown action (the message names the valid ones)']],
+    exit: [
+      ['0', 'the setting was shown or changed, also for an unknown action (the message names the valid ones)'],
+      ['1', 'the telemetry config file could not be written'],
+    ],
     json: 'not supported; output is text',
     ci: 'no effect',
   },
   protect: {
     exit: [
-      ['0', 'credentials migrated, none found, a --dry-run, or you declined at the prompt'],
-      ['1', 'a migration failed, key files were found that protect cannot migrate, or the directory does not exist'],
+      ['0', 'credentials migrated, nothing found, a --dry-run that found text credentials, or you declined at the prompt'],
+      ['1', 'a migration failed, the directory does not exist, or no text credential was found but key files were that protect cannot migrate (also with --dry-run)'],
       ['2', 'cannot prompt (stdin is not a terminal and --ci was not given), the prompt was aborted, or the --atx file for --grant is missing or invalid'],
       ['3', 'the broker denied the --grant'],
-      ['4', 'the broker is unreachable or its socket belongs to another user'],
+      ['4', 'the broker is unreachable, rejected the token (401), answered 200 without a JSON body, or its socket belongs to another user'],
       ['5', 'the --grant check failed unexpectedly'],
-      ['6', 'the broker answered with another error status'],
+      ['6', 'the broker answered with a status other than 200, 401 or 403'],
     ],
     json: 'prints the result as JSON',
     ci: 'migrates without prompting (needed when stdin is not a terminal)',
@@ -145,7 +148,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     exit: [
       ['0', 'the files verify clean, or the subcommand succeeded'],
       ['1', 'tampered, missing or policy-violating files, changes found by diff, no signature store, a declined resign, an unknown subcommand, or an error'],
-      ['3', 'verify --enforce found what exit 1 reports (quarantine mode)'],
+      ['3', 'verify --enforce found tampered, missing or unsigned files, or a failed pin or policy check (quarantine mode); a missing or unreadable signature store still exits 1'],
     ],
     json: 'prints JSON for every subcommand except hook',
     ci: 'resign re-signs without asking for confirmation',
@@ -167,12 +170,18 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     ci: 'does not start the browser login; exits 1 unless already logged in',
   },
   logout: {
-    exit: [['0', 'always: stored credentials were removed, or there were none']],
+    exit: [
+      ['0', 'stored credentials were removed, or there were none'],
+      ['1', 'the stored login file could not be removed'],
+    ],
     json: 'prints the result as JSON',
     ci: 'no effect',
   },
   whoami: {
-    exit: [['0', 'always: the output says whether you are logged in']],
+    exit: [
+      ['0', 'the output says whether you are logged in'],
+      ['1', 'the stored login file could not be read'],
+    ],
     json: 'prints the login state as JSON',
     ci: 'no effect',
   },
@@ -187,7 +196,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   shield: {
     exit: [
       ['0', 'the subcommand succeeded'],
-      ['1', 'init had a failing step, selfcheck found Shield compromised or in lockdown, evaluate blocked the action, no policy is loaded, recover --verify failed, suggest, explain or triage have no LLM backend, or an unknown subcommand'],
+      ['1', 'init found hardcoded credentials, selfcheck found Shield compromised or in lockdown, evaluate blocked the action, no policy is loaded, recover --verify failed, suggest, explain or triage have no LLM backend, or an unknown subcommand'],
     ],
     json: 'prints JSON',
     ci: 'init prints JSON, rewrites an existing policy, and skips --shell-hook and --ai-tools; other subcommands are unchanged',
@@ -196,8 +205,9 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     exit: [
       ['0', 'the composite score is 50 or higher'],
       ['1', 'the score is below 50, or the directory does not exist'],
+      ['2', 'an unsupported --format, --quiet together with --verbose, or a --report that could not be written under --json'],
     ],
-    json: 'prints the results as JSON instead of writing the HTML report',
+    json: 'prints the results as JSON; the HTML report is written only with --report',
     ci: 'does not open the report in a browser',
   },
   'scan-soul': {
@@ -234,8 +244,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   'self-register': {
     exit: [
-      ['0', 'every tool was registered, or a --dry-run'],
-      ['1', 'no tool matched --only, or a registration failed'],
+      ['0', 'every tool was processed, or a --dry-run; a registration the registry refused or that could not reach it is shown as [SKIP] and still exits 0'],
+      ['1', 'no tool matched --only, or processing a tool threw an error'],
       ['2', 'not confirmed: declined at the prompt, or a non-interactive run without --yes'],
     ],
     json: 'prints the result as JSON; never prompts, so pass --yes to write',
@@ -263,7 +273,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['1', 'no package name, the package is not in the registry or is already claimed, ownership could not be verified, or the claim request failed'],
     ],
     json: 'prints the result as JSON',
-    ci: 'prints no progress lines or spinner',
+    ci: 'prints no spinner and no keypair progress line; in text mode the "Registering claim" line is still printed',
   },
   admin: {
     exit: [
@@ -287,7 +297,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['1', 'the directory cannot be read'],
     ],
     json: 'prints the result as JSON',
-    ci: 'never asks before scanning unknown MCP packages, does not open the --report file, and does not share results',
+    ci: 'never asks before scanning unknown MCP packages, does not open the --report file, and does not share the summary; with --auto-scan and contributions enabled, each unknown server scan is still shared',
   },
   setup: {
     exit: [
@@ -335,7 +345,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['1', 'verify failed, the server or its identity was not found, no server name was given, an unknown subcommand, or an error'],
     ],
     json: 'prints JSON',
-    ci: 'no effect',
+    ci: 'audit skips the registry trust-score lookup',
   },
 };
 
