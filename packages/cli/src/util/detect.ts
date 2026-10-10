@@ -3,9 +3,19 @@ import { resolve } from 'node:path';
 
 export type ProjectType = 'node' | 'go' | 'python' | 'rust' | 'java' | 'ruby' | 'docker' | 'generic';
 
+/** The manifest `name` was read from; null when no manifest supplied a name. */
+export type NameSource = 'package.json' | 'go.mod' | 'pyproject.toml';
+
 export interface ProjectInfo {
   type: ProjectType;
   name: string | null;
+  /**
+   * Which manifest `name` came from. `type` is the last marker found, so a
+   * tree with a package.json and a requirements.txt is a python project whose
+   * name is still the npm package name; callers that file the project under
+   * a package registry read this field, not `type`.
+   */
+  nameSource: NameSource | null;
   version: string | null;
   hasMcp: boolean;
   hasEnv: boolean;
@@ -17,6 +27,7 @@ export function detectProject(dir: string): ProjectInfo {
   const info: ProjectInfo = {
     type: 'generic',
     name: null,
+    nameSource: null,
     version: null,
     hasMcp: false,
     hasEnv: false,
@@ -31,6 +42,7 @@ export function detectProject(dir: string): ProjectInfo {
     try {
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
       info.name = pkg.name ?? null;
+      if (info.name !== null) info.nameSource = 'package.json';
       info.version = pkg.version ?? null;
     } catch {
       // Ignore parse errors
@@ -48,6 +60,7 @@ export function detectProject(dir: string): ProjectInfo {
         // Extract last path segment: github.com/org/name -> name
         const segments = goMatch[1].split('/');
         info.name = segments[segments.length - 1];
+        info.nameSource = 'go.mod';
       }
     } catch {
       // Ignore read errors
@@ -63,6 +76,7 @@ export function detectProject(dir: string): ProjectInfo {
       const pyMatch = pyContent.match(/^\s*name\s*=\s*"([^"]+)"/m);
       if (pyMatch) {
         info.name = pyMatch[1];
+        info.nameSource = 'pyproject.toml';
       }
     } catch {
       // Ignore read errors

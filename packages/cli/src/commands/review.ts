@@ -34,7 +34,7 @@ interface LocalVerdictFinding {
   file?: string;
   line?: number;
 }
-import { detectProject, type ProjectType } from '../util/detect.js';
+import { detectProject, type NameSource } from '../util/detect.js';
 import { getVersion } from '../util/version.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
@@ -868,9 +868,12 @@ export async function review(options: ReviewOptions): Promise<number> {
       const registryUrl = await getRegistryUrl();
       // The Registry files a contributed scan by package name and ecosystem,
       // and files one without an ecosystem under npm, so only a project with
-      // a package name in npm or PyPI is sent.
+      // a package name in npm or PyPI is sent. The ecosystem follows the
+      // manifest the name was read from, not the project type: a tree with a
+      // package.json and a requirements.txt is a Python project whose name is
+      // the npm package name.
       const project = detectProject(targetDir);
-      const ecosystem = registryEcosystem(project.type);
+      const ecosystem = registryEcosystem(project.nameSource);
       if (registryUrl && typeof project.name === 'string' && project.name !== '' && ecosystem) {
         await submitScanReport(registryUrl, {
           packageName: project.name,
@@ -2214,12 +2217,13 @@ function formatProjectType(project: ReturnType<typeof detectProject>): string {
 
 /**
  * The Registry ecosystem a reviewed project's package name belongs to: npm
- * for a Node.js project, pypi for a Python one, null for any other type. The
- * Registry accepts npm, pypi and github as a contributed scan's ecosystem.
+ * when the name was read from package.json, pypi when it was read from
+ * pyproject.toml, null for any other source or none. The Registry accepts
+ * npm, pypi and github as a contributed scan's ecosystem.
  */
-export function registryEcosystem(type: ProjectType): 'npm' | 'pypi' | null {
-  if (type === 'node') return 'npm';
-  if (type === 'python') return 'pypi';
+export function registryEcosystem(nameSource: NameSource | null): 'npm' | 'pypi' | null {
+  if (nameSource === 'package.json') return 'npm';
+  if (nameSource === 'pyproject.toml') return 'pypi';
   return null;
 }
 
