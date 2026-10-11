@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import * as yaml from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
@@ -25,7 +26,8 @@ export const projectConfigSchema = z.object({
 
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
 
-const CONFIG_FILENAMES = ['.opena2a.yaml', '.opena2a.yml', '.opena2a.json'];
+// Tried in this order; the first file that parses and validates wins.
+const CONFIG_FILENAMES = ['.opena2a.yaml', '.opena2a.yml', '.opena2a.json', 'opena2a.config.json'];
 
 export function loadProjectConfig(startDir?: string): ProjectConfig | null {
   const dir = startDir ?? process.cwd();
@@ -34,15 +36,10 @@ export function loadProjectConfig(startDir?: string): ProjectConfig | null {
     const filepath = resolve(dir, filename);
     try {
       const raw = readFileSync(filepath, 'utf-8');
-      let parsed: unknown;
-
-      if (filename.endsWith('.json')) {
-        parsed = JSON.parse(raw);
-      } else {
-        // Simple YAML-like parsing for basic key-value configs
-        // For full YAML support, users should use .opena2a.json
-        parsed = JSON.parse(raw);
-      }
+      // CORE_SCHEMA keeps a date-like scalar a string rather than a Date.
+      const parsed: unknown = filename.endsWith('.json')
+        ? JSON.parse(raw)
+        : yaml.load(raw, { schema: yaml.CORE_SCHEMA });
 
       return projectConfigSchema.parse(parsed);
     } catch {

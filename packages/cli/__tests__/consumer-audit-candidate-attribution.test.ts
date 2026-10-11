@@ -310,8 +310,9 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
         devDependencies: { '@types/node': '^20.11.0', typescript: '^5.7.0', vitest: '^4.1.8' },
       },
       shared: {
-        dependencies: { zod: '^3.24.0' },
-        devDependencies: { typescript: '^5.7.0', vitest: '^4.1.8' },
+        // js-yaml parses the YAML forms of the project config (#455).
+        dependencies: { 'js-yaml': '^4.1.0', zod: '^3.24.0' },
+        devDependencies: { '@types/js-yaml': '^4.0.9', typescript: '^5.7.0', vitest: '^4.1.8' },
       },
       telemetry: {
         devDependencies: { '@types/node': '^20.11.0', typescript: '^5.7.0', vitest: '^4.1.8' },

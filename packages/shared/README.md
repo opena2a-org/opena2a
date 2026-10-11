@@ -15,7 +15,7 @@ npm install @opena2a/shared
 
 This package provides the common foundation used by `opena2a-cli` and other OpenA2A tools:
 
-- **Project config** -- `loadProjectConfig()` reads and validates `.opena2a.yml` / `opena2a.config.json` using Zod schemas
+- **Project config** -- `loadProjectConfig()` reads and validates the first of `.opena2a.yaml`, `.opena2a.yml`, `.opena2a.json` or `opena2a.config.json` found in a directory, using Zod schemas
 - **User config** -- `loadUserConfig()` / `saveUserConfig()` manage per-user preferences stored in `~/.opena2a/`
 - **Scan history** -- `loadScanHistory()` / `appendScanEntry()` track past scan results locally
 - **Shared types** -- `AdapterType`, `AdapterResult`, `Finding`, and other interfaces used across adapters
@@ -52,7 +52,7 @@ appendScanEntry({
 
 | Export | Description |
 |--------|------------|
-| `loadProjectConfig(dir)` | Load and validate project config from a directory |
+| `loadProjectConfig(dir)` | Load and validate project config from a directory; `null` when no file is found or none validates |
 | `projectConfigSchema` | Zod schema for project configuration |
 | `loadUserConfig()` | Load user preferences from `~/.opena2a/` |
 | `saveUserConfig(config)` | Persist user preferences |
