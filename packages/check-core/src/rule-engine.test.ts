@@ -82,7 +82,7 @@ const baseInput = (overrides: Partial<RuleEngineInput> = {}): RuleEngineInput =>
   ...overrides,
 });
 
-describe("runRuleEngine — VERIFIED skill (mockup 3.2)", () => {
+describe("runRuleEngine — VERIFIED skill", () => {
   const out = runRuleEngine(baseInput());
 
   it("emits all five expected positive reasoning entries", () => {
@@ -121,7 +121,7 @@ describe("runRuleEngine — VERIFIED skill (mockup 3.2)", () => {
   });
 });
 
-describe("runRuleEngine — LISTED skill with permission overreach (mockup 3.1)", () => {
+describe("runRuleEngine — LISTED skill with permission overreach", () => {
   const input = baseInput({
     packageName: "opena2a/code-review-skill",
     latestVersion: "0.3.1",
@@ -165,7 +165,7 @@ describe("runRuleEngine — LISTED skill with permission overreach (mockup 3.1)"
   });
 });
 
-describe("runRuleEngine — LISTED MCP with destructive tools (mockup 3.4)", () => {
+describe("runRuleEngine — LISTED MCP with destructive tools", () => {
   const input = baseInput({
     packageName: "@modelcontextprotocol/server-filesystem",
     latestVersion: "2.1.0",
@@ -198,7 +198,7 @@ describe("runRuleEngine — LISTED MCP with destructive tools (mockup 3.4)", () 
   });
 });
 
-describe("runRuleEngine — BLOCKED MCP (mockup 3.6)", () => {
+describe("runRuleEngine — BLOCKED MCP", () => {
   const secret: HardcodedSecret = {
     type: "openai_api_key",
     typeLabel: "",
@@ -287,7 +287,7 @@ describe("runRuleEngine — BLOCKED MCP (mockup 3.6)", () => {
   });
 });
 
-describe("runRuleEngine — LISTED_UNSCANNED (mockup 3.3)", () => {
+describe("runRuleEngine — LISTED_UNSCANNED", () => {
   const input = baseInput({
     packageName: "some-org/data-explorer-skill",
     verdict: "LISTED_UNSCANNED",
@@ -323,7 +323,7 @@ describe("runRuleEngine — LISTED_UNSCANNED (mockup 3.3)", () => {
   });
 });
 
-describe("runRuleEngine — NOT_FOUND (mockup 3.7)", () => {
+describe("runRuleEngine — NOT_FOUND", () => {
   const input = baseInput({
     packageName: "nonexistent-thing-xyz",
     verdict: "NOT_FOUND",
@@ -377,7 +377,7 @@ describe("runRuleEngine — determinism", () => {
 });
 
 describe("runRuleEngine — secret enrichment side effect", () => {
-  it("populates rotationUrl on enrichedSecrets even when verdict is VERIFIED (mockup 3.5)", () => {
+  it("populates rotationUrl on enrichedSecrets even when verdict is VERIFIED", () => {
     const input = baseInput({
       verdict: "VERIFIED",
       hardcodedSecrets: [

@@ -3,7 +3,7 @@
  *
  * Returns a structured `RenderedRichBlock` that the CLI consumer
  * iterates to emit dividers + labelled lines + tone-applied colors.
- * Section ordering matches the brief mockups byte-for-byte on the
+ * Section ordering is fixed byte-for-byte on the
  * must_match fields (header section names, severity prefixes, status
  * markers, tier labels). Field-level wording inside sections may
  * evolve; layout / structure may not.
@@ -188,7 +188,7 @@ function verdictLabel(tier: VerdictTier): string {
 
 /**
  * Build the meta-lines under the package name in the header. Order
- * mirrors brief mockup 3.1 / 3.4: artifactType + verdict, then score
+ * for skills and MCPs: artifactType + verdict, then score
  * line, then publisher, license, downloads, community-scans.
  */
 function buildHeaderMetaLines(input: CheckRichBlockInput): RichBlockMetaLine[] {
@@ -360,7 +360,7 @@ function buildObservationsSection(
 
 /**
  * Build the threat-model questions section — numbered list of static
- * template strings. Static per artifact type (brief §6).
+ * template strings. Static per artifact type.
  */
 function buildThreatModelSection(
   artifactType: ThreatModelArtifactType,

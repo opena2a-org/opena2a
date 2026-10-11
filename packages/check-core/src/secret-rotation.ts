@@ -34,7 +34,7 @@ export interface SecretRotationGuide {
  * credential scanners (CRED-*, AST-CRED-*, WEBCRED-*, SEM-CRED-*,
  * AGENT-CRED-*, ENVLEAK, CLIPASS, DRIFT prefixes).
  *
- * Entries beyond the v1 brief baseline (slack_bot_token,
+ * Entries beyond the v1 baseline credential types (slack_bot_token,
  * gcp_service_account_key, stripe_secret_key) are included because they
  * appear in HMA's existing credential corpus — leaving them to the
  * `unknown` fallback would surface a worse rotation message than today.

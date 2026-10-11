@@ -25,7 +25,7 @@ export type CheckTone = "default" | "good" | "warning" | "critical" | "dim";
  *
  * Required fields mirror what `@opena2a/registry-client`'s `TrustAnswer`
  * always populates for a registered package. Optional fields cover the
- * extended surface described in F5 — publisher, permissions, revocation.
+ * extended surface: publisher, permissions, revocation.
  * These are stubs for v0.3.0: the caller passes them when available
  * (e.g. agent / skill paths), otherwise the renderer hides the row.
  */
@@ -90,11 +90,11 @@ export interface RenderedCheck {
   header: { name: string; meta: string[] };
   /** Plain-English verdict ("No known issues", "Warning — review...", "Blocked by registry"). */
   verdict: { text: string; tone: CheckTone };
-  /** Rendering-ordered lines. Empty when a given field is undefined (F5 "missing = hidden"). */
+  /** Rendering-ordered lines. Empty when a given field is undefined ("missing = hidden"). */
   lines: CheckBlockLine[];
   /**
    * True when the Trust meter line was emitted. Useful for callers
-   * that want a structural assertion in parity tests (F6 regression).
+   * that want a structural assertion on meter gating in parity tests.
    */
   meterShown: boolean;
 }
@@ -155,7 +155,7 @@ export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
   // --- Lines -----------------------------------------------------------------
   const lines: CheckBlockLine[] = [];
 
-  // Trust meter — governed by scanStatus (F6).
+  // Trust meter — governed by scanStatus (a number implies measurement).
   const meterShown = shouldShowMeter(scanStatus);
   if (meterShown) {
     const score = normalizeScore(trustScore);
@@ -172,14 +172,14 @@ export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
     });
   }
 
-  // Trust level is always shown (matches F5 schema: "Level always present; one truth").
+  // Trust level is always shown (canonical schema: "Level always present; one truth").
   lines.push({
     label: "Level",
     value: `${trustLevelLabel(trustLevel)}  ${trustLevelLegend(trustLevel)}`,
     tone: trustLevel >= 3 ? "good" : trustLevel >= 1 ? "warning" : "critical",
   });
 
-  // Publisher — shown only when known (F5 "missing = hidden").
+  // Publisher — shown only when known ("missing = hidden").
   if (publisher && publisher.name) {
     const verifiedSuffix =
       publisher.verified === true

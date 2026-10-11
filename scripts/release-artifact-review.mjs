@@ -74,8 +74,8 @@ const CHECKS = [
 ];
 
 /**
- * The own-package roster for `consumer-closure`: the FLOOR of
- * todo/scripts/own-package-census.mjs plus the @opena2a scope. A fresh-install
+ * The own-package roster for `consumer-closure`: every package the project
+ * publishes under its own name, plus the @opena2a scope. A fresh-install
  * closure of the reviewed tarball must not contain a deprecated or advisory-
  * matched copy of any of these, nested or not — GHSA advisories on our own
  * packages describe OUR defects, and shipping a closure that resolves one is

@@ -47,7 +47,7 @@ describe("renderCheckBlock — verdict", () => {
   });
 });
 
-describe("renderCheckBlock — meter gating (F6)", () => {
+describe("renderCheckBlock — meter gating", () => {
   it("shows the Trust meter when scanStatus is completed", () => {
     const out = renderCheckBlock(base({ scanStatus: "completed" }));
     expect(out.meterShown).toBe(true);
@@ -120,7 +120,7 @@ describe("renderCheckBlock — trust level", () => {
 });
 
 describe("renderCheckBlock — optional fields", () => {
-  it("hides Publisher when not provided (F5 missing=hidden)", () => {
+  it("hides Publisher when not provided (missing = hidden)", () => {
     const out = renderCheckBlock(base());
     expect(out.lines.find((l) => l.label === "Publisher")).toBeUndefined();
   });
@@ -216,7 +216,7 @@ describe("renderCheckBlock — optional fields", () => {
   });
 });
 
-describe("renderCheckBlock — line ordering (F5 canonical schema)", () => {
+describe("renderCheckBlock — line ordering (canonical schema)", () => {
   it("emits Trust, then Level, then optional rows in a stable order", () => {
     const out = renderCheckBlock(
       base({

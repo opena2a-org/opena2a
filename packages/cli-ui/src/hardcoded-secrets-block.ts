@@ -1,5 +1,5 @@
 /**
- * Hardcoded-secrets block — always renders. Three states per brief §7:
+ * Hardcoded-secrets block — always renders. Three states:
  *   - !scanCovered             → "Not yet analyzed."
  *   - scanCovered, empty list  → "None detected on the latest version."
  *   - scanCovered, non-empty   → severity-grouped credential list +
@@ -122,7 +122,7 @@ function versionSuffix(latestVersion?: string): string {
 }
 
 /**
- * Build the dedup'd list of rotation URLs. The brief renders them
+ * Build the dedup'd list of rotation URLs. The block renders them
  * one per credential type (not per credential), so multiple AWS keys
  * collapse to one "Rotate (AWS): ..." line.
  */

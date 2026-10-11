@@ -2,7 +2,7 @@
  * @opena2a/telemetry: Tier-1 usage telemetry SDK.
  *
  * No content collection. No first-run banner. Fire-and-forget HTTP.
- * See README.md and opena2a-registry/docs/telemetry-spec.md.
+ * See README.md and https://opena2a.org/telemetry for the event schema.
  */
 
 import { platform as osPlatform } from "node:os";
