@@ -163,15 +163,19 @@ const SUPPRESSION_LABEL: Record<SuppressionReason, string> = {
   ci: "CI environment detected",
   "do-not-track": "DO_NOT_TRACK is set",
   "env-opt-out": "OPENA2A_TELEMETRY=off is set",
+  "test-runner": "test runner detected",
+  "ephemeral-home": "temporary home directory detected",
 };
 
-// CI is an environmental fact the user did not choose, so say so. The other
-// two ARE the user's own doing — telling them "you did not turn it off"
-// would be wrong.
+// CI, a test runner and a temporary home are environmental facts the user
+// did not choose, so say so. DO_NOT_TRACK and OPENA2A_TELEMETRY=off ARE the
+// user's own doing, and telling them "you did not turn it off" would be wrong.
 const SUPPRESSION_EXPLANATION: Record<SuppressionReason, string> = {
   ci: "Telemetry is suppressed automatically in CI — you did not turn it off.",
   "do-not-track": "DO_NOT_TRACK is set in this environment, so telemetry stays off.",
   "env-opt-out": "OPENA2A_TELEMETRY=off is set in this environment, which overrides the saved preference.",
+  "test-runner": "Telemetry is suppressed automatically under a test runner. You did not turn it off.",
+  "ephemeral-home": "Telemetry is suppressed automatically in a temporary home. You did not turn it off.",
 };
 
 // Each remedy must actually work for its reason. OPENA2A_TELEMETRY=on does
@@ -180,6 +184,8 @@ const SUPPRESSION_EXPLANATION: Record<SuppressionReason, string> = {
 function suppressionRemedy(reason: SuppressionReason, tool: string): string {
   switch (reason) {
     case "ci":
+    case "test-runner":
+    case "ephemeral-home":
       return `override: OPENA2A_TELEMETRY=on ${tool} <cmd>`;
     case "do-not-track":
       return "to re-enable: unset DO_NOT_TRACK";

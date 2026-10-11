@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { scrubSuppressionEnv, restoreSuppressionEnv, type SavedEnv } from "./test-support.js";
+import { scrubSuppressionEnv, restoreSuppressionEnv, markPersistent, markTemporary, type SavedEnv } from "./test-support.js";
 
 let tmpHome: string;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -18,6 +18,7 @@ beforeEach(() => {
   // silence every event and fail them on a runner. See test-support.ts.
   savedEnv = scrubSuppressionEnv();
   tmpHome = mkdtempSync(join(tmpdir(), "opena2a-telem-sdk-"));
+  markPersistent(tmpHome);
   process.env.XDG_CONFIG_HOME = tmpHome;
   process.env.OPENA2A_TELEMETRY_URL = "http://test.local/event";
   delete process.env.OPENA2A_TELEMETRY;
@@ -80,6 +81,83 @@ describe("CI suppression (end to end)", () => {
     await tele.track("scan", { success: true });
     await tele.flush();
     expect(fetchMock).toHaveBeenCalled();
+  });
+});
+
+describe("test runners and temporary homes (end to end)", () => {
+  // The bug this guards: suites that spawn a CLI from a test runner, and
+  // jobs that start it with HOME=$(mktemp -d), sent events that counted as
+  // users. Each negative case below runs the full SDK call sequence a CLI
+  // makes; the positive control at the end shows the same recorder fires.
+  async function runCommand(): Promise<void> {
+    const tele = await freshSdk();
+    await tele.init({ tool: "opena2a", version: "0.0.0-test" });
+    tele.start();
+    await tele.track("scan", { success: true, durationMs: 10 });
+    tele.error("scan", "BOOM");
+    await tele.flush();
+  }
+
+  function sentEvents(): Array<{ event: string; install_id: string }> {
+    return fetchMock.mock.calls.map(([, req]) => JSON.parse((req as RequestInit).body as string));
+  }
+
+  it.each([
+    ["VITEST", "true"],
+    ["JEST_WORKER_ID", "1"],
+    ["NODE_TEST_CONTEXT", "child"],
+  ])("emits nothing when %s=%s is set", async (key, val) => {
+    process.env[key] = val;
+    await runCommand();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing when the config dir is inside the temporary directory", async () => {
+    markTemporary(tmpHome);
+    await runCommand();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing when HOME is inside the temporary directory", async () => {
+    for (const key of ["HOME", "USERPROFILE"]) {
+      savedEnv[key] = process.env[key];
+      process.env[key] = join(tmpHome, "home");
+    }
+    delete process.env.XDG_CONFIG_HOME;
+    markTemporary(tmpHome);
+    await runCommand();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("still emits under a test runner in a temporary home when explicitly opted in", async () => {
+    process.env.VITEST = "true";
+    markTemporary(tmpHome);
+    process.env.OPENA2A_TELEMETRY = "on";
+    await runCommand();
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("positive control: a persistent home with no markers sends one start per run, with the same ID", async () => {
+    await runCommand();
+    await runCommand();
+    const events = sentEvents();
+    // The 200ms debounce keeps only the first event of each run.
+    expect(events.map((e) => e.event)).toEqual(["start", "start"]);
+    expect(events[0].install_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(events[1].install_id).toBe(events[0].install_id);
+  });
+
+  it("status() names the reason", async () => {
+    process.env.VITEST = "true";
+    let tele = await freshSdk();
+    await tele.init({ tool: "opena2a", version: "0.0.0-test" });
+    expect(tele.status()).toMatchObject({ enabled: false, installId: null, suppressedBy: "test-runner" });
+
+    delete process.env.VITEST;
+    markTemporary(tmpHome);
+    tele = await freshSdk();
+    await tele.init({ tool: "opena2a", version: "0.0.0-test" });
+    expect(tele.status()).toMatchObject({ enabled: false, installId: null, suppressedBy: "ephemeral-home" });
   });
 });
 

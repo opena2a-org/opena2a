@@ -52,12 +52,22 @@ export interface TrackFields {
  *
  * A persisted `<tool> telemetry off` deliberately has NO reason code: for
  * that state the ordinary `<tool> telemetry on` toggle works, so a plain
- * hint is the right affordance. These three are the cases where that toggle
+ * hint is the right affordance. These are the cases where that toggle
  * would not work, and so must be explained instead.
+ *
+ * `test-runner`: a test runner started this process (`VITEST`,
+ * `JEST_WORKER_ID` or `NODE_TEST_CONTEXT` is set). `ephemeral-home`: the
+ * config directory or the home directory is inside the system temporary
+ * directory, so the config file does not outlive the run.
  *
  * See `autoSuppressionReason` and `loadConfig` in config.ts.
  */
-export type SuppressionReason = "ci" | "do-not-track" | "env-opt-out";
+export type SuppressionReason =
+  | "ci"
+  | "do-not-track"
+  | "env-opt-out"
+  | "test-runner"
+  | "ephemeral-home";
 
 export interface Status {
   enabled: boolean;
@@ -71,7 +81,8 @@ export interface Status {
   installId: string | null;
   /**
    * Present only when telemetry is off because of the *environment*
-   * (CI / DO_NOT_TRACK) rather than a user choice. Consumers should say so
+   * (CI, DO_NOT_TRACK, a test runner, a temporary home) rather than a
+   * user choice. Consumers should say so
    * rather than implying the user turned it off — and must not suggest
    * `<tool> telemetry on` as the remedy, because a config-file flip does
    * not survive automatic suppression.

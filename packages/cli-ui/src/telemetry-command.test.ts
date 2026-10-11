@@ -7,7 +7,11 @@ beforeEach(() => {
 });
 
 function makeInput(
-  overrides: { enabled?: boolean; suppressedBy?: "ci" | "do-not-track"; installId?: string | null } = {},
+  overrides: {
+    enabled?: boolean;
+    suppressedBy?: "ci" | "do-not-track" | "env-opt-out" | "test-runner" | "ephemeral-home";
+    installId?: string | null;
+  } = {},
 ) {
   let enabled = overrides.enabled ?? true;
   return {
@@ -110,15 +114,27 @@ describe("automatic suppression rendering", () => {
     expect(out).toContain("unset OPENA2A_TELEMETRY");
   });
 
+  it.each([
+    ["test-runner", "test runner detected"],
+    ["ephemeral-home", "temporary home directory detected"],
+  ] as const)("explains %s suppression as automatic and offers the opt-in", (reason, label) => {
+    const out = runTelemetryCommand("status", makeInput({ enabled: false, suppressedBy: reason }));
+    expect(out).toContain(`state:       off (${label})`);
+    expect(out).toContain("You did not turn it off.");
+    expect(out).toContain("OPENA2A_TELEMETRY=on dvaa <cmd>");
+    expect(out).not.toContain("undefined");
+    expect(out).not.toContain("dvaa telemetry on'");
+  });
+
   it("every suppression reason renders a remedy", () => {
     // NOT a fail-by-construction guard, despite appearances: the reason list
     // below is a hardcoded literal, so a new union member does not extend it.
     // The actual guard is the compiler — `SUPPRESSION_LABEL` /
     // `SUPPRESSION_EXPLANATION` are Record<SuppressionReason, string> and
-    // `suppressionRemedy` is a switch with no default, so a fourth reason
+    // `suppressionRemedy` is a switch with no default, so a new reason
     // fails tsc at all three sites. This is a characterization test: it pins
-    // the rendered shape of the three reasons that exist today.
-    for (const reason of ["ci", "do-not-track", "env-opt-out"] as const) {
+    // the rendered shape of the reasons that exist today.
+    for (const reason of ["ci", "do-not-track", "env-opt-out", "test-runner", "ephemeral-home"] as const) {
       const out = runTelemetryCommand("status", makeInput({ enabled: false, suppressedBy: reason }));
       expect(out, `reason=${reason}`).toMatch(/override:|to re-enable:/);
       expect(out, `reason=${reason}`).not.toContain("dvaa telemetry on'");

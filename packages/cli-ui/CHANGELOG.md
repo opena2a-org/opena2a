@@ -15,6 +15,12 @@
   `config:`, and the `status` help line names it. A getter that throws prints
   `unavailable` instead of failing the command. A CLI that passes no getter
   prints exactly what it printed before.
+- `TelemetryStatusLike.suppressedBy` accepts `"test-runner"` and
+  `"ephemeral-home"`, the two automatic suppressions `@opena2a/telemetry` adds,
+  and `runTelemetryCommand` explains them: `state: off (test runner detected)`
+  or `state: off (temporary home directory detected)`, a line saying the user
+  did not turn telemetry off, and the `OPENA2A_TELEMETRY=on <tool> <cmd>`
+  override, the same remedy as under CI.
 
 ### Fixed
 - `runTelemetryCommand` accepts a status whose `installId` is `null`, which

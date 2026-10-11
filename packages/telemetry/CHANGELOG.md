@@ -84,6 +84,30 @@ The 0.2.0 entry in this file called the hash irreversible, which was misleading:
   must be addressed before a per-tool install count can be published as
   measured.
 
+- **Telemetry is also suppressed under a test runner and in a temporary home
+  directory.** New `isTestRunner()` (`VITEST`, `JEST_WORKER_ID` or
+  `NODE_TEST_CONTEXT` is set; `NODE_ENV=test` is not used) and
+  `isEphemeralHome()` (the config directory or the home directory is inside
+  `os.tmpdir()`, compared after resolving symlinks). `loadConfig()` returns
+  `enabled: false` when either fires, and `status().suppressedBy` reports
+  `"test-runner"` or `"ephemeral-home"`; `SuppressionReason` gains both values.
+  Nothing is sent, and no install ID is derived or kept, exactly as under CI.
+
+  Why: outside CI, a test suite that spawns a CLI sent an event for every
+  spawn, and a CLI started with `HOME=$(mktemp -d)` lost its config file after
+  each run, so every run looked like a first run on a new machine. Both were
+  counted as users.
+
+  An explicit `OPENA2A_TELEMETRY=on` overrides these two the same way it
+  overrides CI, so a project's own end-to-end tests can still exercise the
+  real ingest path; it still never overrides `DO_NOT_TRACK`. When several
+  apply, `suppressedBy` reports the first of `do-not-track`, `ci`,
+  `test-runner`, `ephemeral-home`. A throwaway home outside `os.tmpdir()`,
+  such as a container filesystem, is not detected.
+
+  Consumer CLIs that render `suppressedBy` need `@opena2a/cli-ui` with labels
+  for the two new values; an older renderer has no text for them.
+
 ### Fixed
 
 - **No install ID exists while telemetry is off.** Under any opt-out

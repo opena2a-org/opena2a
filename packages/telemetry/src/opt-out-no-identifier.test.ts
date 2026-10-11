@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { scrubSuppressionEnv, restoreSuppressionEnv, type SavedEnv } from "./test-support.js";
+import { scrubSuppressionEnv, restoreSuppressionEnv, markPersistent, markTemporary, type SavedEnv } from "./test-support.js";
 
 const probe = vi.hoisted(() => ({
   platform: "darwin" as NodeJS.Platform,
@@ -89,6 +89,9 @@ const ENV_OPT_OUTS: Array<[string, Record<string, string>]> = [
   ["DO_NOT_TRACK=1 with OPENA2A_TELEMETRY=on", { DO_NOT_TRACK: "1", OPENA2A_TELEMETRY: "on" }],
   ["CI=true", { CI: "true" }],
   ["GITHUB_ACTIONS=true", { GITHUB_ACTIONS: "true" }],
+  ["VITEST=true", { VITEST: "true" }],
+  ["JEST_WORKER_ID=1", { JEST_WORKER_ID: "1" }],
+  ["NODE_TEST_CONTEXT=child", { NODE_TEST_CONTEXT: "child" }],
 ];
 
 /** What an earlier release may have left in telemetry.json. */
@@ -159,6 +162,7 @@ beforeEach(() => {
     delete process.env[key];
   }
   tmpHome = mkdtempSync(join(tmpdir(), "opena2a-telem-optout-"));
+  markPersistent(tmpHome);
   process.env.XDG_CONFIG_HOME = tmpHome;
   process.env.OPENA2A_TELEMETRY_URL = "http://test.local/event";
   fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
@@ -175,6 +179,35 @@ afterEach(() => {
   delete process.env.OPENA2A_TELEMETRY_URL;
 });
 
+/** Run one command under an opt-out already in force, and assert it left no ID. */
+async function expectNoIdNoProbeNoSend(
+  command: string,
+  prior: Record<string, unknown> | null,
+): Promise<void> {
+  const tele = await freshSdk();
+  await COMMANDS[command](tele);
+  await tele.track("after", { success: true });
+  await tele.flush();
+
+  expect(probe.calls).toEqual([]);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(tele.status().installId).toBeNull();
+
+  const persisted = readPersisted();
+  if (command === "telemetry off") {
+    expect(persisted).toEqual({ enabled: false });
+  } else if (command === "telemetry on") {
+    // The user asked for it; the env still holds telemetry off, so
+    // the preference is saved without an ID.
+    expect(persisted).toEqual({ enabled: true });
+  } else if (prior?.enabled === false) {
+    expect(persisted).toEqual({ enabled: false });
+  } else {
+    // An earlier ID is deleted, and the default is not written back.
+    expect(persisted).toBeNull();
+  }
+}
+
 describe.each(PLATFORMS)("on %s, an environment opt-out", (platform) => {
   describe.each(ENV_OPT_OUTS)("%s", (_label, env) => {
     describe.each(PRIOR_FILES)("with %s", (_prior, prior) => {
@@ -182,30 +215,19 @@ describe.each(PLATFORMS)("on %s, an environment opt-out", (platform) => {
         probe.platform = platform;
         writePrior(prior);
         Object.assign(process.env, env);
-
-        const tele = await freshSdk();
-        await COMMANDS[command](tele);
-        await tele.track("after", { success: true });
-        await tele.flush();
-
-        expect(probe.calls).toEqual([]);
-        expect(fetchMock).not.toHaveBeenCalled();
-        expect(tele.status().installId).toBeNull();
-
-        const persisted = readPersisted();
-        if (command === "telemetry off") {
-          expect(persisted).toEqual({ enabled: false });
-        } else if (command === "telemetry on") {
-          // The user asked for it; the env still holds telemetry off, so
-          // the preference is saved without an ID.
-          expect(persisted).toEqual({ enabled: true });
-        } else if (prior?.enabled === false) {
-          expect(persisted).toEqual({ enabled: false });
-        } else {
-          // An earlier ID is deleted, and the default is not written back.
-          expect(persisted).toBeNull();
-        }
+        await expectNoIdNoProbeNoSend(command, prior);
       });
+    });
+  });
+});
+
+describe.each(PLATFORMS)("on %s, a config home inside the temporary directory", (platform) => {
+  describe.each(PRIOR_FILES)("with %s", (_prior, prior) => {
+    it.each(Object.keys(COMMANDS))("%s: no ID, no probe, no send", async (command) => {
+      probe.platform = platform;
+      writePrior(prior);
+      markTemporary(tmpHome);
+      await expectNoIdNoProbeNoSend(command, prior);
     });
   });
 });

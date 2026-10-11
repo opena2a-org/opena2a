@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync } from "node:fs";
+import { join, parse } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, setEnabled, configPaths, endpointURL, debugPrintEnabled, isCI, doNotTrack, DEFAULT_ENDPOINT } from "./config.js";
-import { scrubSuppressionEnv, restoreSuppressionEnv, type SavedEnv } from "./test-support.js";
+import { loadConfig, setEnabled, configPaths, endpointURL, debugPrintEnabled, isCI, isTestRunner, isEphemeralHome, doNotTrack, DEFAULT_ENDPOINT } from "./config.js";
+import { scrubSuppressionEnv, restoreSuppressionEnv, markPersistent, markTemporary, type SavedEnv } from "./test-support.js";
 
 let tmpHome: string;
 let savedEnv: SavedEnv;
@@ -11,6 +11,7 @@ let savedEnv: SavedEnv;
 beforeEach(() => {
   savedEnv = scrubSuppressionEnv();
   tmpHome = mkdtempSync(join(tmpdir(), "opena2a-telem-"));
+  markPersistent(tmpHome);
   process.env.XDG_CONFIG_HOME = tmpHome;
   delete process.env.OPENA2A_TELEMETRY;
   delete process.env.OPENA2A_TELEMETRY_URL;
@@ -130,6 +131,95 @@ describe("doNotTrack", () => {
 
   it("is false when unset", () => {
     expect(doNotTrack()).toBe(false);
+  });
+});
+
+describe("isTestRunner", () => {
+  it("is false on a clean environment", () => {
+    expect(isTestRunner()).toBe(false);
+  });
+
+  it.each([
+    ["VITEST", "true"],
+    ["JEST_WORKER_ID", "1"],
+    ["NODE_TEST_CONTEXT", "child"],
+    ["NODE_TEST_CONTEXT", "child-v8"],
+  ])("%s=%s marks a test runner", (key, val) => {
+    process.env[key] = val;
+    expect(isTestRunner()).toBe(true);
+  });
+
+  it.each([["false"], ["0"], [""]])("VITEST=%j is not a test runner", (val) => {
+    process.env.VITEST = val;
+    expect(isTestRunner()).toBe(false);
+  });
+
+  it("does not treat NODE_ENV=test as a test runner", () => {
+    expect(isTestRunner({ NODE_ENV: "test" } as NodeJS.ProcessEnv)).toBe(false);
+  });
+
+  it("reads the passed env rather than process.env", () => {
+    expect(isTestRunner({ VITEST: "true" } as NodeJS.ProcessEnv)).toBe(true);
+    expect(isTestRunner({} as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
+
+describe("isEphemeralHome", () => {
+  let root: string;
+  let persistent: string;
+
+  beforeEach(() => {
+    root = join(tmpHome, "temp-root");
+    persistent = join(tmpHome, "persistent");
+    mkdirSync(root);
+    mkdirSync(persistent);
+  });
+
+  it("is true when the config dir is inside the temporary directory", () => {
+    expect(isEphemeralHome(join(root, "h", ".config", "opena2a"), persistent, root)).toBe(true);
+  });
+
+  it("is true when the home directory is inside the temporary directory", () => {
+    expect(isEphemeralHome(join(persistent, "opena2a"), join(root, "home"), root)).toBe(true);
+  });
+
+  it("is true when the home directory is the temporary directory itself", () => {
+    expect(isEphemeralHome(join(root, ".config", "opena2a"), root, root)).toBe(true);
+  });
+
+  it("is false when neither is inside the temporary directory", () => {
+    expect(isEphemeralHome(join(persistent, ".config", "opena2a"), persistent, root)).toBe(false);
+  });
+
+  it("is false for a sibling that only shares the name prefix", () => {
+    const sibling = `${root}-other`;
+    expect(isEphemeralHome(join(sibling, "opena2a"), sibling, root)).toBe(false);
+  });
+
+  it("is false when the home is unknown and the config dir is persistent", () => {
+    expect(isEphemeralHome(join(persistent, "opena2a"), null, root)).toBe(false);
+  });
+
+  it("resolves symlinks, so a linked temporary directory still matches", () => {
+    if (process.platform === "win32") return;
+    const link = join(tmpHome, "temp-link");
+    symlinkSync(root, link);
+    // Home reached through the link, temp root given by its real path.
+    expect(isEphemeralHome(join(persistent, "opena2a"), join(link, "home"), root)).toBe(true);
+    // And the other way round, as on macOS where TMPDIR is /var/... and
+    // the real path is /private/var/...
+    expect(isEphemeralHome(join(persistent, "opena2a"), join(root, "home"), link)).toBe(true);
+  });
+
+  it("ignores a temporary directory set to the filesystem root", () => {
+    const fsRoot = parse(persistent).root;
+    expect(isEphemeralHome(join(persistent, "opena2a"), persistent, fsRoot)).toBe(false);
+  });
+
+  it("defaults to this process's config dir, home and os.tmpdir()", () => {
+    expect(isEphemeralHome()).toBe(false);
+    markTemporary(tmpHome);
+    expect(isEphemeralHome()).toBe(true);
   });
 });
 
@@ -254,6 +344,91 @@ describe("loadConfig automatic suppression", () => {
     process.env.DO_NOT_TRACK = "1";
     expect(loadConfig().config.installId).toBeNull();
     expect(existsSync(paths.file)).toBe(false);
+  });
+});
+
+describe("loadConfig suppression for test runners and temporary homes", () => {
+  // Regression guard: a test suite that spawns a CLI, outside CI, sent an
+  // event for every spawn, and a CLI started with HOME=$(mktemp -d) looked
+  // like a first run on a new machine every time.
+  it.each([
+    ["VITEST", "true"],
+    ["JEST_WORKER_ID", "1"],
+    ["NODE_TEST_CONTEXT", "child"],
+  ])("%s=%s suppresses telemetry and writes nothing", (key, val) => {
+    process.env[key] = val;
+    const { config, paths, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(config.installId).toBeNull();
+    expect(suppressedBy).toBe("test-runner");
+    expect(existsSync(paths.file)).toBe(false);
+  });
+
+  it("a config dir inside the temporary directory suppresses telemetry and writes nothing", () => {
+    markTemporary(tmpHome);
+    const { config, paths, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(config.installId).toBeNull();
+    expect(suppressedBy).toBe("ephemeral-home");
+    expect(existsSync(paths.file)).toBe(false);
+  });
+
+  it("a HOME inside the temporary directory suppresses telemetry", () => {
+    for (const key of ["HOME", "USERPROFILE"]) {
+      savedEnv[key] = process.env[key];
+      process.env[key] = join(tmpHome, "home");
+    }
+    delete process.env.XDG_CONFIG_HOME;
+    markTemporary(tmpHome);
+    const { config, paths, suppressedBy } = loadConfig();
+    expect(paths.dir).toBe(join(tmpHome, "home", ".config", "opena2a"));
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBe("ephemeral-home");
+    expect(existsSync(paths.file)).toBe(false);
+  });
+
+  it("deletes an install_id persisted before the home read as temporary", () => {
+    const { paths } = loadConfig();
+    expect(JSON.parse(readFileSync(paths.file, "utf8")).installId).toBeTruthy();
+    markTemporary(tmpHome);
+    expect(loadConfig().config.installId).toBeNull();
+    expect(existsSync(paths.file)).toBe(false);
+  });
+
+  it("CI outranks a test runner in attribution", () => {
+    process.env.CI = "true";
+    process.env.VITEST = "true";
+    expect(loadConfig().suppressedBy).toBe("ci");
+  });
+
+  it("a test runner outranks a temporary home in attribution", () => {
+    process.env.VITEST = "true";
+    markTemporary(tmpHome);
+    expect(loadConfig().suppressedBy).toBe("test-runner");
+  });
+
+  it("OPENA2A_TELEMETRY=on re-enables under a test runner and in a temporary home", () => {
+    process.env.VITEST = "true";
+    markTemporary(tmpHome);
+    process.env.OPENA2A_TELEMETRY = "on";
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(true);
+    expect(suppressedBy).toBeNull();
+  });
+
+  it("OPENA2A_TELEMETRY=on still does NOT override DO_NOT_TRACK under a test runner", () => {
+    process.env.VITEST = "true";
+    process.env.DO_NOT_TRACK = "1";
+    process.env.OPENA2A_TELEMETRY = "on";
+    const { config, suppressedBy } = loadConfig();
+    expect(config.enabled).toBe(false);
+    expect(suppressedBy).toBe("do-not-track");
+  });
+
+  it("an env opt-out outranks a test runner in attribution", () => {
+    process.env.VITEST = "true";
+    process.env.OPENA2A_TELEMETRY = "off";
+    expect(loadConfig().suppressedBy).toBe("env-opt-out");
   });
 });
 

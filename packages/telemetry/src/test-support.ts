@@ -11,7 +11,9 @@
  * claim to, on a laptop and on a runner alike.
  */
 
-import { CI_VENDOR_ENV_VARS } from "./config.js";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { CI_VENDOR_ENV_VARS, TEST_RUNNER_ENV_VARS } from "./config.js";
 
 /**
  * Every env var that suppresses telemetry.
@@ -21,24 +23,57 @@ import { CI_VENDOR_ENV_VARS } from "./config.js";
  * fail only on a contributor's machine that happens to set the new var —
  * never on our own runners, which set CI/GITHUB_ACTIONS and are already
  * scrubbed — surfacing later as an unrelated-looking test failure.
+ *
+ * The test-runner markers are here because these suites run under Vitest,
+ * which sets `VITEST` in this very process.
  */
 export const SUPPRESSION_ENV_VARS = [
   ...CI_VENDOR_ENV_VARS,
+  ...TEST_RUNNER_ENV_VARS,
   "CI",
   "CONTINUOUS_INTEGRATION",
   "DO_NOT_TRACK",
 ] as const;
 
+/** The variables `os.tmpdir()` reads, on POSIX and on Windows. */
+const TEMP_ROOT_ENV_VARS = ["TMPDIR", "TMP", "TEMP"] as const;
+
 export type SavedEnv = Record<string, string | undefined>;
 
-/** Clear every suppression var, returning the prior values for restore. */
+/**
+ * Clear every suppression var, returning the prior values for restore.
+ * The temporary-directory variables are saved too (not cleared), so that
+ * `markPersistent` and `markTemporary` are undone by the same restore.
+ */
 export function scrubSuppressionEnv(): SavedEnv {
   const saved: SavedEnv = {};
   for (const key of SUPPRESSION_ENV_VARS) {
     saved[key] = process.env[key];
     delete process.env[key];
   }
+  for (const key of TEMP_ROOT_ENV_VARS) saved[key] = process.env[key];
   return saved;
+}
+
+function setTempRoot(dir: string): void {
+  for (const key of TEMP_ROOT_ENV_VARS) process.env[key] = dir;
+}
+
+/**
+ * Make `dir`, a fresh mkdtemp directory the suites use as their config
+ * home, read as a persistent home. Temporary-home suppression would
+ * otherwise turn every default-ON assertion off. `os.tmpdir()` is pointed
+ * at a directory inside `dir`, which `dir` itself is not under.
+ */
+export function markPersistent(dir: string): void {
+  const elsewhere = join(dir, "tmp");
+  mkdirSync(elsewhere, { recursive: true });
+  setTempRoot(elsewhere);
+}
+
+/** Make `dir` read as a temporary home: `os.tmpdir()` becomes `dir`. */
+export function markTemporary(dir: string): void {
+  setTempRoot(dir);
 }
 
 /** Restore what `scrubSuppressionEnv` cleared. */

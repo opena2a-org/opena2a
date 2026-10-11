@@ -21,7 +21,7 @@ await tele.track("scan", { success: true, durationMs: 312 });
 tele.error("scan", "HMA_TIMEOUT");
 ```
 
-- `init()` loads opt-out config from `~/.config/opena2a/telemetry.json` and `OPENA2A_TELEMETRY` env var, and suppresses telemetry entirely in CI or under `DO_NOT_TRACK` (see [automatic suppression](#automatic-suppression)). **No first-run banner is emitted** (deliberate — see disclosure surfaces below).
+- `init()` loads opt-out config from `~/.config/opena2a/telemetry.json` and `OPENA2A_TELEMETRY` env var, and suppresses telemetry entirely in CI, under `DO_NOT_TRACK`, under a test runner or in a temporary home directory (see [automatic suppression](#automatic-suppression)). **No first-run banner is emitted** (deliberate; see disclosure surfaces below).
 - `start()` fires a `start` event.
 - `track(name, fields?)` fires a `command` event with the command name and optional `success` / `durationMs` / `reason` (see [the `reason` field](#the-reason-field)).
 - `error(name, code)` fires an `error` event with the failure code.
@@ -88,7 +88,7 @@ run is deleted from `telemetry.json` on the next run. An explicit
 
 ## Automatic suppression
 
-Telemetry is **off by default** in two cases, with no configuration:
+Telemetry is **off by default** in these cases, with no configuration:
 
 - **CI / build environments** — detected via `CI`, `CONTINUOUS_INTEGRATION`, or a
   vendor marker (`GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `BUILDKITE`, `JENKINS_URL`,
@@ -96,6 +96,17 @@ Telemetry is **off by default** in two cases, with no configuration:
   "not CI".
 - **`DO_NOT_TRACK`** — the [cross-vendor convention](https://consoledonottrack.com/).
   Any value other than `0` / `false` / `no` opts out.
+- **Test runners**: `VITEST`, `JEST_WORKER_ID` or `NODE_TEST_CONTEXT` is set. Vitest,
+  Jest and `node --test` set these in the processes that run tests, and a CLI a test
+  spawns inherits them. `NODE_ENV=test` is not used: applications set it for their own
+  reasons.
+- **Temporary homes**: the config directory (`$XDG_CONFIG_HOME/opena2a` or
+  `~/.config/opena2a`) or the home directory is inside the system temporary directory
+  (`os.tmpdir()`, which follows `TMPDIR`; `TEMP` / `TMP` on Windows), as with
+  `HOME=$(mktemp -d)`. The config file there is discarded after the run, so every run
+  would look like a first run on a new machine. Symlinks are resolved before the
+  paths are compared. A throwaway home elsewhere, such as a container filesystem, is
+  not detected.
 
 Why: `install_id` is derived from the OS machine-id, falling back to a hash of the
 hostname when that probe fails. CI runners are provisioned fresh for each job, so
@@ -111,26 +122,30 @@ throwaway `docker run`, a devcontainer rebuild, or a sandboxed `npx` hits the sa
 fallback path while setting none of these variables. This suppression covers the
 CI-labeled population, which is the bulk of it, not the whole class.
 
-The two reasons are **not peers**:
+The reasons are **not peers**:
 
 - `DO_NOT_TRACK` is a deliberate user intent, in the same tier as `telemetry off`.
   **Nothing overrides it** — see below.
-- CI-ness is a fact about the machine, not a choice, so an explicit opt-in may
-  override it.
+- CI-ness, a test runner and a temporary home are facts about where the process
+  runs, not choices, so an explicit opt-in may override them.
 
 Suppression is computed per-invocation and is **never written to the config file**:
 the file records what the user chose, not where the process happened to run.
 
-To exercise the real ingest path from your own CI, set an explicit
-`OPENA2A_TELEMETRY=on` (also `1`, `true`, `yes`). That overrides **CI detection
-only**. It can not re-enable a deliberate `telemetry off`, and it can not override
+To exercise the real ingest path from your own CI or end-to-end tests, set an
+explicit `OPENA2A_TELEMETRY=on` (also `1`, `true`, `yes`). That overrides **CI,
+test-runner and temporary-home detection only**. It can not re-enable a deliberate
+`telemetry off`, and it can not override
 `DO_NOT_TRACK` — otherwise any Makefile, Dockerfile `ENV`, or org-wide CI config
 exporting it would silently defeat a privacy signal the user set once in their
 shell profile and never revisited.
 
 `status()` reports which suppression is in force via the optional
-`suppressedBy: "ci" | "do-not-track"` field, so a CLI can explain the state
-rather than implying the user turned telemetry off:
+`suppressedBy` field (`"ci"`, `"do-not-track"`, `"test-runner"` or
+`"ephemeral-home"`; `"env-opt-out"` for `OPENA2A_TELEMETRY=off`), so a CLI can
+explain the state rather than implying the user turned telemetry off. When more
+than one applies, the first in this order is reported: `do-not-track`, `ci`,
+`test-runner`, `ephemeral-home`. In CI:
 
 ```
   state:       off (CI environment detected)
