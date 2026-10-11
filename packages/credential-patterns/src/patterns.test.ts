@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CONFIG_FILES, CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from './patterns.js';
+import { findRealMatch } from './match.js';
 
 /**
  * Test data for each pattern: valid strings that MUST match, invalid strings that MUST NOT.
@@ -10,6 +11,7 @@ import { CONFIG_FILES, CREDENTIAL_PATTERNS, CREDENTIAL_PREFIX_QUICK_CHECK } from
  */
 // Build test tokens dynamically to avoid triggering GitHub Push Protection
 const slackTestToken = ['xox', 'b-1234567890-1234567890-', 'abcdefghijklmnopqrstuvwx'].join('');
+const slackUserTestToken = ['xox', 'p-123456789012-123456789012-1234567890123-', '0123456789abcdef'.repeat(2)].join('');
 const discordBotToken = ['MTIzNDU2Nzg5MDEyMzQ1Njc4OQ', '.GabcDE.', 'abcdefghijklmnopqrstuvwxyz01234'].join('');
 const anthropicTestKey = ['sk-ant-api03-', 'abc123def456abc123def456abc123'].join('');
 const awsAccessTestKey = ['AKIA', 'IOSFODNN7EXAMPLE'].join('');
@@ -103,8 +105,16 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     invalid: ['nfp_short', 'nfp_' + 'a'.repeat(5)],
   },
   'azure': {
-    valid: ['AccountKey=' + 'a'.repeat(43) + '=', 'SharedAccessKey = ' + 'B'.repeat(43) + '='],
-    invalid: ['AccountKey=short', 'RandomKey=' + 'a'.repeat(43) + '='],
+    valid: [
+      'AccountKey=' + 'a'.repeat(43) + '=',
+      'SharedAccessKey = ' + 'B'.repeat(43) + '=',
+      'AccountKey=' + 'a'.repeat(86) + '==',                 // 512-bit Storage account key
+    ],
+    invalid: [
+      'AccountKey=short',
+      'RandomKey=' + 'a'.repeat(43) + '=',
+      'sha512-' + 'a'.repeat(86) + '==',                     // integrity value, no key name
+    ],
   },
   'supabase': {
     valid: ['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + 'a'.repeat(50)],
@@ -113,7 +123,7 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
 
   // Communication
   'slack': {
-    valid: [slackTestToken],
+    valid: [slackTestToken, slackUserTestToken],
     invalid: ['xoxb-short', 'xoxz-1234567890-1234567890-abcdefghijklmnopqrstuvwx'],
   },
   'slack-webhook': {
@@ -161,6 +171,10 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
   'github-app': {
     valid: ['ghs_' + 'a'.repeat(36)],
     invalid: ['ghs_short', 'ghs_'],
+  },
+  'github-user-to-server': {
+    valid: ['ghu_' + 'a'.repeat(36)],
+    invalid: ['ghu_short', 'ghu_', 'ghu_' + 'a'.repeat(35)],
   },
   'github-refresh': {
     valid: ['ghr_' + 'a'.repeat(36)],
@@ -215,6 +229,14 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
   'square': {
     valid: ['sq0csp-' + 'a'.repeat(22)],
     invalid: ['sq0csp-short', 'sq0CSP-' + 'a'.repeat(22)],
+  },
+  'square-access-token': {
+    valid: ['EAAA' + 'a'.repeat(60), '"EAAA' + 'a'.repeat(60) + '"'],
+    invalid: [
+      'EAAA' + 'a'.repeat(59),
+      'EAAA' + 'a'.repeat(61),                               // part of a longer run
+      'b' + 'EAAA' + 'a'.repeat(60),                         // inside a base64 run
+    ],
   },
 
   // Database — connection strings flag only when a secret is embedded:
@@ -419,6 +441,11 @@ describe('CREDENTIAL_PATTERNS', () => {
     { name: '20k repeated mongodb://', value: 'mongodb://'.repeat(2000), budgetMs: 500 },
     { name: 'postgres:// with long @-free tail', value: 'postgres://' + 'a:b/'.repeat(5000), budgetMs: 500 },
     { name: 'minified no-space db inventory', value: ('{"u":"postgres://h' + 'x'.repeat(60) + '/db"},').repeat(250), budgetMs: 500 },
+    // Open-ended runs added for secretless-ai#135: a key name or prefix
+    // followed by a long run the pattern can never complete.
+    { name: '10k after AccountKey=', value: 'AccountKey=' + 'a'.repeat(10000) },
+    { name: '10k after EAAA', value: 'EAAA' + 'a'.repeat(10000) },
+    { name: 'xoxp- with 1k numeric groups', value: 'xoxp-' + '1234567890-'.repeat(1000) },
   ];
 
   for (const input of REDOS_INPUTS) {
@@ -467,6 +494,113 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
     // redis:// lines before the real pattern runs — a silent miss.
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('redis://x')).toBe(true);
   });
+
+  it('derives the ghu_ and EAAA prefixes (secretless-ai#135)', () => {
+    // Without them a line holding ${VAR} and one of these tokens is skipped
+    // before the pattern runs.
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('ghu_abc')).toBe(true);
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test('token: EAAA')).toBe(true);
+  });
+});
+
+describe('vendor-format sweep (secretless-ai#135)', () => {
+  // Vendors document these lengths as variable or growing, so a fixture pinned
+  // to one length is what hid patterns that missed the format issued today.
+  // Each pattern is swept at its documented minimum, one over, and well over,
+  // and the match must reach the end of the value: a match that stops early
+  // leaves the tail out of a redacted preview.
+  const BODY = 'aB3xQ9zK7mR2tY5wL8pN4vC6hJ1sD0gF';
+  const B64_BODY = 'aB3x+Q9zK7/mR2tY5wL8pN4vC6hJ1sD0gF';
+  const HEX_BODY = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+  const run = (alphabet: string, n: number): string => alphabet.repeat(Math.ceil(n / alphabet.length)).slice(0, n);
+  const pattern = (id: string) => {
+    const p = CREDENTIAL_PATTERNS.find(c => c.id === id);
+    if (!p) throw new Error(`catalog pattern ${id} not found`);
+    return p;
+  };
+
+  const GITHUB = [
+    { id: 'github-pat', prefix: 'ghp' },
+    { id: 'github-oauth', prefix: 'gho' },
+    { id: 'github-app', prefix: 'ghs' },
+    { id: 'github-user-to-server', prefix: 'ghu' },
+  ];
+  const slack = (kind: 'b' | 'p', tail: string) =>
+    kind === 'b'
+      ? ['xox', 'b-', '123456789012-', '1234567890123-', tail].join('')
+      : ['xox', 'p-', '123456789012-', '123456789012-', '1234567890123-', tail].join('');
+
+  // Each row: the line a scanner reads, and the value the match must cover to its end.
+  const VALID: Array<{ id: string; at: string; line: string; value: string }> = [
+    // azure: 44 characters (32 bytes), one over, 88 characters (512-bit Storage key)
+    ...[[43, '='], [44, '='], [86, '==']].map(([n, pad]) => {
+      const value = run(B64_BODY, n as number) + pad;
+      return { id: 'azure', at: `${(n as number) + (pad as string).length} chars`, line: 'AccountKey=' + value, value };
+    }),
+    // GitHub: 36 is today's body length; GitHub says to plan for 255 characters in all
+    ...GITHUB.flatMap(({ id, prefix }) => [36, 37, 251].map(n => {
+      const value = [prefix, '_', run(BODY, n)].join('');
+      return { id, at: `${value.length} chars`, line: `token = "${value}"`, value };
+    })),
+    // Slack bot token: two numeric groups, secret at the pattern floor, one over, well over
+    ...[24, 25, 80].map(n => {
+      const value = slack('b', run(BODY, n));
+      return { id: 'slack', at: `xoxb secret ${n}`, line: `SLACK_TOKEN=${value}`, value };
+    }),
+    // Slack user token: three numeric groups, 32-character secret, one over, well over
+    ...[32, 33, 80].map(n => {
+      const value = slack('p', run(HEX_BODY, n));
+      return { id: 'slack', at: `xoxp secret ${n}`, line: `SLACK_TOKEN=${value}`, value };
+    }),
+    // Square: the documented 64-character token, quoted, unquoted, and as a bearer value
+    ...['"%"', "'%'", 'token: %', 'Authorization: Bearer %', '%'].map(shape => {
+      const value = ['EAAA', run(BODY, 60)].join('');
+      return { id: 'square-access-token', at: shape, line: shape.replace('%', value), value };
+    }),
+  ];
+
+  for (const { id, at, line, value } of VALID) {
+    it(`${id} matches the whole value at ${at}`, () => {
+      const m = line.match(pattern(id).regex);
+      expect(m, `${id} no longer matches at ${at}`).not.toBeNull();
+      const valueEnd = line.indexOf(value) + value.length;
+      expect(m!.index! + m![0].length, `${id} stops before the end of the value at ${at}`).toBe(valueEnd);
+      expect(m!.index!).toBeLessThanOrEqual(line.indexOf(value));
+      expect(findRealMatch(line, pattern(id)), `${id} suppressed as an example at ${at}`).not.toBeNull();
+    });
+  }
+
+  // Lines that must not produce a finding for each pattern this change touched.
+  // A base64 blob can hold a prefix's letters but never its `_` or `-`
+  // separator, so the blob rows carry the letters.
+  const TOUCHED: Array<{ id: string; letters: string; placeholder: string }> = [
+    { id: 'azure', letters: 'AccountKey', placeholder: 'AccountKey=' + 'EXAMPLE' + run(B64_BODY, 36) + '=' },
+    { id: 'slack', letters: 'xoxp', placeholder: slack('p', 'placeholder' + run(HEX_BODY, 21)) },
+    ...GITHUB.map(({ id, prefix }) => ({
+      id, letters: prefix, placeholder: [prefix, '_', 'placeholder', run(BODY, 25)].join(''),
+    })),
+    { id: 'square-access-token', letters: 'EAAA', placeholder: ['EAAA', 'EXAMPLE', run(BODY, 53)].join('') },
+  ];
+
+  for (const { id, letters, placeholder } of TOUCHED) {
+    const p = pattern(id);
+    const blob = run(B64_BODY, 30) + letters + run(B64_BODY, 70);
+    const nonMatching = [
+      { what: 'sha512 integrity string', line: `"integrity": "sha512-${blob}=="` },
+      { what: 'data: URI', line: `<img src="data:image/png;base64,${blob}">` },
+      { what: 'its own regex source', line: `const re = /${p.regex.source}/${p.regex.flags};` },
+      { what: '${VAR} reference', line: `AccountKey=\${${p.envPrefix}}` },
+    ];
+    for (const { what, line } of nonMatching) {
+      it(`${id} does not match a ${what}`, () => {
+        expect(p.regex.test(line)).toBe(false);
+      });
+    }
+    it(`${id} matches a placeholder-marked value and the allowlist suppresses it`, () => {
+      expect(p.regex.test(placeholder), `${id} placeholder fixture no longer has the token shape`).toBe(true);
+      expect(findRealMatch(placeholder, p)).toBeNull();
+    });
+  }
 });
 
 describe('detection preserved for assembled fixtures', () => {
