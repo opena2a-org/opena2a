@@ -34,7 +34,7 @@
  *   Failures are release-blockers. The init scoring algorithm cannot drift
  *   past these bounds without an audit-doc decision and a band update.
  *
- * Per [CHIEF-CDS-028] OPENA2A_CORPUS_DETERMINISTIC=1.
+ * OPENA2A_CORPUS_DETERMINISTIC=1 is set.
  *
  * Exit code 0 = green, 1 = score-band failure, 2 = setup error.
  */
