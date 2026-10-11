@@ -2,7 +2,7 @@
 /**
  * release-smoke-corpus.ts — opena2a-corpus consumer harness for opena2a-cli.
  *
- * Per [CHIEF-CA-044] each consumer ships its own harness; this one's
+ * Each consumer ships its own harness; this one's
  * particular job is verifying structural parity between `opena2a scan`
  * and `hackmyagent secure` for every fixture. The opena2a-cli delegates
  * to HMA; if structural parity drifts (different score, different finding
@@ -21,7 +21,7 @@
  * the published pin (a routine event during HMA development — e.g. unreleased
  * content-aware GIT-002/GIT-003), the harness reported false "wrapper drift".
  *
- * Fixed 2026-07-07 [CHIEF-CA]: the reference is now resolved from opena2a-cli's
+ * Fixed 2026-07-07: the reference is now resolved from opena2a-cli's
  * OWN pinned dependency (`require.resolve('hackmyagent')` → its `cli.js`). That
  * is the same `node_modules/hackmyagent` the wrapper's `resolveWorkspaceBin`
  * hits, so both sides run the identical pinned build BY CONSTRUCTION — no PATH
@@ -33,7 +33,7 @@
  * reinstall so the pin is current, or bump the pin (a deliberate, documented
  * golden re-bake), rather than pointing the reference at a dev tree.
  *
- * Per [CHIEF-CDS-028] OPENA2A_CORPUS_DETERMINISTIC=1 is set.
+ * OPENA2A_CORPUS_DETERMINISTIC=1 is set.
  *
  * Exit code 0 = green, 1 = drift, 2 = setup error.
  */

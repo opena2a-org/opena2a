@@ -7,11 +7,11 @@
  * routing contract:
  *
  *   - blocked classification short-circuits BEFORE `matchIntent` runs and
- *     returns a structured `NaturalLanguageBlock` (CHIEF-CA).
+ *     returns a structured `NaturalLanguageBlock`.
  *   - a not-blocked classification (benign attackClass, or non-empty class
  *     below the 0.8 confidence threshold) lets the existing intent flow run.
  *   - a null classification (daemon unreachable) lets the intent flow run --
- *     the silent-fallback contract (CHIEF-CDS): a missing daemon never blocks.
+ *     the silent-fallback contract: a missing daemon never blocks.
  *   - the returned block carries ONLY canonical signals; the daemon's
  *     attacker-influenced `evidence` / `remediation` never leak (trust
  *     boundary), and a hostile `modelVersion` is stripped of terminal-control

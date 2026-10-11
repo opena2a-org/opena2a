@@ -411,7 +411,7 @@ describe("successFromExitCode", () => {
   });
 });
 
-describe("successFromExitCode — semanticSuccessCodes ([CHIEF-CSR-018] + [CHIEF-CPO-022])", () => {
+describe("successFromExitCode with semanticSuccessCodes", () => {
   it("exit 2 with semanticSuccessCodes [2] = success (ai-trust not-found is a working outcome)", async () => {
     const tele = await freshSdk();
     expect(tele.successFromExitCode(2, [2])).toBe(true);

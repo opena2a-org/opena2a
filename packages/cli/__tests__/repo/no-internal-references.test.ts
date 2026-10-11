@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -99,5 +100,49 @@ describe('shipped sources and package docs cite no internal references', () => {
       });
     }
     expect(hits, `drop the id and keep the sentence:\n${hits.join('\n')}`).toEqual([]);
+  });
+});
+
+// The repository is public as well: test files, release scripts, docs and
+// workflows never reach a package but are read by every contributor. Each
+// tracked file is held to the same rule. The two guard files below name the
+// forbidden tokens in order to reject them and are the only exceptions.
+const GUARD_FILES = new Set([
+  'packages/cli/__tests__/repo/no-internal-references.test.ts',
+  'packages/cli/__tests__/child-env-policy.test.ts',
+]);
+const BINARY_EXT = /\.(gif|png|jpe?g|ico|woff2?|tgz|gz|zip)$/i;
+
+function trackedFiles(): string[] {
+  const out = execFileSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT, encoding: 'utf-8' });
+  return out
+    .split('\0')
+    .filter((f) => f && !BINARY_EXT.test(f) && !GUARD_FILES.has(f))
+    .filter((f) => fs.existsSync(path.join(REPO_ROOT, f)));
+}
+
+describe('tracked repository files cite no internal references', () => {
+  const files = trackedFiles();
+
+  it('lists every tracked file, tests and scripts included', () => {
+    expect(files).toContain('README.md');
+    expect(files).toContain('packages/cli/scripts/release-smoke-corpus.ts');
+    expect(files).toContain('packages/telemetry/src/index.test.ts');
+  });
+
+  it('no tracked line names an internal role tag, decision id, decision log, ruling or notes file', () => {
+    const hits: string[] = [];
+    for (const file of files) {
+      const lines = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8').split('\n');
+      lines.forEach((line, i) => {
+        for (const { name, pattern } of INTERNAL_REFERENCES) {
+          const m = pattern.exec(line);
+          if (m) hits.push(`${file}:${i + 1}: ${name} "${m[0]}"`);
+        }
+        const m = DECISION_ID_CITATION.exec(line);
+        if (m) hits.push(`${file}:${i + 1}: decision id "${m[0]}"`);
+      });
+    }
+    expect(hits, `drop the tag or id and keep the sentence:\n${hits.join('\n')}`).toEqual([]);
   });
 });
