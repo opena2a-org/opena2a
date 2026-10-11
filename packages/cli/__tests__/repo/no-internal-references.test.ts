@@ -22,8 +22,7 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
 
 // A decision id cited as `[AB-123]` or "per / after AB-123". Matched by that
 // citation shape, not by any `AB-123` token, so public check ids such as
-// `NEMO-009` stay allowed. Applied to package docs only for now: three source
-// comments still carry one.
+// `NEMO-009` stay allowed.
 const DECISION_ID_CITATION = /\[[A-Z]{2,4}-\d{3}\]|(?<![A-Za-z0-9_])(?:per|after) [A-Z]{2,4}-\d{3}(?![A-Za-z0-9])/i;
 
 const SOURCE_EXT = /\.(ts|tsx|js|mjs|cjs)$/;
@@ -87,9 +86,9 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(hits, `replace each with the public issue or the rule itself:\n${hits.join('\n')}`).toEqual([]);
   });
 
-  it('no package README or changelog cites an internal decision id', () => {
+  it('no shipped source, README or changelog cites an internal decision id', () => {
     const hits: string[] = [];
-    for (const file of files.filter((f) => /(README|CHANGELOG)\.md$/.test(f))) {
+    for (const file of files) {
       const lines = fs.readFileSync(file, 'utf-8').split('\n');
       lines.forEach((line, i) => {
         const m = DECISION_ID_CITATION.exec(line);
