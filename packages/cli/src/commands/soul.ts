@@ -187,7 +187,7 @@ function formatScanResult(result: any, verbose: boolean, strict = false): void {
   process.stdout.write(`Controls: ${passingControls}/${totalControls} passing\n`);
   if (hasPartialScope) {
     // Inline scope disclosure — required regardless of verbose mode so the
-    // partial-scope state is visible to CISO-rule-11 readers. Closes #136.
+    // partial-scope state is always visible. Closes #136.
     process.stdout.write(`Scope:    ${evaluatedDomains} of ${totalDomains} domains evaluated; ${skippedDomains.length} skipped: ${skippedDomains.join(', ')}\n`);
   }
 

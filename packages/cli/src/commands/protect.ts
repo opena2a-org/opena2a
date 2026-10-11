@@ -1477,8 +1477,8 @@ function isInsideGitWorkTree(dir: string): 'yes' | 'no' | 'unknown' {
  * protect rewrites source files in place. Its only advertised undo used to be
  * `git checkout -- <files>`, printed unconditionally -- including in the
  * `mktemp -d` case where there is no repository and the command cannot run
- * (#257). A recovery instruction that fails where it is printed is the dead
- * end CISO Rule 11 exists to prevent.
+ * (#257). A recovery instruction that fails where it is printed is a dead
+ * end.
  *
  * Deliberately NOT solved by writing a backup of the original file: that file
  * still contains the plaintext credential, so a rollback manifest on disk

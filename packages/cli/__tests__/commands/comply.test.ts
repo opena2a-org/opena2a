@@ -63,7 +63,7 @@ describe('comply command', () => {
     const { exitCode, output } = await captureStdout(() => runComply({ files: [file] }));
     expect(exitCode).toBe(0);
     expect(output).toContain('CLEAN');
-    // CISO Rule 11: even a zero-finding verdict states which layers ran.
+    // Even a zero-finding verdict states which layers ran.
     expect(output).toContain('regex');
     expect(output).toContain('Verdict: CLEAN');
   });

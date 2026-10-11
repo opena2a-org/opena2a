@@ -455,8 +455,7 @@ describe('init', () => {
   });
 
   // Regression: audit-wave-1 bug B — ENOENT must print Next Steps with
-  // discoverable usage. Bare "Directory not found" was a CISO Rule 1 dead
-  // end. JSON mode emits a structured error object so CI consumers can
+  // discoverable usage. Bare "Directory not found" was a dead end. JSON mode emits a structured error object so CI consumers can
   // distinguish ENOENT from valid-zero-finding states.
   it('text-mode ENOENT prints Next Steps with --help reference (audit B)', async () => {
     const { stderr, exitCode } = await captureStderr(() => init({
@@ -706,7 +705,7 @@ describe('init', () => {
 
   // Regression: opena2a/issues/117 — Fix commands must point to runnable
   // mutations, never to status/read-only commands. `opena2a shield status`
-  // is read-only and creates a dead-end UX (CISO Rule 3 violation).
+  // is read-only and creates a dead-end UX.
   it('action commands never point to read-only status commands (#117)', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');

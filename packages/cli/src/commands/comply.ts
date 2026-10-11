@@ -225,7 +225,7 @@ function renderHuman(
     }
   }
 
-  // Observation block (CISO Rule 11): always state which layers actually ran,
+  // Observation block: always state which layers actually ran,
   // even on a CLEAN verdict, and give a recovery path -- never a dead end.
   out.write('\n');
   out.write(`  ${dim('Layers:')} ${green('regex')} (always-on)`);

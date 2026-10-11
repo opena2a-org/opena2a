@@ -40,7 +40,7 @@ const ATTACK_CLASS_LABEL: Record<Exclude<NanoMindAttackClass, ''>, string> = {
 };
 
 /**
- * Build the CISO Rule 11 block message (observation + verdict + remediation)
+ * Build the block message (observation + verdict + remediation)
  * as structured lines. PURE -- no terminal I/O, no color, no cli-ui import;
  * the caller maps tones to chalk and writes the lines.
  *
@@ -50,7 +50,7 @@ const ATTACK_CLASS_LABEL: Record<Exclude<NanoMindAttackClass, ''>, string> = {
  * and `confidence` is a number, so neither can carry hostile bytes.
  *
  * Remediation deliberately does NOT cite a `--no-classify` flag (not shipped
- * in this release): citing an unregistered flag would be a CISO Rule 11
+ * in this release): citing an unregistered flag would be a
  * dead-end. The natural-language router is a convenience layer, so the always
  * available escape hatch is to run the intended command explicitly.
  */

@@ -15,7 +15,7 @@ For each command verify:
 3. Exit code is correct (0 for success, 1 for critical/high findings or hard errors).
 4. No credentials printed (any masked preview shows ≤8 chars of head + tail).
 5. No stack traces.
-6. Observations + Verdict block present (CISO Rule 11) — required from 0.10.0 onward.
+6. Observations + Verdict block present, required from 0.10.0 onward.
 
 ## Help and version
 

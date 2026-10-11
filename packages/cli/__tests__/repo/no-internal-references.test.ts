@@ -18,6 +18,13 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   { name: 'internal decision log', pattern: /COUNCIL_LEDGER/ },
   { name: 'internal role tag', pattern: /\bCHIEF-[A-Z]{2,4}\b/ },
   { name: 'internal ruling', pattern: /design-function ruling/ },
+  // A numbered rule from an internal role's charter, e.g. "Rule 11" cited
+  // under a role name. "CISO" as a reader ("the CISO scanning the output")
+  // stays allowed; only the rule citation is matched.
+  {
+    name: 'internal charter rule',
+    pattern: /\b(?:CA|CCO|CDE|CDO|CDS|CISO|CPO|CRO|CSR|DPO)[- ][Rr]ule[- ]?\d+\b/,
+  },
   { name: 'private notes file', pattern: /\b(?:feedback|project|reference|user)_[a-z0-9_]+\.md\b/ },
 ];
 

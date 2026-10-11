@@ -235,7 +235,7 @@ describe('buildClassifierBlockLines', () => {
     modelVersion: 'nanomind-security-classifier@0.5.0',
   };
 
-  it('renders observation + verdict + remediation (CISO Rule 11)', () => {
+  it('renders observation + verdict + remediation', () => {
     const text = buildClassifierBlockLines(block, sanitizeForTerminal)
       .map((l) => l.text)
       .join('\n');

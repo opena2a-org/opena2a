@@ -5,8 +5,8 @@
  * Each parent registers as a single Commander command with manual
  * subcommand routing, so Commander's auto-help only knows about the
  * parent. Without intercept, `opena2a guard sign --help` prints the
- * `guard` parent help instead of `sign`-specific help — CISO Rule 7
- * (discoverability) violation flagged in #132.
+ * `guard` parent help instead of `sign`-specific help, a
+ * discoverability gap flagged in #132.
  *
  * Each parent's action calls `printSubcommandHelp(parent, sub)` after
  * detecting `--help` / `-h` in the incoming args.
