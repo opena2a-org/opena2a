@@ -171,7 +171,7 @@ This release ships work that merged to `main` after the `0.10.5` tag was cut: th
 ## 0.8.25
 
 ### Changed
-- **Trust queries route through `@opena2a/registry-client@0.1.0` (exact pin).** Four call sites migrated via dynamic `await import(...)` for CJS compatibility: `util/registry-enrichment.ts` (batch), `util/report-submission.ts` (publish), `commands/verify.ts` (profile), `commands/mcp-audit.ts` (score). All three fleet CLIs now share one HTTP client implementation (published with SLSA v1 provenance). Per CA-034 M1. No user-visible output change; registry returns the same canonical trust data either way.
+- **Trust queries route through `@opena2a/registry-client@0.1.0` (exact pin).** Four call sites migrated via dynamic `await import(...)` for CJS compatibility: `util/registry-enrichment.ts` (batch), `util/report-submission.ts` (publish), `commands/verify.ts` (profile), `commands/mcp-audit.ts` (score). All three fleet CLIs now share one HTTP client implementation (published with SLSA v1 provenance). Part of the CLI consolidation. No user-visible output change; registry returns the same canonical trust data either way.
 - `commands/verify.ts` tamper-detection fetch stays as a direct call: `/api/v1/trust/query?name=...&hash=...` uses a `hash` parameter not exposed by `@opena2a/registry-client@0.1.0`. Documented inline; revisit when the client adds a hash option.
 
 ## 0.8.24
