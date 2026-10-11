@@ -1,6 +1,6 @@
-import { homedir, hostname, platform as osPlatform } from "node:os";
-import { join } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { homedir, hostname, platform as osPlatform, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync, realpathSync } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import type { SuppressionReason } from "./types.js";
@@ -36,6 +36,19 @@ export const CI_VENDOR_ENV_VARS = [
   "NETLIFY",
   "VERCEL",
   "CF_PAGES",
+] as const;
+
+/**
+ * Variables a test runner sets in every process it runs tests in, and
+ * which a CLI spawned from a test inherits: Vitest sets `VITEST`, Jest
+ * `JEST_WORKER_ID`, and `node --test` sets `NODE_TEST_CONTEXT`.
+ * `NODE_ENV=test` is deliberately absent: applications set it for their own
+ * reasons, so it says nothing reliable about who started this CLI.
+ */
+export const TEST_RUNNER_ENV_VARS = [
+  "VITEST",
+  "JEST_WORKER_ID",
+  "NODE_TEST_CONTEXT",
 ] as const;
 
 export interface TelemetryConfig {
@@ -224,9 +237,10 @@ function envTruthy(v: string | undefined): boolean {
 }
 
 /**
- * Explicit opt-IN. Overrides *CI detection only* — never a deliberate
- * opt-out, whether that lives in the config file or in DO_NOT_TRACK. Lets
- * us exercise the real ingest path from our own CI without reopening the
+ * Explicit opt-IN. Overrides the *environmental* suppressions only (CI, a
+ * test runner, a temporary home), never a deliberate opt-out, whether that
+ * lives in the config file or in DO_NOT_TRACK. Lets us exercise the real
+ * ingest path from our own CI and end-to-end tests without reopening the
  * door to every other runner on the internet.
  */
 function envOptIn(env: NodeJS.ProcessEnv): boolean {
@@ -267,6 +281,79 @@ export function isCI(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
+ * Detect a process started from inside a test runner.
+ *
+ * Test suites that exercise a CLI spawn it many times per run, and the
+ * child inherits the runner's environment. Outside CI (a developer running
+ * the suite locally) none of the CI variables is set, so every one of those
+ * spawns used to send events as if a user had run the command.
+ */
+export function isTestRunner(env: NodeJS.ProcessEnv = process.env): boolean {
+  return TEST_RUNNER_ENV_VARS.some((key) => envTruthy(env[key]));
+}
+
+/**
+ * The path with every symlink in its longest existing prefix resolved, so
+ * that `/var/...` and `/private/var/...` on macOS (or a symlinked TMPDIR)
+ * compare equal. The part that does not exist yet is appended unchanged.
+ */
+function canonicalPath(p: string): string {
+  const abs = resolve(p);
+  try {
+    return realpathSync.native(abs);
+  } catch {
+    const parent = dirname(abs);
+    if (parent === abs) return abs;
+    return join(canonicalPath(parent), basename(abs));
+  }
+}
+
+/** True when `child` is `parent` or sits anywhere below it. */
+function isWithin(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  if (rel === "") return true;
+  return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+function safeHomedir(): string | null {
+  try {
+    return homedir();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect a home directory that will not outlive this run: the telemetry
+ * config directory, or the home directory itself, sits inside the system
+ * temporary directory (`os.tmpdir()`).
+ *
+ * Why this exists: test suites and scripted jobs start a CLI with
+ * `HOME=$(mktemp -d)` (or an equivalent `XDG_CONFIG_HOME`) so it cannot
+ * touch the real home. The config file, and the install ID stored in it,
+ * is then thrown away after every run, so each run looked like a first run
+ * on a new machine.
+ *
+ * One limit: only `os.tmpdir()` is checked, which follows `TMPDIR` (`TEMP`
+ * / `TMP` on Windows). A throwaway home somewhere else, such as a container
+ * filesystem discarded after the job, is not detected here.
+ *
+ * The parameters exist for tests; callers use the defaults.
+ */
+export function isEphemeralHome(
+  configDir: string = configPaths().dir,
+  home: string | null = safeHomedir(),
+  tempRoot: string = tmpdir(),
+): boolean {
+  const root = canonicalPath(tempRoot);
+  // A temporary directory set to a filesystem root would contain every path.
+  if (dirname(root) === root) return false;
+  return [configDir, home].some(
+    (p) => typeof p === "string" && p !== "" && isWithin(canonicalPath(p), root),
+  );
+}
+
+/**
  * Honor the cross-vendor `DO_NOT_TRACK` convention
  * (https://consoledonottrack.com/). Any value except an explicit
  * "no" value opts the user out.
@@ -282,7 +369,7 @@ export function doNotTrack(env: NodeJS.ProcessEnv = process.env): boolean {
  * reads as "you turned this off", and sends users chasing a config flip
  * that suppression will just re-apply.
  *
- * Order matters, and the two reasons are NOT peers:
+ * Order matters, and the reasons are NOT peers:
  *
  *   - `DO_NOT_TRACK` is a deliberate user *intent*. A user exports it once
  *     in their shell profile and expects every tool to honor it. It sits in
@@ -290,8 +377,13 @@ export function doNotTrack(env: NodeJS.ProcessEnv = process.env): boolean {
  *     `OPENA2A_TELEMETRY=on` — which we tell people to put in CI configs,
  *     Dockerfiles and Makefiles — can never silently override a privacy
  *     signal the user never touched.
- *   - CI-ness is an environmental *fact*, not a choice, so an explicit
- *     opt-in may override it. That is the only thing the opt-in overrides.
+ *   - CI-ness, a test runner and a temporary home are environmental
+ *     *facts*, not choices, so an explicit opt-in may override them. They
+ *     are the only things the opt-in overrides. Among them CI is reported
+ *     first: a test suite running in CI is explained by the CI.
+ *
+ * The temporary-home check reads the paths this process would use (see
+ * `isEphemeralHome`), not `env`.
  */
 export function autoSuppressionReason(
   env: NodeJS.ProcessEnv = process.env,
@@ -299,6 +391,8 @@ export function autoSuppressionReason(
   if (doNotTrack(env)) return "do-not-track";
   if (envOptIn(env)) return null;
   if (isCI(env)) return "ci";
+  if (isTestRunner(env)) return "test-runner";
+  if (isEphemeralHome()) return "ephemeral-home";
   return null;
 }
 
@@ -314,7 +408,9 @@ export function autoSuppressionReason(
  *   4. CI environment — suppressed, unless OPENA2A_TELEMETRY is set to an
  *      explicit on value. CI-ness is a fact about the machine, not a
  *      choice by the user, so an explicit opt-in may override it.
- *   5. default ON (matches spec).
+ *   5. Test runner, then temporary home: suppressed on the same terms as
+ *      CI, and overridden by the same explicit opt-in.
+ *   6. default ON (matches spec).
  *
  * The install_id exists only while telemetry is on. When it is on, the ID
  * is derived once and persisted so later runs (and other tools on the same
@@ -326,7 +422,7 @@ export function autoSuppressionReason(
  * nothing but the default `enabled: true` plus an ID is removed. This never
  * writes `enabled: true`.
  *
- * Note that CI/DO_NOT_TRACK suppression is computed per-invocation and
+ * Note that automatic suppression is computed per-invocation and
  * deliberately NOT written to the config file: the file records what the
  * user chose, not where the process happened to run.
  */
@@ -367,7 +463,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): {
   //     so a plain hint is the better affordance, and attributing it to the
   //     environment would tell the user something untrue about their own
   //     choice.
-  //   - Otherwise the environment is the cause (DO_NOT_TRACK / CI).
+  //   - Otherwise the environment is the cause (DO_NOT_TRACK, CI, a test
+  //     runner or a temporary home).
   const suppressedBy: SuppressionReason | null = envDisabled
     ? "env-opt-out"
     : !fileEnabled
@@ -397,8 +494,8 @@ function forgetInstallId(paths: ConfigPaths, keepOptOut: boolean): void {
  * `off` writes exactly `{"enabled":false}`: the install_id is deleted, not
  * kept for later. `on` never derives an ID itself — loadConfig() does that
  * on the next load, and only when telemetry is then actually on — and keeps
- * an existing ID only when no env opt-out, DO_NOT_TRACK or CI is holding
- * telemetry off.
+ * an existing ID only when no env opt-out or automatic suppression is
+ * holding telemetry off.
  */
 export function setEnabled(
   enabled: boolean,
