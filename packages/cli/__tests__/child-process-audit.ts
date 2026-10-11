@@ -59,6 +59,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(node dist/index.js --version/--help)',
   },
+  'root-help-telemetry.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js --help | detect <dir>) with a scratch HOME and ' +
+      'XDG_CONFIG_HOME, one at a time (#450)',
+  },
   'shield/init-positional-dir.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,

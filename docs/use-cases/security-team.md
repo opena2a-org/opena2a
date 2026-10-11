@@ -12,7 +12,7 @@ You are a CISO, security engineer, or compliance analyst. Developers on your tea
 
 ## Step 1: Discover Shadow AI
 
-Run detection on a developer workstation to see what AI tools are active. This command is read-only and does not modify any files. With `"$HOME"` as the target, `detect` treats the top of the home directory as the project, so a `.mcp.json` and AI config files kept there are listed as the project's; it reads the process table and the machine-wide MCP configs under the home directory whatever the target.
+Run detection on a developer workstation to see what AI tools are active. This command changes nothing in the directory it scans. It does write to the home directory of the account that runs it: it keeps a scan count in `~/.opena2a/config.json`, creating that file on its first run, and while usage telemetry is on it stores an install ID in `~/.config/opena2a/telemetry.json` (under `$XDG_CONFIG_HOME` when that is set). With `"$HOME"` as the target, `detect` treats the top of the home directory as the project, so a `.mcp.json` and AI config files kept there are listed as the project's; it reads the process table and the machine-wide MCP configs under the home directory whatever the target.
 
 ```bash
 npx opena2a-cli detect "$HOME"
@@ -153,7 +153,7 @@ The report is the same one Step 1 prints. What `--registry` changes is the `MCP 
 
 No capture of this command is pasted here: its output depends on what the live registry holds for your servers on the day you run it, and a frozen copy of that is exactly the kind of thing the rest of this page used to get wrong. Run it and read your own.
 
-`--registry` is the only flag on this page that leaves the machine. It sends the name and asset type of each discovered MCP server and nothing else -- no file contents, no findings, no scores. Scan results are sent only if you separately opt in with `opena2a config contribute on`. A server the registry has never seen is not unsafe by that fact alone -- custom and internal servers never appear in it -- but it has had no community vetting either. Adding `--auto-scan` scans those servers locally with HackMyAgent instead, which is where the `Scanned:` label comes from.
+`--registry` is the only flag on this page that sends scan data off the machine. It sends the name and asset type of each discovered MCP server and nothing else -- no file contents, no findings, no scores. Separately from any flag, usage telemetry is on by default and sends one event for each command run: the command name, its outcome and duration, the CLI version, the platform, the Node.js major version and a persistent install ID, with no paths, file contents or findings. `opena2a --help` prints whether it is on for the account running it; `OPENA2A_TELEMETRY=off` turns it off wherever that variable is set, and `opena2a telemetry off` turns it off persistently. Scan results are sent only if you separately opt in with `opena2a config contribute on`. A server the registry has never seen is not unsafe by that fact alone -- custom and internal servers never appear in it -- but it has had no community vetting either. Adding `--auto-scan` scans those servers locally with HackMyAgent instead, which is where the `Scanned:` label comes from.
 
 ---
 
