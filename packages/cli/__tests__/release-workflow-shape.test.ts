@@ -234,7 +234,7 @@ const packScript = stepScript(workflowSource, PACK_STEP);
 const entries = roster(packScript);
 
 describe('release.yml pack-and-publish order', () => {
-  it('QGF-114.AC1 packs packages/cli last, and npm pack lists the roster in the same order', () => {
+  it('packs packages/cli last, and npm pack lists the roster in the same order', () => {
     expect(entries[entries.length - 1]).toEqual({ workspace: 'packages/cli', pkg: 'opena2a-cli' });
     // Everything ahead of it is a scoped workspace — the CLI is the only
     // unscoped package, so this pins "after all ten @opena2a/* entries"
@@ -249,11 +249,11 @@ describe('release.yml pack-and-publish order', () => {
     expect(packWorkspaces(packScript)).toEqual(entries.map((entry) => entry.workspace));
   });
 
-  it('QGF-114.AC2 publishes every @opena2a workspace before the packages that depend on it', () => {
+  it('publishes every @opena2a workspace before the packages that depend on it', () => {
     assertDependencyBeforeDependent(entries);
   });
 
-  it('QGF-114.AC3 derives every roster package from the workspace manifests, not a fixed list', () => {
+  it('derives every roster package from the workspace manifests, not a fixed list', () => {
     // Reading each manifest is what makes the ordering property a measurement
     // of the tree rather than a restatement of it. The workflow throws at pack
     // time on a name mismatch, which would abort a release mid-tag; the same
@@ -266,7 +266,7 @@ describe('release.yml pack-and-publish order', () => {
     }
   });
 
-  it('QGF-114.AC4 fails the ordering assertion on a copy that packs packages/cli first', () => {
+  it('fails the ordering assertion on a copy that packs packages/cli first', () => {
     const baseOrder = roster(stepScript(withCliPackedFirst(workflowSource), PACK_STEP));
     // The mutation moved one entry and nothing else.
     expect(baseOrder[0]).toEqual({ workspace: 'packages/cli', pkg: 'opena2a-cli' });
@@ -290,7 +290,7 @@ describe('release.yml pack-and-publish order', () => {
     expect(failure?.message).toContain('@opena2a/shared');
   });
 
-  it('QGF-114.AC5 rosters every publishable workspace exactly once, and no others', () => {
+  it('rosters every publishable workspace exactly once, and no others', () => {
     const workspaces = entries.map((entry) => entry.workspace);
     expect([...workspaces].sort()).toEqual(publishableWorkspaces().sort());
     expect(new Set(workspaces).size).toBe(workspaces.length);

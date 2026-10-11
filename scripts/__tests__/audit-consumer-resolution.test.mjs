@@ -298,7 +298,7 @@ function resolved() {
   return resolvedRun;
 }
 
-test('QGF-97.AC1 packs every unserved workspace sibling from this branch and installs the candidate through it', () => {
+test('packs every unserved workspace sibling from this branch and installs the candidate through it', () => {
   assert.ok(
     UNPUBLISHED.length > 0,
     'packages/cli declares no @opena2a/* sibling this scenario can leave unpublished'
@@ -356,7 +356,7 @@ test('QGF-97.AC1 packs every unserved workspace sibling from this branch and ins
   assert.equal(r.status, 0, `the audit failed on a clean tree\n${r.context()}`);
 });
 
-test('QGF-97.AC2 leaves a sibling the registry serves resolving from the registry', () => {
+test('leaves a sibling the registry serves resolving from the registry', () => {
   assert.ok(PUBLISHED.length > 0, 'this scenario leaves no @opena2a/* sibling published');
   const r = resolved();
   const overrides = r.install.probeManifest.overrides ?? {};
@@ -379,7 +379,7 @@ test('QGF-97.AC2 leaves a sibling the registry serves resolving from the registr
   }
 });
 
-test('QGF-97.AC3 fails on the advisory, not on resolution, when a sibling is unpublished', () => {
+test('fails on the advisory, not on resolution, when a sibling is unpublished', () => {
   assert.ok(UNPUBLISHED.length > 0, 'this scenario leaves no @opena2a/* sibling unpublished');
   const r = runGate({ ...RESOLVED_SCENARIO, audit: HIGH_ADVISORY_REPORT });
 
@@ -397,7 +397,7 @@ test('QGF-97.AC3 fails on the advisory, not on resolution, when a sibling is unp
   );
 });
 
-test('QGF-97.AC4 never packs or redirects a scoped dependency that is not a workspace sibling', () => {
+test('never packs or redirects a scoped dependency that is not a workspace sibling', () => {
   assert.ok(
     NON_SIBLINGS.length > 0,
     'every @opena2a/* dependency of packages/cli now has a workspace directory, so this case ' +
@@ -424,7 +424,7 @@ test('QGF-97.AC4 never packs or redirects a scoped dependency that is not a work
   }
 });
 
-test('QGF-97.AC5 refuses to substitute a version the manifest does not pin', () => {
+test('refuses to substitute a version the manifest does not pin', () => {
   assert.ok(
     DRIFTED.length > 0,
     'no @opena2a/* sibling pins a version its own workspace has moved past, so this case has ' +

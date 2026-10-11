@@ -277,7 +277,7 @@ function selfRegisterTableHeaders(): string[] {
 }
 
 describe('docs/use-cases -- the "Expected output" blocks are captures of the pinned build', () => {
-  it('OPA-07.AC1 the three detect audits are captures of formatText, not of a header it cannot print', () => {
+  it('the three detect audits are captures of formatText, not of a header it cannot print', () => {
     const version = pinnedVersion();
     const detectSrc = read(DETECT_SRC);
 
@@ -313,7 +313,7 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     }
   });
 
-  it('OPA-07.AC2 the CSV block carries generateAssetCsv\'s header verbatim and rows with that many columns', () => {
+  it('the CSV block carries generateAssetCsv\'s header verbatim and rows with that many columns', () => {
     const header = csvHeaderLiteral();
     const columns = header.split(',').length;
 
@@ -347,7 +347,7 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     }
   });
 
-  it('OPA-07.AC3 the self-register block prints only strings the command can produce', () => {
+  it('the self-register block prints only strings the command can produce', () => {
     const selfRegisterSrc = read(SELF_REGISTER_SRC);
     const doc = read(MCP);
 
@@ -392,7 +392,7 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
       .toContain("OpenA2A project's own tools");
   });
 
-  it('OPA-07.AC4 review-demo.tape names an init target instead of cd-ing into one maintainer\'s directory', () => {
+  it('review-demo.tape names an init target instead of cd-ing into one maintainer\'s directory', () => {
     const lines = read(TAPE).split('\n');
 
     expect(read(INDEX_SRC), 'init no longer takes a directory operand').toContain(".command('init [directory]')");
@@ -423,7 +423,7 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     expect(header.join('\n'), `${TAPE}: the header comment carries no recording date`).toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 
-  it('OPA-07.AC5 every capture is pinned to packages/cli/package.json, and no fabrication is back', () => {
+  it('every capture is pinned to packages/cli/package.json, and no fabrication is back', () => {
     const version = pinnedVersion();
     const violations: string[] = [];
 
@@ -538,7 +538,7 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     expect(problems).toEqual([]);
   });
 
-  it('OPA-07.AC5 the pinned version is derived, never written down here', () => {
+  it('the pinned version is derived, never written down here', () => {
     const self = fs.readFileSync(__filename, 'utf-8');
     expect(
       self,

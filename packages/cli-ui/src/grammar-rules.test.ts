@@ -64,14 +64,14 @@ describe("renderScore rules (OPA-03.AC2)", () => {
     { score: 250 },
   ];
 
-  it("OPA-03.AC2 renderScore first line matches ^\\d{1,3}/100( -> 100 by .+)?$ for every fixture", () => {
+  it("renderScore first line matches ^\\d{1,3}/100( -> 100 by .+)?$ for every fixture", () => {
     for (const fixture of SCORE_FIXTURES) {
       const first = renderScore(fixture, { color: false }).split("\n")[0];
       expect(first).toMatch(/^\d{1,3}\/100( -> 100 by .+)?$/);
     }
   });
 
-  it("OPA-03.AC2 renderScore output never carries a minus-delta or a letter grade", () => {
+  it("renderScore output never carries a minus-delta or a letter grade", () => {
     // grep -E ' -[0-9]|[A-F][+-]?$' over the concatenated outputs prints nothing
     const outputs = SCORE_FIXTURES.flatMap((f) => [
       renderScore(f, { color: false }),
@@ -82,7 +82,7 @@ describe("renderScore rules (OPA-03.AC2)", () => {
 });
 
 describe("renderVerdict rules (OPA-03.AC2)", () => {
-  it("OPA-03.AC2 renderVerdict is a single line with no leading blank line", () => {
+  it("renderVerdict is a single line with no leading blank line", () => {
     const outputs = [
       renderVerdict({ verdict: "safe" }),
       renderVerdict({ verdict: "blocked", summary: "1 critical finding" }),
@@ -98,7 +98,7 @@ describe("renderVerdict rules (OPA-03.AC2)", () => {
 });
 
 describe("renderFinding rules (OPA-03.AC2)", () => {
-  it("OPA-03.AC2 renderFinding carries severity, title, file:line, why, Verify:, Fix: in order", () => {
+  it("renderFinding carries severity, title, file:line, why, Verify:, Fix: in order", () => {
     const out = renderFinding(FINDING, { color: false });
     const positions = [
       out.indexOf("MEDIUM"),
@@ -112,7 +112,7 @@ describe("renderFinding rules (OPA-03.AC2)", () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  it("OPA-03.AC2 renderFinding renders at most one URL", () => {
+  it("renderFinding renders at most one URL", () => {
     const withUrl = renderFinding(FINDING, { color: false });
     expect(withUrl.match(/https?:\/\//g)).toHaveLength(1);
     const withoutUrl = renderFinding({ ...FINDING, url: undefined }, { color: false });
@@ -121,7 +121,7 @@ describe("renderFinding rules (OPA-03.AC2)", () => {
 });
 
 describe("renderProgress rules (OPA-03.AC2)", () => {
-  it("OPA-03.AC2 renderProgress writes only to the passed sink, never stdout or stderr", () => {
+  it("renderProgress writes only to the passed sink, never stdout or stderr", () => {
     const stdoutWrite = vi.spyOn(process.stdout, "write");
     const stderrWrite = vi.spyOn(process.stderr, "write");
     const writes: string[] = [];
@@ -134,7 +134,7 @@ describe("renderProgress rules (OPA-03.AC2)", () => {
     expect(stderrWrite).not.toHaveBeenCalled();
   });
 
-  it("OPA-03.AC2 renderProgress never includes the home directory in its text", () => {
+  it("renderProgress never includes the home directory in its text", () => {
     const home = os.homedir();
     const envHome = process.env.HOME;
     const writes: string[] = [];
@@ -149,7 +149,7 @@ describe("renderProgress rules (OPA-03.AC2)", () => {
 });
 
 describe("renderError rules (OPA-03.AC2)", () => {
-  it("OPA-03.AC2 renderError carries what happened, what was not changed, and one next command", () => {
+  it("renderError carries what happened, what was not changed, and one next command", () => {
     const out = renderError(
       {
         what: "Scan failed: registry unreachable (ETIMEDOUT)",
@@ -166,14 +166,14 @@ describe("renderError rules (OPA-03.AC2)", () => {
 });
 
 describe("color kill-switches (OPA-03.AC2)", () => {
-  it("OPA-03.AC2 NO_COLOR=1 yields zero ESC bytes across every renderer", () => {
+  it("NO_COLOR=1 yields zero ESC bytes across every renderer", () => {
     vi.stubEnv("NO_COLOR", "1");
     // even with color and TTY forced on, NO_COLOR wins
     const out = allRendererOutput({ color: true, isTTY: true });
     expect(out.match(/\x1b/g)).toBeNull();
   });
 
-  it("OPA-03.AC2 a non-TTY sink yields zero ESC bytes across every renderer", () => {
+  it("a non-TTY sink yields zero ESC bytes across every renderer", () => {
     vi.stubEnv("NO_COLOR", "");
     const out = allRendererOutput({ color: true, isTTY: false });
     expect(out.match(/\x1b/g)).toBeNull();
@@ -181,7 +181,7 @@ describe("color kill-switches (OPA-03.AC2)", () => {
 });
 
 describe("additive versioned surface (OPA-03.AC4)", () => {
-  it("OPA-03.AC4 version reads 0.6.0 and chalk stays the only runtime dependency", () => {
+  it("version reads 0.6.0 and chalk stays the only runtime dependency", () => {
     const pkg = JSON.parse(readFileSync(path.join(PKG_DIR, "package.json"), "utf8")) as {
       version: string;
       dependencies: Record<string, string>;
@@ -190,7 +190,7 @@ describe("additive versioned surface (OPA-03.AC4)", () => {
     expect(Object.keys(pkg.dependencies)).toEqual(["chalk"]);
   });
 
-  it("OPA-03.AC4 every base export of the barrel is still present", async () => {
+  it("every base export of the barrel is still present", async () => {
     const barrel = await import("./index.js");
     const keys = Object.keys(barrel);
     const baseExports = [
@@ -241,7 +241,7 @@ describe("additive versioned surface (OPA-03.AC4)", () => {
     expect(rendered.lines[0].command).toBe("go do");
   });
 
-  it("OPA-03.AC4 the 0.6.0 CHANGELOG entry names the seven exports and frontDoorConformance", () => {
+  it("the 0.6.0 CHANGELOG entry names the seven exports and frontDoorConformance", () => {
     const changelog = readFileSync(path.join(PKG_DIR, "CHANGELOG.md"), "utf8");
     const entry = changelog.split(/^## 0\.6\.0$/m)[1]?.split(/^## /m)[0] ?? "";
     for (const name of [
@@ -260,7 +260,7 @@ describe("additive versioned surface (OPA-03.AC4)", () => {
 });
 
 describe("envelope validation (OPA-03.AC2)", () => {
-  it("OPA-03.AC2 envelope rejects an empty or oversized nextSteps list", () => {
+  it("envelope rejects an empty or oversized nextSteps list", () => {
     const base = {
       tool: "t",
       version: "1.0.0",

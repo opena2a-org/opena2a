@@ -104,7 +104,7 @@ describe('identity', () => {
   });
 });
 
-it('QGF-304.AC3 round-trips an identity through the real fs at 0o600 under umask 022', () => {
+it('round-trips an identity through the real fs at 0o600 under umask 022', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aim-core-test-ac3-'));
   const previousUmask = process.umask(0o022);
   try {

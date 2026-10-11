@@ -62,7 +62,7 @@ const runsNpmCi = (s: Step): boolean => /(^|\s)npm ci(\s|$)/m.test(s.run ?? '');
 const GUARD_CMD = String.raw`git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'`;
 
 describe('release.yml job graph (OPA-04.AC1)', () => {
-  it('OPA-04.AC1 review sits between build and publish in the needs chain', () => {
+  it('review sits between build and publish in the needs chain', () => {
     const names = Object.keys(release.jobs);
     expect(names).toContain('build');
     expect(names).toContain('review');
@@ -76,13 +76,13 @@ describe('release.yml job graph (OPA-04.AC1)', () => {
     expect(needsOf(release.jobs['github-release'])).toEqual(['publish']);
   });
 
-  it('OPA-04.AC1 top-level permissions stay empty and review holds contents: read only', () => {
+  it('top-level permissions stay empty and review holds contents: read only', () => {
     expect(release.permissions).toEqual({});
     expect(release.jobs.review.permissions).toEqual({ contents: 'read' });
     expect(release.jobs.build.permissions).toEqual({ contents: 'read', actions: 'read' });
   });
 
-  it('OPA-04.AC1 no job other than publish carries id-token: write', () => {
+  it('no job other than publish carries id-token: write', () => {
     expect(release.jobs.publish.permissions).toEqual({ 'id-token': 'write' });
     for (const [name, job] of Object.entries(release.jobs)) {
       if (name === 'publish') continue;
@@ -94,13 +94,13 @@ describe('release.yml job graph (OPA-04.AC1)', () => {
     }
   });
 
-  it('OPA-04.AC1 publish still has no checkout', () => {
+  it('publish still has no checkout', () => {
     for (const s of steps(release.jobs.publish)) {
       expect(s.uses ?? '', 'publish must not check out the repository').not.toMatch(/checkout/);
     }
   });
 
-  it('OPA-04.AC1 review downloads npm-tarballs and verifies the manifest digest exactly as publish does', () => {
+  it('review downloads npm-tarballs and verifies the manifest digest exactly as publish does', () => {
     const download = steps(release.jobs.review).find((s) => /download-artifact/.test(s.uses ?? ''));
     expect(download?.with?.name).toBe('npm-tarballs');
 
@@ -116,7 +116,7 @@ describe('release.yml job graph (OPA-04.AC1)', () => {
     expect(reviewVerify?.run).toBe(publishVerify?.run);
   });
 
-  it('OPA-04.AC1 the review step runs the script per manifest tarball with GH_TOKEN, after npm ci --ignore-scripts', () => {
+  it('the review step runs the script per manifest tarball with GH_TOKEN, after npm ci --ignore-scripts', () => {
     const reviewSteps = steps(release.jobs.review);
     const scriptIdx = reviewSteps.findIndex((s) =>
       (s.run ?? '').includes('scripts/release-artifact-review.mjs --tarball')
@@ -148,7 +148,7 @@ describe('package-manager-config guard (OPA-04.AC4)', () => {
     ['ci.yml', ci],
   ];
 
-  it('OPA-04.AC4 every job that runs npm ci carries the guard before its install step, unconditionally', () => {
+  it('every job that runs npm ci carries the guard before its install step, unconditionally', () => {
     for (const [file, wf] of files) {
       for (const [jobName, job] of Object.entries(wf.jobs)) {
         const jobSteps = steps(job);
@@ -181,7 +181,7 @@ describe('package-manager-config guard (OPA-04.AC4)', () => {
     }
   });
 
-  it('OPA-04.AC4 the guarded jobs are exactly the installing jobs in both files', () => {
+  it('the guarded jobs are exactly the installing jobs in both files', () => {
     const installing = (wf: Workflow) =>
       Object.entries(wf.jobs)
         .filter(([, job]) => steps(job).some(runsNpmCi))
@@ -193,7 +193,7 @@ describe('package-manager-config guard (OPA-04.AC4)', () => {
     expect(installing(release)).toEqual(['build', 'review']);
   });
 
-  it('OPA-04.AC4 the release build job keeps npm ci --ignore-scripts', () => {
+  it('the release build job keeps npm ci --ignore-scripts', () => {
     const hasBare = steps(release.jobs.build).some((s) => (s.run ?? '').trim() === 'npm ci --ignore-scripts');
     expect(hasBare, 'release.yml build must install with --ignore-scripts').toBe(true);
     // And nothing in release.yml may install WITHOUT --ignore-scripts: this

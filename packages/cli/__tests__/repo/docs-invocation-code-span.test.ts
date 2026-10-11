@@ -38,10 +38,10 @@ import * as path from 'node:path';
  * The repository root, resolved from this file's own location and never from
  * `process.cwd()`.
  *
- * The cwd this suite runs under is `packages/cli`, not the root: ci.yml:65 runs
- * `npm run test` -> root package.json `... && turbo run test` -> this package's
- * package.json:12 `vitest run`, and turbo runs each package script in that
- * package's own directory. A cwd-relative `packages/cli/README.md` would
+ * The cwd this suite runs under is `packages/cli`, not the root: the ci.yml
+ * step `- run: npm run test` -> root package.json `... && turbo run test` ->
+ * this package's `"test": "vitest run"`, and turbo runs each package script
+ * in that package's own directory. A cwd-relative `packages/cli/README.md` would
  * resolve to `packages/cli/packages/cli/README.md`, which does not exist, and
  * the walk would silently read a short file list and pass having measured
  * almost nothing. The ascent is fixed because this file's location is fixed:
@@ -356,7 +356,7 @@ const UNWALKED_TAPE = { file: 'docs/images/review-demo.tape', line: 28 } as cons
 describe('every documented `npx opena2a-cli` invocation sits in a fence or a code span', () => {
   // --- AC1: the walked set, the root resolution, and the runner chain ------
 
-  it('OPA-06.AC1 resolves the repository root from this file, not from process.cwd()', () => {
+  it('resolves the repository root from this file, not from process.cwd()', () => {
     expect(REPO_ROOT).toBe(path.resolve(__dirname, '..', '..', '..', '..'));
     expect(path.relative(REPO_ROOT, __dirname).split(path.sep).join('/')).toBe(
       'packages/cli/__tests__/repo',
@@ -379,19 +379,19 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     }
   });
 
-  it('OPA-06.AC1 walks exactly README.md, packages/cli/README.md and every docs/**/*.md', () => {
+  it('walks exactly README.md, packages/cli/README.md and every docs/**/*.md', () => {
     expect(walkedFiles()).toEqual([...WALKED_SET]);
     expect(walkedFiles()).toHaveLength(9);
   });
 
-  it('OPA-06.AC1 is collected by the required check with no workflow edit', () => {
+  it('is collected by the required check with no workflow edit', () => {
     const packageDir = path.join(REPO_ROOT, 'packages', 'cli');
 
     // This file sits where the include glob looks.
     expect(path.relative(packageDir, __dirname).split(path.sep).join('/')).toBe('__tests__/repo');
     expect(fs.readdirSync(__dirname)).toContain('docs-invocation-code-span.test.ts');
 
-    // ci.yml:65 `npm run test` -> root `turbo run test` -> this package's
+    // ci.yml step `- run: npm run test` -> root `turbo run test` -> this package's
     // `vitest run` -> include `__tests__/**/*.test.ts`. Each hop, read.
     const vitestConfig = fs.readFileSync(path.join(packageDir, 'vitest.config.ts'), 'utf-8');
     expect(vitestConfig).toContain("include: ['__tests__/**/*.test.ts']");
@@ -412,18 +412,18 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(ci.split(/\r?\n/).map((l) => l.trim())).toContain('- run: npm run test');
   });
 
-  it('OPA-06.AC1 no invocation sits outside a fenced block and outside a code span', () => {
+  it('no invocation sits outside a fenced block and outside a code span', () => {
     const { bare } = classify(readWalkedSet());
     expect(bare, report(bare)).toHaveLength(0);
   });
 
-  it('OPA-06.AC1 passes with an empty exemption list', () => {
+  it('passes with an empty exemption list', () => {
     expect(EXEMPTIONS).toHaveLength(0);
   });
 
   // --- AC2: the negative case ---------------------------------------------
 
-  it('OPA-06.AC2 reports every bare-prose invocation as file:line, not only the first', () => {
+  it('reports every bare-prose invocation as file:line, not only the first', () => {
     const { fenced, codeSpan, bare } = classify(plant(readWalkedSet()));
 
     expect(bare.map((o) => `${o.file}:${o.line}`)).toEqual([
@@ -438,7 +438,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(codeSpan).toHaveLength(3);
   });
 
-  it('OPA-06.AC2 the failure message carries every violation verbatim and does not truncate', () => {
+  it('the failure message carries every violation verbatim and does not truncate', () => {
     const { bare } = classify(plant(readWalkedSet()));
     const message = report(bare);
 
@@ -454,13 +454,13 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(message).not.toMatch(/\.\.\.|and \d+ more|truncat/i);
   });
 
-  it('OPA-06.AC2 the unplanted tree is green, so the red above is the plant and nothing else', () => {
+  it('the unplanted tree is green, so the red above is the plant and nothing else', () => {
     expect(classify(readWalkedSet()).bare).toEqual([]);
   });
 
   // --- AC3: the census and the two mechanics ------------------------------
 
-  it('OPA-06.AC3 the census: 58 occurrences, 55 fenced, 3 code-span, 0 bare', () => {
+  it('the census: 58 occurrences, 55 fenced, 3 code-span, 0 bare', () => {
     const { fenced, codeSpan, bare } = classify(readWalkedSet());
 
     expect(fenced).toHaveLength(55);
@@ -475,7 +475,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(perFile).toEqual(OCCURRENCES_PER_FILE);
   });
 
-  it('OPA-06.AC3 the code-span occurrences are the ci-cd.md:529 npx-hangs row (twice) and the developer.md:245 sign step', () => {
+  it('the code-span occurrences are the ci-cd.md:529 npx-hangs row (twice) and the developer.md:245 sign step', () => {
     const { codeSpan } = classify(readWalkedSet());
     expect(codeSpan).toEqual([
       { file: CODE_SPAN_ROW.file, line: CODE_SPAN_ROW.line, text: CODE_SPAN_ROW.text },
@@ -484,7 +484,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     ]);
   });
 
-  it('OPA-06.AC3 fence tracking closes in every walked file: an even count, 180 in total', () => {
+  it('fence tracking closes in every walked file: an even count, 180 in total', () => {
     const { fenceLines } = classify(readWalkedSet());
 
     expect(Object.fromEntries(fenceLines)).toEqual(FENCE_LINES_PER_FILE);
@@ -496,13 +496,13 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect([...fenceLines.values()].reduce((a, b) => a + b, 0)).toBe(180);
   });
 
-  it('OPA-06.AC3 no tilde fence and no indented fence line in the walked set', () => {
+  it('no tilde fence and no indented fence line in the walked set', () => {
     const sources = readWalkedSet();
     expect(lineKeys(sources, (l) => /^\s*~{3}/.test(l))).toEqual([]);
     expect(lineKeys(sources, (l) => FENCE_LINE.test(l) && /^\s/.test(l))).toEqual([]);
   });
 
-  it('OPA-06.AC3 the lines carrying a double backtick are exactly the fence lines', () => {
+  it('the lines carrying a double backtick are exactly the fence lines', () => {
     const sources = readWalkedSet();
     const doubles = lineKeys(sources, (l) => l.includes(`${BACKTICK}${BACKTICK}`));
     const fences = lineKeys(sources, (l) => FENCE_LINE.test(l));
@@ -511,7 +511,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(doubles).toHaveLength(180);
   });
 
-  it('OPA-06.AC3 the admit rule discriminates on backtick parity before the match', () => {
+  it('the admit rule discriminates on backtick parity before the match', () => {
     for (const { line, admit, why } of DISCRIMINATION) {
       const { fenced, codeSpan, bare } = classify([['fixture.md', line]]);
       expect(fenced, why).toHaveLength(0);
@@ -525,7 +525,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     }
   });
 
-  it('OPA-06.AC3 an invocation in backticks is admitted whatever its operand: placement only', () => {
+  it('an invocation in backticks is admitted whatever its operand: placement only', () => {
     // A target-checking lint refuses this line — the invocation names no
     // explicit target and `from` is read as its operand. That is a different
     // criterion; here it is clean, because it sits in a code span.
@@ -542,7 +542,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
 
   // --- AC4: the instrument moves nothing ----------------------------------
 
-  it('OPA-06.AC4 the 57 occurrence lines are byte-identical to the base tree', () => {
+  it('the 57 occurrence lines are byte-identical to the base tree', () => {
     const sources = readWalkedSet();
     const rows = lineKeys(sources, (l) => INVOCATION_ONCE.test(l));
 
@@ -554,7 +554,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     ).toBe(OCCURRENCE_LINES_SHA256);
   });
 
-  it('OPA-06.AC4 the walked set is not widened: markdown only, three roots, no src', () => {
+  it('the walked set is not widened: markdown only, three roots, no src', () => {
     const walked = walkedFiles();
 
     for (const file of walked) {
@@ -569,7 +569,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(walked.filter((f) => f.endsWith('.tape'))).toEqual([]);
   });
 
-  it('OPA-06.AC4 docs/images/review-demo.tape carries a 59th invocation and is not walked', () => {
+  it('docs/images/review-demo.tape carries a 59th invocation and is not walked', () => {
     expect(walkedFiles()).not.toContain(UNWALKED_TAPE.file);
 
     // It exists and it does carry one — the exclusion is a decision about a

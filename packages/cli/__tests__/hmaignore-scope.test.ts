@@ -117,19 +117,19 @@ const rulePaths = (content: string): string[] =>
 describe('root .hmaignore scope guard (real repository state)', () => {
   const content = fs.readFileSync(rootIgnorePath, 'utf-8');
 
-  it('OPA-08.AC4 (a) no line of the root .hmaignore begins with !', () => {
+  it('no line of the root .hmaignore begins with !', () => {
     for (const line of content.split('\n')) {
       expect(line.trim().startsWith('!')).toBe(false);
     }
   });
 
-  it('OPA-08.AC4 (b) every rule line is a single path naming a file that exists', () => {
+  it('every rule line is a single path naming a file that exists', () => {
     for (const rulePath of rulePaths(content)) {
       expect(isExistingFile(rulePath), `${rulePath} is not an existing file`).toBe(true);
     }
   });
 
-  it('OPA-08.AC4 (c) every rule line is preceded by comment lines naming a check id and an issue reference', () => {
+  it('every rule line is preceded by comment lines naming a check id and an issue reference', () => {
     for (const rule of parseRules(content).rules) {
       const block = rule.comments.join('\n');
       expect(rule.comments.length, `${rule.rulePath} has no preceding comment`).toBeGreaterThan(0);
@@ -138,21 +138,21 @@ describe('root .hmaignore scope guard (real repository state)', () => {
     }
   });
 
-  it('OPA-08.AC4 (d) no rule path is under packages/cli/src/', () => {
+  it('no rule path is under packages/cli/src/', () => {
     for (const rulePath of rulePaths(content)) {
       expect(rulePath.startsWith('packages/cli/src/')).toBe(false);
     }
   });
 
-  it('OPA-08.AC4 (e) packages/cli/.hmaignore does not exist', () => {
+  it('packages/cli/.hmaignore does not exist', () => {
     expect(fs.existsSync(path.join(repoRoot, 'packages', 'cli', '.hmaignore'))).toBe(false);
   });
 
-  it('OPA-08.AC4 (f) the rule list equals the two ruled paths verbatim', () => {
+  it('the rule list equals the two ruled paths verbatim', () => {
     expect(rulePaths(content)).toEqual(RULED_PATHS);
   });
 
-  it('OPA-08.AC4 the full audit reports no offender on the committed file', () => {
+  it('the full audit reports no offender on the committed file', () => {
     expect(auditHmaIgnore(content)).toEqual([]);
   });
 });
@@ -171,22 +171,22 @@ describe('scope guard audit (fixture contents built here, both directions)', () 
     '',
   ].join('\n');
 
-  it('OPA-08.AC5 rejects a fixture carrying a ! negation line', () => {
+  it('rejects a fixture carrying a ! negation line', () => {
     const fixture = `${ruledFixture}!NEMO-007\n`;
     expect(auditHmaIgnore(fixture).map(o => o.reason)).toContain('negation-line');
   });
 
-  it('OPA-08.AC5 rejects a fixture carrying a directory-level rule', () => {
+  it('rejects a fixture carrying a directory-level rule', () => {
     const fixture = [...ruledComment, 'packages/cli/__tests__', ''].join('\n');
     expect(auditHmaIgnore(fixture).map(o => o.reason)).toContain('not-an-existing-file');
   });
 
-  it('OPA-08.AC5 rejects a fixture whose rule names a non-existent file', () => {
+  it('rejects a fixture whose rule names a non-existent file', () => {
     const fixture = [...ruledComment, 'packages/cli/no-such-file.ts', ''].join('\n');
     expect(auditHmaIgnore(fixture).map(o => o.reason)).toContain('not-an-existing-file');
   });
 
-  it('OPA-08.AC5 rejects a fixture whose rule lacks a preceding check-id/issue comment', () => {
+  it('rejects a fixture whose rule lacks a preceding check-id/issue comment', () => {
     const bare = `${RULED_PATHS[0]}\n`;
     expect(auditHmaIgnore(bare).map(o => o.reason)).toContain('no-preceding-comment');
 
@@ -197,12 +197,12 @@ describe('scope guard audit (fixture contents built here, both directions)', () 
     expect(auditHmaIgnore(noIssue).map(o => o.reason)).toContain('comment-lacks-issue-ref');
   });
 
-  it('OPA-08.AC5 rejects a fixture carrying a rule under packages/cli/src/', () => {
+  it('rejects a fixture carrying a rule under packages/cli/src/', () => {
     const fixture = [...ruledComment, 'packages/cli/src/index.ts', ''].join('\n');
     expect(auditHmaIgnore(fixture).map(o => o.reason)).toContain('rule-under-src');
   });
 
-  it('OPA-08.AC5 accepts a fixture matching the ruled shape', () => {
+  it('accepts a fixture matching the ruled shape', () => {
     expect(auditHmaIgnore(ruledFixture)).toEqual([]);
     expect(rulePaths(ruledFixture)).toEqual(RULED_PATHS);
   });

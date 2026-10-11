@@ -55,7 +55,7 @@ const isGuard = (run: string) => {
 };
 
 describe('tree-local package-manager config guard in workflows', () => {
-  it('OPA-02.AC1 every npm-ci job guards against tracked package-manager config before installing', () => {
+  it('every npm-ci job guards against tracked package-manager config before installing', () => {
     const problems: string[] = [];
 
     for (const file of WORKFLOWS) {
