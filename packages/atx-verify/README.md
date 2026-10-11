@@ -4,10 +4,10 @@ Spec-compliant **offline** verifier for ATX (Agent Trust eXtension) credentials 
 the signed, portable credential that states what an agent *is*.
 
 This is the single shared TypeScript verifier for the OpenA2A ecosystem. It is
-**byte-for-byte interoperable** with the Go
-([`opena2a-registry/pkg/atcverify`](https://github.com/opena2a-org/opena2a-registry/tree/main/pkg/atcverify))
-and Python ([`atx-conformance`](https://github.com/opena2a-standards/atx-conformance))
-reference verifiers; canonicalization agreement
+**byte-for-byte interoperable** with the Go and Python reference verifiers
+(`verifiers/go` and `verifiers/python` in
+[`atx-conformance`](https://github.com/opena2a-standards/atx-conformance));
+canonicalization agreement
 across Go == Python == TS is pinned by `atx-conformance/jcs-vectors`.
 
 ## What it does

@@ -9,8 +9,8 @@
  * RFC 8259 §4 first-wins/last-wins parser-divergence smuggling split and MUST
  * be rejected before any field is interpreted. This mirrors the strict parse
  * in the reference verifiers (atx-conformance `verifiers/go`,
- * `verifiers/python`), `opena2a-registry/pkg/atcverify`, and the Java SDK's
- * `AtxStrictParse` (agent-identity-management).
+ * `verifiers/python`) and the Java SDK's `AtxStrictParse`
+ * (agent-identity-management).
  *
  * Folding matters because a lenient struct-mapping parser (Go's encoding/json)
  * collapses a case-variant pair like `{"trustLevel":9,"TRUSTLEVEL":1}` to one

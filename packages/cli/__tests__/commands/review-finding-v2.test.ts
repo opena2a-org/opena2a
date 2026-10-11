@@ -245,7 +245,7 @@ describe('generateReviewHtml — Finding v2 wiring (renderer source assertions)'
 
   it('the renderer renders mixed evidence (both positive and absence panels)', () => {
     const html = compactReportScript(generateReviewHtml(buildReport([])));
-    // Adversarial Phase 4.5 surfaced this: HMA's HmaMixedEvidence variant
+    // Adversarial review surfaced this: HMA's HmaMixedEvidence variant
     // had no renderer branch — silent display drop. Renderer must now route
     // through positivePanel + absencePanel helpers.
     expect(html).toContain("f.evidence.kind==='mixed'");
