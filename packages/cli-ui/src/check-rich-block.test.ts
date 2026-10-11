@@ -79,7 +79,7 @@ function skillFixture(
   };
 }
 
-describe("renderCheckRichBlock — skill (mockup 3.1)", () => {
+describe("renderCheckRichBlock — skill", () => {
   it("emits header with name + verdict + score lines", () => {
     const out = renderCheckRichBlock(skillFixture());
     expect(out.header.name).toBe("opena2a/code-review-skill");
@@ -161,7 +161,7 @@ describe("renderCheckRichBlock — skill (mockup 3.1)", () => {
   });
 });
 
-describe("renderCheckRichBlock — VERIFIED clean skill (mockup 3.2)", () => {
+describe("renderCheckRichBlock — VERIFIED clean skill", () => {
   it("'No findings.' under What we observed when findings empty", () => {
     const out = renderCheckRichBlock(
       skillFixture({
@@ -204,7 +204,7 @@ describe("renderCheckRichBlock — VERIFIED clean skill (mockup 3.2)", () => {
   });
 });
 
-describe("renderCheckRichBlock — LISTED (UNSCANNED) skill (mockup 3.3)", () => {
+describe("renderCheckRichBlock — LISTED (UNSCANNED) skill", () => {
   it("renders Score: [—], no observed-findings section, 'Why no score'", () => {
     const out = renderCheckRichBlock(
       skillFixture({
@@ -249,7 +249,7 @@ describe("renderCheckRichBlock — LISTED (UNSCANNED) skill (mockup 3.3)", () =>
   });
 });
 
-describe("renderCheckRichBlock — BLOCKED MCP (mockup 3.6)", () => {
+describe("renderCheckRichBlock — BLOCKED MCP", () => {
   it("renders Recovery path + alternatives + critical primary action", () => {
     const out = renderCheckRichBlock({
       name: "malicious-mcp-xyz",
@@ -326,7 +326,7 @@ describe("renderCheckRichBlock — BLOCKED MCP (mockup 3.6)", () => {
   });
 });
 
-describe("renderCheckRichBlock — Phase 3 finding 1 (ANSI / OSC sanitization)", () => {
+describe("renderCheckRichBlock — ANSI / OSC sanitization", () => {
   it("strips ANSI escape sequences from registry-sourced narrative fields", () => {
     const out = renderCheckRichBlock(
       skillFixture({
@@ -400,7 +400,7 @@ describe("renderCheckRichBlock — Phase 3 finding 1 (ANSI / OSC sanitization)",
   });
 });
 
-describe("renderCheckRichBlock — Phase 3 finding 3 (severity-order burial)", () => {
+describe("renderCheckRichBlock — severity-order burial", () => {
   it("renders findings in severity desc order (CRITICAL never buried)", () => {
     const out = renderCheckRichBlock(
       skillFixture({
@@ -444,7 +444,7 @@ describe("renderCheckRichBlock — Phase 3 finding 3 (severity-order burial)", (
   });
 });
 
-describe("renderCheckRichBlock — Phase 3 finding 4 (BLOCKED with empty criticals)", () => {
+describe("renderCheckRichBlock — BLOCKED with empty criticals", () => {
   it("falls back to gap entries when verdictReasoning has no critical statements", () => {
     const out = renderCheckRichBlock({
       name: "edge-case",

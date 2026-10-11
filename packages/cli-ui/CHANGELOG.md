@@ -126,25 +126,25 @@
 ## 0.5.0
 
 ### Added
-- `renderCheckRichBlock(input)` — orchestrator for the v1 rich-context `check` view (skills + MCPs). Composes header, hardcoded-secrets, "What is this skill?" / "What is this MCP?", "What we observed", "Why VERIFIED/LISTED/BLOCKED", "How this skill could be misused" (skill only), threat-model questions, and the action gradient. Returns structured `{ header, sections[] }` so CLI consumers apply their own chalk palette. Closes brief `check-rich-context-skills-mcp-v1.md` §3 mockups byte-for-byte on must_match fields.
+- `renderCheckRichBlock(input)` — orchestrator for the v1 rich-context `check` view (skills + MCPs). Composes header, hardcoded-secrets, "What is this skill?" / "What is this MCP?", "What we observed", "Why VERIFIED/LISTED/BLOCKED", "How this skill could be misused" (skill only), threat-model questions, and the action gradient. Returns structured `{ header, sections[] }` so CLI consumers apply their own chalk palette. Section layout is fixed byte-for-byte on must_match fields.
 - `renderHardcodedSecretsBlock(input)` — always-renders, 3-state secrets section: detected (severity-grouped + rotation URLs + report command), clean ("None detected on the latest version (vX.Y.Z)"), unscanned ("Not yet analyzed").
 - `renderSkillNarrativeBlock(narrative)` + `renderSkillMisuseNarrative(narrative)` — skill-name / activation phrases / behaviour / declared-vs-observed permission delta / external services / persistence / tool-call counts; misuse paragraph emitted only when NanoMind v3 cached output is non-empty.
 - `renderMcpNarrativeBlock(narrative)` — opener line + tool list (column-aligned signatures) + path scope / network / persistence / auth / side effects rows.
 - `renderVerdictReasoningBlock(input)` — header derived from tier ("Why VERIFIED" / "Why VERIFIED despite findings" / "Why LISTED, not VERIFIED" / "Why BLOCKED" / "Why no score"); consumes `VerdictReasoningStatement[]` from `@opena2a/check-core`'s rule engine and applies `[ok]` / `1.` / `CRITICAL` markers.
 - `renderActionGradientBlock(input)` — column-aligned `Next` rows; first `primary` step gets the tier-driven headline tone (good / warning / critical / default).
-- Static threat-model question tables (`SKILL_THREAT_MODEL_QUESTIONS`, `MCP_THREAT_MODEL_QUESTIONS`) per brief §6, frozen so callers can't mutate.
+- Static threat-model question tables (`SKILL_THREAT_MODEL_QUESTIONS`, `MCP_THREAT_MODEL_QUESTIONS`), frozen so callers can't mutate.
 
 ### Behaviour
 - `renderCheckRichBlock` consumes the registry's `PackageNarrative` payload structurally — cli-ui has no runtime dependency on `@opena2a/check-core` (chalk-only deps preserved).
 - Section ordering is invariant across calls with the same `tier`: `Hardcoded secrets, What is this <type>?, What we observed, Why <tier>, [Recovery path, alternatives — BLOCKED only], [How this skill could be misused — skill only], Threat-model questions, Next`. The orchestrator suppresses "What we observed" on `LISTED_UNSCANNED` (no scan to surface) and on `NOT_FOUND` (different render path).
 - `LISTED_UNSCANNED` renders `Score: [—]` + `Never scanned` instead of a fabricated number.
 - `BLOCKED` renders an immutable `Recovery path: None.` line and an alternatives list (top 3) when suggestions are present.
-- No emojis, no marketing language, no superlatives — section names match brief §3 contract.
+- No emojis, no marketing language, no superlatives; section names are a fixed contract.
 
 ### Security
-- New `sanitizeForTerminal(s)` + `sanitizeArray(arr)` helpers (also exported) strip ANSI escape sequences (CSI / OSC / lone Esc), the BEL byte, NULs, DEL, and other C0 control bytes from caller-supplied strings before they enter rendered output. Preserves `\n` and `\t`. Applied at every emit site that consumes a registry-sourced narrative field — `summary`, `behaviorDescription`, `misuseNarrative`, `pathScope`, `network`, `persistence`, `auth`, `secret.maskedValue` / `file` / `rotationUrl`, `mcp.tools[].signature` / `description`, finding `description` / `fix` / `locator`, `nextStep.command` / `url`, alternatives, header publisher / license / scan-age / version label, and the package name itself. Mitigates ANSI-injection / OSC-8 hyperlink-spoof / clear-screen attacks via a malicious `secure --publish` payload. Fix for Phase 3 adversarial review finding HIGH-1.
-- `What we observed` findings now render in severity-descending order (CRITICAL first, LOW last; stable within bucket). Previously caller-supplied array order could bury a CRITICAL below a long list of LOWs. Fix for Phase 3 finding MEDIUM-3.
-- `BLOCKED` tier verdict-reasoning falls back to `gap` entries when the upstream rule engine emits zero `critical` statements (data-quality bug); falls back to a `Block reasoning unavailable — data error in upstream record.` placeholder when both are empty. Prevents an empty `Why BLOCKED` section. Fix for Phase 3 finding MEDIUM-4.
+- New `sanitizeForTerminal(s)` + `sanitizeArray(arr)` helpers (also exported) strip ANSI escape sequences (CSI / OSC / lone Esc), the BEL byte, NULs, DEL, and other C0 control bytes from caller-supplied strings before they enter rendered output. Preserves `\n` and `\t`. Applied at every emit site that consumes a registry-sourced narrative field — `summary`, `behaviorDescription`, `misuseNarrative`, `pathScope`, `network`, `persistence`, `auth`, `secret.maskedValue` / `file` / `rotationUrl`, `mcp.tools[].signature` / `description`, finding `description` / `fix` / `locator`, `nextStep.command` / `url`, alternatives, header publisher / license / scan-age / version label, and the package name itself. Mitigates ANSI-injection / OSC-8 hyperlink-spoof / clear-screen attacks via a malicious `secure --publish` payload.
+- `What we observed` findings now render in severity-descending order (CRITICAL first, LOW last; stable within bucket). Previously caller-supplied array order could bury a CRITICAL below a long list of LOWs.
+- `BLOCKED` tier verdict-reasoning falls back to `gap` entries when the upstream rule engine emits zero `critical` statements (data-quality bug); falls back to a `Block reasoning unavailable — data error in upstream record.` placeholder when both are empty. Prevents an empty `Why BLOCKED` section.
 
 ## 0.4.0
 
@@ -159,12 +159,12 @@
 ## 0.3.0
 
 ### Added
-- `renderCheckBlock(input)` — canonical `check <pkg>` output block. Emits header (name + meta), verdict line, Trust meter (gated on `scanStatus`), trust-level legend, and optional Publisher / Permissions / Revocation / Community scans / Last scan rows. Missing optional fields are hidden, never faked (closes brief `check-command-divergence.md` §F5).
-- `renderNotFoundBlock(input)` — unified package-not-found output: ecosystem-aware header, optional error hint (for translated git-style misses, §F3), Did-you-mean suggestions list, optional skill-fallback CTA. Closes §F5 shape divergence across HMA / opena2a-cli / ai-trust.
-- `renderNextSteps(input)` — Next-Steps CTAs with primary-vs-default bullet styling and tone signals. Each CLI passes its own commands; labels stay consistent across CLIs (closes §F7).
+- `renderCheckBlock(input)` — canonical `check <pkg>` output block. Emits header (name + meta), verdict line, Trust meter (gated on `scanStatus`), trust-level legend, and optional Publisher / Permissions / Revocation / Community scans / Last scan rows. Missing optional fields are hidden, never faked.
+- `renderNotFoundBlock(input)` — unified package-not-found output: ecosystem-aware header, optional error hint (for translated git-style misses), Did-you-mean suggestions list, optional skill-fallback CTA. One not-found shape across HMA / opena2a-cli / ai-trust.
+- `renderNextSteps(input)` — Next-Steps CTAs with primary-vs-default bullet styling and tone signals. Each CLI passes its own commands; labels stay consistent across CLIs.
 
 ### Behaviour
-- Trust meter is suppressed when `scanStatus !== 'completed' | 'warnings'` (closes §F6 — "a number implies measurement").
+- Trust meter is suppressed when `scanStatus !== 'completed' | 'warnings'` ("a number implies measurement").
 - Registry-canonical `trustScore` on the 0-1 scale is accepted and scaled to 0-100 for the meter; callers passing 0-100 work unchanged.
 - No new runtime dependencies; primitives return structured `{ label, value, tone }` data so CLIs apply their own chalk palette.
 

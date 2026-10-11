@@ -26,15 +26,34 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
     pattern: /\b(?:CA|CCO|CDE|CDO|CDS|CISO|CPO|CRO|CSR|DPO)[- ][Rr]ule[- ]?\d+\b/,
   },
   { name: 'private notes file', pattern: /\b(?:feedback|project|reference|user)_[a-z0-9_]+\.md\b/ },
+  // A section, mockup, baseline or session of a private planning brief. A
+  // reader cannot open the brief: state the behaviour the citation stood for.
+  {
+    name: 'planning brief citation',
+    pattern: /\bbrief (?:§|`|mockups?\b|baseline\b|acceptance\b)|\bper brief\b|\bdivergence brief\b/i,
+  },
+  { name: 'planning mockup number', pattern: /\bmockup \d/i },
+  { name: 'planning session label', pattern: /\bsession \d+[a-z]?\b/i },
+  { name: 'review finding label', pattern: /\bPhase \d+(?:\.\d+)? (?:adversarial review )?finding\b/i },
+  // A file in the registry's source tree, which is not public.
+  {
+    name: 'private registry file',
+    pattern: /\bopena2a-registry\/(?:internal|docs|cmd|migrations)\/|\bmigration \d{3}\b/i,
+  },
 ];
 
+// A finding number from a private planning brief ("F5", "§F3"). Checked under
+// packages/ only: the release-check captures and scripts use F1 and F2 as
+// their own cell ids.
+const PLANNING_FINDING_ID = /(?<![A-Za-z0-9_#\\-])§?F\d{1,2}\b(?![-.]\w)/;
+
 // A planning file or local checkout path that lives outside this repository,
-// e.g. `briefs/<name>.md`, `todo/<date>-<name>.md` or `~/workspace/...`, or
-// a checkout's local instruction file cited by path (`<repo>/CLAUDE.md`),
-// which is never tracked. A reader cannot open any of them: state the rule
-// instead.
+// e.g. `briefs/<name>.md`, `todo/<date>-<name>.md`, `todo/scripts/<name>.mjs`
+// or `~/workspace/...`, or a checkout's local instruction file cited by path
+// (`<repo>/CLAUDE.md`), which is never tracked. A reader cannot open any of
+// them: state the rule instead.
 const PRIVATE_PATH =
-  /(?<![A-Za-z0-9_.-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.md\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
+  /(?<![A-Za-z0-9_.-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.(?:md|mjs|js|ts|py|sh)\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
 
 // A decision id cited as `[AB-123]` or "per / after AB-123". Matched by that
 // citation shape, not by any `AB-123` token, so public check ids such as
@@ -85,7 +104,7 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(rel.some((f) => /\.test\.ts$|__tests__\//.test(f))).toBe(false);
   });
 
-  it('no line names an internal decision log, role tag, ruling or notes file', () => {
+  it('no line names an internal decision log, role tag, ruling, notes file, planning brief or registry file', () => {
     const hits: string[] = [];
     for (const file of files) {
       const lines = fs.readFileSync(file, 'utf-8').split('\n');
@@ -131,6 +150,24 @@ describe('shipped sources and package docs cite no internal references', () => {
     }
     expect(hits, `replace the path with the rule it points to:\n${hits.join('\n')}`).toEqual([]);
   });
+
+  it('every pattern above still matches the citation shape it was written for', () => {
+    const named = (name: string) => INTERNAL_REFERENCES.find((r) => r.name === name)!.pattern;
+    expect(named('planning brief citation').test('rules per brief §5.1')).toBe(true);
+    expect(named('planning brief citation').test('Covers the brief baseline')).toBe(true);
+    expect(named('planning mockup number').test('VERIFIED skill (mockup 3.2)')).toBe(true);
+    expect(named('planning session label').test('cli-ui 0.4.0 (session 3)')).toBe(true);
+    expect(named('review finding label').test('Phase 3 adversarial review finding HIGH-1')).toBe(true);
+    expect(named('private registry file').test('opena2a-registry/docs/telemetry-spec.md')).toBe(true);
+    expect(named('private registry file').test('stored by migration 223')).toBe(true);
+    expect(PLANNING_FINDING_ID.test('meter gating (F6)')).toBe(true);
+    expect(PLANNING_FINDING_ID.test('git-style misses, §F3')).toBe(true);
+    expect(PRIVATE_PATH.test('todo/scripts/own-package-census.mjs')).toBe(true);
+    // Ordinary prose and public references stay allowed.
+    expect(named('planning brief citation').test('a brief pause before retrying')).toBe(false);
+    expect(named('private registry file').test('opena2a-registry/pkg/atcverify')).toBe(false);
+    expect(PLANNING_FINDING_ID.test('color #F59E0B, key 0xF1, F1-score')).toBe(false);
+  });
 });
 
 // The repository is public as well: test files, release scripts, docs and
@@ -160,7 +197,7 @@ describe('tracked repository files cite no internal references', () => {
     expect(files).toContain('packages/telemetry/src/index.test.ts');
   });
 
-  it('no tracked line names an internal role tag, decision id, decision log, ruling or notes file', () => {
+  it('no tracked line names an internal role tag, decision id, decision log, ruling, notes file, planning brief or registry file', () => {
     const hits: string[] = [];
     for (const file of files) {
       const lines = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8').split('\n');
@@ -174,6 +211,18 @@ describe('tracked repository files cite no internal references', () => {
       });
     }
     expect(hits, `drop the tag or id and keep the sentence:\n${hits.join('\n')}`).toEqual([]);
+  });
+
+  it('no tracked line under packages/ cites a planning finding number', () => {
+    const hits: string[] = [];
+    for (const file of files.filter((f) => f.startsWith('packages/'))) {
+      const lines = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8').split('\n');
+      lines.forEach((line, i) => {
+        const m = PLANNING_FINDING_ID.exec(line);
+        if (m) hits.push(`${file}:${i + 1}: "${m[0]}"`);
+      });
+    }
+    expect(hits, `drop the number and state the behaviour it stood for:\n${hits.join('\n')}`).toEqual([]);
   });
 
   it('no tracked line points to a private planning file or local path', () => {

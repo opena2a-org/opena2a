@@ -20,7 +20,7 @@ const baseSecret = (overrides: Partial<HardcodedSecret> = {}): HardcodedSecret =
 });
 
 describe("SECRET_ROTATION_TABLE", () => {
-  it("includes the v1 brief baseline credential types", () => {
+  it("includes the v1 baseline credential types", () => {
     const required = [
       "anthropic_api_key",
       "openai_api_key",

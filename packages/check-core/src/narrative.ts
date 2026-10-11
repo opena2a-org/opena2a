@@ -2,8 +2,7 @@
  * Package narrative — rich-context payload that powers the `check`
  * skill+mcp v1 view in the OpenA2A CLI fleet (HMA, opena2a-cli, ai-trust).
  *
- * Wire shape mirrors the registry's `package_narratives` row (see
- * opena2a-registry/internal/domain/package_narrative.go and migration 223).
+ * Wire shape mirrors the registry's `package_narratives` row.
  * v1 covers `skill` and `mcp` artifact types only; npm/PyPI/A2A artifacts
  * skip the rich-context view and fall back to the existing 0.18.3 / M3
  * block plus a one-line "rich-context coming in v2" footer.
@@ -14,10 +13,10 @@
 
 /**
  * Top-level narrative shape returned by GET /api/v1/trust/narrative
- * and rendered by `renderCheckRichBlock` (cli-ui 0.4.0, session 3).
+ * and rendered by `renderCheckRichBlock` (cli-ui 0.4.0).
  *
- * Exactly one of `skill` or `mcp` is set, matching the SQL CHECK
- * constraint in migration 223.
+ * Exactly one of `skill` or `mcp` is set, matching the registry's SQL
+ * CHECK constraint on the row.
  */
 export interface PackageNarrative {
   /** Bumps when the wire schema breaks. v1 = 1. */

@@ -66,7 +66,7 @@ function headerForTier(
 ): string {
   switch (tier) {
     case "VERIFIED":
-      // Mockup 3.5 path: "Why VERIFIED despite findings" when there
+      // "Why VERIFIED despite findings" when there
       // are gaps alongside positives. Pure-clean is just "Why VERIFIED".
       if (hasGaps && hasPositives) return "Why VERIFIED despite findings";
       return "Why VERIFIED";
@@ -150,7 +150,7 @@ export function renderVerdictReasoningBlock(
   }
 
   // VERIFIED + LISTED tiers — positives first, then gaps. Numbered
-  // when 2+ gaps exist (matches mockup 3.1 which numbers 3 items).
+  // when 2+ gaps exist.
   for (const p of positives) lines.push(renderPositive(p.text));
 
   const numbered = gaps.length >= 2;

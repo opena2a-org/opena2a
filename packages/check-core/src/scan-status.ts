@@ -4,7 +4,7 @@
  *
  *   - `"completed"` — render the Security meter with the numeric score.
  *   - `"warnings"`  — render the meter with a warnings chrome.
- *   - `undefined`   — suppress the meter (F6: a number implies measurement;
+ *   - `undefined`   — suppress the meter (a number implies measurement;
  *     don't show one for pending/failed/unknown states).
  */
 export function mapScanStatusForMeter(status?: string): "completed" | "warnings" | undefined {

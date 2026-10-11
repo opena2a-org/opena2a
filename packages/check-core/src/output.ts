@@ -101,8 +101,8 @@ export interface BuildNotFoundInput {
 }
 
 /**
- * Build the canonical not-found JSON shape. Closes F2 (three different
- * not-found shapes) by giving all consumers a single builder.
+ * Build the canonical not-found JSON shape. Replaces three different
+ * not-found shapes by giving all consumers a single builder.
  */
 export function buildNotFoundOutput(input: BuildNotFoundInput): NotFoundOutput {
   const { name, ecosystem, errorHint, suggestions, error, nextSteps } = input;

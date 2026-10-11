@@ -59,7 +59,7 @@ describe("renderNotFoundBlock — skill fallback", () => {
 });
 
 describe("renderNotFoundBlock — error hint", () => {
-  it("emits the error hint ahead of suggestions and fallback (F3 translation)", () => {
+  it("emits the error hint ahead of suggestions and fallback (git-shorthand translation)", () => {
     const out = renderNotFoundBlock({
       pkg: "anthropic/code-review",
       errorHint: "Looks like a git path — use @scope/name for npm packages.",

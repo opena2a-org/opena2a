@@ -28,7 +28,7 @@ export interface NotFoundBlockInput {
   skillFallback?: { available: boolean; command: string };
   /**
    * Translated error hint for cases like `anthropic/code-review` being
-   * mistaken for a git remote (F3 in the divergence brief). Passed through
+   * mistaken for a git remote. Passed through
    * verbatim when provided.
    */
   errorHint?: string;

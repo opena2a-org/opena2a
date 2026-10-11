@@ -134,7 +134,7 @@ export function renderActionGradientBlock(
     let row: string;
     if (value.length === 0) {
       // No command / URL — render label only without trailing colon.
-      // (Mockup 3.6: "Stop:  Do NOT install" — but "Do NOT install"
+      // (BLOCKED view: "Stop:  Do NOT install" — but "Do NOT install"
       // is the label-only directive that ships as `command`. If a
       // step has truly no value we strip the colon.)
       row = safeLabel;

@@ -7,7 +7,7 @@
  *
  * Lives in @opena2a/check-core so HMA, opena2a-cli, and ai-trust share
  * one implementation. Output is consumed by `renderCheckRichBlock` in
- * @opena2a/cli-ui (session 3) and embedded in the registry-stored
+ * @opena2a/cli-ui and embedded in the registry-stored
  * `PackageNarrative` so re-renders are byte-stable across CLIs.
  *
  * The hardcoded-secrets enrichment path (rotationUrl / rotationCommand)
@@ -28,7 +28,7 @@ import { enrichSecretRotation } from "./secret-rotation.js";
 /**
  * Trust verdict produced by the registry. Mirrors the user-facing trust
  * tier labels rendered in the `check` block header. `LISTED_UNSCANNED`
- * is the LISTED-with-no-scan state (mockup 3.3). `NOT_FOUND` returns
+ * is the LISTED-with-no-scan state. `NOT_FOUND` returns
  * an entirely different render path; the rule engine still produces
  * spelling-suggestion next-steps for it.
  */
@@ -182,7 +182,7 @@ export function runRuleEngine(input: RuleEngineInput): RuleEngineOutput {
  * Compose the verdict-reasoning statement list. Entries appear in the
  * order they are pushed; the renderer renders verbatim, no sorting.
  *
- * Per brief §5.1:
+ * Statements per tier:
  *   VERIFIED → positives only (the gaps are absent or upgraded away)
  *   LISTED   → gaps that block VERIFIED, with optional positives that
  *              still hold (registry-confirmed publisher, etc.)
@@ -370,7 +370,7 @@ function permissionsMatchExactly(perms: PermissionStatus[]): boolean {
 
 /**
  * Compose the action gradient. Branches on `verdict × scanStatus ×
- * artifactType`. Brief §5.2 lists the canonical combinations; the
+ * artifactType`. The branches below cover the canonical combinations; the
  * function falls through to a sane default when an unexpected tuple
  * shows up rather than throwing.
  */
