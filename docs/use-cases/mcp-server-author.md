@@ -5,7 +5,7 @@ You develop or maintain MCP (Model Context Protocol) servers. You want to ensure
 **Time estimate:** 10 minutes for a full audit, signing, and registration.
 
 **Prerequisites:**
-- Node.js 18 or later
+- Node.js 20.19 or later
 - An MCP server project directory
 - npm account (for publishing and trust verification)
 

@@ -6,7 +6,7 @@ You want to automate AI security checks in your CI/CD pipeline. This guide cover
 
 **Prerequisites:**
 - A GitHub repository
-- Node.js 18 or later available in your CI environment
+- Node.js 20.19 or later available in your CI environment
 - Familiarity with GitHub Actions (or equivalent CI system)
 
 ---
@@ -432,7 +432,7 @@ version: 2.1
 jobs:
   ai-security:
     docker:
-      - image: cimg/node:20.0
+      - image: cimg/node:20.19
     steps:
       - checkout
       - run:

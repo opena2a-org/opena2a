@@ -51,7 +51,7 @@
   ],
   "homepage": "https://github.com/opena2a-org/opena2a/tree/main/packages/cli",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   },
   "license": "Apache-2.0",
   "repository": {
