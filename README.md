@@ -205,11 +205,11 @@ Once `opena2a identity integrate` runs once, every event the OpenA2A toolchain c
 opena2a identity audit --limit 200
 # 200 most recent events: credential injections, file accesses, config
 # changes, scan findings, ARP runtime events. All in one timestamp-
-# ordered JSON-lines view, sourced from Secretless, HackMyAgent,
-# ConfigGuard, Shield, and ARP.
+# ordered table, sourced from Secretless, HackMyAgent, ConfigGuard,
+# Shield, and ARP.
 
-opena2a identity audit | jq 'select(.result == "denied")'
-# just the denies
+jq 'select(.result == "denied")' ~/.opena2a/aim-core/audit.jsonl
+# just the denies, read from the log file
 ```
 
 The audit log lives at `~/.opena2a/aim-core/audit.jsonl`. Append-only. Rotation at 50 MB, last 5 generations kept. Forward to Splunk or Sentinel via the standard tail-and-forward pattern.
