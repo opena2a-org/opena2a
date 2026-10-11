@@ -158,6 +158,14 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(node dist/index.js mcp sign|verify ...), one at a time (#344)',
   },
+  'docs/mcp-server-author-ai-trust.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node <installed ai-trust bin> [<command>] --help, and check . against a closed ' +
+      'local port), spawnSync(jq --version), and spawnSync(bash -e -c <the gate step in the guide>) ' +
+      'with npx replaced by a stand-in, one at a time (#449)',
+  },
   'cited-recovery-verbs.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
