@@ -6,11 +6,11 @@ import {
 } from "./threat-model-questions.js";
 
 describe("threat-model questions — static templates", () => {
-  it("skill has 3 questions per brief §6.1", () => {
+  it("skill has 3 questions", () => {
     expect(SKILL_THREAT_MODEL_QUESTIONS).toHaveLength(3);
   });
 
-  it("mcp has 3 questions per brief §6.2", () => {
+  it("mcp has 3 questions", () => {
     expect(MCP_THREAT_MODEL_QUESTIONS).toHaveLength(3);
   });
 

@@ -15,7 +15,7 @@ const secondary = (label: string, command?: string): NextStepLike => ({
   command,
 });
 
-describe("action-gradient — VERIFIED clean (mockup 3.2)", () => {
+describe("action-gradient — VERIFIED clean", () => {
   it("renders aligned label columns and good tone on first primary", () => {
     const out = renderActionGradientBlock({
       tier: "VERIFIED",
@@ -37,7 +37,7 @@ describe("action-gradient — VERIFIED clean (mockup 3.2)", () => {
   });
 });
 
-describe("action-gradient — LISTED skill (mockup 3.1)", () => {
+describe("action-gradient — LISTED skill", () => {
   it("renders three rows aligned to the longest label", () => {
     const out = renderActionGradientBlock({
       tier: "LISTED",
@@ -60,7 +60,7 @@ describe("action-gradient — LISTED skill (mockup 3.1)", () => {
   });
 });
 
-describe("action-gradient — BLOCKED (mockup 3.6)", () => {
+describe("action-gradient — BLOCKED", () => {
   it("renders critical tone on first primary", () => {
     const out = renderActionGradientBlock({
       tier: "BLOCKED",

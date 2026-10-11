@@ -25,7 +25,7 @@ export type ThreatModelArtifactType = "skill" | "mcp";
  * Resolve the static template for a given artifact type. Returns a
  * frozen list — callers must not mutate. Returns an empty list for
  * artifact types without v1 templates (npm/pypi/a2a fall back to the
- * legacy renderer + footer per brief §3.8, so they shouldn't reach
+ * legacy renderer + footer, so they shouldn't reach
  * this function in practice).
  */
 export function threatModelQuestionsFor(

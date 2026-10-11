@@ -59,7 +59,7 @@ export interface ScanResult {
 /**
  * A skill-resolver result — HMA's `@anthropic/code-review` fallback path.
  * ai-trust and opena2a-cli do not inject a skill adapter in 0.1.0
- * (skill handling is HMA-only per F4 of the check-command-divergence brief).
+ * (skill handling is HMA-only).
  */
 export interface SkillResult {
   name: string;
@@ -87,7 +87,7 @@ export interface ParsedCheckInput {
   /** Normalized package/resource name (e.g. `pip:requests` → `requests`). */
   normalizedName: string;
   /** True when the shape looks like a git shorthand (`user/repo`) that
-   * npm's downloader will try to clone (F3 of the divergence brief). */
+   * npm's downloader will try to clone. */
   isGitShorthand: boolean;
   /** True when the raw input had the `@scope/` npm prefix. */
   isScoped: boolean;
@@ -177,7 +177,7 @@ export interface CheckOutput {
    * contract holds when narrative is absent.
    *
    * Renderers that don't know about narrative ignore the field. cli-ui
-   * 0.4.0 (session 3) introduces `renderCheckRichBlock` to consume it.
+   * 0.4.0 introduces `renderCheckRichBlock` to consume it.
    */
   narrative?: PackageNarrative;
 }

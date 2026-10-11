@@ -30,7 +30,7 @@ Carries the --nanomind advisory escalation channel through `check --json`
 Adds the rich-context narrative wire types, the static secret-rotation
 lookup table, and the deterministic rule engine for verdict reasoning +
 action gradient. Drives the `check` skill+mcp v1 view rendered by
-`renderCheckRichBlock` in `@opena2a/cli-ui` 0.4.0 (session 3).
+`renderCheckRichBlock` in `@opena2a/cli-ui` 0.4.0.
 
 ### Added
 - `PackageNarrative` + `SkillNarrative` + `McpNarrative` + supporting
@@ -38,30 +38,29 @@ action gradient. Drives the `check` skill+mcp v1 view rendered by
   `PermissionStatus`, `ToolCallCount`, `VerdictReasoningStatement`,
   `NextStep`, `ArtifactType`, `SecretSeverity`,
   `PermissionDeltaStatus`). Mirrors the `package_narratives` row stored
-  by `opena2a-registry` migration 223.
+  by the OpenA2A Registry.
 - `SECRET_ROTATION_TABLE` + `lookupSecretRotation(type)` +
   `enrichSecretRotation(secret)` — credential-type → rotation
-  URL/command lookup. Covers the brief baseline (anthropic, openai, aws,
+  URL/command lookup. Covers the baseline types (anthropic, openai, aws,
   github, generic_bearer, private_key, database_url) plus three
   high-frequency types from HMA's existing corpus (slack_bot_token,
   gcp_service_account_key, stripe_secret_key) and the unknown fallback.
 - `runRuleEngine(input)` — pure, deterministic
   `(RuleEngineInput) -> { verdictReasoning, nextSteps,
   enrichedSecrets, hardcodedSecretsBlock }`. Verdict reasoning rules
-  per brief §5.1 (positive / gap / critical statements per tier).
-  Action-gradient rules per brief §5.2 (verdict × scanStatus ×
-  artifactType). No NanoMind, no I/O — same input always produces the
+  emit positive / gap / critical statements per tier. Action-gradient
+  rules branch on verdict × scanStatus × artifactType. No NanoMind, no I/O — same input always produces the
   same output.
 - `CheckOutput.narrative?: PackageNarrative` — optional rich-context
   payload, emitted as the LAST key by `buildCheckOutput` so existing
-  byte-equality parity (F1) holds when narrative is absent.
+  byte-equality parity holds when narrative is absent.
 
 ### Unblocks
-- Brief acceptance criteria 4, 5, 6, 8, 10 (verdict reasoning + action
-  gradient + hardcoded-secrets block determinism).
-- Session 3 (cli-ui 0.4.0 rendering) — consumes `runRuleEngine` output
+- Deterministic verdict reasoning, action gradient and hardcoded-secrets
+  block output.
+- cli-ui 0.4.0 rendering: consumes `runRuleEngine` output
   via `PackageNarrative.verdictReasoning` + `nextSteps`.
-- Session 2c (HMA semantic-compiler emission) — uses the wire types to
+- HMA semantic-compiler emission: uses the wire types to
   build the `PackageNarrative` payload that `secure --publish` sends to
   the registry.
 
