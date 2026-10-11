@@ -2,8 +2,6 @@
  * MCP narrative block — renders "What is this MCP?" with tool list,
  * path/network/persistence/auth scope, and side effects.
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§3.4-§3.6).
- *
  * The opening prose ("Filesystem MCP server. Exposes 7 tools to a
  * connected agent:") is intentionally minimal in v1 — the McpNarrative
  * type has no descriptive `behaviorDescription` field today, so the

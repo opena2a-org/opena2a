@@ -176,8 +176,6 @@ export interface CheckOutput {
    * AFTER `analystFindings` so the existing 0.1.0 byte-equality parity
    * contract holds when narrative is absent.
    *
-   * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§4)
-   *
    * Renderers that don't know about narrative ignore the field. cli-ui
    * 0.4.0 (session 3) introduces `renderCheckRichBlock` to consume it.
    */

@@ -9,8 +9,8 @@ import nacl from "tweetnacl";
  * - `ci` — a continuous-integration publisher we operate.
  * - `partner` — a vetted external partner publishing under our banner.
  *
- * See `todo/2026-06-06-first-party-publish-signing-contract.md` and the registry's
- * `internal/application/publish_service.go` (resolveSource / isPrivilegedProvenance).
+ * The registry enforces this in `internal/application/publish_service.go`
+ * (resolveSource / isPrivilegedProvenance).
  */
 export type PrivilegedSource = "first_party_scanner" | "ci" | "partner";
 export type ScanSource = PrivilegedSource | "community";

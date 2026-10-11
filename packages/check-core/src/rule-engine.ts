@@ -1,8 +1,6 @@
 /**
  * Deterministic rule engine for `check` rich-context.
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§5)
- *
  * Pure function: `(RuleEngineInput) -> { verdictReasoning, nextSteps }`.
  * Same inputs always produce the same outputs — there is no NanoMind
  * call, no I/O, and no time-of-day dependency in this path.

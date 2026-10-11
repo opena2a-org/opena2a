@@ -1,8 +1,6 @@
 /**
  * Rich-context check block — orchestrates the v1 "skill" / "mcp" view.
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§3).
- *
  * Returns a structured `RenderedRichBlock` that the CLI consumer
  * iterates to emit dividers + labelled lines + tone-applied colors.
  * Section ordering matches the brief mockups byte-for-byte on the

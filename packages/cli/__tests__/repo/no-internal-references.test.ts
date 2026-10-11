@@ -18,8 +18,13 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   { name: 'internal decision log', pattern: /COUNCIL_LEDGER/ },
   { name: 'internal role tag', pattern: /\bCHIEF-[A-Z]{2,4}\b/ },
   { name: 'internal ruling', pattern: /design-function ruling/ },
-  { name: 'private notes file', pattern: /\bfeedback_[a-z0-9_]+\.md\b/ },
+  { name: 'private notes file', pattern: /\b(?:feedback|project|reference|user)_[a-z0-9_]+\.md\b/ },
 ];
+
+// A planning file or local checkout path that lives outside this repository,
+// e.g. `briefs/<name>.md`, `todo/<date>-<name>.md` or `~/workspace/...`.
+// A reader of a published package cannot open it: state the rule instead.
+const PRIVATE_PATH = /(?<![A-Za-z0-9_.-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.md\b|~\/workspace\//;
 
 // A decision id cited as `[AB-123]` or "per / after AB-123". Matched by that
 // citation shape, not by any `AB-123` token, so public check ids such as
@@ -100,6 +105,21 @@ describe('shipped sources and package docs cite no internal references', () => {
       });
     }
     expect(hits, `drop the id and keep the sentence:\n${hits.join('\n')}`).toEqual([]);
+  });
+
+  it('no shipped source, README or changelog points to a private planning file or local path', () => {
+    const hits: string[] = [];
+    for (const file of files) {
+      const lines = fs.readFileSync(file, 'utf-8').split('\n');
+      lines.forEach((line, i) => {
+        const m = PRIVATE_PATH.exec(line);
+        if (m) {
+          const rel = path.relative(REPO_ROOT, file).split(path.sep).join('/');
+          hits.push(`${rel}:${i + 1}: "${m[0]}"`);
+        }
+      });
+    }
+    expect(hits, `replace the path with the rule it points to:\n${hits.join('\n')}`).toEqual([]);
   });
 });
 

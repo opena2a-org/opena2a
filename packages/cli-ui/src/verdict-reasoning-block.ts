@@ -2,8 +2,6 @@
  * Verdict-reasoning block — renders the rule-engine output verbatim
  * under "Why VERIFIED / LISTED / BLOCKED / no score".
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§5).
- *
  * The rule engine in `@opena2a/check-core` produces a deterministic
  * `VerdictReasoningStatement[]`. This renderer applies the markers:
  *   - `positive` → `[ok]  <text>`

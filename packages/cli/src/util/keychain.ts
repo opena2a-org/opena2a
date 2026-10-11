@@ -20,8 +20,7 @@
  * window (~50ms per call). Linux `secret-tool` reads from stdin and is not
  * affected. The argv-exposure window is the same threat surface every
  * shell-out keychain tool faces (gh, pass, aws-vault, secretless-ai). Proper
- * fix requires a NAPI binding — tracked in
- * todo/2026-04-30-cli-auth-keychain-storage-P1.md. Net effect over plaintext
+ * fix requires a NAPI binding, which is not built yet. Net effect over plaintext
  * file storage: 30-90 days of at-rest exposure replaced with ~50ms windows
  * per login/refresh, observable only by a same-user attacker actively polling
  * `ps -ww`. Strictly better against the dominant attack vectors (file
@@ -291,7 +290,7 @@ export function getKeychain(): KeychainBackend {
       break;
     default:
       // Windows + others fall back to file-mode for now. cmdkey support is
-      // tracked separately (todo/2026-04-30-cli-auth-keychain-storage-P1.md).
+      // not built yet.
       cached = new NullKeychain();
   }
   return cached;

@@ -1,8 +1,6 @@
 /**
  * Static credential-type → rotation-guidance lookup.
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§4.1, §7)
- *
  * Drives the "Rotate at: ..." line in the hardcoded-secrets render block.
  * Rule engine calls `enrichSecretRotation` on each detected secret to
  * populate `rotationUrl` / `rotationCommand` deterministically.
