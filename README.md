@@ -103,7 +103,7 @@ npm view opena2a-cli dist.attestations --json
 # Expects non-empty result with predicateType "https://slsa.dev/provenance/v1"
 ```
 
-For local CLI integrity (post-install tamper), `opena2a status` reports the binary signature state. `opena2a shield selfcheck` runs the full self-attestation against the embedded manifest.
+No command compares the installed files of `opena2a-cli` with the published package; the package carries no file manifest to check them against. `opena2a shield selfcheck`, and the `Integrity` line of `opena2a status` that repeats its verdict, check Shield's own state: the policy hash, the shell hook, the event-log chain, the node executable path, and the hashes Shield recorded for its policy, scan and cache files. `opena2a verify` computes the SHA-256 of one entry file each for `hackmyagent`, `secretless-ai`, `aibrowserguard` and `ai-trust` and asks the registry whether that hash matches its record; it prints `no data` when the registry returns neither a match nor a mismatch, and it checks `opena2a-cli` only when run as `opena2a verify --package opena2a-cli`. To check the registry's tarball for a version against its provenance attestation, see [Verifying OpenA2A npm packages](docs/verifying-npm-packages.md).
 
 Identity files (`~/.opena2a/aim-core/identity.json`) are written `mode 0600`. OAuth tokens live in the OS keychain by default. `~/.opena2a/auth.json` stores metadata only.
 

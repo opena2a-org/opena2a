@@ -1,7 +1,9 @@
 /**
- * opena2a verify -- Verify binary integrity of installed packages.
- * Computes SHA-256 hashes of local artifacts and compares against
- * registry-published hashes for tamper detection.
+ * opena2a verify -- Look up installed OpenA2A tools in the registry.
+ * Computes the SHA-256 of each package's entry file (one file, not the
+ * installed tree) and asks the registry whether that hash matches its record.
+ * The default list does not include opena2a-cli itself, and nothing here
+ * checks the CLI's own installed files.
  */
 
 import { createHash } from 'node:crypto';
@@ -47,7 +49,8 @@ export interface ResolvedPackage {
 
 // --- Constants ---
 
-const VERIFIABLE_PACKAGES = [
+/** Checked when no --package is given. The verify help names each one. */
+export const VERIFIABLE_PACKAGES = [
   'hackmyagent', 'secretless-ai', 'aibrowserguard', 'ai-trust',
 ];
 
@@ -93,7 +96,7 @@ export async function verify(options: VerifyOptions): Promise<number> {
   const isCi = options.ci ?? false;
 
   if (!isJson && !isCi) {
-    process.stdout.write(bold('Verifying binary integrity of OpenA2A packages') + '\n\n');
+    process.stdout.write(bold('Looking up installed OpenA2A package hashes in the registry') + '\n\n');
   }
 
   const results: VerifyResult[] = [];
