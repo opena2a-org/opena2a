@@ -21,7 +21,7 @@ const ALL_PROPERTIES = [
 
 describe("frontDoorConformance self-test (OPA-03.AC3)", () => {
   it(
-    "OPA-03.AC3 reports the conforming fixture all-pass across the five properties",
+    "reports the conforming fixture all-pass across the five properties",
     async () => {
       const result = await frontDoorConformance({
         bin: path.join(FIXTURES, "conforming-cli.cjs"),
@@ -35,7 +35,7 @@ describe("frontDoorConformance self-test (OPA-03.AC3)", () => {
   );
 
   it(
-    "OPA-03.AC3 names every violated property on the violating fixture",
+    "names every violated property on the violating fixture",
     async () => {
       const result = await frontDoorConformance({
         bin: path.join(FIXTURES, "violating-cli.cjs"),
@@ -51,7 +51,7 @@ describe("frontDoorConformance self-test (OPA-03.AC3)", () => {
   );
 
   it(
-    "OPA-03.AC3 reports the observed value for each property, pass or fail",
+    "reports the observed value for each property, pass or fail",
     async () => {
       const result = await frontDoorConformance({
         bin: path.join(FIXTURES, "conforming-cli.cjs"),

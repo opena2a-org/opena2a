@@ -33,7 +33,7 @@ function sourcedMaxLiveChildren(): number {
 }
 
 describe('vitest worker-cap derivation', () => {
-  it('QGF-40.AC4 yields at least two workers at pidsMax=512 with four or more CPUs', () => {
+  it('yields at least two workers at pidsMax=512 with four or more CPUs', () => {
     expect(deriveMaxWorkers(512, 4)).toBeGreaterThanOrEqual(2);
     expect(deriveMaxWorkers(512, 16)).toBeGreaterThanOrEqual(2);
     // The contract's arithmetic bound behind that result: at 512 pids, two

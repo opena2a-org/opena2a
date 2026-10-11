@@ -48,7 +48,7 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-it('QGF-304.AC1 creates identity.json at 0o600 under umask 022 with every chmod inert', () => {
+it('creates identity.json at 0o600 under umask 022 with every chmod inert', () => {
   makeChmodsInert();
   try {
     withUmask(0o022, () => createIdentity(tmpDir, 'test-agent'));
@@ -59,7 +59,7 @@ it('QGF-304.AC1 creates identity.json at 0o600 under umask 022 with every chmod 
   expect(modeOf(path.join(tmpDir, 'identity.json'))).toBe(0o600);
 });
 
-it('QGF-304.AC2 creates identity.json at 0o600 under umask 000 with every chmod inert and leaves no tmp file', () => {
+it('creates identity.json at 0o600 under umask 000 with every chmod inert and leaves no tmp file', () => {
   makeChmodsInert();
   try {
     withUmask(0o000, () => createIdentity(tmpDir, 'test-agent'));

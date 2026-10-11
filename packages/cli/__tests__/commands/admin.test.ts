@@ -332,7 +332,7 @@ describe('admin -- key safety & host pinning', () => {
 });
 
 describe('admin sensors -- interactive confirm (TTY stdin, no --yes, no --ci, text output)', () => {
-  it('QGF-305.AC4 approve calls _internals.approve exactly once when the confirm input supplies y', async () => {
+  it('approve calls _internals.approve exactly once when the confirm input supplies y', async () => {
     const spy = vi.spyOn(_internals, 'approve').mockResolvedValue({ ok: true, status: 200, data: { sensorId: SAMPLE_ID, state: 'verified' } });
     const restore = withTtyStdinAnswer('y');
     let result: { exitCode: number; out: string; err: string };
@@ -350,7 +350,7 @@ describe('admin sensors -- interactive confirm (TTY stdin, no --yes, no --ci, te
     expect(result.exitCode).toBe(0);
   });
 
-  it('QGF-305.AC4 approve prints Aborted., returns 1 and does not call _internals.approve when the confirm input supplies n', async () => {
+  it('approve prints Aborted., returns 1 and does not call _internals.approve when the confirm input supplies n', async () => {
     const spy = vi.spyOn(_internals, 'approve');
     const restore = withTtyStdinAnswer('n');
     let result: { exitCode: number; out: string; err: string };
@@ -365,7 +365,7 @@ describe('admin sensors -- interactive confirm (TTY stdin, no --yes, no --ci, te
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('QGF-305.AC4 reject calls _internals.reject exactly once when the confirm input supplies y', async () => {
+  it('reject calls _internals.reject exactly once when the confirm input supplies y', async () => {
     vi.spyOn(_internals, 'listPending').mockResolvedValue({ ok: true, status: 200, data: { pending: pending(), count: 1 } });
     const spy = vi.spyOn(_internals, 'reject').mockResolvedValue({ ok: true, status: 200, data: {} });
     const restore = withTtyStdinAnswer('y');
@@ -383,7 +383,7 @@ describe('admin sensors -- interactive confirm (TTY stdin, no --yes, no --ci, te
     expect(result.exitCode).toBe(0);
   });
 
-  it('QGF-305.AC4 reject prints Aborted., returns 1 and does not call _internals.reject when the confirm input supplies n', async () => {
+  it('reject prints Aborted., returns 1 and does not call _internals.reject when the confirm input supplies n', async () => {
     vi.spyOn(_internals, 'listPending').mockResolvedValue({ ok: true, status: 200, data: { pending: pending(), count: 1 } });
     const spy = vi.spyOn(_internals, 'reject');
     const restore = withTtyStdinAnswer('n');

@@ -230,7 +230,7 @@ describe('guard-snapshots', () => {
     expect(result.resigned).toBe(1);
   });
 
-  it('QGF-305.AC3 resign in interactive mode re-signs when the confirm input supplies y', async () => {
+  it('resign in interactive mode re-signs when the confirm input supplies y', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
     await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"modified"}');
@@ -253,7 +253,7 @@ describe('guard-snapshots', () => {
     expect(verifyExit).toBe(0);
   });
 
-  it('QGF-305.AC3 resign in interactive mode cancels and leaves the store unchanged when the confirm input supplies n', async () => {
+  it('resign in interactive mode cancels and leaves the store unchanged when the confirm input supplies n', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
     await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"modified"}');

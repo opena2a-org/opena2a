@@ -36,7 +36,7 @@ function progressText(input: Parameters<typeof renderProgress>[0]): string {
 }
 
 describe("grammar exports (OPA-03.AC1)", () => {
-  it("OPA-03.AC1 grammar module exports exactly the seven grammar names", async () => {
+  it("grammar module exports exactly the seven grammar names", async () => {
     const grammar = await import("./grammar.js");
     expect(Object.keys(grammar).sort()).toEqual([
       "envelope",
@@ -49,7 +49,7 @@ describe("grammar exports (OPA-03.AC1)", () => {
     ]);
   });
 
-  it("OPA-03.AC1 the barrel re-exports all seven grammar names", async () => {
+  it("the barrel re-exports all seven grammar names", async () => {
     const barrel = await import("./index.js");
     const keys = Object.keys(barrel);
     for (const name of [
@@ -138,7 +138,7 @@ describe("colored form strips back to the plain golden (OPA-03.AC1)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("OPA-03.AC1 each colored renderer output equals its plain form after ANSI strip", () => {
+  it("each colored renderer output equals its plain form after ANSI strip", () => {
     const on = { color: true } as const;
     const off = { color: false } as const;
     const pairs: Array<[string, string]> = [

@@ -343,7 +343,7 @@ function scanFixture(): string {
 }
 
 describe(`${DOC_REL} — the HackMyAgent gate counts the findings the scanner emits`, () => {
-  it('OPA-05.AC1 the scan step derives the counts from .findings[], naming no top-level count key', () => {
+  it('the scan step derives the counts from .findings[], naming no top-level count key', () => {
     const body = hmaScanStepBody(readDoc());
 
     for (const jqPath of jqRawPaths(body)) {
@@ -363,13 +363,13 @@ describe(`${DOC_REL} — the HackMyAgent gate counts the findings the scanner em
     });
   });
 
-  it('OPA-05.AC2 no .summary.critical or .summary.high anywhere in the doc', () => {
+  it('no .summary.critical or .summary.high anywhere in the doc', () => {
     const markdown = readDoc();
     expect(markdown).not.toContain('.summary.critical');
     expect(markdown).not.toContain('.summary.high');
   });
 
-  it('OPA-05.AC3 the gate exits non-zero on a scan report with one critical finding', () => {
+  it('the gate exits non-zero on a scan report with one critical finding', () => {
     expect(haveJq(), JQ_REQUIRED).toBe(true);
     expect(
       runGate(scanReport(1)),
@@ -377,13 +377,13 @@ describe(`${DOC_REL} — the HackMyAgent gate counts the findings the scanner em
     ).not.toBe(0);
   });
 
-  it('OPA-05.AC3 the gate exits zero on the same report with no critical findings', () => {
+  it('the gate exits zero on the same report with no critical findings', () => {
     expect(haveJq(), JQ_REQUIRED).toBe(true);
     expect(runGate(scanReport(0))).toBe(0);
   });
 
   it(
-    'OPA-05.AC4 every jq path the recipe reads resolves in the pinned scanner\'s --ci --format json output',
+    'every jq path the recipe reads resolves in the pinned scanner\'s --ci --format json output',
     () => {
       expect(haveJq(), JQ_REQUIRED).toBe(true);
       const body = hmaScanStepBody(readDoc());
@@ -427,7 +427,7 @@ describe(`${DOC_REL} — the HackMyAgent gate counts the findings the scanner em
     180_000,
   );
 
-  it('OPA-05.AC5 the scanner under test is the exact build packages/cli/package.json pins', () => {
+  it('the scanner under test is the exact build packages/cli/package.json pins', () => {
     const pinned = pinnedVersion();
     // An exact pin, not a range: a caret would let the measured build drift away
     // from the declared one without the declaration changing.

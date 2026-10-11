@@ -37,11 +37,11 @@ describe('CHANGELOG Security entry (#246)', () => {
   const entries = unreleasedSecurityEntries(read('CHANGELOG.md'));
   const closing = entries.filter(e => e.includes('Closes #246'));
 
-  it('OPA-14.AC8 one Unreleased Security entry closes #246', () => {
+  it('one Unreleased Security entry closes #246', () => {
     expect(closing).toHaveLength(1);
   });
 
-  it('OPA-14.AC8 the entry names the sites by path and the children as objects', () => {
+  it('the entry names the sites by path and the children as objects', () => {
     const entry = closing[0];
     for (const site of [
       'packages/cli/src/index.ts', 'router.ts', 'shield/llm-backend.ts',
@@ -53,7 +53,7 @@ describe('CHANGELOG Security entry (#246)', () => {
     expect(entry).toMatch(/model CLI/);
   });
 
-  it('OPA-14.AC8 the entry states the exposure window, the declared names, the widening path and the cap', () => {
+  it('the entry states the exposure window, the declared names, the widening path and the cap', () => {
     const entry = closing[0];
     expect(entry).toMatch(/full environment/);
     expect(entry).toMatch(/every release since/i);
@@ -67,14 +67,14 @@ describe('CHANGELOG Security entry (#246)', () => {
     expect(entry).toMatch(/Closes #246/);
   });
 
-  it('OPA-14.AC8 the entry carries no internal artifact path or governance tag', () => {
+  it('the entry carries no internal artifact path or governance tag', () => {
     const entry = closing[0];
     expect(entry).not.toMatch(/\.qgf|qgf\/|COUNCIL_LEDGER|roadmap\/|\[CHIEF-|CISO|OPA-14/);
   });
 });
 
 describe('ignore files and dev scripts (#246)', () => {
-  it('OPA-14.AC9 no root .hmaignore rule names a path under packages/cli/src, and packages/cli/.hmaignore is absent', () => {
+  it('no root .hmaignore rule names a path under packages/cli/src, and packages/cli/.hmaignore is absent', () => {
     const root = path.join(REPO_ROOT, '.hmaignore');
     if (fs.existsSync(root)) {
       const rules = fs.readFileSync(root, 'utf-8').split('\n')
@@ -94,7 +94,7 @@ describe('ignore files and dev scripts (#246)', () => {
     expect(text).toMatch(/env: lockTraceSuiteEnv\(traceFile\b/);
   });
 
-  it('OPA-14.AC9 release-smoke-corpus.ts keeps its spread, under a comment stating both sides get the identical environment by design', () => {
+  it('release-smoke-corpus.ts keeps its spread, under a comment stating both sides get the identical environment by design', () => {
     const lines = read('packages/cli/scripts/release-smoke-corpus.ts').split('\n');
     const idx = lines.findIndex(l => /const env = \{ \.\.\.process\.env, OPENA2A_CORPUS_DETERMINISTIC: '1' \};/.test(l));
     expect(idx).toBeGreaterThan(0);
@@ -106,7 +106,7 @@ describe('ignore files and dev scripts (#246)', () => {
     expect(comment.join(' ')).toMatch(/both sides of the parity run receive the identical environment by design/i);
   });
 
-  it('OPA-14.AC9 the benchmark, comply and init harnesses feed their spread to buildChildEnv', () => {
+  it('the benchmark, comply and init harnesses feed their spread to buildChildEnv', () => {
     for (const [file, line] of [
       ['packages/cli/scripts/release-smoke-benchmark.ts', 69],
       ['packages/cli/scripts/release-smoke-comply.ts', 72],

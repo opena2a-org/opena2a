@@ -40,7 +40,7 @@ const {
   verifyEventLog,
   sha256File,
 } = await import('../../src/shield/events.js');
-const { runIntegrityChecks } = await import('../../src/shield/integrity.js');
+const integrity = await import('../../src/shield/integrity.js');
 const { runShieldPhase } = await import('../../src/commands/review.js');
 const { shield } = await import('../../src/commands/shield.js');
 
@@ -102,7 +102,8 @@ function extendTo(size: number): void {
 }
 
 function eventChainCheck() {
-  const check = runIntegrityChecks({}).checks.find(c => c.name === 'event-chain');
+  const report = integrity.runIntegrityChecks({});
+  const check = report.checks.find(c => c.name === 'event-chain');
   expect(check).toBeDefined();
   return check!;
 }

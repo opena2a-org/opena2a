@@ -194,7 +194,7 @@ describe('ai-config', () => {
       expect(matches[0].severity).toBe('high');
     });
 
-    it('OPA-12.AC3 still detects the assembled AWS and Google fixture values', () => {
+    it('still detects the assembled AWS and Google fixture values', () => {
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
         mcpServers: {
           'github': { command: 'node', args: [], env: { TOKEN: 'ghp_' + 'A'.repeat(36) } },

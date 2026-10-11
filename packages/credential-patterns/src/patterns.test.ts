@@ -469,12 +469,12 @@ describe('CREDENTIAL_PREFIX_QUICK_CHECK', () => {
   });
 });
 
-describe('OPA-12 detection preserved for assembled fixtures', () => {
+describe('detection preserved for assembled fixtures', () => {
   // The families whose fixtures were whole in-source literals before being
   // assembled from parts; the live catalog must still see the assembled values.
   const AFFECTED_FAMILIES = ['anthropic', 'aws-access', 'aws-sts', 'github-pat', 'mongodb', 'google'];
 
-  it('OPA-12.AC3 each affected family keeps a valid fixture matching the live catalog pattern, and assembled quick-check probes still pass', () => {
+  it('each affected family keeps a valid fixture matching the live catalog pattern, and assembled quick-check probes still pass', () => {
     for (const id of AFFECTED_FAMILIES) {
       const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id);
       expect(pattern, `catalog pattern ${id}`).toBeDefined();
@@ -485,7 +485,7 @@ describe('OPA-12 detection preserved for assembled fixtures', () => {
     expect(CREDENTIAL_PREFIX_QUICK_CHECK.test(['AKIA', '1234567890123456'].join(''))).toBe(true);
   });
 
-  it('OPA-12.AC4 affected-family invalid fixtures still do not match — no detector weakened', () => {
+  it('affected-family invalid fixtures still do not match — no detector weakened', () => {
     for (const id of AFFECTED_FAMILIES) {
       const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id)!;
       for (const invalid of PATTERN_TEST_CASES[id].invalid) {
