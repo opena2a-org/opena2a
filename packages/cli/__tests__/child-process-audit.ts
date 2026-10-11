@@ -114,6 +114,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(jq | bash | node) recipe probes',
   },
+  'docs/ci-cd-exit-codes.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(jq --version) once, then spawnSync(jq -r <expr>) for each gate expression ' +
+      'the CI guide reads from detect --format json, one at a time (#448)',
+  },
   'shield/claude-env-contract.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
