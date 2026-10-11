@@ -72,7 +72,8 @@ export async function setup(options: SetupOptions): Promise<number> {
 
   // Step 1: Check authentication. If missing or expired, run the browser login
   // flow inline so the user doesn't have to cancel + retry. JSON callers stay
-  // strict-mode (still error with a machine-readable code).
+  // strict-mode (still error with a machine-readable code). In --ci mode login
+  // refuses without starting a browser, so only its refusal is printed.
   let auth = loadAuth();
   if (!auth || !isAuthValid(auth)) {
     if (isJson) {
@@ -80,8 +81,10 @@ export async function setup(options: SetupOptions): Promise<number> {
       return 1;
     }
 
-    process.stdout.write(yellow('  Not authenticated.') + ' Launching browser login...\n');
-    process.stdout.write(dim('  (Press Ctrl+C to cancel and use --server <url> for a self-hosted AIM server.)') + '\n\n');
+    if (!options.ci) {
+      process.stdout.write(yellow('  Not authenticated.') + ' Launching browser login...\n');
+      process.stdout.write(dim('  (Press Ctrl+C to cancel and use --server <url> for a self-hosted AIM server.)') + '\n\n');
+    }
 
     const { login } = await import('./login.js');
     const loginCode = await login({
