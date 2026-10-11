@@ -4,7 +4,7 @@
  *               that need not be git repositories.
  *
  * Both are pre-existing (protect.ts was byte-identical across
- * v0.10.11..cli-v0.10.12) and both are dead ends in the CISO Rule 11 sense:
+ * v0.10.11..cli-v0.10.12) and both are dead ends:
  * an exit code that makes an affirmative claim about work that never ran, and
  * a recovery instruction that cannot execute where it is printed.
  */

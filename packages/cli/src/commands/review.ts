@@ -640,8 +640,8 @@ export async function review(options: ReviewOptions): Promise<number> {
   // more reassuring than a full scan would. Emit to STDERR so it is visible on
   // every output path — including `--json` (whose JSON stays on stdout, with a
   // top-level `provisional: true` flag) and `--ci` — and so it appears above
-  // the verdict rather than scrolling past below it (CISO Rule 11 — no
-  // misleading verdicts).
+  // the verdict rather than scrolling past below it (no misleading
+  // verdicts).
   if (!hmaAvailable) {
     const noResult = describeHmaNoResult(hmaData.run);
     process.stderr.write(

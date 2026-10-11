@@ -171,8 +171,8 @@ export function calculateSecurityScore(
   // 96/100 "strong" verdict and a fixture that scored ≤30.
   // Bonus must also suppress on MEDIUM findings (e.g. `.crt` cert files
   // emit MEDIUM CRED-CERTFILE). Without medCount, a project with a single
-  // MEDIUM finding visible to the user still rendered 100/100 — CISO
-  // Rule 11 violation surfaced by Phase 4.5 review of #116.
+  // MEDIUM finding visible to the user still rendered 100/100, a
+  // misleading verdict surfaced in review of #116.
   const hmaFindingCount = hmaBySeverity
     ? (hmaBySeverity['critical'] || 0) + (hmaBySeverity['high'] || 0) + (hmaBySeverity['medium'] || 0)
     : 0;

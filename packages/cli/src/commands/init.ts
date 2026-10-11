@@ -788,7 +788,7 @@ function generateActions(
   // Split key/cert files from text-pattern credentials. `opena2a protect`
   // can migrate text patterns to a vault but cannot rotate or untrack
   // binary key files — surfacing both under a single protect-action would
-  // be a CISO Rule 1 dead end on the keyfile side (Phase 4.5 finding).
+  // be a dead end on the keyfile side.
   const keyfileCreds = creds.filter(c => c.findingId === 'CRED-KEYFILE' || c.findingId === 'CRED-CERTFILE');
   const textCreds = creds.filter(c => c.findingId !== 'CRED-KEYFILE' && c.findingId !== 'CRED-CERTFILE');
 
