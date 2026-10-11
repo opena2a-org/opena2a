@@ -214,4 +214,9 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git ls-files) over the package sources, and execFileSync(git init / git add) ' +
       'to build each planted scratch tree, one at a time',
   },
+  'install-integrity-claims.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js verify --help) once, to read the verify help text (#434)',
+  },
 };
