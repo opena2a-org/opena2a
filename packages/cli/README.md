@@ -90,7 +90,7 @@ Full command reference, Shield subcommands, scope drift detection, behavioral go
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 20.19
 - Optional: Docker (for `opena2a train`)
 
 ## Telemetry

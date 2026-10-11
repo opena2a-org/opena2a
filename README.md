@@ -51,7 +51,7 @@ npx opena2a-cli init my-agent   # run once, no install
 npm install -g opena2a-cli      # install globally
 ```
 
-Requires Node.js 18 or later.
+Requires Node.js 20.19 or later.
 
 ### Homebrew
 

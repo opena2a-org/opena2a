@@ -5,7 +5,7 @@ You use Claude Code, Cursor, GitHub Copilot, or another AI coding assistant. You
 **Time estimate:** 5 minutes from start to a fully governed project.
 
 **Prerequisites:**
-- Node.js 18 or later
+- Node.js 20.19 or later
 - An existing project directory
 
 ---
