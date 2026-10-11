@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { bold, red, yellow, dim, cyan, orange } from './colors.js';
+import { printable } from './printable.js';
 import { validateRegistryUrl } from './validate-registry-url.js';
 
 // --- Types ---
@@ -49,17 +50,62 @@ interface AdvisoryResponse {
 export interface AdvisoryCheck {
   advisories: Advisory[];
   matchedPackages: string[];
+  /** The number of advisories the Registry reported for the request. */
   total: number;
+  /** The number of advisories in the list that was read. Below `total` when
+   *  the Registry holds more than the request asks for. */
+  listed: number;
   fromCache: boolean;
   /** Whether an advisory list was read, from the Registry or the cache. When
    *  false no dependency was compared, so the result is "not checked", not
    *  "no advisories found". */
   checked: boolean;
+  /** Why no advisory list was read, in one line; null when one was read. */
+  reason: string | null;
+  /** True when OPENA2A_ADVISORIES=off turned the request off. */
+  turnedOff: boolean;
 }
 
+/** The request reads the advisories published in this many days... */
+export const ADVISORY_WINDOW_DAYS = 30;
+/** ...and at most this many of them. */
+export const ADVISORY_LIMIT = 100;
+const ADVISORY_TIMEOUT_MS = 5_000;
+
+/** Set to `off` to make `review` and `init` skip the advisory request. */
+export const ADVISORIES_ENV = 'OPENA2A_ADVISORIES';
+
 /** The result when no advisory list was read. */
-export function advisoriesNotChecked(): AdvisoryCheck {
-  return { advisories: [], matchedPackages: [], total: 0, fromCache: false, checked: false };
+export function advisoriesNotChecked(reason: string | null = null, turnedOff = false): AdvisoryCheck {
+  return { advisories: [], matchedPackages: [], total: 0, listed: 0, fromCache: false, checked: false, reason, turnedOff };
+}
+
+function advisoriesTurnedOff(): boolean {
+  return ['off', '0', 'false', 'no'].includes((process.env[ADVISORIES_ENV] ?? '').trim().toLowerCase());
+}
+
+/** The first line of an error's message, with any `user:password@` removed
+ *  from a URL in it: the line is shown in the terminal and the report. */
+function firstLine(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return (message.split('\n')[0] ?? '').replace(/\/\/[^/\s@]*@/g, '//').trim();
+}
+
+/** The Registry URL without a trailing `/`, so the request path is joined
+ *  with one slash. */
+function normalizeRegistryUrl(registryUrl: string): string {
+  return registryUrl.trim().replace(/\/+$/, '');
+}
+
+/** The Registry URL as it is named in a reason: origin and path only, no
+ *  credentials. */
+function shownUrl(registryUrl: string): string {
+  try {
+    const u = new URL(registryUrl);
+    return `${u.origin}${u.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return 'the configured Registry';
+  }
 }
 
 // --- Cache ---
@@ -118,27 +164,40 @@ function writeCache(registryUrl: string, data: AdvisoryResponse): void {
 
 // --- Fetch ---
 
-async function fetchAdvisories(registryUrl: string): Promise<AdvisoryResponse | null> {
+/**
+ * Read the advisory list. The request names a date and a count and nothing
+ * about the project: dependencies are matched against the list here, on this
+ * machine. When no list is read, `reason` says why in one line.
+ */
+async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryResponse } | { reason: string }> {
   // The validator accepts an empty URL, which would build a relative one.
-  if (!registryUrl) return null;
+  if (!registryUrl) return { reason: 'no Registry URL is configured' };
   try {
     validateRegistryUrl(registryUrl);
-    // Fetch advisories from the last 30 days
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const url = `${registryUrl}/api/v1/trust/advisories?since=${since}&limit=100`;
+  } catch (err) {
+    return { reason: firstLine(err) };
+  }
+  const where = shownUrl(registryUrl);
+  const since = new Date(Date.now() - ADVISORY_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const url = `${registryUrl}/api/v1/trust/advisories?since=${since}&limit=${ADVISORY_LIMIT}`;
+  try {
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(ADVISORY_TIMEOUT_MS),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) return { reason: `${where} answered HTTP ${response.status}` };
     const body = await response.json() as Partial<AdvisoryResponse> | null;
     // A body without an advisory list is not a list that was read.
-    if (!body || !Array.isArray(body.advisories)) return null;
-    return body as AdvisoryResponse;
-  } catch {
-    return null;
+    if (!body || !Array.isArray(body.advisories)) return { reason: `${where} answered without an advisory list` };
+    return { data: body as AdvisoryResponse };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      return { reason: `${where} did not answer within ${ADVISORY_TIMEOUT_MS / 1000} seconds` };
+    }
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${firstLine(err.cause)}` : '';
+    return { reason: `${where} could not be read (${firstLine(err)}${cause})` };
   }
 }
 
@@ -211,8 +270,9 @@ function detectProjectPackages(dir: string): string[] {
  */
 export async function checkAdvisories(
   dir: string,
-  registryUrl: string,
+  configuredUrl: string,
 ): Promise<AdvisoryCheck> {
+  const registryUrl = normalizeRegistryUrl(configuredUrl);
   // Check cache first
   const cached = readCache(registryUrl);
   let data: AdvisoryResponse;
@@ -223,13 +283,17 @@ export async function checkAdvisories(
     fromCache = true;
   } else {
     const fetched = await fetchAdvisories(registryUrl);
-    if (!fetched) return advisoriesNotChecked();
-    data = fetched;
+    if ('reason' in fetched) return advisoriesNotChecked(fetched.reason);
+    data = fetched.data;
     writeCache(registryUrl, data);
   }
 
-  if (data.advisories.length === 0) {
-    return { advisories: [], matchedPackages: [], total: 0, fromCache, checked: true };
+  const listed = data.advisories.length;
+  // A missing or malformed total is read as the length of the list.
+  const total = typeof data.total === 'number' && Number.isFinite(data.total) ? Math.max(data.total, listed) : listed;
+
+  if (listed === 0) {
+    return { advisories: [], matchedPackages: [], total, listed, fromCache, checked: true, reason: null, turnedOff: false };
   }
 
   // Match advisories against project packages
@@ -253,10 +317,56 @@ export async function checkAdvisories(
   return {
     advisories: matched,
     matchedPackages: matchedNames,
-    total: data.total,
+    total,
+    listed,
     fromCache,
     checked: true,
+    reason: null,
+    turnedOff: false,
   };
+}
+
+/**
+ * The advisory check `review` and `init` run: skipped when
+ * OPENA2A_ADVISORIES=off, otherwise read from the Registry `resolveRegistryUrl`
+ * names. A configured URL the resolver refuses leaves the advisories not
+ * checked, with the refusal as the reason.
+ */
+export async function readAdvisories(
+  dir: string,
+  resolveRegistryUrl: () => Promise<string>,
+): Promise<AdvisoryCheck> {
+  if (advisoriesTurnedOff()) {
+    return advisoriesNotChecked(`the advisory request is turned off (${ADVISORIES_ENV}=off)`, true);
+  }
+  let registryUrl: string;
+  try {
+    registryUrl = await resolveRegistryUrl();
+  } catch (err) {
+    return advisoriesNotChecked(firstLine(err));
+  }
+  return checkAdvisories(dir, registryUrl);
+}
+
+/**
+ * The fixed versions an advisory names for `pkg`, from its OSV ranges, in the
+ * order given. Only plain version strings are kept: the value is shown in
+ * the report and can become part of an install command.
+ */
+export function fixedVersions(advisory: Advisory, pkg: string): string[] {
+  const versions: string[] = [];
+  for (const affected of advisory.affected ?? []) {
+    if (affected.package?.name !== pkg) continue;
+    for (const range of affected.ranges ?? []) {
+      for (const event of range.events ?? []) {
+        const v = event?.fixed;
+        if (typeof v === 'string' && /^v?\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(v) && !versions.includes(v)) {
+          versions.push(v);
+        }
+      }
+    }
+  }
+  return versions;
 }
 
 // --- Output ---
@@ -268,21 +378,24 @@ export function printAdvisoryWarnings(check: AdvisoryCheck): void {
   process.stdout.write(red(bold('  Security Advisories')) + '\n');
   process.stdout.write(dim('  ' + '-'.repeat(47)) + '\n');
 
+  // Every advisory field is Registry text, so each is cut to one printable
+  // line before it reaches the terminal.
+  const text = (value: unknown): string => printable(typeof value === 'string' ? value : String(value ?? ''));
   for (const advisory of check.advisories) {
-    const severity = advisory.severity?.[0]?.score ?? 'UNKNOWN';
+    const severity = text(advisory.severity?.[0]?.score ?? 'UNKNOWN');
     const severityColor = severity === 'CRITICAL' ? red
       : severity === 'HIGH' ? orange
       : severity === 'MODERATE' ? yellow
       : dim;
 
-    const packages = (advisory.affected ?? []).map(a => a.package?.name).filter(Boolean);
+    const packages = (advisory.affected ?? []).map(a => a.package?.name).filter(Boolean).map(text);
 
-    process.stdout.write(`  ${severityColor(`[${severity}]`.padEnd(12))} ${advisory.summary}\n`);
-    process.stdout.write(`  ${' '.repeat(12)} ${dim(`ID: ${advisory.id}  Packages: ${packages.join(', ')}`)}\n`);
+    process.stdout.write(`  ${severityColor(`[${severity}]`.padEnd(12))} ${text(advisory.summary)}\n`);
+    process.stdout.write(`  ${' '.repeat(12)} ${dim(`ID: ${text(advisory.id)}  Packages: ${packages.join(', ')}`)}\n`);
   }
 
   process.stdout.write(dim('  ' + '-'.repeat(47)) + '\n');
-  process.stdout.write(`  ${yellow(`${check.advisories.length} advisory(ies)`)} affecting ${cyan(check.matchedPackages.join(', '))}\n`);
+  process.stdout.write(`  ${yellow(`${check.advisories.length} advisory(ies)`)} affecting ${cyan(check.matchedPackages.map(text).join(', '))}\n`);
   // The package is a shell parameter that refuses when unset: pasted before
   // PACKAGE is set, the shell prints the message and runs nothing.
   process.stdout.write(dim('  For details, run: opena2a verify --package "${PACKAGE:?set PACKAGE to a package named above}"\n'));

@@ -74,14 +74,26 @@ function renderHygiene() {
   var advLabel = !advChecked ? 'not checked' : init.advisoryCount + ' found';
   h += statCard(advLabel, 'Advisories', !advChecked ? 'var(--dim)' : init.advisoryCount > 0 ? 'var(--amber)' : 'var(--green)');
   h += '</div>';
+  var advRead = init.advisoryRead || null;
+  // What the request covered: a window and a count, and whether the Registry
+  // reported more advisories than were read.
+  var advScope = '';
+  if (advRead) {
+    advScope = 'Advisories published in the last ' + advRead.windowDays + ' days (at most ' + advRead.limit + ') were read from the OpenA2A Registry and checked against project dependencies.';
+    if (advRead.total > advRead.listed) {
+      advScope += ' The Registry reported ' + advRead.total + ' advisories; ' + (advRead.total - advRead.listed) + ' were not read or compared.';
+    }
+  }
   if (init.matchedPackages && init.matchedPackages.length > 0) {
     h += '<div class="card"><div class="card-title">Affected Packages</div><div style="font-size:12px;color:var(--muted)">' + init.matchedPackages.map(function(p) {
       return esc(p);
-    }).join(', ') + '</div></div>';
+    }).join(', ') + '</div>' + (advScope ? '<div style="font-size:12px;color:var(--dim);margin-top:6px">' + esc(advScope) + '</div>' : '') + '</div>';
   } else if (!advChecked) {
-    h += '<div class="card" style="font-size:12px;color:var(--dim)">Advisories not checked: no advisory list was read from the OpenA2A Registry, so no dependency was compared. Run the review again when the Registry is reachable.</div>';
+    var advReason = advRead && advRead.notCheckedReason ? ' Reason: ' + advRead.notCheckedReason + '.' : '';
+    var advNext = advRead && advRead.turnedOff ? ' Unset OPENA2A_ADVISORIES to check them.' : ' Run the review again when the Registry is reachable.';
+    h += '<div class="card" style="font-size:12px;color:var(--dim)">' + esc('Advisories not checked: no advisory list was read from the OpenA2A Registry, so no dependency was compared.' + advReason + advNext) + '</div>';
   } else {
-    h += '<div class="card" style="font-size:12px;color:var(--dim)">Advisories checked against project dependencies via the OpenA2A Registry. No matching advisories found.</div>';
+    h += '<div class="card" style="font-size:12px;color:var(--dim)">' + esc((advScope || 'Advisories checked against project dependencies via the OpenA2A Registry.') + ' No matching advisories found.') + '</div>';
   }
   var guard = report.guardData;
   if (guard) {

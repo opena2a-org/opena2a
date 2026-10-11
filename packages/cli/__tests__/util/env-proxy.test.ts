@@ -25,6 +25,7 @@ import {
   fetchWithEnvProxy,
 } from '../../src/util/env-proxy.js';
 import { AimClient, AimServerError } from '../../src/util/aim-client.js';
+import { realFetch } from '../setup/offline-fetch.js';
 
 const AIM_HOST = 'aim.scratch.invalid';
 
@@ -187,9 +188,18 @@ describe('AimClient behind a proxy', () => {
     await new Promise((r) => proxy.close(r));
   });
 
+  beforeEach(() => {
+    // With Node.js's built-in proxy support the runtime's own fetch carries
+    // a request for AIM_HOST to the local proxy. The suite's offline stub
+    // would refuse it by its URL first, and would also refuse the direct
+    // request a test expects to fail, whether or not a proxy was turned on.
+    vi.stubGlobal('fetch', realFetch);
+  });
+
   afterEach(() => {
     resetEnvProxy();
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     proxyLog.length = 0;
     proxyAuth.length = 0;
   });

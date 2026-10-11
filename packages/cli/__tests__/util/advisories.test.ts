@@ -14,7 +14,7 @@ vi.mock('node:os', async (importOriginal) => {
   };
 });
 
-import { checkAdvisories, printAdvisoryWarnings } from '../../src/util/advisories.js';
+import { checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
 
 const mockFetch = vi.fn();
 
@@ -276,5 +276,142 @@ describe('advisories', () => {
     const output = chunks.join('');
     expect(output).toContain('CRITICAL');
     expect(output).toContain('Test advisory');
+  });
+
+  // Regression (#464): the advisory text is the Registry's, and init printed
+  // it as received, so an ESC sequence reached the terminal and the text
+  // after a newline printed as a line of its own.
+  it('printAdvisoryWarnings removes control characters from Registry text', () => {
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+    try {
+      printAdvisoryWarnings({
+        advisories: [{
+          id: 'OA2A-2026-0001\x1b]0;title\x07',
+          summary: 'Bad thing\x1b[31mRED\nFORGED LINE',
+          severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+          affected: [{ package: { name: 'test-pkg\r\nFORGED PKG', ecosystem: 'npm' } }],
+          published: '2026-10-01T00:00:00Z',
+        }],
+        matchedPackages: ['test-pkg\nFORGED MATCH'],
+        total: 1,
+        listed: 1,
+        fromCache: false,
+        checked: true,
+        reason: null,
+        turnedOff: false,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    const output = chunks.join('');
+    expect(output).not.toContain('\x1b');
+    expect(output).not.toContain('\x07');
+    expect(output).not.toContain('\r');
+    expect(output).toContain('Bad thing[31mREDFORGED LINE');
+    expect(output.split('\n').some(l => /^\s*FORGED/.test(l))).toBe(false);
+  });
+
+  // Regression (#464): a registry.url ending in "/" requested
+  // "//api/v1/trust/advisories".
+  it('joins a Registry URL that ends in "/" with one slash', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+    await checkAdvisories(tempDir, 'https://registry.test/');
+
+    expect(String(mockFetch.mock.calls[0][0])).toMatch(/^https:\/\/registry\.test\/api\/v1\/trust\/advisories\?/);
+  });
+
+  it('reads the window and limit it states, and reports a total above the list it read', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 250, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    const url = new URL(String(mockFetch.mock.calls[0][0]));
+    expect(url.searchParams.get('limit')).toBe('100');
+    const days = (Date.now() - Date.parse(url.searchParams.get('since') as string)) / 86_400_000;
+    expect(days).toBeGreaterThanOrEqual(29);
+    expect(days).toBeLessThanOrEqual(31);
+    expect(result.checked).toBe(true);
+    expect(result.listed).toBe(0);
+    expect(result.total).toBe(250);
+  });
+
+  // Regression (#464): a refused registry.url left the advisories "not
+  // checked" with nothing that named the URL or the refusal.
+  it('names the refusal of a configured Registry URL and sends nothing', async () => {
+    const direct = await checkAdvisories(tempDir, 'http://registry.internal.example');
+    expect(direct.checked).toBe(false);
+    expect(direct.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+
+    // A URL carrying a user and password; the reason names the host only.
+    const withUserinfo = 'http://' + ['someone', 'not-a-real-pw'].join(':') + '@registry.internal.example';
+    const resolved = await readAdvisories(tempDir, async () => {
+      throw new Error(`Registry URL must use HTTPS: ${withUserinfo}\nPlain HTTP is only allowed for localhost development.`);
+    });
+    expect(resolved.checked).toBe(false);
+    expect(resolved.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('names why no list was read: an HTTP status, a timeout, an unreachable host', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 503 });
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test answered HTTP 503');
+
+    mockFetch.mockReset();
+    mockFetch.mockRejectedValue(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }));
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test did not answer within 5 seconds');
+
+    mockFetch.mockReset();
+    mockFetch.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND registry.test') }));
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test could not be read (fetch failed: getaddrinfo ENOTFOUND registry.test)');
+  });
+
+  // Regression (#464): the request could not be skipped.
+  describe('OPENA2A_ADVISORIES=off', () => {
+    const saved = process.env.OPENA2A_ADVISORIES;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.OPENA2A_ADVISORIES;
+      else process.env.OPENA2A_ADVISORIES = saved;
+    });
+
+    it('skips the request and reports the advisories as not checked', async () => {
+      process.env.OPENA2A_ADVISORIES = 'off';
+      const resolve = vi.fn(async () => 'https://registry.test');
+
+      const result = await readAdvisories(tempDir, resolve);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+      expect(result.checked).toBe(false);
+      expect(result.turnedOff).toBe(true);
+      expect(result.reason).toContain('OPENA2A_ADVISORIES=off');
+    });
+
+    it('any other value makes the request', async () => {
+      process.env.OPENA2A_ADVISORIES = 'on';
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+      const result = await readAdvisories(tempDir, async () => 'https://registry.test');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(result.checked).toBe(true);
+    });
+  });
+
+  it('fixedVersions reads plain fixed versions for the package and drops anything else', () => {
+    const advisory = {
+      id: 'OA2A-2026-0004',
+      summary: 'x',
+      severity: [],
+      published: '2026-10-01T00:00:00Z',
+      affected: [
+        { package: { name: 'pkg', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.3.0' }, { fixed: '2.0.1-rc.1' }, { fixed: '1.3.0' }, { fixed: '3.0.0; touch x' }] }] },
+        { package: { name: 'other', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ fixed: '9.9.9' }] }] },
+      ],
+    };
+    expect(fixedVersions(advisory, 'pkg')).toEqual(['1.3.0', '2.0.1-rc.1']);
+    expect(fixedVersions(advisory, 'missing')).toEqual([]);
   });
 });
