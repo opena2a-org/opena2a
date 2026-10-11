@@ -5,7 +5,7 @@ how to set up a development environment, run tests, and submit changes.
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20.19
 - npm >= 9
 - Git
 

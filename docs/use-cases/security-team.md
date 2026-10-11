@@ -5,7 +5,7 @@ You are a CISO, security engineer, or compliance analyst. Developers on your tea
 **Time estimate:** 10 minutes per machine for initial discovery. 30 minutes for a full fleet assessment.
 
 **Prerequisites:**
-- Node.js 18 or later
+- Node.js 20.19 or later
 - Access to developer workstations (directly or via remote execution)
 
 ---
