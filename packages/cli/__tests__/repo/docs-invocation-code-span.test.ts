@@ -330,9 +330,15 @@ const DISCRIMINATION: ReadonlyArray<{
  * Recomputed again on the merge of main after opena2a #319 turned the use-case expected-output
  * blocks into labelled captures and added the developer walkthrough's sign step: that docs
  * change was the point of #319, and this branch still edits no documentation.
+ *
+ * Recomputed again by opena2a #448, whose point is the CI guide's exit-code and --ci
+ * statements: two ci-cd.md invocation comments credited --ci with "No colors" and
+ * "Deterministic output", and the shorter, corrected detect JSON example moves eight
+ * invocations between it and the credential job up one or two lines. No invocation
+ * was added, removed or re-fenced, and the troubleshooting row stays on line 529.
  */
 const OCCURRENCE_LINES_SHA256 =
-  '4485e51b8d2161efea65bd40bfbfe2111cce6e73e7c2716bcddd62eeb194488e';
+  '1814e6183b6fd65f0b35fb11ee0863c0b7db767b75699cc453663095c4e79432';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];

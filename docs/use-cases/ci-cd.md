@@ -13,7 +13,7 @@ You want to automate AI security checks in your CI/CD pipeline. This guide cover
 
 ## Quick Start: Three-Step GitHub Actions Workflow
 
-This workflow runs on every pull request and blocks merges when critical findings are detected.
+This workflow runs on every pull request and fails when the review score is below 50 or the governance score is below 60. `detect` exits 0 whatever it finds, so step 3 reads the score from its JSON.
 
 ```yaml
 # .github/workflows/ai-security.yml
@@ -49,9 +49,9 @@ jobs:
       # Step 3: Trust score gate
       - name: Trust gate
         run: |
-          score=$(jq -r '.governanceScore' detect-results.json)
+          score=$(jq -r '.summary.governanceScore' detect-results.json)
           echo "Governance score: $score / 100"
-          if [ "$score" -lt 60 ]; then
+          if ! [ "$score" -ge 60 ]; then
             echo "Governance score $score is below the required threshold of 60"
             jq '.findings' detect-results.json
             exit 1
@@ -64,17 +64,17 @@ jobs:
 
 ### The `--ci` Flag
 
-The `--ci` flag adjusts behavior for non-interactive environments:
+`--ci` does something different in each command, and each command's `--help` states it under `Automation:`. It does not turn color off: color is off when `NO_COLOR` is set or when stdout is not a terminal, as in a CI log or a `>` redirect. With `--ci`:
 
-- Disables color output and interactive prompts
-- Disables browser auto-open for HTML reports
-- Uses compact output formatting
-- Ensures deterministic exit codes
+- `detect`: never asks before scanning unknown MCP packages, does not open the `--report` file, and does not share the summary; with `--auto-scan` and contributions enabled, each unknown server scan is still shared
+- `review`: does not open the report in a browser
+- `scan-soul`: no effect
+- `protect`: migrates without prompting (needed when stdin is not a terminal)
 
 ```bash
-npx opena2a-cli detect my-agent --ci      # No colors, no prompts
+npx opena2a-cli detect my-agent --ci      # No prompts, no browser, no shared summary
 npx opena2a-cli review my-agent --ci      # No browser open
-npx opena2a-cli scan-soul my-agent --ci   # Deterministic output
+npx opena2a-cli scan-soul my-agent --ci   # Same as without --ci
 ```
 
 ### The `--format json` Flag
@@ -85,43 +85,41 @@ Returns machine-readable JSON for programmatic consumption:
 npx opena2a-cli detect my-agent --format json
 ```
 
-Example JSON output:
+Example JSON output, abridged to one entry per array with some fields left out. The score is `.summary.governanceScore`:
 
 ```json
 {
-  "version": "0.7.2",
-  "hostname": "runner-abc123",
-  "username": "runner",
-  "scanDirectory": "/home/runner/work/my-project",
-  "scanTimestamp": "2026-03-15T10:30:00Z",
+  "scanTimestamp": "2026-10-11T10:43:53.673Z",
+  "scanDirectory": "/home/runner/work/my-project/my-project",
   "agents": [
     {
-      "name": "claude-code",
-      "status": "configured",
-      "details": "config file present"
+      "name": "Claude Code",
+      "category": "ai-assistant",
+      "identityStatus": "no identity",
+      "governanceStatus": "no governance",
+      "risk": "high"
     }
   ],
   "mcpServers": [
     {
       "name": "filesystem",
-      "platform": "claude",
-      "scope": "local",
-      "signed": false
+      "source": ".mcp.json (project)",
+      "verified": false,
+      "capabilities": ["filesystem"],
+      "risk": "medium"
     }
   ],
-  "configFiles": [
-    {
-      "name": "CLAUDE.md",
-      "type": "governance",
-      "signed": false
-    }
-  ],
-  "governanceScore": 45,
+  "aiConfigs": [{ "file": "CLAUDE.md", "tool": "Claude Code", "risk": "low" }],
+  "summary": {
+    "totalAgents": 2,
+    "governanceScore": 15,
+    "recoverablePoints": 85
+  },
   "findings": [
     {
-      "severity": "medium",
+      "severity": "high",
       "category": "governance",
-      "message": "No SOUL.md behavioral governance file"
+      "title": "2 AI agents running without governance"
     }
   ]
 }
@@ -141,20 +139,21 @@ npx opena2a-cli review my-agent --format json      # Full review
 
 ## Exit Codes
 
-All opena2a commands use consistent exit codes:
+Each command has its own exit codes, listed at the end of its `--help` under `Exit codes:`. A step fails on any status other than 0. For the commands this guide runs:
 
-| Exit Code | Meaning | CI Behavior |
-|-----------|---------|-------------|
-| 0 | No findings, or all findings are info/low | Pipeline passes |
-| 1 | Critical or high findings detected | Pipeline fails |
-| 2 | Command error (invalid args, missing files) | Pipeline fails |
+| Command | Exit 0 | Exit 1 | Exit 2 |
+|---------|--------|--------|--------|
+| `detect` | discovery finished, whatever it found, critical findings included | the directory cannot be read | an unsupported `--format` |
+| `review` | the composite score is 50 or higher | the score is below 50 | the directory does not exist, an unsupported `--format`, `--quiet` together with `--verbose`, or the HTML report could not be written |
+| `scan-soul` | the governance score is 60 or higher (with `--strict`, also no critical control missing) | the score is below 60 (a directory with no SOUL.md scores 0), a critical control is missing under `--strict`, or the scan failed | not returned |
+| `protect --dry-run` | nothing was found, or text credentials were found (count them with `.totalFound`) | the directory does not exist, or no text credential was found but key files were, which protect cannot migrate | not returned without `--grant`; `opena2a protect --help` lists 2 to 6 |
 
-For governance gating on the critical SOUL controls:
+To fail on what `detect` finds, read its JSON, as the score gates in this guide do. `--strict` adds the critical SOUL controls to the `scan-soul` score check:
 
 ```bash
 npx opena2a-cli scan-soul my-agent --strict
-# Exit 0 if the critical SOUL controls are present
-# Exit 1 if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)
+# Exit 0 if the score is 60 or higher and SOUL-IH-003 and SOUL-HB-001 both pass
+# Exit 1 if the score is below 60, or SOUL-IH-003 or SOUL-HB-001 is missing
 ```
 
 ---
@@ -192,7 +191,7 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           npx opena2a-cli detect "$GITHUB_WORKSPACE" --format json --ci > "$GITHUB_WORKSPACE/detect.json"
-          score=$(jq -r '.governanceScore' "$GITHUB_WORKSPACE/detect.json")
+          score=$(jq -r '.summary.governanceScore' "$GITHUB_WORKSPACE/detect.json")
           echo "score=$score" >> "$GITHUB_OUTPUT"
           echo "Governance score: $score / 100"
           jq '.' "$GITHUB_WORKSPACE/detect.json"
@@ -262,7 +261,8 @@ jobs:
           found=$(jq -r '.totalFound' creds.json)
           echo "Credentials found: $found"
           if [ "$found" -gt 0 ]; then
-            jq '.credentials' creds.json
+            # Each .results[].credential carries the secret in .value: print only where it is.
+            jq '[.results[].credential | {findingId, filePath, line, envVar}]' creds.json
             exit 1
           fi
 
@@ -275,7 +275,7 @@ jobs:
         run: |
           score=${{ needs.detect.outputs.governance-score }}
           echo "Final governance score: $score / 100"
-          if [ "$score" -lt 60 ]; then
+          if ! [ "$score" -ge 60 ]; then
             echo "Governance score $score is below the required threshold of 60"
             exit 1
           fi
@@ -527,8 +527,8 @@ jobs:
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | `npx opena2a-cli` hangs | npm prompting for install confirmation | Use `npx -y opena2a-cli` |
-| Exit code 2 on `scan-soul` | No SOUL.md file in repository | Create one with `opena2a harden-soul` first |
-| JSON parse errors | Command outputting text warnings before JSON | Use `--ci` flag to suppress non-JSON output |
+| Exit code 1 on `scan-soul` | No SOUL.md in the scanned directory (it scores 0), or a score below 60 | Create one with `opena2a harden-soul` first |
+| JSON parse errors | Notices on stderr were captured into the JSON file, for example with `2>&1` | Redirect stdout only (`> file.json`); the JSON goes to stdout and notices to stderr |
 | High download times | npx downloading on every run | Cache node_modules or install globally in a setup step |
 
 ### Caching for Faster Runs
