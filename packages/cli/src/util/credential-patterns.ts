@@ -455,7 +455,7 @@ export function catalogSeverityForCategory(category?: string): string {
  *
  * INCLUDED: patterns whose match is a STRONG, near-unique credential signal by
  * itself (distinctive prefix/structure). EXCLUDED on purpose:
- *   - Value-shape-only patterns that match benign content (Phase 4.5 review):
+ *   - Value-shape-only patterns that match benign content:
  *     `supabase` (any HS256 JWT incl. PUBLIC anon keys, mislabelled "Service
  *     Key"), `telegram-bot` (`numeric:35char` cache keys/snowflakes), `twilio`
  *     (`SK`+32hex == any MD5/etag), `grafana` (`glc_`+base64 blob), and the
@@ -469,8 +469,8 @@ export function catalogSeverityForCategory(category?: string): string {
  *   - Name-gated patterns whose match[0] is `Name=value` (NOT a bare secret) and
  *     that ship no capture group, so `m[1] ?? m[0]` is the whole
  *     `AccountKey=<base64>=` span: `azure`. protect would vault the wrong value
- *     AND corrupt the surrounding `;`-delimited connection string on rewrite
- *     (Phase 4.5 re-review). Same rationale as `aws-secret` — HMA's semantic
+ *     AND corrupt the surrounding `;`-delimited connection string on rewrite.
+ *     Same rationale as `aws-secret`: HMA's semantic
  *     layer owns name-gated values. EVERY included pattern below is a pure
  *     value-shape prefix whose m[0] IS the migratable secret.
  *   - `pem-private-key` (key material — {@link scanCryptoKeyFiles}, extension-
