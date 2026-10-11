@@ -219,4 +219,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(node dist/index.js verify --help) once, to read the verify help text (#434)',
   },
+  'repo/bin-executable.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(<each package.json bin target> --version), run directly with no node in ' +
+      'front, one at a time (#436)',
+  },
 };
