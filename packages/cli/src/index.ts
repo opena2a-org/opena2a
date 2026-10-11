@@ -68,7 +68,8 @@ process.env.AI_TRUST_CLI_PREFIX = 'opena2a registry';
 async function main(): Promise<void> {
   // Tier-1 usage telemetry \u2014 default ON; opt-out via OPENA2A_TELEMETRY=off
   // or `opena2a telemetry off`. See README \u00a7Telemetry. Disclosure surfaces:
-  // README, --version line, telemetry subcommand, opena2a.org/telemetry.
+  // README, --version line, --help (live state), telemetry subcommand,
+  // opena2a.org/telemetry.
   const tele = await import('@opena2a/telemetry');
   const { versionLineParts, runTelemetryCommand, verdictColor, divider, sanitizeForTerminal } =
     await import('@opena2a/cli-ui');
