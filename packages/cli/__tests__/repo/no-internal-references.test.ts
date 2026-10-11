@@ -20,6 +20,12 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   { name: 'private notes file', pattern: /\bfeedback_[a-z0-9_]+\.md\b/ },
 ];
 
+// A decision id cited as `[AB-123]` or "per / after AB-123". Matched by that
+// citation shape, not by any `AB-123` token, so public check ids such as
+// `NEMO-009` stay allowed. Applied to package docs only for now: three source
+// comments still carry one.
+const DECISION_ID_CITATION = /\[[A-Z]{2,4}-\d{3}\]|(?<![A-Za-z0-9_])(?:per|after) [A-Z]{2,4}-\d{3}(?![A-Za-z0-9])/i;
+
 const SOURCE_EXT = /\.(ts|tsx|js|mjs|cjs)$/;
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const SKIP_DIRS = new Set(['__tests__', '__snapshots__', 'node_modules', 'dist']);
@@ -79,5 +85,20 @@ describe('shipped sources and package docs cite no internal references', () => {
       });
     }
     expect(hits, `replace each with the public issue or the rule itself:\n${hits.join('\n')}`).toEqual([]);
+  });
+
+  it('no package README or changelog cites an internal decision id', () => {
+    const hits: string[] = [];
+    for (const file of files.filter((f) => /(README|CHANGELOG)\.md$/.test(f))) {
+      const lines = fs.readFileSync(file, 'utf-8').split('\n');
+      lines.forEach((line, i) => {
+        const m = DECISION_ID_CITATION.exec(line);
+        if (m) {
+          const rel = path.relative(REPO_ROOT, file).split(path.sep).join('/');
+          hits.push(`${rel}:${i + 1}: "${m[0]}"`);
+        }
+      });
+    }
+    expect(hits, `drop the id and keep the sentence:\n${hits.join('\n')}`).toEqual([]);
   });
 });

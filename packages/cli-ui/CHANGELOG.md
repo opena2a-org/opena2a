@@ -165,7 +165,7 @@
 ## 0.2.0
 
 ### Added
-- `renderObservationsBlock` + `buildCategorySummaries` + `buildVerdict` — Surfaces / Checks / Categories / Verdict block for scan output, consumed by HMA / opena2a-cli / ai-trust after CA-030.
+- `renderObservationsBlock` + `buildCategorySummaries` + `buildVerdict` — Surfaces / Checks / Categories / Verdict block for scan output, consumed by HMA / opena2a-cli / ai-trust.
 - `analyst-render` helpers for description / threat-level / confidence normalization.
 
 ## 0.1.0

@@ -90,4 +90,4 @@ Initial release. Extracted from `hackmyagent/src/check-render.ts` and
 
 ### Unblocks
 - F2, F3, F4 of `briefs/check-command-divergence.md` (not-found shape, git exit code leak, skill fallback).
-- `[CA-034]` M3 milestone in `todo/2026-04-22-cli-consolidation-sequenced.md`.
+- The third milestone of the CLI consolidation.
