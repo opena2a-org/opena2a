@@ -35,10 +35,14 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   { name: 'planning mockup number', pattern: /\bmockup \d/i },
   { name: 'planning session label', pattern: /\bsession \d+[a-z]?\b/i },
   { name: 'review finding label', pattern: /\bPhase \d+(?:\.\d+)? (?:adversarial review )?finding\b/i },
+  // The step number of an internal pre-release review checklist. The CLI's
+  // own numbered steps ("Phase 3.5: Update AI tool config files") stay allowed.
+  { name: 'review phase label', pattern: /\bPhase ?4\.5\b/i },
   // A file in the registry's source tree, which is not public.
   {
     name: 'private registry file',
-    pattern: /\bopena2a-registry\/(?:internal|docs|cmd|migrations)\/|\bmigration \d{3}\b/i,
+    pattern:
+      /\bopena2a-registry\/(?:(?:tree|blob)\/[\w.-]+\/)?(?:internal|docs|cmd|migrations|pkg)\/|\bmigration \d{3}\b/i,
   },
 ];
 
@@ -158,14 +162,21 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(named('planning mockup number').test('VERIFIED skill (mockup 3.2)')).toBe(true);
     expect(named('planning session label').test('cli-ui 0.4.0 (session 3)')).toBe(true);
     expect(named('review finding label').test('Phase 3 adversarial review finding HIGH-1')).toBe(true);
+    expect(named('review phase label').test('is allowlisted (Phase 4.5 fix)')).toBe(true);
+    expect(named('review phase label').test('config bonus (#116/Phase4.5)')).toBe(true);
     expect(named('private registry file').test('opena2a-registry/docs/telemetry-spec.md')).toBe(true);
     expect(named('private registry file').test('stored by migration 223')).toBe(true);
+    expect(named('private registry file').test('opena2a-registry/pkg/atcverify')).toBe(true);
+    expect(
+      named('private registry file').test('github.com/opena2a-org/opena2a-registry/tree/main/pkg/atcverify'),
+    ).toBe(true);
     expect(PLANNING_FINDING_ID.test('meter gating (F6)')).toBe(true);
     expect(PLANNING_FINDING_ID.test('git-style misses, §F3')).toBe(true);
     expect(PRIVATE_PATH.test('todo/scripts/own-package-census.mjs')).toBe(true);
     // Ordinary prose and public references stay allowed.
     expect(named('planning brief citation').test('a brief pause before retrying')).toBe(false);
-    expect(named('private registry file').test('opena2a-registry/pkg/atcverify')).toBe(false);
+    expect(named('review phase label').test('// Phase 3.5: Update AI tool config files')).toBe(false);
+    expect(named('private registry file').test("repositoryUrl: 'https://github.com/opena2a-org/opena2a-registry'")).toBe(false);
     expect(PLANNING_FINDING_ID.test('color #F59E0B, key 0xF1, F1-score')).toBe(false);
   });
 });

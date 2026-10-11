@@ -93,7 +93,7 @@ False-positive suppression release driven by `secretless-ai status` dogfooding i
 - ReDoS test expanded from one shape to ten (empty, single char, 1k/10k repeated `a`, 10k `/`, 10k after each common prefix `sk-`/`AKIA`/`ghp_`, 10k newlines, mixed long). Every pattern stays under 50ms on every input.
 - Multi-real per-category test added (`findRealMatch`) — one fixture per pattern category (ai-ml / cloud / communication / developer / payment / database / auth / monitoring) asserts the `/g` promotion iterates past an allowlisted match to find a real one. A future regex edit that breaks `/g` is caught with a precise per-category diagnostic.
 
-### Phase 4.5 adversarial review fixes (caught pre-merge)
+### Adversarial review fixes (caught pre-merge)
 
 - **Demo-password match is case-insensitive.** `Password123` (capitalized) in a tutorial fixture now allowlists; the case-sensitive Set lookup that shipped in the first draft would have missed it.
 - **IPv6 loopback `[::1]` allowlists alongside `localhost` and `127.0.0.1`.** Tutorial fixtures using IPv6 loopback are no longer flagged as real credentials. `[::2]` and other non-loopback IPv6 addresses still fire.

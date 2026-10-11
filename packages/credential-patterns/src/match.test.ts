@@ -208,7 +208,7 @@ describe('isKnownExample (0.1.1 — localhost+demo-password DB connection string
     expect(isKnownExample(line, match)).toBe(true);
   });
 
-  it('capitalized demo password `Password123` with localhost is allowlisted (Phase 4.5 fix)', () => {
+  it('capitalized demo password `Password123` with localhost is allowlisted', () => {
     // Adversarial review case: case-sensitive Set lookup would have missed
     // capitalized demo passwords. Real tutorials sometimes capitalize.
     const line = 'DATABASE_URL=postgres://admin:Password123@localhost:5432/mydb';
@@ -217,7 +217,7 @@ describe('isKnownExample (0.1.1 — localhost+demo-password DB connection string
     expect(isKnownExample(line, match)).toBe(true);
   });
 
-  it('IPv6 loopback `[::1]` with demo password is allowlisted (Phase 4.5 fix)', () => {
+  it('IPv6 loopback `[::1]` with demo password is allowlisted', () => {
     // Adversarial review case: IPv6 loopback is the same trust class as
     // 127.0.0.1; tutorials occasionally use it.
     const line = 'DATABASE_URL=postgres://admin:password@[::1]:5432/mydb';

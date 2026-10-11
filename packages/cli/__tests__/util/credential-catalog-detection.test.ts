@@ -65,7 +65,7 @@ describe('BREADTH_DETECT_IDS — fail-safe include list', () => {
       expect(ids.has(id), `BREADTH_DETECT_IDS has '${id}' not in the catalog`).toBe(true);
     }
   });
-  it('excludes the FP-prone value-shape-only patterns (Phase 4.5)', () => {
+  it('excludes the FP-prone value-shape-only patterns', () => {
     for (const id of ['supabase', 'telegram-bot', 'twilio', 'grafana', 'mongodb', 'postgres', 'mysql', 'redis']) {
       expect(BREADTH_DETECT_IDS.has(id), `'${id}' must NOT be in the breadth list`).toBe(false);
     }
@@ -143,7 +143,7 @@ describe('collectCatalogMatches', () => {
     expect(collect([`const fake = "${placeholder}";`], '/x/config.js')).toHaveLength(0);
   });
 
-  // Phase 4.5: value-shape-only patterns must NOT fire on benign content.
+  // Value-shape-only patterns must NOT fire on benign content.
   // Tokens built by concatenation so GitHub Push Protection (which scans source
   // bytes) doesn't flag these deliberately-credential-shaped benign fixtures.
   it('does NOT false-positive on benign content (twilio SK+md5, telegram id:hash, bare conn string)', () => {

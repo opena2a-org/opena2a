@@ -3,7 +3,7 @@
  * defined by ATP/ATX that states what an agent *is*.
  *
  * This verifier reproduces the canonicalization of the OpenA2A reference
- * verifiers (`opena2a-registry/pkg/atcverify/verify.go canonicalPayload()` and
+ * verifiers (`atx-conformance/verifiers/go/verify.go canonicalPayload()` and
  * the Python port at `atx-conformance/verifiers/python/verify.py`). Byte
  * agreement across Go == Python == TS is pinned by
  * `atx-conformance/jcs-vectors`; whole-verifier equivalence is asserted by the
@@ -578,7 +578,7 @@ function controllerDid(keyId: string): string {
 }
 
 /**
- * Mirror of `opena2a-registry/pkg/atcverify/verify.go canonicalPayload()`:
+ * Mirror of `atx-conformance/verifiers/go/verify.go canonicalPayload()`:
  *   fmt.Sprintf("%s|%s|%s|%s|%s|%s|%d|%.6f|%s|%s|%s", ...)
  * with atxVersion hardcoded to "1.0".
  */
@@ -604,8 +604,8 @@ export function canonicalPayload(atx: Atx): Buffer {
  * canonicalPayload, this covers capabilities, scanSummary, issuerChain,
  * publisher, declaredPurpose, and behavioralProfile. The projection (canonical empties,
  * always-full scanSummary, %.6f string trustScore, root-first issuerChain) and
- * the canonicalizer match opena2a-registry/pkg/atcverify and the conformance
- * verifiers exactly; byte agreement is pinned by atx-conformance/jcs-vectors.
+ * the canonicalizer match the Go and Python conformance verifiers exactly;
+ * byte agreement is pinned by atx-conformance/jcs-vectors.
  */
 export function canonicalPayloadV11(atx: Atx): Buffer {
   const scan = (atx.scanSummary ?? {}) as Record<string, unknown>;

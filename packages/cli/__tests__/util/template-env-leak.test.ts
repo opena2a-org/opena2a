@@ -79,7 +79,7 @@ describe('scanTemplateEnvLeaks: fires on real-shaped values in template env file
     expect(scanTemplateEnvLeaks(tmpDir).length).toBe(1);
   });
 
-  // Cross-command consistency (opena2a#227 Phase 4.5): `init` must agree in
+  // Cross-command consistency (opena2a#227): `init` must agree in
   // direction with `hackmyagent secure` (CONFIG-004), which flags OpenAI /
   // Stripe env-file leaks. The alnum-only patterns match a real key.
   it('flags a real-shaped OpenAI project key (sk-proj-…) — agrees with HMA CONFIG-004', () => {

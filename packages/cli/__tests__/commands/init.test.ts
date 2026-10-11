@@ -631,8 +631,8 @@ describe('init', () => {
     const fakeKey = 'sk-ant-api03-' + 'P'.repeat(85);
     fs.writeFileSync(path.join(tempDir, 'config.ts'), `const k = "${fakeKey}";`);
     // Add a key file so we can also assert CRED-KEYFILE carries a non-
-    // misleading fix command (Phase 4.5 follow-up: pre-fix this routed
-    // to `opena2a protect` which silently no-ops on binary key files).
+    // misleading fix command (pre-fix this routed to `opena2a protect`,
+    // which silently no-ops on binary key files).
     fs.writeFileSync(path.join(tempDir, 'leak.key'), '-----BEGIN PRIVATE KEY-----\nFAKE');
 
     const { output } = await captureStdout(() => init({
@@ -665,10 +665,10 @@ describe('init', () => {
     expect(mcpFinding.locations[0].file.endsWith('mcp.json')).toBe(true);
   });
 
-  // Phase 4.5 follow-up: a single MEDIUM `.crt` finding alone must NOT
+  // A single MEDIUM `.crt` finding alone must NOT
   // co-exist with a 100/100 score and a "+5 security config" bonus.
   // Pre-fix `hasHighImpact` only checked critCount/highCount.
-  it('MEDIUM CRED-CERTFILE alone suppresses the security-config bonus (#116/Phase4.5)', async () => {
+  it('MEDIUM CRED-CERTFILE alone suppresses the security-config bonus (#116)', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
     fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '{}');
@@ -688,7 +688,7 @@ describe('init', () => {
     expect(certFinding.severity).toBe('medium');
   });
 
-  // Phase 4.5 follow-up: assert the real corpus is checked when present
+  // Assert the real corpus is checked when present
   // so monotonicity isn't only validated on synthetic shapes.
   const corpusKitchenSink = path.join(os.homedir(), 'workspace', 'opena2a-org', 'opena2a-corpus', 'repo', 'malicious', 'kitchen-sink');
   const corpusBenign = path.join(os.homedir(), 'workspace', 'opena2a-org', 'opena2a-corpus', 'repo', 'benign', 'tiny-clean-repo');
