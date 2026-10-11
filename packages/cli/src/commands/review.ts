@@ -727,7 +727,7 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   // ── Observations + Verdict ──────────────────────────────────────────
   // Shared block from @opena2a/cli-ui so review/scan output stays
-  // consistent with hackmyagent secure output per [CA-030]. Dynamic
+  // consistent with hackmyagent secure output. Dynamic
   // import because cli-ui is ESM and this package is CJS (same pattern
   // as @opena2a/shared / @opena2a/contribute usage elsewhere). Skipped under
   // --quiet: the Score line above already carries the result.

@@ -1,7 +1,7 @@
 /**
  * Pure helpers for rendering NanoMind generative findings in scan output.
  *
- * Shared across hackmyagent, opena2a-cli, ai-trust per [CA-030]. Zero
+ * Shared across hackmyagent, opena2a-cli, ai-trust. Zero
  * runtime deps — callers apply colors and wrapping. Transformations
  * stay isolated from the render pipeline so they can be unit-tested
  * without spinning up a full scan.

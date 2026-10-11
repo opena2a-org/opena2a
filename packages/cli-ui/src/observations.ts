@@ -6,7 +6,7 @@
  * verified, and a plain-English verdict — so `100/100` never stands
  * alone as a dead-end opaque signal.
  *
- * Shared across hackmyagent, opena2a-cli, ai-trust per [CA-030].
+ * Shared across hackmyagent, opena2a-cli, ai-trust.
  * No runtime deps (no chalk); returns tone tuples so callers apply colors.
  */
 
