@@ -197,7 +197,7 @@ describe('child-process audit: a row merges, a count sentence does not', () => {
     return [conflicts(repoDir, a, b), conflicts(repoDir, b, a)];
   }
 
-  it('QGF-146.AC4 two deliveries each add their own row and merge clean; the same two rewriting one count sentence conflict', () => {
+  it('two deliveries each add their own row and merge clean; the same two rewriting one count sentence conflict', () => {
     const delivered = fs.readFileSync(AUDIT_IN_TREE, 'utf-8');
 
     // Each branch adds exactly one entry, for a distinct new spawning test

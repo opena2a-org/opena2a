@@ -3,9 +3,10 @@
  * lockdown, not after.
  *
  * `--verify` is documented as "Verify before recovering". The original
- * implementation called `exitLockdown()` first and only re-entered lockdown if
- * the checks came back compromised, because `runIntegrityChecks` short-circuits
- * to `status: 'lockdown'` while the marker is present. That leaves a window in
+ * implementation called `exitLockdown()` first and only re-entered lockdown
+ * if the checks came back compromised, because
+ * `runIntegrityChecks` short-circuits to `status: 'lockdown'` while the
+ * marker is present. That leaves a window in
  * which a compromised machine is out of lockdown, and anything that ends the
  * process during the window (a throwing check, SIGINT, a kill) leaves it out of
  * lockdown permanently — a fail-open on the one command whose whole job is to
@@ -90,9 +91,9 @@ describe('shield recover --verify', () => {
   it('runs the checks while the lockdown marker is still present', async () => {
     integrity.enterLockdown('tamper detected');
 
-    let lockedDuringCheck: boolean | null = null;
+    let lockedDuringRun: boolean | null = null;
     vi.spyOn(integrity, 'runIntegrityChecks').mockImplementation(() => {
-      lockedDuringCheck = integrity.isLockdown();
+      lockedDuringRun = integrity.isLockdown();
       return { status: 'healthy', checks: [], lastVerified: '', chainHash: '' };
     });
 
@@ -100,7 +101,7 @@ describe('shield recover --verify', () => {
     await shield({ subcommand: 'recover', verify: true, format: 'json' });
     io.restore();
 
-    expect(lockedDuringCheck).toBe(true);
+    expect(lockedDuringRun).toBe(true);
   });
 
   it('reports a throwing check without crashing, and stays in lockdown', async () => {

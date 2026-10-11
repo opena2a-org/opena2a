@@ -108,7 +108,7 @@ function docsMarkdownFiles(): string[] {
 }
 
 describe('documented npx opena2a-cli invocations name their target', () => {
-  it('OPA-02.AC2 every documented invocation with a tree-reading subcommand carries an explicit target', () => {
+  it('every documented invocation with a tree-reading subcommand carries an explicit target', () => {
     const violations: string[] = [];
 
     for (const file of docsMarkdownFiles()) {
@@ -123,7 +123,7 @@ describe('documented npx opena2a-cli invocations name their target', () => {
     expect(violations).toEqual([]);
   });
 
-  it('OPA-02.AC2 REQUIRES_TARGET covers every subcommand declared with a directory or file operand in index.ts', () => {
+  it('REQUIRES_TARGET covers every subcommand declared with a directory or file operand in index.ts', () => {
     const indexTs = fs.readFileSync(
       path.join(REPO_ROOT, 'packages', 'cli', 'src', 'index.ts'),
       'utf-8'
@@ -143,7 +143,7 @@ describe('documented npx opena2a-cli invocations name their target', () => {
     expect(declared.filter((name) => !REQUIRES_TARGET.has(name))).toEqual([]);
   });
 
-  it('OPA-02.AC3 the cwd-implied form is refused and the explicit form is admitted', () => {
+  it('the cwd-implied form is refused and the explicit form is admitted', () => {
     // Negative path pinned: reintroducing a cwd-implied line in any scanned
     // file fails AC2 above; this pins the rule itself against regression.
     expect(checkInvocation(' review')).not.toBeNull();
@@ -166,7 +166,7 @@ describe('documented npx opena2a-cli invocations name their target', () => {
     ).toEqual([]);
   });
 
-  it('OPA-02.AC3 the ci-cd.md HackMyAgent recipe runs from runner.temp with the workspace as the operand', () => {
+  it('the ci-cd.md HackMyAgent recipe runs from runner.temp with the workspace as the operand', () => {
     const cicd = fs.readFileSync(
       path.join(REPO_ROOT, 'docs', 'use-cases', 'ci-cd.md'),
       'utf-8'

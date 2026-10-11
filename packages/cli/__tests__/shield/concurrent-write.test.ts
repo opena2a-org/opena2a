@@ -239,14 +239,14 @@ describe('concurrent writeEvent (#231)', () => {
     return overCeilingRun;
   }
 
-  it(`QGF-40.AC1 never holds more than MAX_LIVE_CHILDREN=${MAX_LIVE_CHILDREN} spawned children live at once`, async () => {
+  it(`never holds more than MAX_LIVE_CHILDREN=${MAX_LIVE_CHILDREN} spawned children live at once`, async () => {
     const { peakLive } = await runOverCeiling();
     // Counted by the runner itself: peakLive is the high-water mark of
     // children spawned and not yet exited.
     expect(peakLive).toBeLessThanOrEqual(MAX_LIVE_CHILDREN);
   }, 60_000);
 
-  it('QGF-40.AC2 keeps at least two writers simultaneously live and contending in the same startAt window', async () => {
+  it('keeps at least two writers simultaneously live and contending in the same startAt window', async () => {
     const { peakLive, lines, stderrs } = await runOverCeiling();
     // The whole first batch spawns in one tick and every child in it spins
     // until the shared startAt instant, so the ceiling itself is the
@@ -261,7 +261,7 @@ describe('concurrent writeEvent (#231)', () => {
     ).toEqual({ valid: true, brokenAt: null });
   }, 60_000);
 
-  it('QGF-40.AC3 queues writers above the ceiling instead of spawning them concurrently', async () => {
+  it('queues writers above the ceiling instead of spawning them concurrently', async () => {
     const { peakLive, lines } = await runOverCeiling();
     // The total writer count rose past the ceiling and nobody was dropped...
     expect(OVER_CEILING_WRITERS).toBeGreaterThan(MAX_LIVE_CHILDREN);
@@ -316,7 +316,7 @@ describe('concurrent writeEvent (#231)', () => {
     });
   }, 60_000);
 
-  it('OPA-01.AC3 keeps the stderr of a child that exits 0', async () => {
+  it('keeps the stderr of a child that exits 0', async () => {
     // Red at base 5cb201b: spawnChild surfaced stderr only inside the
     // rejection for a non-zero exit, so a child that printed the fail-open
     // `shield: lock-timeout` warning and exited 0 left no trace.

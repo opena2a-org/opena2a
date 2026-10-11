@@ -65,7 +65,7 @@ async function countSettlements(fn: () => Promise<boolean>): Promise<{ value: bo
 }
 
 describe('confirm (shared yes/no prompt)', () => {
-  it('QGF-305.AC1 resolves true for y, Y, yes, YES and " yes " (surrounding spaces)', async () => {
+  it('resolves true for y, Y, yes, YES and " yes " (surrounding spaces)', async () => {
     for (const line of ['y', 'Y', 'yes', 'YES', ' yes ']) {
       const s = sink();
       const result = await confirm('Proceed? [y/N] ', { input: linesThenEof([line]), output: s.output });
@@ -74,26 +74,26 @@ describe('confirm (shared yes/no prompt)', () => {
     }
   });
 
-  it('QGF-305.AC1 the affirmative answer wins even though readline fires close right after the line', async () => {
+  it('the affirmative answer wins even though readline fires close right after the line', async () => {
     // A single 'y' line followed by EOF: both 'line' and 'close' fire; the
     // result must be the typed answer, not the close default.
     const result = await confirm('? ', { input: linesThenEof(['y']), output: sink().output });
     expect(result).toBe(true);
   });
 
-  it('QGF-305.AC2 resolves false for n, no, an empty line and any other text', async () => {
+  it('resolves false for n, no, an empty line and any other text', async () => {
     for (const line of ['n', 'no', '', 'maybe', 'yess', 'y es', 'true', '1']) {
       const result = await confirm('? ', { input: linesThenEof([line]), output: sink().output });
       expect(result, `line ${JSON.stringify(line)}`).toBe(false);
     }
   });
 
-  it('QGF-305.AC2 resolves false when the input ends before any line arrives (EOF)', async () => {
+  it('resolves false when the input ends before any line arrives (EOF)', async () => {
     const result = await confirm('? ', { input: Readable.from([]), output: sink().output });
     expect(result).toBe(false);
   });
 
-  it('QGF-305.AC2 settles exactly once on every affirmative, negative and EOF input', async () => {
+  it('settles exactly once on every affirmative, negative and EOF input', async () => {
     const cases: Array<{ lines: string[]; expected: boolean }> = [
       { lines: ['y'], expected: true },
       { lines: ['Y'], expected: true },
@@ -114,7 +114,7 @@ describe('confirm (shared yes/no prompt)', () => {
     }
   });
 
-  it('QGF-305.AC2 reads only the first line; later lines do not change the result', async () => {
+  it('reads only the first line; later lines do not change the result', async () => {
     const first = await confirm('? ', { input: linesThenEof(['n', 'y']), output: sink().output });
     expect(first).toBe(false);
     const second = await confirm('? ', { input: linesThenEof(['y', 'n']), output: sink().output });
@@ -127,19 +127,19 @@ describe('confirm -- single readline site (invariant)', () => {
   const adminSrc = fs.readFileSync(path.join(SRC, 'commands/admin.ts'), 'utf-8');
   const confirmSrc = fs.readFileSync(path.join(SRC, 'util/confirm.ts'), 'utf-8');
 
-  it('QGF-305.AC5 neither guard-snapshots.ts nor admin.ts calls readline createInterface', () => {
+  it('neither guard-snapshots.ts nor admin.ts calls readline createInterface', () => {
     expect(guardSnapshotsSrc).not.toMatch(/createInterface/);
     expect(adminSrc).not.toMatch(/createInterface/);
     expect(guardSnapshotsSrc).not.toMatch(/readline/);
     expect(adminSrc).not.toMatch(/readline/);
   });
 
-  it('QGF-305.AC5 the readline interface that reads the answer is created inside the shared confirm function', () => {
+  it('the readline interface that reads the answer is created inside the shared confirm function', () => {
     expect(confirmSrc).toMatch(/import \{ createInterface \} from 'node:readline'/);
     expect(confirmSrc.match(/createInterface\(/g)?.length).toBe(1);
   });
 
-  it('QGF-305.AC1 both the guard resign prompt and the admin destructive-action prompt call the shared confirm', () => {
+  it('both the guard resign prompt and the admin destructive-action prompt call the shared confirm', () => {
     expect(guardSnapshotsSrc).toMatch(/import \{ confirm \} from '\.\.\/util\/confirm\.js'/);
     expect(guardSnapshotsSrc).toMatch(/await confirm\('\\nConfirm re-sign\? \[y\/N\] '\)/);
     expect(adminSrc).toMatch(/import \{ confirm \} from '\.\.\/util\/confirm\.js'/);

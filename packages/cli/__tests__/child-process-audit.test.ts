@@ -75,7 +75,7 @@ function testcaseSource(source: string, titlePrefix: string): string {
 }
 
 describe('child-process spawn audit', () => {
-  it('QGF-40.AC5 lists every test file that imports node:child_process, and only those', () => {
+  it('lists every test file that imports node:child_process, and only those', () => {
     const importers = listTestFiles(TESTS_ROOT)
       .filter(file => STATIC_IMPORT.test(fs.readFileSync(file, 'utf-8')))
       .map(file => path.relative(TESTS_ROOT, file))
@@ -105,7 +105,7 @@ describe('child-process spawn audit', () => {
   // collide on a file whose rows merge cleanly. So: no cardinal beside the
   // name of the set. Nothing here asserts how many entries the table holds —
   // that number is written down nowhere, which is the point.
-  it('QGF-146.AC2 the audit docstring gives no count of the set the table enumerates', () => {
+  it('the audit docstring gives no count of the set the table enumerates', () => {
     const offenders = leadingCommentSentences(AUDIT_SOURCE).filter(
       sentence => CARDINAL.test(sentence) && AUDITED_SET.test(sentence),
     );
@@ -124,7 +124,7 @@ describe('child-process spawn audit', () => {
   // cannot observe its own history. The equality is re-derived at the
   // delivered commit, where this contract's own new spawning file is one of
   // the entries, and neither side is compared to a number written anywhere.
-  it('QGF-146.AC3 the symmetric assertion still binds the table to the tree, both ways', () => {
+  it('the symmetric assertion still binds the table to the tree, both ways', () => {
     const importers = listTestFiles(TESTS_ROOT)
       .filter(file => STATIC_IMPORT.test(fs.readFileSync(file, 'utf-8')))
       .map(file => path.relative(TESTS_ROOT, file))
@@ -146,14 +146,14 @@ describe('child-process spawn audit', () => {
     const source = fs.readFileSync(THIS_SOURCE, 'utf-8');
     const squash = (text: string) => text.replace(/\s+/g, '');
     const preamble = source.split(TESTCASE_BOUNDARY)[0];
-    const enumeration = testcaseSource(source, 'QGF-40.AC5');
+    const enumeration = testcaseSource(source, 'lists every test file');
     const ceiling = testcaseSource(source, 'records the ceiling');
 
     const parts: [string, string, string][] = [
       ['the preamble', preamble, `const STATIC_IMPORT = /^import\\s[^;]*?from\\s+['"]node:child_process['"]/m;`],
-      ['the QGF-40.AC5 testcase', enumeration, 'listTestFiles(TESTS_ROOT)'],
-      ['the QGF-40.AC5 testcase', enumeration, `STATIC_IMPORT.test(fs.readFileSync(file, 'utf-8'))`],
-      ['the QGF-40.AC5 testcase', enumeration, 'expect(importers).toEqual(Object.keys(CHILD_PROCESS_AUDIT).sort());'],
+      ['the enumeration testcase', enumeration, 'listTestFiles(TESTS_ROOT)'],
+      ['the enumeration testcase', enumeration, `STATIC_IMPORT.test(fs.readFileSync(file, 'utf-8'))`],
+      ['the enumeration testcase', enumeration, 'expect(importers).toEqual(Object.keys(CHILD_PROCESS_AUDIT).sort());'],
       ['the ceiling testcase', ceiling, `source.match(/^const MAX_LIVE_CHILDREN = (\\d+);$/m)`],
       ['the ceiling testcase', ceiling, `CHILD_PROCESS_AUDIT['shield/concurrent-write.test.ts'].maxSimultaneousChildren`],
       ['the ceiling testcase', ceiling, 'toBe(Number(match![1]))'],

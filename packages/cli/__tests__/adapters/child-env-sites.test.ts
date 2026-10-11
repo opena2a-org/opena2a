@@ -321,7 +321,7 @@ function findStart(result: Survey, file: string, calleeArg: RegExp): Survey['sta
 describe('child-env-sites — every child start under src/ (#246)', () => {
   const result = survey();
 
-  it('OPA-14.AC3 the walker sees the child-start population, and none of the RegExp.exec calls', () => {
+  it('the walker sees the child-start population, and none of the RegExp.exec calls', () => {
     // Guards the guard: if the walker silently matched nothing, every other
     // assertion here would pass vacuously.
     expect(result.starts.length).toBeGreaterThanOrEqual(40);
@@ -339,22 +339,22 @@ describe('child-env-sites — every child start under src/ (#246)', () => {
     }
   });
 
-  it('OPA-14.AC3 every child start carries a resolver env or is on the implicit-inherit roster', () => {
+  it('every child start carries a resolver env or is on the implicit-inherit roster', () => {
     expect(result.violations, 'child starts whose env is neither a resolver nor absent').toEqual([]);
   });
 
-  it('OPA-14.AC3 the roster equals the measured implicit-inherit set exactly (shrink only)', () => {
+  it('the roster equals the measured implicit-inherit set exactly (shrink only)', () => {
     // Symmetric on purpose: an unlisted implicit site fails, and so does a
     // listed site that has since been fixed or moved, so a stale roster is as
     // loud as a new leak.
     expect(result.implicit).toEqual([...IMPLICIT_INHERIT].sort());
   });
 
-  it('OPA-14.AC3 no child start spreads process.env into its options', () => {
+  it('no child start spreads process.env into its options', () => {
     expect(result.spreads).toEqual([]);
   });
 
-  it('OPA-14.AC3 the three sites the ruling moved out of implicit inheritance carry a resolver', () => {
+  it('the three sites the ruling moved out of implicit inheritance carry a resolver', () => {
     const review = findStart(result, 'commands/review.ts', /'secure'/);
     expect(review.verdict).toEqual({ kind: 'resolver', via: 'childEnv' });
     expect(review.envValue).toMatch(/^childEnv\(\s*'hackmyagent'/);
@@ -370,7 +370,7 @@ describe('child-env-sites — every child start under src/ (#246)', () => {
     }
   });
 
-  it('OPA-14.AC3 the adapters reach a resolver through toolEnv, and the seven fixed sites through childEnv', () => {
+  it('the adapters reach a resolver through toolEnv, and the seven fixed sites through childEnv', () => {
     for (const adapter of ['adapters/spawn.ts', 'adapters/python.ts', 'adapters/docker.ts']) {
       const run = result.starts.find(s => s.site.startsWith(`${adapter}:`) && /toolEnv/.test(s.envValue ?? ''));
       expect(run, `${adapter} run spawn goes through toolEnv`).toBeDefined();
@@ -406,7 +406,7 @@ describe('child-env-sites — the shipped-spread census (#246)', () => {
     return hits;
   }
 
-  it('OPA-14.AC2 exactly one `...process.env` under src/, inside the body of inheritEnv', () => {
+  it('exactly one `...process.env` under src/, inside the body of inheritEnv', () => {
     const hits = spreadLines();
     expect(hits.map(h => `${h.file}:${h.line}`)).toHaveLength(1);
     expect(hits[0].file).toBe('adapters/registry.ts');
@@ -423,12 +423,12 @@ describe('child-env-sites — the shipped-spread census (#246)', () => {
     expect(hits[0].line).toBeLessThanOrEqual(bodyEndLine);
   });
 
-  it('OPA-14.AC2 zero spreads in the six files that carried the seven at base', () => {
+  it('zero spreads in the six files that carried the seven at base', () => {
     const hits = spreadLines().filter(h => sixFiles.includes(h.file));
     expect(hits).toEqual([]);
   });
 
-  it('OPA-14.AC2 the adapters’ toolEnv chooses inheritEnv() or buildChildEnv(), and the direct sites use childEnv', () => {
+  it('the adapters’ toolEnv chooses inheritEnv() or buildChildEnv(), and the direct sites use childEnv', () => {
     for (const adapter of ['adapters/spawn.ts', 'adapters/python.ts', 'adapters/docker.ts']) {
       const blanked = blankCommentsAndStrings(fs.readFileSync(path.join(SRC_ROOT, adapter), 'utf-8'));
       const decl = /function toolEnv\s*\([^)]*\)[^{]*\{/.exec(blanked)!;

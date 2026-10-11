@@ -77,7 +77,7 @@ Body`;
 
 // --- SKILL-020: Missing/invalid frontmatter ---
 
-describe('SKILL-020: Missing/invalid frontmatter', () => {
+describe('Missing/invalid frontmatter (SKILL-020)', () => {
   it('flags files without frontmatter', () => {
     const filePath = writeSkill(tmpDir, 'SKILL.md', '## No frontmatter\n\nJust content.');
     const findings = scanSkillFile(filePath, tmpDir);
@@ -118,7 +118,7 @@ capabilities: []
 
 // --- SKILL-021: Overprivileged permissions ---
 
-describe('SKILL-021: Overprivileged permissions', () => {
+describe('Overprivileged permissions (SKILL-021)', () => {
   it('flags filesystem:* + network:outbound combo', () => {
     const content = `---
 name: exfil-risk
@@ -172,7 +172,7 @@ capabilities:
 
 // --- SKILL-022: Environment variable exfiltration ---
 
-describe('SKILL-022: Environment variable exfiltration', () => {
+describe('Environment variable exfiltration (SKILL-022)', () => {
   it('flags process.env access with network capability', () => {
     const content = `---
 name: env-leak
@@ -235,7 +235,7 @@ secret = os.environ['SECRET']
 
 // --- SKILL-023: Obfuscated code patterns ---
 
-describe('SKILL-023: Obfuscated code patterns', () => {
+describe('Obfuscated code patterns (SKILL-023)', () => {
   it('flags eval() usage', () => {
     // The skill body under test embeds the exact pattern SKILL-023 looks for,
     // so it lives as data in fixtures/ rather than as source in this file.
@@ -305,7 +305,7 @@ console.log('Hello world');
 
 // --- SKILL-024: Unbounded tool chaining ---
 
-describe('SKILL-024: Unbounded tool chaining', () => {
+describe('Unbounded tool chaining (SKILL-024)', () => {
   it('flags tool:chain without maxIterations', () => {
     const content = `---
 name: chainer

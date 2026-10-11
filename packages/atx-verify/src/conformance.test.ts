@@ -152,7 +152,7 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     expect(fixtureFiles.length).toBe(PINNED_SUITE_SIZE);
   });
 
-  it(`OPA-13.AC1 frozen verdict table has exactly ${PINNED_SUITE_SIZE} rows, each a complete verdict`, () => {
+  it(`frozen verdict table has exactly ${PINNED_SUITE_SIZE} rows, each a complete verdict`, () => {
     const rows = Object.entries(PINNED_VERDICTS);
     expect(rows.length).toBe(PINNED_SUITE_SIZE);
     for (const [file, row] of rows) {
@@ -166,7 +166,7 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     }
   });
 
-  it('OPA-13.AC2 table key set equals the vendored __fixtures__ directory listing', () => {
+  it('table key set equals the vendored __fixtures__ directory listing', () => {
     const tableKeys = Object.keys(PINNED_VERDICTS).sort();
     // Both directions are reported in ONE assertion so a rename names both the
     // stray file and the orphaned table key.
@@ -182,7 +182,7 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     expect(tableKeys).toEqual(fixtureFiles);
   });
 
-  it('OPA-13.AC5 pins fixture 21 (v1_1-untrusted-chain-authority.json) as REJECT SIGNATURE_INVALID', () => {
+  it('pins fixture 21 (v1_1-untrusted-chain-authority.json) as REJECT SIGNATURE_INVALID', () => {
     expect(PINNED_VERDICTS['v1_1-untrusted-chain-authority.json']).toEqual({
       verifyResult: 'REJECT',
       rejectCategory: 'SIGNATURE_INVALID',
@@ -190,7 +190,7 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     expect(fixtureFiles).toContain('v1_1-untrusted-chain-authority.json');
   });
 
-  it('OPA-13.AC5 ATX_CONFORMANCE_REF equals the ref .github/workflows/ci.yml pins', () => {
+  it('ATX_CONFORMANCE_REF equals the ref .github/workflows/ci.yml pins', () => {
     expect(ATX_CONFORMANCE_REF).toMatch(/^[0-9a-f]{40}$/);
     // The short ref named in this file's header, PINNED_SUITE_SIZE doc comment
     // and describe title is this constant's 7-character prefix.
@@ -213,7 +213,7 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     }
     const rawAtx = rawText.slice(span.start, span.end);
 
-    it(`OPA-13.AC3 ${f.name} -> ${describeVerdict(f.expected)}`, () => {
+    it(`${f.name} -> ${describeVerdict(f.expected)}`, () => {
       // The fixture's own `expected` member must agree with the frozen table
       // BEFORE the verifier result is compared: an edited fixture fails here,
       // naming the file, whether or not the verifier happens to agree with it.

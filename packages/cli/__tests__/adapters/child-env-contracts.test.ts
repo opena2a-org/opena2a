@@ -118,7 +118,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
-  it('OPA-14.AC1 CHILD_ENV_CONTRACTS is keyed by binary and carries the AdapterConfig env shape', () => {
+  it('CHILD_ENV_CONTRACTS is keyed by binary and carries the AdapterConfig env shape', () => {
     for (const binary of ['hackmyagent', 'claude', 'secretless-ai']) {
       expect(CHILD_ENV_CONTRACTS, `contract for ${binary}`).toHaveProperty(binary);
     }
@@ -134,7 +134,7 @@ describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
     expect(CHILD_ENV_CONTRACTS['secretless-ai']).toEqual({ envInherit: true });
   });
 
-  it('OPA-14.AC1 childEnv("hackmyagent") is buildChildEnv over the base contract plus the node toolchain', () => {
+  it('childEnv("hackmyagent") is buildChildEnv over the base contract plus the node toolchain', () => {
     const contract = CHILD_ENV_CONTRACTS.hackmyagent;
     expect([...contract.envAllow!].sort()).toEqual([...HACKMYAGENT_EXACT].sort());
     expect([...contract.envAllowPrefixes!].sort()).toEqual([...HACKMYAGENT_PREFIXES].sort());
@@ -151,7 +151,7 @@ describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
     expect(childEnv('hackmyagent').GITHUB_TOKEN).toBeUndefined();
   });
 
-  it('OPA-14.AC1 `set` entries are applied last and win over the contract', () => {
+  it('`set` entries are applied last and win over the contract', () => {
     const env = childEnv('hackmyagent', {
       set: { HMA_CHECK_COMMAND: 'opena2a check', NANOMIND_URL: 'http://override:1' },
     });
@@ -162,14 +162,14 @@ describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
       .not.toHaveProperty('OPENA2A_CHILD_ENV_ALLOW');
   });
 
-  it('OPA-14.AC1 childEnv of a binary with no contract throws rather than returning an environment', () => {
+  it('childEnv of a binary with no contract throws rather than returning an environment', () => {
     expect(() => childEnv('no-such-binary')).toThrow(/No child-environment contract.*no-such-binary/);
     // Prototype keys are not contracts either.
     expect(() => childEnv('constructor')).toThrow();
     expect(() => childEnv('toString')).toThrow();
   });
 
-  it('OPA-14.AC1 inheritEnv() is the parent environment verbatim minus OPENA2A_CHILD_ENV_ALLOW', () => {
+  it('inheritEnv() is the parent environment verbatim minus OPENA2A_CHILD_ENV_ALLOW', () => {
     vi.stubEnv('OPENA2A_CHILD_ENV_ALLOW', 'GITHUB_TOKEN');
     const env = inheritEnv();
     expect(env).not.toHaveProperty('OPENA2A_CHILD_ENV_ALLOW');
@@ -180,7 +180,7 @@ describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
     expect(env.OPENAI_API_KEY).toBe('PLANTED-openai');
   });
 
-  it('OPA-14.AC1 probeEnv stays the version-probe environment and ignores the hatch', () => {
+  it('probeEnv stays the version-probe environment and ignores the hatch', () => {
     vi.stubEnv('OPENA2A_CHILD_ENV_ALLOW', 'GITHUB_TOKEN');
     const probe = probeEnv(CHILD_ENV_CONTRACTS.hackmyagent.envAllowPrefixes);
     expect(probe.GITHUB_TOKEN).toBeUndefined();
@@ -190,7 +190,7 @@ describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
     expect(probe).not.toHaveProperty('OPENA2A_CHILD_ENV_ALLOW');
   });
 
-  it('OPA-14.AC1 ADAPTER_REGISTRY entries obtain their environment through the contracts', async () => {
+  it('ADAPTER_REGISTRY entries obtain their environment through the contracts', async () => {
     expect(ADAPTER_REGISTRY.scan.envAllow).toEqual(CHILD_ENV_CONTRACTS.hackmyagent.envAllow);
     expect(ADAPTER_REGISTRY.scan.envAllowPrefixes).toEqual(CHILD_ENV_CONTRACTS.hackmyagent.envAllowPrefixes);
     expect(ADAPTER_REGISTRY.secrets.envInherit).toBe(true);
@@ -238,7 +238,7 @@ describe('every route to hackmyagent (#246)', () => {
     return routes;
   }
 
-  it('OPA-14.AC4 the five routes hand the scanner byte-identical key sets once the citation names are removed', async () => {
+  it('the five routes hand the scanner byte-identical key sets once the citation names are removed', async () => {
     const routes = await captureRoutes();
     expect(Object.keys(routes)).toHaveLength(5);
 
@@ -257,7 +257,7 @@ describe('every route to hackmyagent (#246)', () => {
     }
   });
 
-  it('OPA-14.AC4 every route forwards NANOMIND_URL and none forwards GITHUB_TOKEN', async () => {
+  it('every route forwards NANOMIND_URL and none forwards GITHUB_TOKEN', async () => {
     const routes = await captureRoutes();
     for (const [name, env] of Object.entries(routes)) {
       expect(env.NANOMIND_URL, `${name} forwards NANOMIND_URL`).toBe('http://127.0.0.1:871');
@@ -270,7 +270,7 @@ describe('every route to hackmyagent (#246)', () => {
     }
   });
 
-  it('OPA-14.AC4 the not-installed npx fallback of each direct site is on the same contract', () => {
+  it('the not-installed npx fallback of each direct site is on the same contract', () => {
     // Both spawns of each direct site resolve through childEnv; the fallback
     // is the one that runs on a machine without a PATH hackmyagent, which is
     // exactly where `npx` needs the node-toolchain prefixes.
@@ -345,7 +345,7 @@ describe('the seven fixed sites (#246)', () => {
   ];
 
   for (const site of sites) {
-    it(`OPA-14.AC6 ${site.name}: lacks GITHUB_TOKEN and carries ${site.declared}`, async () => {
+    it(`${site.name}: lacks GITHUB_TOKEN and carries ${site.declared}`, async () => {
       const env = await site.capture();
       expect(env, `${site.name} passed an env`).toBeDefined();
       expect(env.GITHUB_TOKEN).toBeUndefined();
@@ -354,7 +354,7 @@ describe('the seven fixed sites (#246)', () => {
     });
   }
 
-  it('OPA-14.AC6 the ANTHROPIC_API_KEY the claude contract declares does not reach the hackmyagent-free sites', async () => {
+  it('the ANTHROPIC_API_KEY the claude contract declares does not reach the hackmyagent-free sites', async () => {
     // A name declared by one contract is not thereby declared by another:
     // docker and python never see the model credential.
     await new DockerAdapter(ADAPTER_REGISTRY.train).run({ args: [], quiet: true });
@@ -363,7 +363,7 @@ describe('the seven fixed sites (#246)', () => {
     expect(lastSpawn(c => c.args[0] === '-m').ANTHROPIC_API_KEY).toBeUndefined();
   });
 
-  it('OPA-14.AC6 the which-claude probe sees neither the model credential nor GITHUB_TOKEN', () => {
+  it('the which-claude probe sees neither the model credential nor GITHUB_TOKEN', () => {
     expect(isClaudeCodeAvailable()).toBe(true);
     const probe = execFileSyncCalls.find(c => c.bin === 'which')!.opts.env as NodeJS.ProcessEnv;
     expect(probe).toBeDefined();
@@ -372,7 +372,7 @@ describe('the seven fixed sites (#246)', () => {
     expect(probe.PATH).toBe(process.env.PATH);
   });
 
-  it('OPA-14.AC6 with OPENA2A_CHILD_ENV_ALLOW=GITHUB_TOKEN a childEnv route forwards it, reports it, and still drops the hatch', async () => {
+  it('with OPENA2A_CHILD_ENV_ALLOW=GITHUB_TOKEN a childEnv route forwards it, reports it, and still drops the hatch', async () => {
     vi.stubEnv('OPENA2A_CHILD_ENV_ALLOW', 'GITHUB_TOKEN');
     await spawnHmaCheck('express', [], {});
     const env = lastSpawn(isHmaRun);
@@ -388,7 +388,7 @@ describe('the seven fixed sites (#246)', () => {
     expect(claude).not.toHaveProperty('OPENA2A_CHILD_ENV_ALLOW');
   });
 
-  it('OPA-14.AC6 the envInherit route forwards GITHUB_TOKEN and OPENAI_API_KEY as before and lacks the hatch', async () => {
+  it('the envInherit route forwards GITHUB_TOKEN and OPENAI_API_KEY as before and lacks the hatch', async () => {
     vi.stubEnv('OPENA2A_CHILD_ENV_ALLOW', 'GITHUB_TOKEN');
     await new SpawnAdapter({ ...ADAPTER_REGISTRY.secrets, method: 'spawn', command: 'secretless-ai' })
       .run({ args: [], quiet: true });
@@ -399,7 +399,7 @@ describe('the seven fixed sites (#246)', () => {
     expect(env).not.toHaveProperty('OPENA2A_CHILD_ENV_ALLOW');
   });
 
-  it('OPA-14.AC6 the envInherit entries remain exactly broker and secrets', () => {
+  it('the envInherit entries remain exactly broker and secrets', () => {
     const exempt = Object.keys(ADAPTER_REGISTRY).filter(n => ADAPTER_REGISTRY[n].envInherit);
     expect(exempt.sort()).toEqual(['broker', 'secrets']);
     const inheriting = Object.entries(CHILD_ENV_CONTRACTS).filter(([, c]) => c.envInherit).map(([b]) => b);

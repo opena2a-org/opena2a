@@ -97,7 +97,7 @@ function importInChild(overrides: Record<string, string> = {}) {
 }
 
 describe('CANDIDATE consumer-resolution audit: what it reports and what it attributes', () => {
-  it('QGF-112.AC1 reports the tarball it measured and that the base artifact was not measured', async () => {
+  it('reports the tarball it measured and that the base artifact was not measured', async () => {
     const audit = await auditModule();
     const text: string = audit.candidateClosingGuidance(audit.BASE_COMPARISON.NOT_MEASURED);
 
@@ -106,7 +106,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     for (const claim of ATTRIBUTION) expect(text).not.toContain(claim);
   });
 
-  it('QGF-112.AC1 reports the tarball it measured and that the base artifact carries the same failure', async () => {
+  it('reports the tarball it measured and that the base artifact carries the same failure', async () => {
     const audit = await auditModule();
     const text: string = audit.candidateClosingGuidance(audit.BASE_COMPARISON.SAME_FAILURE_ON_BASE);
 
@@ -116,7 +116,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     for (const claim of ATTRIBUTION) expect(text).not.toContain(claim);
   });
 
-  it('QGF-112.AC2 attributes the failure to this branch for the measured-absent outcome and no other', async () => {
+  it('attributes the failure to this branch for the measured-absent outcome and no other', async () => {
     const audit = await auditModule();
     const outcomes: string[] = Object.values(audit.BASE_COMPARISON);
     // Three outcomes, so that "no other" is a statement about a closed set
@@ -137,14 +137,14 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     }
   });
 
-  it('QGF-112.AC2 refuses an outcome it does not recognise instead of defaulting to attribution', async () => {
+  it('refuses an outcome it does not recognise instead of defaulting to attribution', async () => {
     const audit = await auditModule();
     for (const unknown of [undefined, null, '', 'yes', 'toString', 'constructor', 0, {}]) {
       expect(() => audit.candidateClosingGuidance(unknown)).toThrow(/unknown base-comparison/i);
     }
   });
 
-  it('QGF-112.AC2 holds the branch-attributing text in one binding reached from one outcome', () => {
+  it('holds the branch-attributing text in one binding reached from one outcome', () => {
     // The runtime check above proves the composer returns it for one outcome.
     // This proves there is no SECOND way to print it: the sentence exists once
     // in the module, under one name, used once — as the value of the entry
@@ -159,7 +159,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(auditSource).toContain('[BASE_COMPARISON.ABSENT_FROM_BASE, BRANCH_ATTRIBUTED_GUIDANCE]');
   });
 
-  it('QGF-112.AC3 imports without spawning a child process, installing, auditing or reaching the network', () => {
+  it('imports without spawning a child process, installing, auditing or reaching the network', () => {
     const child = importInChild();
 
     expect(child.stderr).toBe('');
@@ -171,7 +171,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(child.tempEntries).toEqual([]);
   });
 
-  it('QGF-112.AC3 imports without creating a scratch directory', () => {
+  it('imports without creating a scratch directory', () => {
     // TMPDIR points at a path that does not exist, so the `mkdtempSync` that
     // opens the audit would throw ENOENT — outside the run's own try/catch, so
     // it would reject the import. A clean import is the measurement.
@@ -186,7 +186,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(fs.existsSync(missing)).toBe(false);
   });
 
-  it('QGF-112.AC3 still runs the audit when the module is the process entry point', () => {
+  it('still runs the audit when the module is the process entry point', () => {
     // The guard must not have turned the gate off: run as the program, with a
     // `--target` that has no value, it still reaches argument handling and
     // exits non-zero.
@@ -199,7 +199,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(child.status).toBe(2);
   });
 
-  it('QGF-112.AC4 allowlists no advisory on a package this repository publishes', async () => {
+  it('allowlists no advisory on a package this repository publishes', async () => {
     const audit = await auditModule();
     const published = fs
       .readdirSync(path.join(REPO_ROOT, 'packages'))
@@ -218,7 +218,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     }
   });
 
-  it('QGF-112.AC4 keeps both forbidden nested packages and the derived hackmyagent waiver', async () => {
+  it('keeps both forbidden nested packages and the derived hackmyagent waiver', async () => {
     const audit = await auditModule();
     const forbidden = audit.FORBIDDEN_PACKAGES as Array<Record<string, any>>;
     expect(forbidden.map((f) => [f.name, f.where])).toEqual([
@@ -233,7 +233,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(forbidden[1].waiver.derive.name).toBe('deriveNestedHackmyagent');
   });
 
-  it('QGF-112.AC4 still exits 1 whenever the run collected any failure', () => {
+  it('still exits 1 whenever the run collected any failure', () => {
     // Unconditional on `failures` being non-empty: no severity threshold, no
     // mode that downgrades it to a warning, nothing between the banner and the
     // exit. Read from source because the exit is what a test cannot survive.
@@ -243,7 +243,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(occurrences(auditSource, 'process.exit(1)')).toBe(1);
   });
 
-  it('QGF-112.AC4 leaves every packages/* dependency version where base put it', () => {
+  it('leaves every packages/* dependency version where base put it', () => {
     // The candidate run is red because `packages/cli` pins workspace versions a
     // consumer has to resolve from the registry. Moving any of these numbers
     // would change what the gate measures, which is not what this change is
@@ -339,7 +339,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(actual).toEqual(BASE);
   });
 
-  it('QGF-112.AC5 keeps consumer-audit-candidate wired to every non-schedule event and able to fail', () => {
+  it('keeps consumer-audit-candidate wired to every non-schedule event and able to fail', () => {
     const workflow = yaml.load(fs.readFileSync(SECURITY_WORKFLOW, 'utf-8')) as any;
     const job = workflow.jobs['consumer-audit-candidate'];
 
@@ -357,7 +357,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(JSON.stringify(job)).not.toContain('|| true');
   });
 
-  it('QGF-112.AC5 keeps the workflow on pull_request, push and schedule with no paths filter', () => {
+  it('keeps the workflow on pull_request, push and schedule with no paths filter', () => {
     const workflow = yaml.load(fs.readFileSync(SECURITY_WORKFLOW, 'utf-8')) as any;
     // YAML 1.1 readers resolve a bare `on:` key to boolean true; js-yaml 4 does
     // not, but reading both keeps this pinned to the workflow rather than to
@@ -369,7 +369,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     expect(JSON.stringify(triggers)).not.toContain('paths');
   });
 
-  it('QGF-112.AC5 leaves consumer-audit-published and the PUBLISHED closing text at base', () => {
+  it('leaves consumer-audit-published and the PUBLISHED closing text at base', () => {
     const workflow = yaml.load(fs.readFileSync(SECURITY_WORKFLOW, 'utf-8')) as any;
 
     expect(workflow.jobs['consumer-audit-published']).toEqual({

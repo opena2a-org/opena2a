@@ -67,7 +67,7 @@ function guardVerdict(files: string[]): { pass: boolean; hits: ShapeHit[] } {
 }
 
 describe('source-literal guard', () => {
-  it('OPA-12.AC1 committed detector test files carry zero contiguous provider-shape literals', () => {
+  it('committed detector test files carry zero contiguous provider-shape literals', () => {
     const targets = SCANNED_FILES.map(rel => path.join(repoRoot, rel));
     for (const target of targets) {
       expect(fs.existsSync(target), `scanned file exists: ${path.relative(repoRoot, target)}`).toBe(true);
@@ -78,7 +78,7 @@ describe('source-literal guard', () => {
     expect(verdict.pass).toBe(true);
   });
 
-  it('OPA-12.AC2 refuses a scratch copy with a planted provider-shape literal', () => {
+  it('refuses a scratch copy with a planted provider-shape literal', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opa12-guard-'));
     try {
       // Plant into a copy of a real scanned file; the planted value is itself

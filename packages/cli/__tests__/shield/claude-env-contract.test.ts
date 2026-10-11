@@ -29,14 +29,14 @@ const REQUIRED_PREFIXES = ['ANTHROPIC_', 'CLAUDE_', 'CLAUDE_CODE_', 'AWS_'];
 const REGISTRY_SOURCE = path.resolve(__dirname, '..', '..', 'src', 'adapters', 'registry.ts');
 
 describe('CHILD_ENV_CONTRACTS.claude (#246)', () => {
-  it('OPA-14.AC5 declares the four credential names and the four prefixes', () => {
+  it('declares the four credential names and the four prefixes', () => {
     const contract = CHILD_ENV_CONTRACTS.claude;
     expect(contract.envInherit).toBeUndefined();
     for (const name of REQUIRED_EXACT) expect(contract.envAllow, name).toContain(name);
     for (const prefix of REQUIRED_PREFIXES) expect(contract.envAllowPrefixes, prefix).toContain(prefix);
   });
 
-  it('OPA-14.AC5 the credential entries are exact because the guard blocks them on a prefix match', () => {
+  it('the credential entries are exact because the guard blocks them on a prefix match', () => {
     // A prefix match passes through looksLikeCredentialName, so a credential
     // under ANTHROPIC_ / AWS_ reaches the child only as an exact entry. The
     // three credentials in the contract are exactly such names; the endpoint
@@ -51,7 +51,7 @@ describe('CHILD_ENV_CONTRACTS.claude (#246)', () => {
     expect(looksLikeCredentialName('AWS_SECRET_ACCESS_KEY')).toBe(true);
   });
 
-  it('OPA-14.AC5 every further exact name carries a comment citing the tool’s published reference', () => {
+  it('every further exact name carries a comment citing the tool’s published reference', () => {
     const extra = (CHILD_ENV_CONTRACTS.claude.envAllow ?? []).filter(n => !REQUIRED_EXACT.includes(n));
     const lines = fs.readFileSync(REGISTRY_SOURCE, 'utf-8').split('\n');
     for (const name of extra) {
@@ -138,7 +138,7 @@ describe('claude on PATH receives the contract (#246)', () => {
     }
   });
 
-  it.skipIf(!posix)('OPA-14.AC5 the stub claude sees ANTHROPIC_API_KEY and not GITHUB_TOKEN', () => {
+  it.skipIf(!posix)('the stub claude sees ANTHROPIC_API_KEY and not GITHUB_TOKEN', () => {
     const response = callClaudeCode('system prompt', 'user prompt', 100);
     expect(response, 'callClaudeCode returned a response from the stub').not.toBeNull();
     expect(response!.backend).toBe('claude-code');
@@ -154,7 +154,7 @@ describe('claude on PATH receives the contract (#246)', () => {
     expect(seen.HOME).toBe(process.env.HOME);
   });
 
-  it.skipIf(!posix)('OPA-14.AC5 the which-claude probe sees neither ANTHROPIC_API_KEY nor GITHUB_TOKEN', () => {
+  it.skipIf(!posix)('the which-claude probe sees neither ANTHROPIC_API_KEY nor GITHUB_TOKEN', () => {
     const record = path.join(stubDir, 'which-env.json');
     fs.rmSync(record, { force: true });
     expect(isClaudeCodeAvailable()).toBe(true);
