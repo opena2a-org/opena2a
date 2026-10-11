@@ -158,24 +158,24 @@ For MCP servers specifically, pay attention to:
 
 ## Step 4: Check Your Trust Rating
 
-The trust rating is a composite metric that reflects your server's security posture, community standing, and verification status.
+Users who look your server up before installing it see the trust rating the OpenA2A Trust Registry holds for your published package. `ai-trust` reads that record:
 
 ```bash
-npx ai-trust check my-server
+npx ai-trust check @myorg/mcp-server-tools --no-scan
 ```
 
-It reports one number between 0 and 1, the six factors that add up to it, and what each factor would need to go higher. No sample run is pasted here: `ai-trust` ships from its own repository on its own release cadence, so a copy of its output frozen into this page ages the moment it publishes.
+`check` takes the name your package is published under. It does not take a directory or the server's name from `.mcp.json`: `ai-trust check .` looks for a package called `.` and reports it not found, and `ai-trust check my-server` reports whichever unrelated npm package holds the name `my-server`.
 
-The trust rating is calculated locally using publicly available signals. No data is uploaded. The factors are:
+With `--no-scan` the command reads the registry record only. It shows the trust score out of 100, the trust level on the scale `Blocked > Warning > Listed > Scanned > Verified`, how many community scans stand behind the record, and how long ago the last one ran. A package the registry has no record of is reported as not found, with `--scan-if-missing` as the next step. Without `--no-scan`, `check` also downloads the latest published version, scans it with HackMyAgent and reports that scan's score; each such scan sends the registry the package name, the verdict and the score. Neither path reads your working tree, so the rating moves when a published version is scanned again, not when you commit.
 
-| Factor | Weight | What It Measures |
-|--------|--------|------------------|
-| Identity | 0.20 | Cryptographic identity exists and is valid |
-| Signature | 0.20 | Package is signed and signature matches |
-| Governance | 0.15 | SOUL.md coverage of ABGS controls |
-| Vulnerability | 0.15 | Known CVEs in dependencies |
-| Community | 0.15 | Download count, dependent packages |
-| Provenance | 0.15 | npm publish attestation, GitHub Actions provenance |
+Add `--json` for a machine-readable result: `name` and `packageType` identify the package, and the fields below carry the rating. A local scan adds `score`, `maxScore` and its failed `findings`. No sample run is pasted here: `ai-trust` ships from its own repository on its own release cadence, so a copy of its output frozen into this page ages the moment it publishes.
+
+| Field | Value |
+|-------|-------|
+| `source` | `registry`, or `scan` after a local scan |
+| `found` | `false` when the registry has no record of the package, and there is then no `trustScore` |
+| `verdict`, `trustLevel` | The verdict and trust level the score belongs to |
+| `trustScore` | The trust score, a number between 0 and 1 |
 
 ---
 
@@ -234,7 +234,7 @@ After the initial setup, keep your trust score current:
 | Before each publish | `npx hackmyagent secure` | Catch new vulnerabilities |
 | After version bump | `opena2a mcp sign my-server` | Re-sign with new version |
 | After version bump | `opena2a self-register` | Update registry entry |
-| After dependency updates | `npx ai-trust check my-server` | Verify score did not drop |
+| After each publish | `npx ai-trust check @myorg/mcp-server-tools` | Scan the published version; confirm the score did not drop |
 | After adding tools | `opena2a scan-soul` | Ensure governance covers new capabilities |
 
 ### CI/CD Integration
@@ -264,12 +264,19 @@ jobs:
 
       - name: Trust score gate
         run: |
-          score=$(npx ai-trust check . --format json | jq -r '.trustScore')
-          if (( $(echo "$score < 0.70" | bc -l) )); then
+          npx ai-trust check @myorg/mcp-server-tools --no-scan --json > trust.json
+          score=$(jq -r '.trustScore // empty' trust.json)
+          if [ -z "$score" ]; then
+            echo "The registry returned no trust score for @myorg/mcp-server-tools"
+            exit 1
+          fi
+          if ! jq -e '.trustScore >= 0.70' trust.json > /dev/null; then
             echo "Trust score $score is below 0.70 threshold"
             exit 1
           fi
 ```
+
+The gate reads the registry's record of your published package, as in Step 4. `check` exits 2 when the registry's verdict is `blocked` or `warning`, which stops the step before the score comparison runs, and a package the registry has no score for fails the step rather than passing it.
 
 ---
 
