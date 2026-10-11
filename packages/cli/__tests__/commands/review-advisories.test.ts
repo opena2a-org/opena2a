@@ -17,6 +17,9 @@ import { runInNewContext } from 'node:vm';
 const REGISTRY_URL = 'https://registry.example.test';
 
 const mockHome = vi.hoisted(() => ({ dir: '' }));
+// What getRegistryUrl() answers: a URL, or the error it throws for a refused
+// configured URL.
+const registry = vi.hoisted(() => ({ answer: 'https://registry.example.test' as string | Error }));
 
 vi.mock('node:os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:os')>();
@@ -29,7 +32,10 @@ vi.mock('node:os', async (importOriginal) => {
 vi.mock('../../src/util/report-submission.js', () => ({
   recordScanAndMaybePrompt: async () => undefined,
   isContributeEnabled: async () => false,
-  getRegistryUrl: async () => 'https://registry.example.test',
+  getRegistryUrl: async () => {
+    if (registry.answer instanceof Error) throw registry.answer;
+    return registry.answer;
+  },
   submitScanReport: async () => true,
 }));
 
@@ -47,18 +53,20 @@ const ADVISORY = {
 
 const mockFetch = vi.fn();
 
-function listResponse(advisories: object[]) {
-  return { ok: true, json: async () => ({ advisories, total: advisories.length, format: 'osv' }) };
+function listResponse(advisories: object[], total = advisories.length) {
+  return { ok: true, json: async () => ({ advisories, total, format: 'osv' }) };
 }
 
-async function silenced<T>(run: () => Promise<T>): Promise<{ result: T; stdout: string }> {
+async function silenced<T>(run: () => Promise<T>): Promise<{ result: T; stdout: string; stderr: string }> {
   const origOut = process.stdout.write;
   const origErr = process.stderr.write;
   let stdout = '';
+  let stderr = '';
   process.stdout.write = ((chunk: unknown) => { stdout += String(chunk); return true; }) as typeof process.stdout.write;
-  process.stderr.write = (() => true) as typeof process.stderr.write;
+  process.stderr.write = ((chunk: unknown) => { stderr += String(chunk); return true; }) as typeof process.stderr.write;
   try {
-    return { result: await run(), stdout };
+    const result = await run();
+    return { result, stdout, stderr };
   } finally {
     process.stdout.write = origOut;
     process.stderr.write = origErr;
@@ -107,10 +115,13 @@ describe('advisory check in review and init (#420)', () => {
     }));
     vi.stubGlobal('fetch', mockFetch);
     mockFetch.mockReset();
+    registry.answer = REGISTRY_URL;
+    delete process.env.OPENA2A_ADVISORIES;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete process.env.OPENA2A_ADVISORIES;
     mockHome.dir = '';
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
@@ -199,5 +210,137 @@ describe('advisory check in review and init (#420)', () => {
     const json = JSON.parse(stdout);
 
     expect(json.advisories).toEqual({ checked: false, count: 0, matchedPackages: [] });
+  });
+});
+
+describe('advisory findings, scope and reasons in review and init (#464)', () => {
+  let tempDir: string;
+  let tempHome: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-adv-'));
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-review-adv-home-'));
+    mockHome.dir = tempHome;
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+      name: 'revfix', version: '1.0.0', dependencies: { 'vulnerable-package': '1.0.0' },
+    }));
+    vi.stubGlobal('fetch', mockFetch);
+    mockFetch.mockReset();
+    registry.answer = REGISTRY_URL;
+    delete process.env.OPENA2A_ADVISORIES;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.OPENA2A_ADVISORIES;
+    mockHome.dir = '';
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  async function runReview(verbose = false): Promise<{ report: Record<string, any>; stdout: string; stderr: string }> {
+    const reportPath = path.join(tempHome, 'review.html');
+    const { stdout, stderr } = await silenced(() => review({
+      targetDir: tempDir,
+      format: 'text',
+      reportPath,
+      autoOpen: false,
+      skipHma: true,
+      ci: true,
+      verbose,
+    }));
+    return { report: reportData(reportPath), stdout, stderr };
+  }
+
+  const advisoryFinding = (report: Record<string, any>) =>
+    report.reportFindings.find((f: any) => f.foundBy.some((b: any) => b.source === 'advisories'));
+
+  // The terminal printed "0 findings" and "No security issues detected"
+  // while the report counted the matched advisory as a high finding.
+  it('the terminal summary counts a matched advisory as the report does', async () => {
+    mockFetch.mockResolvedValue(listResponse([ADVISORY]));
+
+    const { report, stdout } = await runReview();
+
+    expect(advisoryFinding(report).severity).toBe('high');
+    expect(stdout).toContain('1 findings (0 critical, 1 high, 0 medium)');
+    expect(stdout).not.toContain('No security issues detected');
+  });
+
+  it('a matched advisory that names a fixed version gets the install and verify commands', async () => {
+    mockFetch.mockResolvedValue(listResponse([{
+      ...ADVISORY,
+      affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.3.0' }] }] }],
+    }]));
+
+    const { report } = await runReview();
+    const f = advisoryFinding(report);
+
+    expect(f.fix).toEqual(expect.objectContaining({ command: 'npm install vulnerable-package@1.3.0', tool: 'npm' }));
+    expect(f.verify).toEqual(expect.objectContaining({ command: 'npm ls vulnerable-package', tool: 'npm' }));
+    expect(f.evidence[0].text).toContain('fixed in vulnerable-package 1.3.0');
+  });
+
+  it('a matched advisory without a fixed version keeps the advice and no command', async () => {
+    mockFetch.mockResolvedValue(listResponse([ADVISORY]));
+
+    const f = advisoryFinding((await runReview()).report);
+
+    expect(f.fix).toBeNull();
+    expect(f.advice).toBe('Upgrade vulnerable-package to a version OA2A-2026-0001 does not affect.');
+  });
+
+  it('the Hygiene tab states the window and the advisories the Registry reported but the request did not read', async () => {
+    mockFetch.mockResolvedValue(listResponse([], 250));
+
+    const { report } = await runReview();
+    const t = hygieneText(report);
+
+    expect(report.initData.advisoryRead).toEqual(expect.objectContaining({ windowDays: 30, limit: 100, listed: 0, total: 250 }));
+    expect(t).toContain('Advisories published in the last 30 days (at most 100) were read from the OpenA2A Registry');
+    expect(t).toContain('The Registry reported 250 advisories; 250 were not read or compared.');
+    expect(t).toContain('No matching advisories found');
+  });
+
+  it('a refused registry.url is named in --verbose output and on the Hygiene tab', async () => {
+    registry.answer = new Error('Registry URL must use HTTPS: http://registry.internal.example\nPlain HTTP is only allowed for localhost development.');
+
+    const { report, stderr } = await runReview(true);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(stderr).toContain('Advisories not checked: Registry URL must use HTTPS: http://registry.internal.example');
+    expect(report.initData.advisoryRead.notCheckedReason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+    expect(hygieneText(report)).toContain('Reason: Registry URL must use HTTPS: http://registry.internal.example.');
+  });
+
+  it('OPENA2A_ADVISORIES=off makes no request and says how to turn the check back on', async () => {
+    process.env.OPENA2A_ADVISORIES = 'off';
+
+    const { report } = await runReview();
+    const t = hygieneText(report);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(report.initData.advisoriesChecked).toBe(false);
+    expect(report.initData.advisoryRead.turnedOff).toBe(true);
+    expect(t).toContain('not checked');
+    expect(t).toContain('Unset OPENA2A_ADVISORIES to check them.');
+  });
+
+  it('init prints Registry advisory text without its control characters', async () => {
+    mockFetch.mockResolvedValue(listResponse([{ ...ADVISORY, summary: 'Bad thing\x1b[31mRED\nFORGED LINE' }]));
+
+    const { stdout } = await silenced(() => init({ targetDir: tempDir, format: 'text' }));
+
+    expect(stdout).toContain('Bad thing[31mREDFORGED LINE');
+    expect(stdout).not.toContain('\x1b[31mRED');
+    expect(stdout.split('\n').some(l => /^\s*FORGED LINE/.test(l))).toBe(false);
+  });
+
+  it('init --verbose names why the advisories were not checked', async () => {
+    registry.answer = new Error('Registry URL must use HTTPS: http://registry.internal.example');
+
+    const { stdout } = await silenced(() => init({ targetDir: tempDir, format: 'text', verbose: true }));
+
+    expect(stdout).toContain('Advisories not checked: Registry URL must use HTTPS: http://registry.internal.example');
   });
 });

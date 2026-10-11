@@ -10,6 +10,8 @@ const maxWorkers = deriveMaxWorkers(cgroupPidsMax(), availableParallelism());
 export default defineConfig({
   test: {
     include: ['__tests__/**/*.test.ts'],
+    // No test reaches a non-loopback host: see the file for why.
+    setupFiles: ['__tests__/setup/offline-fetch.ts'],
     environment: 'node',
     testTimeout: 10000,
     ...(maxWorkers === undefined ? {} : { maxWorkers }),

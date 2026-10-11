@@ -636,6 +636,19 @@ summary:focus-visible {
 .hygiene-row:last-child {
   border-bottom: none;
 }
+/* The value keeps its own width, up to 60% of the row, so a long check
+   description beside it cannot squeeze "no findings" to a few letters per
+   line; a value wider than that (a signature store path) breaks inside it. */
+.hygiene-row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.hygiene-row > :last-child {
+  flex: 0 0 auto;
+  max-width: 60%;
+  margin-left: 12px;
+  text-align: right;
+}
 .hygiene-label {
   color: var(--muted);
 }

@@ -141,6 +141,9 @@ const COMMAND_CHANGES: Record<string, string> = {
 };
 const BUNDLED_CITATION = /\b(?:hackmyagent|secretless-ai|ai-trust|cryptoserve)\b|\bnpx\s|npm install -g/;
 
+/** The form of an npm package name, as review.ts checks it before a
+ *  contribution: only these characters reach an advisory's install command. */
+const NPM_NAME_FORM = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 const MASK = '••••';
 const SECRET_WORD = '(?:key|token|secret|passw|pwd|auth|credential|private)';
 const URL_PASSWORD = /(\b[a-z][\w+.-]{0,64}:\/\/[^\s:/@]+:)[^\s@]{1,256}@/gi;
@@ -508,17 +511,34 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
   for (const a of initData.advisories) {
     const packages = a.packages.filter(p => initData.matchedPackages.includes(p));
     const named = (packages.length > 0 ? packages : a.packages).join(', ');
+    const fixed = a.fixed ?? [];
+    // One npm package with one fixed version gets the install command; the
+    // name must have npm's form, since it becomes part of a shell command.
+    const npmFix = packages.length === 1 && fixed.length === 1 && fixed[0].package === packages[0]
+      && fixed[0].ecosystem.toLowerCase() === 'npm' && fixed[0].versions.length === 1
+      && NPM_NAME_FORM.test(packages[0])
+      ? { pkg: packages[0], version: fixed[0].versions[0].replace(/^v/, '') }
+      : null;
+    const fixedText = fixed.map(f => `${f.package} ${f.versions.join(' or ')}`).join(', ');
     drafts.push(draft({
       title: `${named}: ${a.summary}`,
       severity: ({ CRITICAL: 'critical', HIGH: 'high', MODERATE: 'medium', MEDIUM: 'medium', LOW: 'low' } as Record<string, string>)[a.severity ?? ''] ?? 'medium',
       confidence: 'likely',
       category: 'Dependencies',
       foundBy: [{ source: 'advisories', checkId: a.id, lines: [] }],
-      evidence: [{ file: null, line: null, text: `${a.id}${a.severity ? ` (${a.severity})` : ''}` }],
+      evidence: [{ file: null, line: null, text: `${a.id}${a.severity ? ` (${a.severity})` : ''}${fixedText ? `; fixed in ${fixedText}` : ''}` }],
       reason: null,
-      fix: null,
-      verify: null,
-      advice: `Upgrade ${named} to a version ${a.id} does not affect.`,
+      fix: npmFix
+        ? { command: `npm install ${npmFix.pkg}@${npmFix.version}`, tool: 'npm', changes: `Installs ${npmFix.pkg} ${npmFix.version} and records it in package.json and package-lock.json.` }
+        : null,
+      verify: npmFix
+        ? { command: `npm ls ${npmFix.pkg}`, tool: 'npm', expect: `${npmFix.pkg}@${npmFix.version} or later` }
+        : null,
+      advice: npmFix
+        ? null
+        : fixedText
+          ? `Upgrade to the version ${a.id} names as fixed: ${fixedText}, or later.`
+          : `Upgrade ${named} to a version ${a.id} does not affect.`,
     }));
   }
 

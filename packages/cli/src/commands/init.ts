@@ -13,7 +13,8 @@ import { detectProject, type ProjectInfo, type ProjectType } from '../util/detec
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
 import { ignoreCommand, scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
 import { pathFrom, shellPath, shellWord } from '../util/shell-word.js';
-import { advisoriesNotChecked, checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
+import { printAdvisoryWarnings, readAdvisories } from '../util/advisories.js';
+import { printable } from '../util/printable.js';
 import { getRegistryUrl } from '../util/report-submission.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
 import { getVersion } from '../util/version.js';
@@ -197,14 +198,10 @@ export async function init(options: InitOptions): Promise<number> {
   if (isTTY) spinner.update('Checking environment...');
   const checks = await runHygieneChecks(targetDir, project, credentialMatches.length, credentialFilesScanned);
 
-  // 4. Check advisories (non-blocking)
-  let advisoryCheck: AdvisoryCheck = advisoriesNotChecked();
-  try {
-    advisoryCheck = await checkAdvisories(targetDir, await getRegistryUrl());
-  } catch {
-    // Advisory check is best-effort: a configured Registry URL that fails
-    // validation leaves the advisories not checked.
-  }
+  // 4. Check advisories (non-blocking). A configured Registry URL that fails
+  // validation leaves the advisories not checked, with the refusal as the
+  // reason.
+  const advisoryCheck = await readAdvisories(targetDir, getRegistryUrl);
 
   // 5. HMA integration (optional dynamic import)
   if (isTTY) spinner.update('Scanning shell environment...');
@@ -389,6 +386,8 @@ export async function init(options: InitOptions): Promise<number> {
     // Show advisory warnings after main report
     if (advisoryCheck.advisories.length > 0) {
       printAdvisoryWarnings(advisoryCheck);
+    } else if (options.verbose && !advisoryCheck.checked && advisoryCheck.reason) {
+      process.stdout.write(dim(`  Advisories not checked: ${printable(advisoryCheck.reason)}`) + '\n\n');
     }
 
     // Contextual tip
