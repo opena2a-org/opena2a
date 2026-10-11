@@ -263,4 +263,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'the opena2a stub and jq as its own children) and spawnSync(jq --version | jq -s -c .), ' +
       'one at a time (#432)',
   },
+  'repo/merge-group-workflows.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(bash -c true | jq --version) probes, then spawnSync(bash -e <a workflow run: ' +
+      'script>) per case, one at a time; the script runs jq and a node stub named gh on PATH ' +
+      'as its own children (#462)',
+  },
 };
