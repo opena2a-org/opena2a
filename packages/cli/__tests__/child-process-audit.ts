@@ -227,4 +227,9 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'once: a child that opens the pipe for writing after a delay and closes it, so a read that ' +
       'blocks on it reaches end of file, and is killed when the case ends (#412)',
   },
+  'install-integrity-claims.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js verify --help) once, to read the verify help text (#434)',
+  },
 };

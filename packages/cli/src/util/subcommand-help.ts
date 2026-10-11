@@ -274,7 +274,7 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     ],
   },
   selfcheck: {
-    summary: 'Verify Shield integrity (binary signatures, policy hashes, event-log chain).',
+    summary: "Check Shield's own state: the policy hash, the shell hook, the event-log chain, the node executable path, and the recorded hashes of Shield's policy, scan and cache files. It does not check the CLI's installed files.",
     examples: ['opena2a shield selfcheck'],
   },
   policy: {

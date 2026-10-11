@@ -5,7 +5,7 @@
  * - init:      Full environment scan, policy generation, shell hooks
  * - status:    Tool availability, policy mode, integrity state
  * - log:       Query the Shield event log
- * - selfcheck: Run integrity checks (alias: check)
+ * - selfcheck: Check Shield's own files, hook and event log (alias: check)
  * - policy:    Show loaded policy summary
  * - evaluate:  Evaluate an action against the policy
  * - recover:   Exit lockdown mode
@@ -93,7 +93,7 @@ export async function shield(options: ShieldOptions): Promise<number> {
       process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
       process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
       process.stderr.write('  log        Query the Shield event log\n');
-      process.stderr.write('  selfcheck  Run integrity checks\n');
+      process.stderr.write("  selfcheck  Check Shield's own files, hook and event log\n");
       process.stderr.write('  policy     Show loaded policy summary\n');
       process.stderr.write('  evaluate   Evaluate an action against the policy\n');
       process.stderr.write('  recover    Exit lockdown mode\n');

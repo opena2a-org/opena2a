@@ -727,7 +727,7 @@ analysis runs and results can be shared with the community.
         process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
         process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
         process.stderr.write('  log        Query the Shield event log\n');
-        process.stderr.write('  selfcheck  Run integrity checks\n');
+        process.stderr.write("  selfcheck  Check Shield's own files, hook and event log\n");
         process.stderr.write('  policy     Show loaded policy summary\n');
         process.stderr.write('  evaluate   Evaluate an action against the policy\n');
         process.stderr.write('  recover    Exit lockdown mode\n');
@@ -901,8 +901,20 @@ Output formats:
   // Verify command
   program
     .command('verify')
-    .description('Verify binary integrity of installed OpenA2A packages')
+    .description('Hash installed OpenA2A tools and look the hashes up in the registry')
     .option('--package <name>', 'Specific package to verify')
+    .addHelpText('after', `
+'verify' computes the SHA-256 of each package's entry file (the one file Node
+loads for it, not the rest of the installed package) and asks the registry
+whether that hash matches its record. "no data" means the registry returned
+neither a match nor a mismatch; it is not a pass.
+
+Without --package it checks hackmyagent, secretless-ai, aibrowserguard and
+ai-trust. opena2a-cli is not in that list; check it with --package opena2a-cli.
+No command compares a package's installed files with the published tarball.
+To check the registry's tarball for a version against its provenance
+attestation, see
+https://github.com/opena2a-org/opena2a/blob/main/docs/verifying-npm-packages.md`)
     .option('--registry-url <url>', 'Registry URL')
     .action(async (opts) => {
       const { verify } = await import('./commands/verify.js');
