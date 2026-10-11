@@ -1,6 +1,5 @@
 # protect — manual walkthrough playbook
 
-> The CLAUDE.md trigger ("Release testing — protect command") points here.
 > Run every scenario below before any publish that modifies
 > `packages/cli/src/commands/protect.ts`,
 > `packages/cli/src/util/credential-patterns.ts`, or
@@ -13,7 +12,7 @@ completeness. Both layers are required.
 ## Setup
 
 ```bash
-cd ~/workspace/opena2a-org/opena2a/packages/cli
+cd packages/cli    # from the repository root
 npm run build
 ```
 
@@ -31,9 +30,8 @@ For every finding produced by `opena2a protect`:
 4. **Masked preview** — Does the user see enough of the credential to recognize it (`sk-ant…abcd`) without the full value being printed?
 5. **Rollback completeness** — Does `--undo` (or the rollback manifest) restore the file byte-for-byte? Is the manifest cleaned up after a clean rollback?
 
-A scenario passes only when all 5 axes are clean. Any failure → entry in
-the workspace-local `briefs/protect-walkthrough-findings.md` (severity,
-root cause, why it matters, fix sketch). Ship-blockers (CRITICAL/HIGH on
+A scenario passes only when all 5 axes are clean. Record each failure as
+a finding (severity, root cause, why it matters, fix sketch). Ship-blockers (CRITICAL/HIGH on
 protect's stated purpose) MUST land in the same branch BEFORE pre-push;
 add the regression test FIRST, then the fix.
 
@@ -244,9 +242,6 @@ Expected: 0 findings · clear "no credentials detected" message · Next Steps sh
 
 ## Reporting
 
-After running all 10 scenarios, summarize per the per-finding review
-protocol in `opena2a/CLAUDE.md`. Findings → workspace-local
-`briefs/protect-walkthrough-findings.md`. UX-only findings →
-workspace-local `briefs/protect-ux-roundtwo.md`. Both files are
-workspace-local (not in git) by design — `briefs/` is a thinking surface,
-not a shipped artifact.
+After running all 10 scenarios, summarize the results with one entry per
+finding (severity, root cause, why it matters, fix sketch), and list
+UX-only findings separately.

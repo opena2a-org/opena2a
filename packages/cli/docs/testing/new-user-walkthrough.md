@@ -4,7 +4,7 @@
 > not the global install — we want to test the artifact we're about to ship.
 
 ```bash
-cd ~/workspace/opena2a-org/opena2a/packages/cli
+cd packages/cli    # from the repository root
 npm run build
 ```
 
