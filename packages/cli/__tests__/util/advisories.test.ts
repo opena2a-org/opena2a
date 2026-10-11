@@ -211,6 +211,32 @@ describe('advisories', () => {
     expect(fs.existsSync(path.join(tempHome, '.opena2a', 'cache', 'advisories.json'))).toBe(true);
   });
 
+  // Regression: on a first review or init the cache write is the first write
+  // under ~/.opena2a, so it sets that directory's mode. It used the default
+  // mode, 755 under a umask of 022, where the other writers there create the
+  // directory 700, and files below it became readable by other local users.
+  it('creates ~/.opena2a, the cache directory and the cache file for the owner only', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ advisories: [], total: 0, format: 'osv' }),
+    });
+    const stateDir = path.join(tempHome, '.opena2a');
+    expect(fs.existsSync(stateDir)).toBe(false);
+
+    // Checked under the usual umask, whatever the runner's own is.
+    const umask = process.umask(0o022);
+    try {
+      await checkAdvisories(tempDir, 'https://registry.test');
+    } finally {
+      process.umask(umask);
+    }
+
+    const mode = (p: string) => fs.statSync(p).mode & 0o777;
+    expect(mode(stateDir)).toBe(0o700);
+    expect(mode(path.join(stateDir, 'cache'))).toBe(0o700);
+    expect(mode(path.join(stateDir, 'cache', 'advisories.json'))).toBe(0o600);
+  });
+
   it('does not answer from a list cached for another Registry', async () => {
     mockFetch.mockResolvedValue({
       ok: true,

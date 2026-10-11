@@ -103,12 +103,14 @@ function writeCache(registryUrl: string, data: AdvisoryResponse): void {
   const cachePath = getCachePath();
   const cacheDir = path.dirname(cachePath);
   try {
-    fs.mkdirSync(cacheDir, { recursive: true });
+    // On a first run this write creates ~/.opena2a, so it sets the mode of the
+    // directory the other files there rely on: owner only, as their writers do.
+    fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(cachePath, JSON.stringify({
       fetchedAt: Date.now(),
       registryUrl,
       data,
-    } as CachedAdvisories), 'utf-8');
+    } as CachedAdvisories), { encoding: 'utf-8', mode: 0o600 });
   } catch {
     // Cache write failure is non-critical
   }
