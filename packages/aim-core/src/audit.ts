@@ -26,7 +26,10 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
     serialized = JSON.stringify(fullEvent);
   }
 
-  fs.mkdirSync(dataDir, { recursive: true });
+  // The log records what agents did, so it is the owner's alone: the
+  // directory is created 0o700 and the file 0o600, by the calls that create
+  // them, whatever the mode of the directory above.
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dataDir, AUDIT_FILE);
 
   // Rotate if audit log exceeds 50MB, keep last 5 rotated logs
@@ -66,7 +69,7 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
     // File doesn't exist yet — will be created by appendFileSync
   }
 
-  fs.appendFileSync(filePath, serialized + '\n', 'utf-8');
+  fs.appendFileSync(filePath, serialized + '\n', { encoding: 'utf-8', mode: 0o600 });
 
   return fullEvent;
 }

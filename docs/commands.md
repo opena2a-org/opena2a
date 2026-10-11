@@ -121,7 +121,7 @@ Full command reference: [opena2a.org/docs](https://opena2a.org/docs).
 
 ## Self-host or AIM Cloud
 
-`opena2a-cli` works offline by default. The optional server path:
+`opena2a-cli` works offline by default. One request is made without a server: `opena2a review` and `opena2a init` read the list of published advisories from the OpenA2A Registry (`GET /api/v1/trust/advisories?since=<date 30 days ago>&limit=100`, waiting at most 5 seconds) and compare it with the project's dependencies on your machine. The request names that date and count and nothing about the project. Set `OPENA2A_ADVISORIES=off` to skip it; the advisories are then reported as not checked. The optional server path:
 
 - **AIM Cloud.** Managed at [aim.opena2a.org](https://aim.opena2a.org). `opena2a login` and you're done.
 - **Self-hosted AIM.** Docker stack from [`agent-identity-management`](https://github.com/opena2a-org/agent-identity-management). REST API, dashboard, Postgres-backed audit log, OAuth, 9-factor real-time trust scoring with NanoMind, 5-step Fine-Grained Authorization pipeline. Run `bash quickstart.sh` to bring it up.

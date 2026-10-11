@@ -183,6 +183,7 @@ Smart Features:
 Telemetry:
   ${telemetryHelpLine(tele.status())}
   Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute
+  review and init read the Registry's advisory list, sending no project data. Disable: OPENA2A_ADVISORIES=off
 
 Learn more: https://opena2a.org/docs`);
 

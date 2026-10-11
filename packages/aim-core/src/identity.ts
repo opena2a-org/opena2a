@@ -29,7 +29,8 @@ export function createIdentity(dataDir: string, agentName: string): StoredIdenti
     createdAt: new Date().toISOString(),
   };
 
-  fs.mkdirSync(dataDir, { recursive: true });
+  // The same directory holds the audit log; whichever write creates it makes it owner-only.
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const identityPath = path.join(dataDir, IDENTITY_FILE);
   const tmpPath = identityPath + '.tmp.' + process.pid;
   // The file holds the secret key, so it is created owner-only (0o600) by the call that

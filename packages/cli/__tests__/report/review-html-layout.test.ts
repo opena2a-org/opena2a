@@ -162,4 +162,15 @@ describe('review report: 375px', () => {
     // the Hygiene tab to 382px at a 375px viewport on a project with a store.
     expect(declarations(css, '.hygiene-row')).toContain('overflow-wrap:anywhere');
   });
+
+  it('a Hygiene value keeps whole words beside a long check description (#464)', () => {
+    // At 375px the value shrank to its min-content width, which
+    // overflow-wrap:anywhere makes one character, and rendered "no findin gs",
+    // "pres ent" and "in .gitign ore". The value now keeps its own width up to
+    // 60% of the row, and the description column gives way.
+    const value = declarations(css, '.hygiene-row>:last-child');
+    expect(value).toContain('flex:0 0 auto');
+    expect(value).toContain('max-width:60%');
+    expect(declarations(css, '.hygiene-row>:first-child')).toContain('min-width:0');
+  });
 });
