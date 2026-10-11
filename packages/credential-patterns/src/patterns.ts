@@ -51,11 +51,27 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'heroku', name: 'Heroku API Key', regex: /HRKU-[a-zA-Z0-9_-]{30,}/, envPrefix: 'HEROKU_API_KEY', category: 'cloud' },
   { id: 'fly-io', name: 'Fly.io Token', regex: /fo1_[a-zA-Z0-9_-]{20,}/, envPrefix: 'FLY_API_TOKEN', category: 'cloud' },
   { id: 'netlify', name: 'Netlify PAT', regex: /nfp_[a-zA-Z0-9]{40,}/, envPrefix: 'NETLIFY_AUTH_TOKEN', category: 'cloud' },
-  { id: 'azure', name: 'Azure Key', regex: /(?:AccountKey|SharedAccessKey|azure[_-]?(?:storage|key|account))\s*[=:]\s*[a-zA-Z0-9+/]{43}=/i, envPrefix: 'AZURE_API_KEY', category: 'cloud' },
+  // Azure Storage account keys are 512-bit (https://learn.microsoft.com/azure/storage/common/storage-account-keys-manage):
+  // base64 of 64 bytes is 88 characters ending in `==`. The 44-character shape
+  // ending in one `=` (32 bytes) is the Service Bus and Event Hubs
+  // SharedAccessKey. Both are live, so the value is 43 key characters, any
+  // further key characters, then one or two `=`. `{43}` followed by an open
+  // run matches exactly what `{43,}` would, and keeps the exact-length
+  // quantifier that consumers read as a fixed-structure signal when scoring
+  // confidence.
+  { id: 'azure', name: 'Azure Key', regex: /(?:AccountKey|SharedAccessKey|azure[_-]?(?:storage|key|account))\s*[=:]\s*[a-zA-Z0-9+/]{43}[a-zA-Z0-9+/]*={1,2}/i, envPrefix: 'AZURE_API_KEY', category: 'cloud' },
   { id: 'supabase', name: 'Supabase Service Key', regex: /eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_-]{50,}/, envPrefix: 'SUPABASE_SERVICE_ROLE_KEY', category: 'cloud' },
 
   // ── Communication (category: communication) ───────────────────────────
-  { id: 'slack', name: 'Slack Token', regex: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}/, envPrefix: 'SLACK_TOKEN', category: 'communication' },
+  // Slack (https://docs.slack.dev/authentication/tokens): bot tokens begin
+  // `xoxb-`, user tokens `xoxp-`, and the last dash-separated segment is the
+  // secret. The page does not state how many numeric groups precede it; user
+  // tokens issued today carry three, bot tokens two, so a third is optional.
+  // It does state the secret length has changed before (6 or 10 characters
+  // for user tokens created before August 2016, 32 since), so the secret is a
+  // floor, not a pinned length. `{24}` plus open run is `{24,}` written with
+  // an exact quantifier (see azure).
+  { id: 'slack', name: 'Slack Token', regex: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-(?:[0-9]{10,13}-)?[a-zA-Z0-9]{24}[a-zA-Z0-9]*/, envPrefix: 'SLACK_TOKEN', category: 'communication' },
   { id: 'slack-webhook', name: 'Slack Webhook URL', regex: /hooks\.slack\.com\/services\/T[A-Z0-9]{8,}\/B[A-Z0-9]{8,}\/[a-zA-Z0-9]{24}/, envPrefix: 'SLACK_WEBHOOK_URL', category: 'communication' },
   { id: 'slack-app', name: 'Slack App Token', regex: /xapp-[0-9]+-[A-Z0-9]+-[0-9]+-[a-z0-9]+/, envPrefix: 'SLACK_APP_TOKEN', category: 'communication' },
   { id: 'telegram-bot', name: 'Telegram Bot Token', regex: /[0-9]{8,10}:[A-Za-z0-9_-]{35}/, envPrefix: 'TELEGRAM_BOT_TOKEN', category: 'communication' },
@@ -65,10 +81,18 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'sendgrid', name: 'SendGrid Key', regex: /SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}/, envPrefix: 'SENDGRID_API_KEY', category: 'communication' },
 
   // ── Developer Platforms (category: developer) ─────────────────────────
-  { id: 'github-pat', name: 'GitHub Token', regex: /ghp_[a-zA-Z0-9]{36}/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
+  // GitHub token prefixes (https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github#githubs-token-formats):
+  // ghp_ personal, gho_ OAuth, ghu_ GitHub App user access, ghs_ installation,
+  // ghr_ refresh. GitHub states tokens "will likely increase in length" and
+  // that integrators should "plan to support tokens up to 255 characters"
+  // (https://github.blog/changelog/2021-03-04-authentication-token-format-updates/),
+  // so 36 is a floor. `{36}` plus open run is `{36,}` with an exact quantifier
+  // (see azure).
+  { id: 'github-pat', name: 'GitHub Token', regex: /ghp_[a-zA-Z0-9]{36}[a-zA-Z0-9]*/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
   { id: 'github-fine', name: 'GitHub Fine-Grained PAT', regex: /github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
-  { id: 'github-oauth', name: 'GitHub OAuth Token', regex: /gho_[a-zA-Z0-9]{36}/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
-  { id: 'github-app', name: 'GitHub App Installation Token', regex: /ghs_[a-zA-Z0-9]{36}/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
+  { id: 'github-oauth', name: 'GitHub OAuth Token', regex: /gho_[a-zA-Z0-9]{36}[a-zA-Z0-9]*/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
+  { id: 'github-app', name: 'GitHub App Installation Token', regex: /ghs_[a-zA-Z0-9]{36}[a-zA-Z0-9]*/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
+  { id: 'github-user-to-server', name: 'GitHub App User Access Token', regex: /ghu_[a-zA-Z0-9]{36}[a-zA-Z0-9]*/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
   { id: 'github-refresh', name: 'GitHub Refresh Token', regex: /ghr_[a-zA-Z0-9]{36,}/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
   { id: 'gitlab', name: 'GitLab PAT', regex: /glpat-[a-zA-Z0-9_-]{20,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
   { id: 'gitlab-pipeline', name: 'GitLab Pipeline Trigger', regex: /glptt-[a-f0-9]{40,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
@@ -84,6 +108,17 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'stripe', name: 'Stripe Live Key', regex: /sk_live_[0-9a-zA-Z]{24,}/, envPrefix: 'STRIPE_SECRET_KEY', category: 'payment' },
   { id: 'stripe-webhook', name: 'Stripe Webhook Secret', regex: /whsec_[a-zA-Z0-9]{32,}/, envPrefix: 'STRIPE_WEBHOOK_SECRET', category: 'payment' },
   { id: 'square', name: 'Square API Key', regex: /sq0[a-z]{3}-[a-zA-Z0-9_-]{22,}/, envPrefix: 'SQUARE_ACCESS_TOKEN', category: 'payment' },
+  // Square access tokens: the traditional access token example at
+  // https://developer.squareup.com/docs/oauth-api/receive-and-manage-tokens
+  // begins `EAAA` and is 64 characters. `EAAA` is also four ordinary base64
+  // characters, so the token must stand alone: no base64 or base64url
+  // character on either side. That keeps image data in a `data:` URI and
+  // `sha512-` integrity strings out; it also means an unquoted value directly
+  // after `=` (`SQUARE_ACCESS_TOKEN=EAAA...`) is not matched, while a quoted
+  // one, or one after `:`, a space or `Bearer `, is. The lookbehind sits after
+  // the literal (equivalent to a leading one) so the quick-check still derives
+  // `EAAA`. Square's JWT access tokens (`eyJ...`) are not matched here.
+  { id: 'square-access-token', name: 'Square Access Token', regex: /EAAA(?<![A-Za-z0-9+/_=-]EAAA)[a-zA-Z0-9_-]{60}(?![A-Za-z0-9+/_=-])/, envPrefix: 'SQUARE_ACCESS_TOKEN', category: 'payment' },
 
   // ── Database (category: database) ─────────────────────────────────────
   // Connection strings flag only when they embed a secret: a userinfo password

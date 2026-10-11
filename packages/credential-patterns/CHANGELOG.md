@@ -2,6 +2,49 @@
 
 All notable changes to `@opena2a/credential-patterns` will be documented in this file.
 
+## Unreleased
+
+### Patterns match the token formats vendors issue today (opena2a-org/secretless-ai#135)
+
+Four patterns had a fixed length or shape that tokens issued today do not
+have, so a file holding a live token was read and reported clean. Each pattern
+below matches more than before. Nothing that matched before stops matching,
+and no pattern was removed. `CREDENTIAL_PATTERNS` grows from 57 to 59 entries.
+
+- **`azure` matches the 88-character Storage account key.** Azure Storage
+  account keys are 512-bit; base64 of 64 bytes is 88 characters ending in
+  `==`. The pattern expected `=` at character 44, so a real Storage key never
+  matched. The 44-character shape (Service Bus and Event Hubs
+  `SharedAccessKey`) still matches. Both still need the `AccountKey` /
+  `SharedAccessKey` / `azure_*` key name in front, so an
+  `"integrity": "sha512-…=="` value of the same shape stays clean.
+- **`slack` matches user tokens (`xoxp-`) and secrets longer than 24
+  characters.** A third numeric group is accepted, and the secret has a
+  24-character floor and no maximum, so the match covers the whole token.
+- **New `github-user-to-server` pattern for `ghu_` GitHub App user access
+  tokens**, which nothing matched before.
+- **`github-pat`, `github-oauth`, `github-app` and `github-user-to-server`
+  take bodies of 36 characters or more.** GitHub says tokens will likely grow
+  and to plan for up to 255 characters; a body pinned at 36 left a longer
+  token's tail outside the match. `github-refresh` already had no maximum.
+- **New `square-access-token` pattern for Square `EAAA` access tokens**
+  (64 characters, the length of Square's documented example). `EAAA` is also
+  four ordinary base64 characters, so the token must stand alone: no base64 or
+  base64url character, `=` included, directly before or after it. Image data
+  in a `data:` URI and `sha512-` integrity strings stay clean. A token written
+  directly after `=` (`SQUARE_ACCESS_TOKEN=EAAA…`, unquoted) is not matched;
+  quoted, after `:` or a space, or after `Bearer ` it is.
+- `CREDENTIAL_PREFIX_QUICK_CHECK` now includes `ghu_` and `EAAA`.
+- Each pattern's comment cites the vendor page its format comes from.
+- Unchanged: `newrelic` (no vendor-documented body length), `telegram-bot`
+  (its 35-character segment is correct) and `github-refresh`.
+
+Tests sweep every changed pattern at its minimum length, one over, and well
+over, check that the match reaches the end of the value, and check that a
+base64 blob holding the prefix, the pattern's own source, a `${VAR}` reference
+and a placeholder-marked value produce no finding. The source-literal guard
+covers the `ghu_`, `EAAA` and three-group `xoxp-` shapes.
+
 ## 0.1.3 — 2026-07-22
 
 ### `CONFIG_FILES`
