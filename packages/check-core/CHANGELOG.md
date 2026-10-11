@@ -32,8 +32,6 @@ lookup table, and the deterministic rule engine for verdict reasoning +
 action gradient. Drives the `check` skill+mcp v1 view rendered by
 `renderCheckRichBlock` in `@opena2a/cli-ui` 0.4.0 (session 3).
 
-Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§4-§7).
-
 ### Added
 - `PackageNarrative` + `SkillNarrative` + `McpNarrative` + supporting
   types (`HardcodedSecret`, `HardcodedSecretsBlock`, `McpTool`,
@@ -89,5 +87,5 @@ Initial release. Extracted from `hackmyagent/src/check-render.ts` and
 - Types: `CheckInput`, `CheckOutput`, `NotFoundOutput`, `ScanResult`, `SkillResult`, `TrustData`, `ParsedCheckInput`, `ScanAdapter`, `SkillAdapter`, `RegistryAdapter`, `TranslatedError`.
 
 ### Unblocks
-- F2, F3, F4 of `briefs/check-command-divergence.md` (not-found shape, git exit code leak, skill fallback).
+- The not-found shape, git exit code leak and skill fallback fixes in the three CLIs.
 - The third milestone of the CLI consolidation.

@@ -1,11 +1,11 @@
 /**
  * Check block — unified output schema for the `check <pkg>` command.
  *
- * Shared across hackmyagent, opena2a-cli (via hma delegation), and ai-trust.
- * Closes F5/F6 from briefs/check-command-divergence.md:
- *   - F5: one canonical output schema, conditional sections, missing = hidden
- *   - F6: trust/security meter suppressed when `scanStatus !== completed|warnings`
- *         ("a number implies measurement")
+ * Shared across hackmyagent, opena2a-cli (via hma delegation), and ai-trust,
+ * so the three CLIs follow the same two rules:
+ *   - one canonical output schema, conditional sections, missing = hidden
+ *   - trust/security meter suppressed when `scanStatus !== completed|warnings`
+ *     ("a number implies measurement")
  *
  * Returns structured lines. The CLI applies its own chalk palette so the
  * package stays a rendering library, not a color library. Values that

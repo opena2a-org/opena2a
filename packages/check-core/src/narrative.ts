@@ -2,8 +2,6 @@
  * Package narrative — rich-context payload that powers the `check`
  * skill+mcp v1 view in the OpenA2A CLI fleet (HMA, opena2a-cli, ai-trust).
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§4)
- *
  * Wire shape mirrors the registry's `package_narratives` row (see
  * opena2a-registry/internal/domain/package_narrative.go and migration 223).
  * v1 covers `skill` and `mcp` artifact types only; npm/PyPI/A2A artifacts

@@ -314,7 +314,6 @@ export async function dispatchCommand(
       // The isNpmTarget gate's slash-rejection would block these, so
       // recognize the prefix explicitly and pass through to HMA which
       // owns the rich-block dispatch in src/check/.
-      // Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§3, §8)
       if (isRichTarget(target)) {
         return spawnHmaCheckFromRouter(target, args.slice(1), globalOptions);
       }

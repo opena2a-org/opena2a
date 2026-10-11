@@ -755,7 +755,7 @@ function riskLabel(level: RiskLevel): string {
  *  2. Scan result exists   -> "Scanned: 95/100 | 0 critical"
  *  3. Neither              -> "No trust data | scan: opena2a detect --registry --auto-scan"
  *
- * Silent-post-consent rule (briefs/scan-result-telemetry-policy.md §5):
+ * Silent-post-consent rule:
  * we no longer surface the "contributed" label on the per-server row.
  * Once the user has opted in to contribution, the act of contributing
  * is invisible. Disclosure lives in the initial consent prompt,

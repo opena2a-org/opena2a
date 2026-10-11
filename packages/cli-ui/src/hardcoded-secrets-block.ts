@@ -5,8 +5,6 @@
  *   - scanCovered, non-empty   → severity-grouped credential list +
  *                                 rotation URLs + report command.
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§7).
- *
  * Pure rendering; no chalk imports here. Returns `RenderedSecretsBlock`
  * tuples; the caller applies tones from its own palette. Severity
  * prefixes (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) are baked into the

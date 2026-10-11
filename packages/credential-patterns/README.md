@@ -71,7 +71,7 @@ The order of `CREDENTIAL_PATTERNS` is load-bearing: more specific prefixes (e.g.
 - Patches (`0.1.x`): bug fixes, new patterns, allowlist additions.
 - Minors (`0.x.0`): breaking pattern semantics (regex narrowing/widening, schema changes), new exports.
 
-Detection-logic changes go through Phase 4.5 adversarial review per `~/workspace/claude-skills/skills/pre-push-review/SKILL.md`.
+Detection-logic changes get an adversarial review before release.
 
 ## License
 

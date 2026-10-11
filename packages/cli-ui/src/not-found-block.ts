@@ -1,9 +1,8 @@
 /**
  * Not-found block — unified "package not found" output.
  *
- * Closes F5 from briefs/check-command-divergence.md: today the three CLIs
- * emit three different shapes for the same miss. This primitive gives them
- * one renderer.
+ * The three CLIs used to emit three different shapes for the same miss.
+ * This primitive gives them one renderer.
  *
  * Renderer returns structured lines only — no chalk. The CLI owns color.
  */

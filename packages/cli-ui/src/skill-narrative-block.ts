@@ -2,12 +2,10 @@
  * Skill narrative block — renders "What is this skill?" + the
  * "How this skill could be misused" misuse paragraph.
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§3.1, §3.2).
- *
  * Two distinct blocks live here so the orchestrator can decide
  * independently whether to render the misuse paragraph (it may be
- * empty when the registry-cached NanoMind v3 summary is OOD per
- * `project_nanomind_v05_intelreport_task_mismatch.md`).
+ * empty when the registry-cached NanoMind v3 summary is out of
+ * distribution for the package).
  *
  * All caller-supplied strings are sanitized via `sanitizeForTerminal`
  * — registry-sourced narrative fields are untrusted and could embed

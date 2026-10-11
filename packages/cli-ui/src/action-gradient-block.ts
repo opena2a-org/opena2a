@@ -2,8 +2,6 @@
  * Action gradient block — renders the rule-engine's `nextSteps[]`
  * verbatim under "Next".
  *
- * Brief: opena2a-org/briefs/check-rich-context-skills-mcp-v1.md (§5.2).
- *
  * The rule engine emits a deterministic ordered list of `NextStep`
  * entries with `weight: 'primary' | 'secondary'`. The renderer
  * column-aligns the labels (so `Install confidently:` and

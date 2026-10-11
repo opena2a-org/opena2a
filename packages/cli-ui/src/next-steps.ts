@@ -1,8 +1,8 @@
 /**
  * Next Steps block — per-CLI CTA injection with consistent rendering.
  *
- * Closes F7 from briefs/check-command-divergence.md: the three CLIs today
- * emit different (or missing) Next Steps blocks. Labels must stay identical
+ * The three CLIs used to emit different (or missing) Next Steps blocks.
+ * This renderer gives them one. Labels must stay identical
  * across CLIs so users build one mental model; commands differ because each
  * CLI binary is different (`hackmyagent secure` vs `opena2a scan`).
  *

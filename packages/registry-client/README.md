@@ -99,7 +99,7 @@ tweetnacl signature is byte-compatible with the registry's Go `crypto/ed25519` v
 
 ## Context
 
-Part of the CLI consolidation track — see `opena2a-org/briefs/cli-consolidation.md` and `opena2a-org/todo/2026-04-22-cli-consolidation-sequenced.md` for the milestone plan.
+Part of the CLI consolidation: `hackmyagent`, `opena2a-cli` and `ai-trust` share this client so the three produce the same trust output.
 
 ## License
 
