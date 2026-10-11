@@ -187,7 +187,7 @@ This integration newly defends **T-3002** (cross-tenant grant leakage), **T-3003
 | `opena2a identity trust` | Local 8-factor posture score. |
 | `opena2a identity sign --data X` | Sign arbitrary bytes with the agent's Ed25519 key. |
 | `opena2a runtime tail [-c N]` | Tail the HMA ARP runtime event stream for the current project. |
-| `opena2a secrets ...` | Credential management via Secretless. `add`, `list`, `run`, `revoke`. |
+| `opena2a secrets ...` | Credential management via Secretless. `secret set`, `secret list`, `run`, `vault revoke`. |
 | `opena2a mcp ...` | MCP server lifecycle: `audit`, `sign`, `verify`. |
 | `opena2a status` | What's running, what's protected, what's missing. |
 | `opena2a login` | OAuth 2.0 device flow against AIM Cloud or your self-hosted server. |
