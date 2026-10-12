@@ -32,14 +32,24 @@ const TOOLS_REQUIRED =
   'bash and jq are required to run the workflow scripts (`apt-get install jq` / `brew install jq`); ' +
   'both are preinstalled on the ubuntu-latest runners this suite runs on';
 
-interface Workflow {
-  jobs: Record<string, { steps?: { name?: string; run?: string }[] }>;
-}
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function stepScript(file: string, job: string, step: string): string {
-  const doc = load(fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8')) as Workflow;
-  const run = doc.jobs[job]?.steps?.find((s) => s.name === step)?.run;
-  if (!run) throw new Error(`${file}: job ${job} has no run: script in the step "${step}"`);
+/**
+ * The `run:` script of one step. The parsed workflow is checked level by level
+ * rather than cast, so a workflow of any other shape gets this error, naming
+ * the file, job and step, instead of a TypeError or a script that is not text.
+ */
+function stepScript(file: string, job: string, step: string, text?: string): string {
+  const doc: unknown = load(text ?? fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8'));
+  const jobs = isRecord(doc) ? doc.jobs : undefined;
+  const entry = isRecord(jobs) ? jobs[job] : undefined;
+  const steps = isRecord(entry) ? entry.steps : undefined;
+  const found = Array.isArray(steps) ? steps.find((s) => isRecord(s) && s.name === step) : undefined;
+  const run = isRecord(found) ? found.run : undefined;
+  if (typeof run !== 'string' || run === '') {
+    throw new Error(`${file}: job ${job} has no run: script in the step "${step}"`);
+  }
   return run;
 }
 
@@ -70,6 +80,12 @@ const APPROVER = /^approvers="([^"]+)"$/m.exec(GATE_SCRIPT)?.[1] ?? '';
 // { fail: true }; an array of replies is consumed one per call to that route,
 // the last repeating. A route the case does not list fails like a 404, except
 // a POST of a check run, which echoes the posted conclusion back.
+//
+// No shell runs inside the stub. Each `--jq` filter is literal text in the
+// workflow script, and spawnSync hands it to jq as one argument, so jq parses
+// it as a filter; jq's filter language cannot start a process.
+// GH_STUB_LOG and GH_STUB_ROUTES are set by runScript() alone, to files in
+// a case directory under this suite's own mkdtemp scratch directory.
 // ---------------------------------------------------------------------------
 
 interface Reply {
@@ -520,6 +536,29 @@ describe('merge-group bind block', () => {
 
   it('has bash and jq to run the workflow scripts', () => {
     expect(haveTools(), TOOLS_REQUIRED).toBe(true);
+  });
+});
+
+describe('workflow step lookup', () => {
+  const steps = (body: string): string => `jobs:\n  evaluate:\n    steps:\n${body}`;
+
+  it('returns the run: script of the named step', () => {
+    const text = steps('      - name: Evaluate\n        run: echo ok\n');
+    expect(stepScript('x.yml', 'evaluate', 'Evaluate', text)).toBe('echo ok');
+  });
+
+  it.each([
+    '',
+    'jobs: [evaluate]\n',
+    'jobs:\n  evaluate: build\n',
+    steps('      name: Evaluate\n      run: echo ok\n'),
+    steps('      - Evaluate\n'),
+    steps('      - name: Evaluate\n        run: [echo, ok]\n'),
+    steps('      - name: Other\n        run: echo ok\n'),
+  ])('names the file, job and step when the workflow %j holds no run: script there', (text) => {
+    expect(() => stepScript('x.yml', 'evaluate', 'Evaluate', text)).toThrow(
+      'x.yml: job evaluate has no run: script in the step "Evaluate"',
+    );
   });
 });
 

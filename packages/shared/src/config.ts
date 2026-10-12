@@ -36,7 +36,11 @@ export function loadProjectConfig(startDir?: string): ProjectConfig | null {
     const filepath = resolve(dir, filename);
     try {
       const raw = readFileSync(filepath, 'utf-8');
-      // CORE_SCHEMA keeps a date-like scalar a string rather than a Date.
+      // CORE_SCHEMA builds only strings, numbers, booleans, nulls, lists and
+      // mappings: a date-like scalar stays a string, and a tag that would build
+      // anything else (`!!js/function`, `!!binary`) fails the parse, so nothing
+      // in the file runs. An alias is the anchored value itself, not a copy, so
+      // a small file stays small in memory.
       const parsed: unknown = filename.endsWith('.json')
         ? JSON.parse(raw)
         : yaml.load(raw, { schema: yaml.CORE_SCHEMA });
