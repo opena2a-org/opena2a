@@ -398,6 +398,26 @@ describe(`${DOC_REL} — ai-trust is described as the tool npx runs`, () => {
     }
   });
 
+  it('Step 4 says ai-trust leaves the working tree unread only when it is given the published name', () => {
+    const step = section(readDoc(), '## Step 4');
+    // `ai-trust check .` without --no-scan packs the current directory (the test above), so a
+    // sentence saying ai-trust does not read the working tree holds only for the published name.
+    // Code spans are masked first: the `.` in `ai-trust check . --no-scan` would end a sentence.
+    const sentences = step.replace(/`[^`\n]*`/g, '`code`').split(/(?<=[.!?])\s+/);
+    const claims = sentences.filter((s) => {
+      const at = s.search(/\bworking tree\b/i);
+      return at !== -1 && /\b(?:neither|nor|not|never|no)\b|n't\b/i.test(s.slice(0, at));
+    });
+    expect(claims.length, 'Step 4 no longer says when ai-trust leaves your working tree unread').toBeGreaterThan(0);
+    for (const claim of claims) {
+      expect(
+        claim,
+        'Step 4 says ai-trust does not read your working tree without limiting that to the published name, ' +
+          'but `ai-trust check .` packs the current directory',
+      ).toMatch(/\bpublished (?:name|under)\b/i);
+    }
+  });
+
   it('the gate asks ai-trust for JSON about the claimed package and passes a score at the threshold', () => {
     expect(haveJq(), JQ_REQUIRED).toBe(true);
     const { status, argv } = runGate(JSON.stringify(registryAnswer(0.7, 'passed')), 0);
