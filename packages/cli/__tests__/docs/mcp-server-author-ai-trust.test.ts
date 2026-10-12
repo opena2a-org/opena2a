@@ -8,12 +8,16 @@ import * as path from 'node:path';
  * docs/use-cases/mcp-server-author.md described a different tool from the
  * ai-trust that `npx ai-trust` runs. Its CI recipe ran
  * `ai-trust check . --format json`: ai-trust registers no `--format` option, so
- * the step died on `unknown option '--format'` before it read a score, and `.`
- * is not a directory to ai-trust but a package name the registry reports as not
- * found. Step 4 said the rating was "calculated locally" from six weighted
- * factors with "no data uploaded". The rating ai-trust prints is the OpenA2A
- * Registry's record of the published package, or the score of a fresh scan of
- * that package, and a scan reports its verdict and score to the registry.
+ * the step died on `unknown option '--format'` before it read a score. ai-trust
+ * takes `.` as a package name, not a directory, and the registry has no record
+ * of it: with `--no-scan` it is reported not found; without `--no-scan`
+ * ai-trust hands it to `npm pack`, which packs the current directory and runs
+ * its `prepack` script if it has one, and then exits 1 because the packed
+ * package is not named `.`. Step 4 said the rating was "calculated locally"
+ * from six weighted factors with "no data uploaded". The rating ai-trust prints
+ * is the OpenA2A Registry's record of the published package, or the score of a
+ * fresh scan of that package, and a scan reports its verdict and score to the
+ * registry.
  *
  * The options are measured, not restated: every `npx ai-trust` invocation is
  * extracted from the doc, and each option it passes is looked up in the help
@@ -373,6 +377,25 @@ describe(`${DOC_REL} — ai-trust is described as the tool npx runs`, () => {
     expect(step, 'Step 4 still carries a factor/weight table ai-trust does not print').not.toMatch(
       /^\|\s*Factor\s*\|\s*Weight\s*\|/m,
     );
+  });
+
+  it('Step 4 says only `check . --no-scan` reports `.` not found, and that `check .` packs the directory', () => {
+    const step = section(readDoc(), '## Step 4');
+    // Each `ai-trust check .` code span, with the prose up to the next `ai-trust` command span.
+    const dotChecks = [...step.matchAll(/`ai-trust check \.((?: [^`]*)?)`([\s\S]*?)(?=`ai-trust |$)/g)];
+    expect(dotChecks.length, 'Step 4 no longer names `ai-trust check .`').toBeGreaterThan(0);
+    for (const [, flags, prose] of dotChecks) {
+      const span = `\`ai-trust check .${flags}\``;
+      const noScan = flags.split(/\s+/).includes('--no-scan');
+      if (/not found/.test(prose)) {
+        expect(noScan, `${span} is said to report "not found", which ai-trust does only with --no-scan`).toBe(true);
+      }
+      if (!noScan) {
+        expect(prose, `${span} without --no-scan runs \`npm pack\` on the current directory`).toMatch(
+          /`npm pack`[\s\S]*`prepack`/,
+        );
+      }
+    }
   });
 
   it('the gate asks ai-trust for JSON about the claimed package and passes a score at the threshold', () => {
