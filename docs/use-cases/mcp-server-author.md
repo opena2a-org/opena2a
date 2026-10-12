@@ -164,7 +164,7 @@ Users who look your server up before installing it see the trust rating the Open
 npx ai-trust check @myorg/mcp-server-tools --no-scan
 ```
 
-`check` takes the name your package is published under. It does not take a directory or the server's name from `.mcp.json`: `ai-trust check .` looks for a package called `.` and reports it not found, and `ai-trust check my-server` reports whichever unrelated npm package holds the name `my-server`.
+`check` expects the name your package is published under. Given a directory or the server's name from `.mcp.json`, it does not check your server. `ai-trust check . --no-scan` looks for a package called `.` and reports it not found. Without `--no-scan`, `ai-trust check .` runs `npm pack` on the current directory, which runs that directory's `prepack` script if it has one, and then exits 1 because the packed package is not named `.`. `ai-trust check my-server` reports whichever unrelated npm package holds the name `my-server`.
 
 With `--no-scan` the command reads the registry record only. It shows the trust score out of 100, the trust level on the scale `Blocked > Warning > Listed > Scanned > Verified`, how many community scans stand behind the record, and how long ago the last one ran. A package the registry has no record of is reported as not found, with `--scan-if-missing` as the next step. Without `--no-scan`, `check` also downloads the latest published version, scans it with HackMyAgent and reports that scan's score; each such scan sends the registry the package name, the verdict and the score. Neither path reads your working tree, so the rating moves when a published version is scanned again, not when you commit.
 
