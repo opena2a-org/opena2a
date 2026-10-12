@@ -73,7 +73,8 @@ export async function setup(options: SetupOptions): Promise<number> {
   // Step 1: Check authentication. If missing or expired, run the browser login
   // flow inline so the user doesn't have to cancel + retry. JSON callers stay
   // strict-mode (still error with a machine-readable code). In --ci mode login
-  // refuses without starting a browser, so only its refusal is printed.
+  // refuses before it contacts a server or starts a browser, and its refusal
+  // names no credential, so only that refusal is printed.
   let auth = loadAuth();
   if (!auth || !isAuthValid(auth)) {
     if (isJson) {

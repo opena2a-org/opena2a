@@ -82,6 +82,30 @@ describe('loadProjectConfig', () => {
     expect(loadProjectConfig(dir)?.project?.name).toBe('fallback');
   });
 
+  it('falls through to the next name when a YAML file carries a tag that would build code', () => {
+    writeFileSync(
+      join(dir, '.opena2a.yaml'),
+      'version: 1\nproject:\n  name: from-yaml\nhook: !!js/function "function () { return 1; }"\n',
+    );
+    writeFileSync(join(dir, 'opena2a.config.json'), JSON.stringify({ version: 1, project: { name: 'fallback' } }));
+
+    expect(loadProjectConfig(dir)?.project?.name).toBe('fallback');
+  });
+
+  it('returns null, without throwing, for YAML nested too deep to parse', () => {
+    writeFileSync(join(dir, '.opena2a.yaml'), `version: 1\nextra: ${'['.repeat(100_000)}${']'.repeat(100_000)}\n`);
+
+    expect(loadProjectConfig(dir)).toBeNull();
+  });
+
+  it('loads a small YAML file whose aliases name a billion values without copying them', () => {
+    const lines = ['version: 1', 'l0: &l0 [x, x, x, x, x, x, x, x, x, x]'];
+    for (let i = 1; i <= 9; i++) lines.push(`l${i}: &l${i} [${Array(10).fill(`*l${i - 1}`).join(', ')}]`);
+    writeFileSync(join(dir, '.opena2a.yaml'), `${lines.join('\n')}\n`);
+
+    expect(loadProjectConfig(dir)).toEqual({ version: 1 });
+  });
+
   it('returns null when the only file fails schema validation', () => {
     writeFileSync(join(dir, '.opena2a.yaml'), 'version: 2\n');
 
