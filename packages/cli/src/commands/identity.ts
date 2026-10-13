@@ -356,18 +356,21 @@ async function handleList(options: IdentityOptions): Promise<number> {
     // A stored token or API key goes only to the server it was stored for.
     const token = client ? storedTokenFor(client.serverUrl) : undefined;
     const apiKey = client ? storedApiKeyFor(client.serverUrl) : undefined;
+    // The agent connection is read from, and shown for, only the server it
+    // was made to: its agent ID is never sent to a server --server names.
+    const connection = connectionTo(client, serverConfig);
     let serverAgent = null;
     let serverAgentList = null;
-    const effectiveServerUrl = serverConfig?.serverUrl ?? auth.serverUrl;
+    const effectiveServerUrl = connection?.serverUrl ?? client?.serverUrl ?? auth.serverUrl;
 
     // If we have a server client with auth, try to fetch server data
     if (client && token) {
       try {
-        if (serverConfig?.agentId) {
+        if (connection?.agentId) {
           // Fetch specific agent if we have a registered agent ID
-          serverAgent = await client.getAgent(token, serverConfig.agentId);
+          serverAgent = await client.getAgent(token, connection.agentId);
         } else {
-          // No specific agent ID — list all agents from server
+          // No agent registered on this server — list all agents from server
           serverAgentList = await client.listAgents(token);
         }
       } catch (err) {
@@ -376,9 +379,9 @@ async function handleList(options: IdentityOptions): Promise<number> {
           process.stderr.write(yellow('Showing local identity only.') + '\n\n');
         }
       }
-    } else if (client && serverConfig?.agentId && apiKey) {
+    } else if (client && connection?.agentId && apiKey) {
       try {
-        serverAgent = await client.getAgent({ apiKey }, serverConfig.agentId);
+        serverAgent = await client.getAgent({ apiKey }, connection.agentId);
       } catch (err) {
         if (!isJson) {
           process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
@@ -440,16 +443,16 @@ async function handleList(options: IdentityOptions): Promise<number> {
     process.stdout.write(`  Created:     ${id.createdAt}\n`);
     process.stdout.write(`  Data Dir:    ${dim(aim.getDataDir())}\n`);
 
-    if (serverAgent && serverConfig) {
+    if (serverAgent && connection) {
       process.stdout.write('\n' + bold('  Server') + '\n');
-      process.stdout.write(`  Server URL:  ${cyan(serverConfig.serverUrl)}\n`);
+      process.stdout.write(`  Server URL:  ${cyan(connection.serverUrl)}\n`);
       process.stdout.write(`  Server ID:   ${serverAgent.id}\n`);
       process.stdout.write(`  Status:      ${serverAgent.status === 'verified' ? green(serverAgent.status) : yellow(serverAgent.status)}\n`);
       process.stdout.write(`  Trust Score: ${serverAgent.trustScore}\n`);
-    } else if (serverConfig) {
+    } else if (connection) {
       process.stdout.write('\n' + bold('  Server') + '\n');
-      process.stdout.write(`  Server URL:  ${cyan(serverConfig.serverUrl)}\n`);
-      process.stdout.write(`  Server ID:   ${serverConfig.agentId}\n`);
+      process.stdout.write(`  Server URL:  ${cyan(connection.serverUrl)}\n`);
+      process.stdout.write(`  Server ID:   ${connection.agentId}\n`);
       process.stdout.write(`  Status:      ${dim('offline or unreachable')}\n`);
     }
 
@@ -641,17 +644,19 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
 
     // If server is configured, fetch server-side trust data
     const client = getServerClient(options);
-    const serverConfig = loadServerConfig();
+    // The agent connection is read only from the server it was made to: its
+    // agent ID is never sent to a server --server names.
+    const connection = connectionTo(client, loadServerConfig());
     let serverAgent = null;
 
-    if (client && serverConfig?.agentId) {
+    if (client && connection?.agentId) {
       try {
         const token = storedTokenFor(client.serverUrl);
         const apiKey = storedApiKeyFor(client.serverUrl);
         if (token) {
-          serverAgent = await client.getAgent(token, serverConfig.agentId);
+          serverAgent = await client.getAgent(token, connection.agentId);
         } else if (apiKey) {
-          serverAgent = await client.getAgent({ apiKey }, serverConfig.agentId);
+          serverAgent = await client.getAgent({ apiKey }, connection.agentId);
         }
       } catch (err) {
         if (!isJson) {
@@ -684,7 +689,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
         result.server = {
           trustScore: serverAgent.trustScore,
           status: serverAgent.status,
-          serverUrl: serverConfig?.serverUrl,
+          serverUrl: connection?.serverUrl,
         };
       }
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -1158,6 +1163,15 @@ function storedTokenFor(serverUrl: string): string | undefined {
     return globalAuth.accessToken;
   }
   return undefined;
+}
+
+/**
+ * The agent connection, when it was made to exactly the server the client
+ * sends requests to. A connection to another server is never returned, so
+ * its agent ID is neither looked up on, nor reported for, a different server.
+ */
+function connectionTo(client: AimClient | null, config: ServerConfig | null): ServerConfig | null {
+  return client && config && resolveServerUrl(config.serverUrl) === client.serverUrl ? config : null;
 }
 
 /**
