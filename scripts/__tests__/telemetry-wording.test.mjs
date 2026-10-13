@@ -33,6 +33,7 @@ const BARRED =
   /anonymous|anonymi[sz]ed|irreversib|no personally identif|no personal data|\bno PII\b|does not identify you|cannot identify you/gi;
 
 const TEXTS = [
+  'README.md',
   'packages/cli/README.md',
   'packages/cli/docs/testing/release-smoke.md',
   'packages/cli/src/index.ts',
@@ -113,10 +114,10 @@ test('the check catches each barred phrase when one is planted', () => {
   }
 });
 
-// The READMEs that describe the usage events. Each joins the sentence to a
-// pointer at the privacy policy with a semicolon, so everything but its
-// closing period must appear.
-const EVENT_READMES = ['packages/cli/README.md', 'packages/telemetry/README.md'];
+// The READMEs that describe the usage events. The two package READMEs join
+// the sentence to a pointer at the privacy policy with a semicolon, so
+// everything but its closing period must appear.
+const EVENT_READMES = ['README.md', 'packages/cli/README.md', 'packages/telemetry/README.md'];
 
 for (const file of EVENT_READMES) {
   test(`${file} states that each event carries an install ID that identifies the machine`, () => {

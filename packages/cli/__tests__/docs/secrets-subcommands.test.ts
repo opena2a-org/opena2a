@@ -1,5 +1,6 @@
 /**
- * Every `opena2a secrets` subcommand the README names is one Secretless has.
+ * Every `opena2a secrets` subcommand the README and docs/commands.md name is
+ * one Secretless has.
  *
  * The command reference listed `add`, `list`, `run` and `revoke`.
  * `opena2a secrets` hands its arguments to secretless-ai unchanged, and
@@ -7,9 +8,10 @@
  * and listed with `secret set` and `secret list`, and a credential is revoked
  * with `vault revoke`.
  *
- * The names are read from the README: the code spans of the
- * `opena2a secrets ...` row, and every `opena2a secrets <subcommand>` written
- * out elsewhere. Each is looked up in the usage lines of the help text of the
+ * The names are read from the pages: the code spans of the
+ * `opena2a secrets ...` row of the command reference in docs/commands.md, and
+ * every `opena2a secrets <subcommand>` written out in it or in the README.
+ * Each is looked up in the usage lines of the help text of the
  * installed secretless-ai. The help is printed in this process from the
  * engine's help module, under the prefix the CLI sets at startup; no engine
  * command runs.
@@ -20,7 +22,11 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
 const CLI_ROOT = resolve(__dirname, '../..');
-const README_PATH = resolve(CLI_ROOT, '../../README.md');
+const REPO_ROOT = resolve(CLI_ROOT, '../..');
+/** The page that carries the command reference. */
+const REFERENCE = 'docs/commands.md';
+/** The pages that write `opena2a secrets` subcommands out. */
+const PAGES = ['README.md', REFERENCE];
 
 /** The command cell of the command-reference row. */
 const ROW_COMMAND = 'opena2a secrets ...';
@@ -37,18 +43,19 @@ const ENGINE_MANIFEST = fromCli.resolve('secretless-ai/package.json');
 const ENGINE_VERSION = (fromCli(ENGINE_MANIFEST) as { version: string }).version;
 const ENGINE_HELP = join(dirname(ENGINE_MANIFEST), 'dist', 'commands', 'help.js');
 
-const readme = readFileSync(README_PATH, 'utf-8');
+const reference = readFileSync(join(REPO_ROOT, REFERENCE), 'utf-8');
+const pages = PAGES.map((page) => readFileSync(join(REPO_ROOT, page), 'utf-8')).join('\n');
 
 /** The code spans of the description cell of the row whose command cell is `command`. */
 function rowSubcommands(markdown: string, command: string): string[] {
   const cell = `| \`${command}\` |`;
   const row = markdown.split('\n').find((l) => l.startsWith(cell));
-  if (row === undefined) throw new Error(`README.md: no row for \`${command}\` in the command reference`);
+  if (row === undefined) throw new Error(`${REFERENCE}: no row for \`${command}\` in the command reference`);
   return [...row.slice(cell.length).matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 }
 
 /**
- * The words after `opena2a secrets` wherever the README writes a subcommand
+ * The words after `opena2a secrets` wherever a page writes a subcommand
  * out, up to the first flag or placeholder: `run` from
  * `opena2a secrets run --only KEY -- <cmd>`.
  */
@@ -98,10 +105,10 @@ function engineHas(paths: Set<string>, name: string): boolean {
   return false;
 }
 
-const listed = rowSubcommands(readme, ROW_COMMAND);
-const written = writtenOut(readme);
+const listed = rowSubcommands(reference, ROW_COMMAND);
+const written = writtenOut(pages);
 
-describe('README: the opena2a secrets subcommands it names', () => {
+describe('the README and the command reference name opena2a secrets subcommands the engine has', () => {
   let engine: Set<string>;
 
   beforeAll(() => {

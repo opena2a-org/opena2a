@@ -1,0 +1,68 @@
+
+  OpenA2A Security Assessment  v0.10.13         0.1s
+
+  Project      my-agent
+  Stack        Node.js
+  Directory    /private/tmp/opena2a-quick-start.QXpmxe/my-agent
+
+  Findings
+  -----------------------------------------------
+  CRITICAL  OpenAI Project Key
+            OpenAI Project Key hardcoded in source. Anyone who can
+            read this file can use it to access the associated
+            account.
+            src/agent.js:1
+            Verify: sed -n '1p' src/agent.js
+            Fix:    opena2a protect
+
+  MEDIUM    .env not in .gitignore
+            Environment files may be committed to version control.
+            Verify: grep -c '\.env' .gitignore 2>/dev/null || echo 0
+            Fix:    opena2a protect
+
+  Security Score: 65 / 100  (project posture: credentials, config, environment)
+
+  Credentials    -20  1 critical
+  Environment    -8  .env unprotected
+  Configuration  -7  no lock file, no security config
+
+  After fixes:   65 -> 100
+
+  Recommendations
+  -----------------------------------------------
+  1. Migrate 1 hardcoded credential to a vault
+     Credentials in source files are readable by anyone with repo
+     access. A vault stores them encrypted, rotates them
+     automatically, and provides an audit trail.
+     $ opena2a protect
+
+  2. Add .env to .gitignore
+     Adding .env to .gitignore prevents secrets from entering version
+     control. Existing tracked .env files also need `git rm --cached
+     .env`.
+     $ opena2a protect
+
+  3. Create .gitignore with .env exclusion
+     Without a .gitignore, build artifacts and sensitive files can be
+     committed accidentally. Protect creates one with .env exclusion
+     to prevent secret leaks.
+     $ opena2a protect
+
+  4. Sign config files for integrity monitoring
+     Signed baselines let you detect unintended config changes before
+     they affect runtime behavior.
+     $ opena2a protect
+
+  -----------------------------------------------
+
+  Tip: opena2a protect
+       1 critical credential in source files — anyone with repo
+       access can use them now. opena2a protect moves them to
+       Secretless AI (local vault, OS keychain, 1Password, Vault, or
+       GCP Secret Manager) and rewrites the source files to
+       reference env vars.
+
+  To set up full Shield protection (11-step orchestration): opena2a shield init
+  For deeper analysis (209 checks): opena2a scan --deep
+  Tip: Install globally for easier access: npm install -g opena2a-cli
+

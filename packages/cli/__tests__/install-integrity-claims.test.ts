@@ -2,7 +2,8 @@
  * What the CLI says about checking an installation matches what it checks
  * (#434).
  *
- * The README said `opena2a status` reports the binary signature state and
+ * The README, and now the "Verifying what was installed" section of
+ * docs/verifying-npm-packages.md, said `opena2a status` reports the binary signature state and
  * `opena2a shield selfcheck` attests the install against an embedded
  * manifest. No manifest ships with the package, `status` repeats the
  * selfcheck verdict, and selfcheck reads only Shield's own state. `verify`
@@ -27,13 +28,13 @@ const PROVENANCE_DOC = 'docs/verifying-npm-packages.md';
 // Claims of an install check that no command performs.
 const UNBACKED = [/embedded manifest/i, /binary signature/i, /binary integrity/i, /self-attestation/i];
 
-/** The README's "Verifying what was installed" section, up to the next `## `. */
+/** The provenance page's "Verifying what was installed" section, up to the next `## `. */
 function verifyingSection(): string {
-  const readme = readFileSync(resolve(REPO_ROOT, 'README.md'), 'utf-8');
-  const start = readme.indexOf('### Verifying what was installed');
+  const page = readFileSync(resolve(REPO_ROOT, PROVENANCE_DOC), 'utf-8');
+  const start = page.indexOf('## Verifying what was installed');
   expect(start).toBeGreaterThan(-1);
-  const end = readme.indexOf('\n## ', start);
-  return readme.slice(start, end === -1 ? undefined : end);
+  const end = page.indexOf('\n## ', start + 1);
+  return page.slice(start, end === -1 ? undefined : end);
 }
 
 function verifyHelp(): string {
@@ -53,18 +54,19 @@ afterEach(() => {
 });
 
 describe('install-integrity claims (#434)', () => {
-  it('the README claims no install check the CLI does not run', () => {
+  it('the verifying page claims no install check the CLI does not run', () => {
     const section = verifyingSection();
     for (const pattern of UNBACKED) expect(section).not.toMatch(pattern);
     expect(section).toContain('No command compares the installed files of `opena2a-cli` with the published package');
   });
 
-  it('the README names what verify hashes and how to reach opena2a-cli', () => {
+  it('the verifying page names what verify hashes and how to reach opena2a-cli', () => {
     const section = verifyingSection();
     for (const pkg of VERIFIABLE_PACKAGES) expect(section).toContain(`\`${pkg}\``);
     expect(section).toContain('`opena2a verify --package opena2a-cli`');
-    expect(section).toContain(`(${PROVENANCE_DOC})`);
-    expect(existsSync(resolve(REPO_ROOT, PROVENANCE_DOC))).toBe(true);
+    // The tarball check is the page's own per-package block, so the section links up to it.
+    expect(section).toContain('](#opena2a-cli)');
+    expect(readFileSync(resolve(REPO_ROOT, PROVENANCE_DOC), 'utf-8')).toContain('\n## `opena2a-cli`\n');
   });
 
   it('shield selfcheck --help names Shield state, not binary signatures', () => {
