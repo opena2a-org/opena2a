@@ -241,14 +241,16 @@ function getServerClient(options: IdentityOptions): AimClient | null {
 
   if (serverFlag) {
     const url = resolveServerUrl(serverFlag);
-    // If no explicit API key, check global auth for matching server
-    if (!apiKey) {
+    // A saved API key goes only to the server it was saved for.
+    const key = options.apiKey ?? storedApiKeyFor(url);
+    // Without an API key for this server, check global auth for matching server
+    if (!key) {
       const globalAuth = loadAuth();
       if (globalAuth && isAuthValid(globalAuth) && globalAuth.serverUrl === url) {
         return new AimClient(url, { accessToken: globalAuth.accessToken });
       }
     }
-    return new AimClient(url, { apiKey });
+    return new AimClient(url, { apiKey: key });
   }
   if (config?.serverUrl) {
     return new AimClient(config.serverUrl, { apiKey });
@@ -351,8 +353,9 @@ async function handleList(options: IdentityOptions): Promise<number> {
     const client = getServerClient(options);
     const serverConfig = loadServerConfig();
     const auth = getStoredAuth();
-    // A stored token goes only to the server it was stored for.
+    // A stored token or API key goes only to the server it was stored for.
     const token = client ? storedTokenFor(client.serverUrl) : undefined;
+    const apiKey = client ? storedApiKeyFor(client.serverUrl) : undefined;
     let serverAgent = null;
     let serverAgentList = null;
     const effectiveServerUrl = serverConfig?.serverUrl ?? auth.serverUrl;
@@ -373,11 +376,9 @@ async function handleList(options: IdentityOptions): Promise<number> {
           process.stderr.write(yellow('Showing local identity only.') + '\n\n');
         }
       }
-    } else if (client && serverConfig?.agentId && auth.apiKey) {
+    } else if (client && serverConfig?.agentId && apiKey) {
       try {
-        const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
-        serverAgent = await client.getAgent(loginResp.accessToken, serverConfig.agentId);
-        saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+        serverAgent = await client.getAgent({ apiKey }, serverConfig.agentId);
       } catch (err) {
         if (!isJson) {
           process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
@@ -645,15 +646,12 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
 
     if (client && serverConfig?.agentId) {
       try {
-        const auth = getStoredAuth();
         const token = storedTokenFor(client.serverUrl);
+        const apiKey = storedApiKeyFor(client.serverUrl);
         if (token) {
           serverAgent = await client.getAgent(token, serverConfig.agentId);
-        } else if (auth.apiKey) {
-          const id = aim.getIdentity();
-          const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
-          serverAgent = await client.getAgent(loginResp.accessToken, serverConfig.agentId);
-          saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
+        } else if (apiKey) {
+          serverAgent = await client.getAgent({ apiKey }, serverConfig.agentId);
         }
       } catch (err) {
         if (!isJson) {
@@ -808,19 +806,12 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
 
   if (client && serverConfig?.agentId) {
     try {
-      const auth = getStoredAuth();
-      let token = storedTokenFor(client.serverUrl);
+      const token = storedTokenFor(client.serverUrl);
+      const apiKey = storedApiKeyFor(client.serverUrl);
+      const credential = token ?? (apiKey ? { apiKey } : undefined);
 
-      if (!token && auth.apiKey) {
-        const aim = new mod.AIMCore({ agentName: 'default' });
-        const id = aim.getIdentity();
-        const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
-        token = loginResp.accessToken;
-        saveServerConfig({ ...serverConfig, accessToken: loginResp.accessToken, refreshToken: loginResp.refreshToken });
-      }
-
-      if (token) {
-        const resp = await client.getAuditLogs(token, serverConfig.agentId, { pageSize: limit });
+      if (credential) {
+        const resp = await client.getAuditLogs(credential, serverConfig.agentId, { pageSize: limit });
 
         if (isJson) {
           process.stdout.write(JSON.stringify({
@@ -1167,6 +1158,15 @@ function storedTokenFor(serverUrl: string): string | undefined {
     return globalAuth.accessToken;
   }
   return undefined;
+}
+
+/**
+ * The API key stored with the agent connection, when it was stored for
+ * exactly this server. A key stored for another server is never returned.
+ */
+function storedApiKeyFor(serverUrl: string): string | undefined {
+  const config = loadServerConfig();
+  return config?.apiKey && resolveServerUrl(config.serverUrl) === serverUrl ? config.apiKey : undefined;
 }
 
 async function handleServerPolicies(options: IdentityOptions): Promise<number> {
