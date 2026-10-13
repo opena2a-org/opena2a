@@ -5,7 +5,7 @@ how to set up a development environment, run tests, and submit changes.
 
 Apache 2.0. PRs from outside the org welcome. This guide has the dev loop, the test conventions, and what to expect on a pull request opened from a fork.
 
-Security issues: `info@opena2a.org` (coordinated disclosure, response within 24 hours).
+Security issues: report them privately to `info@opena2a.org` (coordinated disclosure). The [security policy](SECURITY.md) says what to include and when to expect an acknowledgement.
 
 ## Prerequisites
 
