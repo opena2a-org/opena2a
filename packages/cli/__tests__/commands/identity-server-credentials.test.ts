@@ -73,6 +73,10 @@ async function startFakeAim(): Promise<FakeAim> {
       res.end(JSON.stringify(agent));
     } else if (reqPath.startsWith('/api/v1/agents')) {
       res.end(JSON.stringify({ agents: [agent], total: 1 }));
+    } else if (reqPath === '/api/v1/public/login') {
+      // The AIM login handler takes an email address and a password.
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: 'Email and password are required' }));
     } else {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'not found' }));
@@ -175,5 +179,60 @@ describe('a stored token goes only to the server it was stored for', () => {
       'GET /api/v1/agents/agent-1',
     ]);
     for (const r of issuer.requests) expect(r.headers.authorization).toBe('Bearer token-issued-by-issuer');
+  });
+});
+
+describe('the stored API key reads the agent in X-API-Key, without the login endpoint', () => {
+  beforeEach(() => {
+    state.serverConfig = { serverUrl: issuer.url, agentId: 'agent-1', apiKey: 'FAKE-AIM-KEY-1234', registeredAt: LATER };
+  });
+
+  it('identity list', async () => {
+    const code = await identity({ subcommand: 'list', json: true });
+
+    expect(code).toBe(0);
+    expect(issuer.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents/agent-1']);
+    expect(issuer.requests[0].headers['x-api-key']).toBe('FAKE-AIM-KEY-1234');
+    expect(issuer.requests[0].headers.authorization).toBeUndefined();
+    expect(JSON.parse(stdout).server).toMatchObject({ id: 'agent-1', trustScore: 50 });
+  });
+
+  it('identity trust', async () => {
+    const code = await identity({ subcommand: 'trust', json: true, dir: state.dataDir });
+
+    expect(code).toBe(0);
+    expect(issuer.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents/agent-1']);
+    expect(issuer.requests[0].headers['x-api-key']).toBe('FAKE-AIM-KEY-1234');
+    expect(JSON.parse(stdout).server).toMatchObject({ trustScore: 50 });
+  });
+
+  it('identity audit', async () => {
+    const code = await identity({ subcommand: 'audit', json: true });
+
+    expect(code).toBe(0);
+    expect(issuer.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents/agent-1/audit-logs?pageSize=10']);
+    expect(issuer.requests[0].headers['x-api-key']).toBe('FAKE-AIM-KEY-1234');
+    expect(JSON.parse(stdout)).toMatchObject({ source: 'server', total: 0, auditLogs: [] });
+  });
+
+  it('identity list --server <url> does not send the key stored for another server', async () => {
+    const code = await identity({ subcommand: 'list', server: other.url, json: true });
+
+    expect(code).toBe(0);
+    expect(other.requests).toEqual([]);
+    expect(issuer.requests).toEqual([]);
+  });
+
+  it('identity list --server <url> with a login for that server carries no key stored for another server', async () => {
+    state.auth = { serverUrl: other.url, accessToken: 'token-issued-by-other', expiresAt: LATER };
+
+    const code = await identity({ subcommand: 'list', server: other.url, json: true });
+
+    expect(code).toBe(0);
+    expect(issuer.requests).toEqual([]);
+    expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents/agent-1']);
+    expect(other.requests[0].headers.authorization).toBe('Bearer token-issued-by-other');
+    expect(other.requests[0].headers['x-api-key']).toBeUndefined();
+    expect(other.requests[0].headers['x-aim-api-key']).toBeUndefined();
   });
 });

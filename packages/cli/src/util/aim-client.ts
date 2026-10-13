@@ -46,10 +46,11 @@ export interface RegisterResponse {
   message: string;
 }
 
-export interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-}
+/**
+ * How one request authenticates: an access token, sent as a bearer token,
+ * or an API key, sent in the X-API-Key header the AIM server reads.
+ */
+export type AimCredential = string | { apiKey: string };
 
 export interface AgentListResponse {
   agents: ServerAgent[];
@@ -170,12 +171,6 @@ export class AimClient {
     });
   }
 
-  // ---- Login -------------------------------------------------------------
-
-  async login(credentials: { name: string; apiKey: string }): Promise<LoginResponse> {
-    return this.post('/api/v1/public/login', credentials);
-  }
-
   // ---- Agent CRUD (requires Bearer token) --------------------------------
 
   async createAgent(body: RegisterRequest): Promise<RegisterResponse> {
@@ -196,12 +191,12 @@ export class AimClient {
     return this.get(`/api/v1/agents${query ? '?' + query : ''}`, token);
   }
 
-  async getAgent(token: string, agentId: string): Promise<ServerAgent> {
-    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}`, token);
+  async getAgent(credential: AimCredential, agentId: string): Promise<ServerAgent> {
+    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}`, credential);
   }
 
   async getAuditLogs(
-    token: string,
+    credential: AimCredential,
     agentId: string,
     params?: { page?: number; pageSize?: number },
   ): Promise<AuditLogResponse> {
@@ -211,7 +206,7 @@ export class AimClient {
     const query = qs.toString();
     const result = await this.get<any>(
       `/api/v1/agents/${encodeURIComponent(agentId)}/audit-logs${query ? '?' + query : ''}`,
-      token,
+      credential,
     );
     // Normalize server response: server returns { logs } but client expects { auditLogs }
     return {
@@ -368,9 +363,10 @@ export class AimClient {
 
   // ---- Generic HTTP helpers -----------------------------------------------
 
-  private async get<T>(path: string, token?: string): Promise<T> {
+  private async get<T>(path: string, credential?: AimCredential): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (typeof credential === 'object') headers['X-API-Key'] = credential.apiKey;
+    else if (credential) headers['Authorization'] = `Bearer ${credential}`;
     else if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
     if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
 
