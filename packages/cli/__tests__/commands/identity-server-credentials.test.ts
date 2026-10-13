@@ -230,9 +230,67 @@ describe('the stored API key reads the agent in X-API-Key, without the login end
 
     expect(code).toBe(0);
     expect(issuer.requests).toEqual([]);
-    expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents/agent-1']);
+    expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents']);
     expect(other.requests[0].headers.authorization).toBe('Bearer token-issued-by-other');
     expect(other.requests[0].headers['x-api-key']).toBeUndefined();
     expect(other.requests[0].headers['x-aim-api-key']).toBeUndefined();
+  });
+});
+
+describe('the agent ID of a connection goes only to the server the connection was made to', () => {
+  beforeEach(() => {
+    state.serverConfig = { serverUrl: issuer.url, agentId: 'agent-1', apiKey: 'FAKE-AIM-KEY-1234', registeredAt: LATER };
+    state.auth = { serverUrl: other.url, accessToken: 'token-issued-by-other', expiresAt: LATER };
+  });
+
+  it('identity list --server <url> lists that server with its login and never asks it for the connected agent', async () => {
+    const code = await identity({ subcommand: 'list', server: other.url, json: true });
+
+    expect(code).toBe(0);
+    expect(issuer.requests).toEqual([]);
+    expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents']);
+    expect(other.requests[0].headers.authorization).toBe('Bearer token-issued-by-other');
+    expect(JSON.parse(stdout).server).toMatchObject({ url: other.url, total: 1 });
+  });
+
+  it('identity show --server <url> lists that server with its login and never asks it for the connected agent', async () => {
+    const code = await identity({ subcommand: 'show', server: other.url, json: true });
+
+    expect(code).toBe(0);
+    expect(issuer.requests).toEqual([]);
+    expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents']);
+    expect(JSON.parse(stdout).server).toMatchObject({ url: other.url, total: 1 });
+  });
+
+  it('identity trust --server <url> reads no server data for an agent connected to another server', async () => {
+    const code = await identity({ subcommand: 'trust', server: other.url, json: true, dir: state.dataDir });
+
+    expect(code).toBe(0);
+    expect(issuer.requests).toEqual([]);
+    expect(other.requests).toEqual([]);
+    expect(JSON.parse(stdout).server).toBeUndefined();
+  });
+
+  it('identity show --server <url> without a login for it shows the connection to another server as neither queried nor unreachable', async () => {
+    state.auth = null;
+
+    const code = await identity({ subcommand: 'show', server: other.url });
+
+    expect(code).toBe(0);
+    expect(issuer.requests).toEqual([]);
+    expect(other.requests).toEqual([]);
+    expect(stdout).toContain('Agent ID:');
+    expect(stdout).not.toContain(issuer.url);
+    expect(stdout).not.toContain('offline or unreachable');
+  });
+
+  it('identity show without --server still reads the connected agent from its own server', async () => {
+    const code = await identity({ subcommand: 'show', json: true });
+
+    expect(code).toBe(0);
+    expect(other.requests).toEqual([]);
+    expect(issuer.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents/agent-1']);
+    expect(issuer.requests[0].headers['x-api-key']).toBe('FAKE-AIM-KEY-1234');
+    expect(JSON.parse(stdout).server).toMatchObject({ id: 'agent-1', serverUrl: issuer.url });
   });
 });
