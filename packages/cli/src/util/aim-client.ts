@@ -141,6 +141,11 @@ export class AimClient {
     this.accessToken = options?.accessToken;
   }
 
+  /** The AIM server URL requests go to, without a trailing slash. */
+  get serverUrl(): string {
+    return this.baseUrl;
+  }
+
   // ---- Health / Status ---------------------------------------------------
 
   async health(): Promise<{ status: string }> {
