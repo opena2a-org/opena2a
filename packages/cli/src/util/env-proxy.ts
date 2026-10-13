@@ -39,16 +39,22 @@ export interface ProxyRoute {
 
 type Env = Record<string, string | undefined>;
 
-/** Remove user name and password from a proxy URL before it is printed. */
+/**
+ * Remove user name and password from a proxy URL before it is printed. They
+ * run from the scheme, when the value has one, to the last '@': a value
+ * without a scheme (user:password@host:port, a form curl accepts) parses
+ * with the user name as its scheme, and an unencoded '/', '?' or '#' in a
+ * password ends the host part before the '@'.
+ */
 export function redactProxyUrl(raw: string): string {
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(raw)?.[0] ?? '';
+  const rest = raw.slice(scheme.length);
+  const hostPart = rest.slice(rest.lastIndexOf('@') + 1);
+  if (!scheme) return hostPart.replace(/\/$/, '');
   try {
-    const u = new URL(raw);
-    u.username = '';
-    u.password = '';
-    return u.toString().replace(/\/$/, '');
+    return new URL(scheme + hostPart).toString().replace(/\/$/, '');
   } catch {
-    // Not a parseable URL: drop anything that looks like userinfo.
-    return raw.replace(/\/\/[^/@]*@/, '//');
+    return (scheme + hostPart).replace(/\/$/, '');
   }
 }
 

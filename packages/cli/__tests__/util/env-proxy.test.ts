@@ -45,6 +45,14 @@ describe('envProxyFor', () => {
     expect(redactProxyUrl(proxyWithUser + '/')).not.toMatch(/alice|s3cret/);
   });
 
+  it('removes user name and password from a proxy URL without a scheme or with a / in the password', () => {
+    expect(redactProxyUrl('alice:FAKE-PASS@proxy.corp:8080')).toBe('proxy.corp:8080');
+    expect(redactProxyUrl('http://alice:FAKE/PASS@proxy.corp:8080')).toBe('http://proxy.corp:8080');
+    expect(redactProxyUrl('http://alice:1234/FAKE@proxy.corp:8080')).toBe('http://proxy.corp:8080');
+    expect(envProxyFor('https://aim.example.com', { HTTPS_PROXY: 'alice:FAKE-PASS@proxy.corp:8080' })?.url)
+      .toBe('proxy.corp:8080');
+  });
+
   it('honours NO_PROXY exact hosts, domain suffixes, ports and *', () => {
     const env = { HTTPS_PROXY: 'http://proxy:3128', NO_PROXY: 'internal.corp, .lan,aim.example.com:8443' };
     expect(envProxyFor('https://internal.corp', env)).toBeNull();
@@ -268,6 +276,17 @@ describe('AimClient behind a proxy', () => {
       expect((err as AimServerError).message).toMatch(/went direct/);
       expect(proxyLog).toEqual([]);
     });
+  });
+
+  it('never prints the password of a proxy URL without a scheme', async () => {
+    useProxyEnv();
+    vi.stubEnv('HTTPS_PROXY', 'alice:FAKE-PASS@proxy.corp:8080');
+    const client = new AimClient(`https://${AIM_HOST}`, { timeoutMs: 5000 });
+    const err = await client.health().then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(AimServerError);
+    expect((err as AimServerError).proxyRoute?.proxy.url).toBe('proxy.corp:8080');
+    expect((err as AimServerError).message).toContain('proxy.corp:8080');
+    expect((err as AimServerError).message).not.toMatch(/alice|FAKE-PASS/);
   });
 
   it('leaves requests alone when NO_PROXY exempts the AIM host', async () => {
