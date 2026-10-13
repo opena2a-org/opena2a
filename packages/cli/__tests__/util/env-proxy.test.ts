@@ -4,9 +4,16 @@
  * request that ignores the proxy cannot reach the stub: only the local proxy
  * maps that host to it. Nothing here leaves 127.0.0.1.
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
+import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as https from 'node:https';
 import * as net from 'node:net';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as tls from 'node:tls';
 import type { AddressInfo } from 'node:net';
 import {
   envProxyFor,
@@ -297,5 +304,160 @@ describe('AimClient behind a proxy', () => {
     expect(err).toBeInstanceOf(AimServerError);
     expect((err as AimServerError).proxyRoute).toBeUndefined();
     expect(proxyLog).toEqual([]);
+  });
+});
+
+// Where Node.js offers tls.setDefaultCACertificates, these tests trust a
+// throwaway CA in this process only; openssl writes the certificates.
+// Without either, they are skipped.
+const caStore = tls as unknown as {
+  getCACertificates?: (type?: string) => string[];
+  setDefaultCACertificates?: (certs: string[]) => void;
+};
+const canTrustTestCA = typeof caStore.setDefaultCACertificates === 'function'
+  && typeof caStore.getCACertificates === 'function'
+  && spawnSync('openssl', ['version']).status === 0;
+
+interface ServerCert { key: string; cert: string }
+
+/** A throwaway CA and one server certificate per subjectAltName, in `dir`. */
+function makeCertificates(dir: string, sans: Record<string, string>): { ca: string; servers: Record<string, ServerCert> } {
+  const file = (name: string, body?: string): string => {
+    const p = path.join(dir, name);
+    if (body !== undefined) fs.writeFileSync(p, body);
+    return p;
+  };
+  const newKey = (name: string): string => file(name, generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    .privateKey.export({ type: 'pkcs8', format: 'pem' }) as string);
+  const openssl = (...args: string[]): void => { execFileSync('openssl', args, { stdio: 'pipe' }); };
+  const config = file('openssl.cnf', [
+    '[req]', 'distinguished_name = dn', '[dn]',
+    '[test_ca]', 'basicConstraints = critical, CA:TRUE', 'keyUsage = critical, keyCertSign', '',
+  ].join('\n'));
+  const caKey = newKey('ca-key.pem');
+  const caCert = file('ca.pem');
+  openssl('req', '-new', '-x509', '-key', caKey, '-subj', '/CN=opena2a test CA', '-days', '1',
+    '-config', config, '-extensions', 'test_ca', '-out', caCert);
+  const servers: Record<string, ServerCert> = {};
+  let serial = 1;
+  for (const [name, san] of Object.entries(sans)) {
+    const key = newKey(`${name}-key.pem`);
+    const csr = file(`${name}.csr`);
+    openssl('req', '-new', '-key', key, '-subj', '/CN=opena2a test server', '-config', config, '-out', csr);
+    const ext = file(`${name}.ext`, `subjectAltName = ${san}\nextendedKeyUsage = serverAuth\n`);
+    const cert = file(`${name}.pem`);
+    serial += 1;
+    openssl('x509', '-req', '-in', csr, '-CA', caCert, '-CAkey', caKey, '-set_serial', String(serial),
+      '-days', '1', '-extfile', ext, '-out', cert);
+    servers[name] = { key: fs.readFileSync(key, 'utf8'), cert: fs.readFileSync(cert, 'utf8') };
+  }
+  return { ca: fs.readFileSync(caCert, 'utf8'), servers };
+}
+
+describe.skipIf(!canTrustTestCA)('certificate check inside the CLI\'s own CONNECT tunnel', () => {
+  // On a runtime without built-in proxy support the CLI opens the TLS
+  // connection to AIM itself, inside the tunnel. The certificate must be
+  // checked against the AIM host, whether the URL names an IP address or a
+  // host name. The proxy carries both AIM hosts to one local https stub,
+  // which presents the certificate each test sets.
+  const IP_HOST = '10.255.255.1';
+  let dir: string;
+  let certs: Record<string, ServerCert>;
+  let previousCA: string[];
+  let stub: https.Server;
+  let proxy: http.Server;
+  let proxyUrl: string;
+  const proxyLog: string[] = [];
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-tunnel-tls-'));
+    const made = makeCertificates(dir, {
+      ip: `IP:${IP_HOST}`,
+      loopback: 'DNS:localhost, IP:127.0.0.1',
+      name: `DNS:${AIM_HOST}`,
+      otherName: 'DNS:other.scratch.invalid',
+    });
+    certs = made.servers;
+    previousCA = caStore.getCACertificates!('default');
+    caStore.setDefaultCACertificates!([...previousCA, made.ca]);
+
+    stub = https.createServer(certs.ip, (req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(req.url === '/health' ? JSON.stringify({ status: 'ok' }) : '{}');
+    });
+    await new Promise<void>((r) => stub.listen(0, '127.0.0.1', r));
+    const stubPort = (stub.address() as AddressInfo).port;
+
+    proxy = http.createServer((_req, res) => { res.statusCode = 502; res.end(); });
+    proxy.on('connect', (req, socket, head) => {
+      proxyLog.push(`CONNECT ${req.url}`);
+      if (req.url !== `${IP_HOST}:443` && req.url !== `${AIM_HOST}:443`) {
+        socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+        return;
+      }
+      const upstream = net.connect(stubPort, '127.0.0.1', () => {
+        socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        upstream.write(head);
+        upstream.pipe(socket);
+        socket.pipe(upstream);
+      });
+      upstream.on('error', () => socket.destroy());
+      socket.on('error', () => upstream.destroy());
+      // Once the stub has closed, keep reading the client side so that the
+      // client's close is seen and the tunnel ends.
+      upstream.on('close', () => socket.resume());
+    });
+    await new Promise<void>((r) => proxy.listen(0, '127.0.0.1', r));
+    proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    caStore.setDefaultCACertificates!(previousCA);
+    proxy.closeAllConnections();
+    stub.closeAllConnections();
+    await new Promise((r) => proxy.close(r));
+    await new Promise((r) => stub.close(r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  beforeEach(() => {
+    resetEnvProxy({ builtInProxySupport: false });
+    for (const name of ['http_proxy', 'https_proxy', 'no_proxy', 'NO_PROXY', 'NODE_USE_ENV_PROXY', 'HTTP_PROXY']) vi.stubEnv(name, '');
+    vi.stubEnv('HTTPS_PROXY', proxyUrl);
+  });
+
+  afterEach(() => {
+    resetEnvProxy();
+    vi.unstubAllEnvs();
+    proxyLog.length = 0;
+  });
+
+  function healthWith(target: string, cert: ServerCert): Promise<unknown> {
+    stub.setSecureContext(cert);
+    return new AimClient(target, { timeoutMs: 5000 }).health().then((r) => r, (e: unknown) => e);
+  }
+
+  it('accepts a trusted certificate for the AIM IP address', async () => {
+    expect(await healthWith(`https://${IP_HOST}`, certs.ip)).toEqual({ status: 'ok' });
+    expect(proxyLog).toEqual([`CONNECT ${IP_HOST}:443`]);
+  });
+
+  it('refuses a trusted certificate for another name when the AIM URL is an IP address', async () => {
+    const err = await healthWith(`https://${IP_HOST}`, certs.loopback);
+    expect(err).toBeInstanceOf(AimServerError);
+    expect((err as AimServerError).message).toMatch(/altnames/);
+    expect(proxyLog).toEqual([`CONNECT ${IP_HOST}:443`]);
+  });
+
+  it('accepts a trusted certificate for the AIM host name', async () => {
+    expect(await healthWith(`https://${AIM_HOST}`, certs.name)).toEqual({ status: 'ok' });
+    expect(proxyLog).toEqual([`CONNECT ${AIM_HOST}:443`]);
+  });
+
+  it('refuses a trusted certificate for another host name', async () => {
+    const err = await healthWith(`https://${AIM_HOST}`, certs.otherName);
+    expect(err).toBeInstanceOf(AimServerError);
+    expect((err as AimServerError).message).toMatch(/altnames/);
+    expect(proxyLog).toEqual([`CONNECT ${AIM_HOST}:443`]);
   });
 });

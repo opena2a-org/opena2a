@@ -332,7 +332,9 @@ function fetchThroughProxy(target: URL, proxy: URL, init: RequestInit): Promise<
         return;
       }
       const host = bareHost(target);
-      const secure = track(tls.connect({ socket, servername: tlsServerName(host), ALPNProtocols: ['http/1.1'] }));
+      // `host` is the name the certificate is checked against. An IP address
+      // is sent without SNI, and without `host` Node checks it as localhost.
+      const secure = track(tls.connect({ socket, host, servername: tlsServerName(host), ALPNProtocols: ['http/1.1'] }));
       secure.on('error', fail);
       send({
         host,
