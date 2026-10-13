@@ -383,3 +383,41 @@ describe('each passage that left the README is at its new path', () => {
     }
   });
 });
+
+describe('a moved passage agrees with the CLI and the security policy', () => {
+  it('the scan row offers only the targets `opena2a scan` accepts, and sends the rest to check', () => {
+    // `opena2a scan` runs `hackmyagent secure [directory]`, which reads its
+    // argument as a local path: `opena2a scan express` exits 1 with
+    // "Directory '.../express' does not exist". Packages, repos, MCP servers
+    // and skills are what `opena2a check <target>` resolves.
+    expect(read('packages/cli/src/adapters/registry.ts')).toMatch(
+      /\n {2}scan: \{\n(?: {4}.*\n)*? {4}subcommand: 'secure',\n/,
+    );
+    const rows = read('docs/commands.md')
+      .split('\n')
+      .filter((line) => line.startsWith('| `opena2a scan '));
+    expect(rows).toHaveLength(1);
+    const [command, description] = rows[0].split(' | ');
+    expect(command).toBe('| `opena2a scan [directory]`');
+    const sentences = description.split(/\.\s+/);
+    const routed = sentences.filter((s) => s.includes('use `opena2a check <target>`'));
+    expect(routed, 'the row sends packages and repos to check').toHaveLength(1);
+    const ownTargets = sentences.filter((s) => !routed.includes(s)).join('. ');
+    expect(ownTargets).not.toMatch(/npm|GitHub|MCP|skill/);
+  });
+
+  it('CONTRIBUTING states no response time of its own and points at SECURITY.md', () => {
+    const hours = /acknowledge receipt within (\d+) hours/.exec(read('SECURITY.md'));
+    expect(hours, 'SECURITY.md states the acknowledgement time').not.toBeNull();
+    for (const file of ['README.md', 'CONTRIBUTING.md']) {
+      for (const match of read(file).matchAll(/within (\d+) hours/g)) {
+        expect(match[1], `${file}: "${match[0]}"`).toBe(hours![1]);
+      }
+    }
+    const line = read('CONTRIBUTING.md')
+      .split('\n')
+      .find((l) => l.startsWith('Security issues:'));
+    expect(line).toContain('`info@opena2a.org`');
+    expect(line).toContain('](SECURITY.md)');
+  });
+});

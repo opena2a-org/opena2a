@@ -63,7 +63,7 @@ Three job categories: assess, protect, operate. Run any with `--help` for full f
 | `opena2a init` | Read-only security assessment with a trust score for your project. Start here. |
 | `opena2a review` | Full security dashboard. 6-phase assessment, HTML report. First run downloads the NanoMind model files; `--no-open` skips the browser. |
 | `opena2a detect` | Shadow AI discovery. Finds undeclared agents, MCP servers, AI configs. Returns a governance score. |
-| `opena2a scan <target>` | Static, semantic, and adversarial-payload checks via HackMyAgent (current counts: `hackmyagent --help`). Targets: local repo, npm package, GitHub repo, MCP server, skill, or standalone SOUL.md. |
+| `opena2a scan [directory]` | Static, semantic, and adversarial-payload checks via HackMyAgent (current counts: `hackmyagent --help`). Scans a local directory, the current one by default, or a path to a standalone SOUL.md. For an npm package, GitHub repo, MCP server or skill, use `opena2a check <target>`. |
 | `opena2a check <target>` | Pre-install trust check. Queries the OpenA2A Registry and runs HMA locally. |
 | `opena2a scan-soul <path>` | Governance controls across every ABGS domain, profile-aware. |
 | `opena2a trust <pkg>` | Read-only Registry lookup for an npm or PyPI package. |
