@@ -351,19 +351,21 @@ async function handleList(options: IdentityOptions): Promise<number> {
     const client = getServerClient(options);
     const serverConfig = loadServerConfig();
     const auth = getStoredAuth();
+    // A stored token goes only to the server it was stored for.
+    const token = client ? storedTokenFor(client.serverUrl) : undefined;
     let serverAgent = null;
     let serverAgentList = null;
     const effectiveServerUrl = serverConfig?.serverUrl ?? auth.serverUrl;
 
     // If we have a server client with auth, try to fetch server data
-    if (client && auth.token) {
+    if (client && token) {
       try {
         if (serverConfig?.agentId) {
           // Fetch specific agent if we have a registered agent ID
-          serverAgent = await client.getAgent(auth.token, serverConfig.agentId);
+          serverAgent = await client.getAgent(token, serverConfig.agentId);
         } else {
           // No specific agent ID — list all agents from server
-          serverAgentList = await client.listAgents(auth.token);
+          serverAgentList = await client.listAgents(token);
         }
       } catch (err) {
         if (!isJson) {
@@ -644,8 +646,9 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     if (client && serverConfig?.agentId) {
       try {
         const auth = getStoredAuth();
-        if (auth.token) {
-          serverAgent = await client.getAgent(auth.token, serverConfig.agentId);
+        const token = storedTokenFor(client.serverUrl);
+        if (token) {
+          serverAgent = await client.getAgent(token, serverConfig.agentId);
         } else if (auth.apiKey) {
           const id = aim.getIdentity();
           const loginResp = await client.login({ name: id.agentName, apiKey: auth.apiKey });
@@ -806,7 +809,7 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
   if (client && serverConfig?.agentId) {
     try {
       const auth = getStoredAuth();
-      let token = auth.token;
+      let token = storedTokenFor(client.serverUrl);
 
       if (!token && auth.apiKey) {
         const aim = new mod.AIMCore({ agentName: 'default' });
