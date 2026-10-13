@@ -131,3 +131,16 @@ The messages above were copied from runs of these blocks with npm 10.9.3 and cos
 ## Use in CI
 
 In CI, run a block unchanged as a bash step, such as a GitHub Actions `run:` step, from an empty directory, with the package's version variable (for example `HACKMYAGENT_VERSION`) set to pin the version checked; any failure exits non-zero and fails the step.
+
+## Verifying what was installed
+
+Every version from 0.8.24 on has been published from GitHub Actions through npm Trusted Publishing, with SLSA v1 provenance; earlier versions carry no attestation. The publishing workflow references no npm token; GitHub Actions exchanges its OIDC token with npm at publish time. The command below prints, without verifying anything, the provenance type and attestation URL the registry lists for the latest `opena2a-cli` (append `@<version>` for another; an unattested version prints nothing). `npm audit signatures` checks the registry's signatures and attestations for installed versions, not the installed files or who built them, and does not flag a version without an attestation.
+
+```bash
+npm view opena2a-cli dist.attestations --json
+# Expects non-empty result with predicateType "https://slsa.dev/provenance/v1"
+```
+
+No command compares the installed files of `opena2a-cli` with the published package; the package carries no file manifest to check them against. `opena2a shield selfcheck`, and the `Integrity` line of `opena2a status` that repeats its verdict, check Shield's own state: the policy hash, the shell hook, the event-log chain, the node executable path, and the hashes Shield recorded for its policy, scan and cache files. `opena2a verify` computes the SHA-256 of one entry file each for `hackmyagent`, `secretless-ai`, `aibrowserguard` and `ai-trust` and asks the registry whether that hash matches its record; it prints `no data` when the registry returns neither a match nor a mismatch, and it checks `opena2a-cli` only when run as `opena2a verify --package opena2a-cli`. To check the registry's tarball for a version against its provenance attestation, run the block for the package [above](#opena2a-cli).
+
+Identity files (`~/.opena2a/aim-core/identity.json`) are written `mode 0600`. OAuth tokens live in the OS keychain by default. `~/.opena2a/auth.json` stores metadata only.

@@ -1,12 +1,12 @@
 /**
- * The jq examples in the README's "Post-incident review" section run as shown.
+ * The jq examples in docs/post-incident-review.md run as shown.
  *
- * The section piped `opena2a identity audit` into
+ * The page, then a README section, piped `opena2a identity audit` into
  * `jq 'select(.result == "denied")'`. The command prints a text table, so jq
  * stopped with a parse error; with `--json` it prints the events as one array,
  * so the same filter stopped with `Cannot index array with string "result"`.
  *
- * Each jq example is extracted from the README and handed to bash as written,
+ * Each jq example is extracted from the page and handed to bash as written,
  * with `opena2a` resolving to the build, in a throwaway HOME whose audit log
  * the CLI itself wrote through `opena2a identity log`. An example that selects
  * the denied events must print exactly the denied events that were logged.
@@ -18,13 +18,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const CLI_ROOT = resolve(__dirname, '../..');
-const README_PATH = resolve(CLI_ROOT, '../../README.md');
+const DOC = 'docs/post-incident-review.md';
+const DOC_PATH = resolve(CLI_ROOT, '../..', DOC);
 const CLI_PATH = join(CLI_ROOT, 'dist/index.js');
-const SECTION = 'Post-incident review';
+const HEADING = 'Post-incident review';
 const RUN_TIMEOUT = 30_000;
 
 const JQ_REQUIRED =
-  'jq is required to run the README examples (`apt-get install jq` / `brew install jq`); ' +
+  'jq is required to run the documented examples (`apt-get install jq` / `brew install jq`); ' +
   'it is preinstalled on the ubuntu-latest runners this suite runs on';
 
 /** The events the sandbox log holds, in the order they are logged. */
@@ -39,14 +40,14 @@ const LOGGED = [
 const SELECTS_DENIED = /\.result\s*==\s*"denied"/;
 
 /**
- * Command lines of the fenced shell blocks under `## <heading>`: no blank
- * lines and no comment lines. The section ends at the next `## ` heading that
- * is not inside a fence.
+ * Command lines of the fenced shell blocks under the page's `# <heading>`:
+ * no blank lines and no comment lines. The section ends at the next heading
+ * that is not inside a fence.
  */
 function shellLines(markdown: string, heading: string): string[] {
   const lines = markdown.split('\n');
-  const start = lines.findIndex((l) => l.trim() === `## ${heading}`);
-  if (start === -1) throw new Error(`README.md: no "## ${heading}" section`);
+  const start = lines.findIndex((l) => l.trim() === `# ${heading}`);
+  if (start === -1) throw new Error(`${DOC}: no "# ${heading}" heading`);
 
   const out: string[] = [];
   let fence: string | null = null;
@@ -57,7 +58,7 @@ function shellLines(markdown: string, heading: string): string[] {
       continue;
     }
     if (fence === null) {
-      if (/^## /.test(line)) break;
+      if (/^#{1,6} /.test(line)) break;
       continue;
     }
     if (!['', 'bash', 'sh', 'shell'].includes(fence)) continue;
@@ -68,7 +69,7 @@ function shellLines(markdown: string, heading: string): string[] {
   return out;
 }
 
-const jqExamples = shellLines(readFileSync(README_PATH, 'utf-8'), SECTION).filter((l) => /\bjq\b/.test(l));
+const jqExamples = shellLines(readFileSync(DOC_PATH, 'utf-8'), HEADING).filter((l) => /\bjq\b/.test(l));
 
 function haveJq(): boolean {
   return spawnSync('jq', ['--version'], { encoding: 'utf-8' }).status === 0;
@@ -142,12 +143,12 @@ function summary(event: Record<string, unknown>): string {
   return `${event.action} ${event.target} ${event.result}`;
 }
 
-describe(`README "${SECTION}" jq examples run as shown`, () => {
+describe(`${DOC} jq examples run as shown`, () => {
   it('dist/index.js exists', () => {
     expect(existsSync(CLI_PATH)).toBe(true);
   });
 
-  it('the section shows a jq example that selects the denied events', () => {
+  it('the page shows a jq example that selects the denied events', () => {
     expect(jqExamples.filter((ex) => SELECTS_DENIED.test(ex))).not.toEqual([]);
   });
 

@@ -1,0 +1,25 @@
+{
+  "capture": "quick-start-init.txt",
+  "doc": "README.md",
+  "section": "Quick start",
+  "command": "npx opena2a-cli init my-agent",
+  "package": "opena2a-cli",
+  "version": "0.10.13",
+  "tarball": "https://registry.npmjs.org/opena2a-cli/-/opena2a-cli-0.10.13.tgz",
+  "tarballShasum": "8230a649bfb2ba78ee7d073d8070888c2540f9ae",
+  "invocation": "command as written, run from the directory that holds my-agent, with a new empty HOME, npm cache and npm global prefix so npx installs the package from the npm registry, and the npm update notice turned off",
+  "setup": "my-agent holds two files: package.json with the name my-agent and no dependencies, and src/agent.js, whose first line assigns a placeholder in the OpenAI project key format to a constant. It is not a git repository and has no .gitignore",
+  "environment": ["CI=true", "TERM=dumb", "LANG=en_US.UTF-8", "OPENA2A_TELEMETRY=off"],
+  "tools": {
+    "node": "v26.7.0",
+    "npm": "11.19.0",
+    "os": "macOS 26.6.2 arm64"
+  },
+  "capturedAt": "2026-10-13T05:12:04Z",
+  "exitCode": 1,
+  "stream": "stdout; stderr was empty on this run. On a run that installs the package first, npm writes its install notices to stderr",
+  "outputLines": 68,
+  "outputSha256": "d4ba768de0a78d45a5e6b87abe233c6ded85e00f3d089062a9f22da9c135c456",
+  "excerptLines": "8-16, then one elision line, then 23",
+  "projectFilesAfter": ["package.json", "src/agent.js"]
+}

@@ -3,6 +3,10 @@
 Thank you for your interest in contributing to OpenA2A. This guide covers
 how to set up a development environment, run tests, and submit changes.
 
+Apache 2.0. PRs from outside the org welcome. This guide has the dev loop, the test conventions, and what to expect on a pull request opened from a fork.
+
+Security issues: `info@opena2a.org` (coordinated disclosure, response within 24 hours).
+
 ## Prerequisites
 
 - Node.js >= 20.19
@@ -35,6 +39,41 @@ npx turbo build
 # Run the CLI locally
 node packages/cli/dist/index.js --help
 ```
+
+## From source
+
+This repo is a TypeScript turborepo. Clone and build if you want to inspect the source, contribute, or run an unreleased version.
+
+```bash
+git clone https://github.com/opena2a-org/opena2a.git
+cd opena2a
+git verify-tag $(git describe --tags --abbrev=0)   # verify the latest release tag
+npm install
+npm run build                                      # builds all workspaces via turbo
+./packages/cli/dist/index.js review                # run the freshly-built binary
+
+# Or link it globally for the current shell:
+cd packages/cli && npm link
+opena2a review
+```
+
+The workspaces. `packages/cli` is the binary; the rest are libraries it consumes.
+
+```
+packages/
+├── cli                  the opena2a binary
+├── aim-core             local-first identity, audit log, policies
+├── check-core           scanner orchestration
+├── cli-ui               shared render primitives
+├── credential-patterns
+├── registry-client
+├── ai-classifier
+├── telemetry
+├── contribute           skill scaffolding
+└── shared               types + utilities
+```
+
+The CLI also depends on three sister packages published from their own repos (declared as runtime deps in `packages/cli/package.json`): [`hackmyagent`](https://github.com/opena2a-org/hackmyagent), [`secretless-ai`](https://github.com/opena2a-org/secretless-ai), and [`ai-trust`](https://github.com/opena2a-org/ai-trust). `opena2a scan` delegates to `hackmyagent`. `opena2a secrets` delegates to `secretless-ai`. `opena2a trust` queries via `ai-trust`.
 
 ## Running Tests
 

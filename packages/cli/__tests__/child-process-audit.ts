@@ -241,12 +241,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(<each package.json bin target> --version), run directly with no node in ' +
       'front, one at a time (#436)',
   },
-  'docs/readme-audit-jq-examples.test.ts': {
+  'docs/post-incident-review-jq-examples.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
     spawns:
       'spawnSync(node dist/index.js identity log ...) once per logged event into a scratch ' +
-      'HOME, then spawnSync(bash -o pipefail -c <README jq example>) per example (bash runs ' +
+      'HOME, then spawnSync(bash -o pipefail -c <documented jq example>) per example (bash runs ' +
       'the opena2a stub and jq as its own children) and spawnSync(jq --version | jq -s -c .), ' +
       'one at a time (#432)',
   },
