@@ -258,4 +258,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'script>) per case, one at a time; the script runs jq and a node stub named gh on PATH ' +
       'as its own children (#462)',
   },
+  'util/env-proxy.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(openssl version) when the file loads, then execFileSync(openssl req / openssl ' +
+      'x509) to write a throwaway CA and the server certificates of the tunnel tests, one at a time',
+  },
 };
