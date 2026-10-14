@@ -1,14 +1,14 @@
-// A Copy control in the review HTML holds only a command that runs as pasted
-// and changes nothing irreversibly.
+// Every Copy control on the pages this test renders holds a command that runs
+// as pasted and changes nothing irreversibly.
 //
 // The Copy button puts its text on the clipboard with one click. Three shapes
-// reached it:
-//   - a `<...>` placeholder (`git filter-repo --path <file> --invert-paths`,
-//     `hackmyagent check <skill-path>`). Pasted, the shell reads `<file>` as
-//     an input redirection: it fails with "file: No such file or directory",
-//     or, when a file of that name exists, runs with the argument missing.
-//   - a history rewrite (`git filter-repo`) behind the same single click as a
-//     read-only check.
+// must not sit behind it:
+//   - a `<...>` placeholder (`hackmyagent check <skill-path>`, `opena2a shield
+//     evaluate --action process.spawn --target <binary>`). Pasted, the shell
+//     reads `<binary>` as a file redirection and stops with a syntax error.
+//   - a step that rewrites history or deletes data (`git filter-repo`, `rm`)
+//     behind the same single click as a read-only check. A scan's fix text is
+//     free text, so such a step can arrive from a scanner.
 //   - a chain that cannot reach its second step (`opena2a guard diff &&
 //     opena2a guard resign`: `guard diff` exits 1 whenever a file changed,
 //     which is the only case the step is shown for), and prose such as
