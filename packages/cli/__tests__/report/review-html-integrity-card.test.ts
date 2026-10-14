@@ -2,7 +2,7 @@
 // status the report carries, and never a status the report does not carry.
 //
 // The card read `shield.integrityStatus || 'healthy'`, so a report whose
-// Shield data held no integrity status showed "healthy" in green: a pass
+// Shield data held no integrity status showed "healthy" in red: a pass
 // word nothing had measured. A missing status now reads "Not checked" in the
 // muted colour.
 //
