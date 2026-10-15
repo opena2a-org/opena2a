@@ -236,4 +236,15 @@ describe('quickCredentialScan — catalog breadth integration', () => {
     expect(forValue[0].findingId).toBe('CRED-CAT-slack');
     expect(forValue[0].severity).toBe('high');
   });
+
+  // A Discord webhook whose secret part is a placeholder word: the fixed part
+  // plus the word's first character is a complete match of the pattern, and
+  // the value is still a placeholder. FAKE
+  const DISCORD_PLACEHOLDER = 'https://discord.com/api/webhooks/123456789012345678/your_webhook_token'; // FAKE
+
+  it('does not report a Discord webhook whose secret part is a placeholder word', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'config.js'), `const hook = "${DISCORD_PLACEHOLDER}";\n`);
+    const matches = await quickCredentialScan(tmpDir);
+    expect(matches).toHaveLength(0);
+  });
 });
