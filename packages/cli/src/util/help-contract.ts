@@ -294,7 +294,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   detect: {
     exit: [
       ['0', 'discovery finished'],
-      ['1', 'the directory cannot be read'],
+      ['1', 'the directory cannot be read, or the --report or --export-csv file could not be written'],
       ['2', 'an unsupported --format'],
     ],
     json: 'prints the result as JSON',
