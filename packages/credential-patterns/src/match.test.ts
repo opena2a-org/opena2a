@@ -419,6 +419,12 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
   const GHP_SHORT_XXX = ['ghp_', 'abcdefghijklmnopqrstuvwxyz1234567xxx'].join(''); // FAKE: 33 body characters, then xxx
   // A body that was already a floor ({20,}) took the word in before as well.
   const GITLAB_GLUED = 'glpat-abcdefghijklmnopqrstsample'; // FAKE
+  // The token's own last character begins the word: 23 body characters then
+  // `x`, and the `xx` after it completes `xxx`; 35 then `s`, and `ample`.
+  const SLACK_TAIL_XXX = ['xoxb-', '1234567890-1234567890-', 'abcdefghijklmnopqrstuvwxxx'].join(''); // FAKE
+  const SLACK_TAIL_SAMPLE = ['xoxb-', '1234567890-1234567890-', 'abcdefghijklmnopqrstuvwsample'].join(''); // FAKE
+  const GHP_TAIL_XXX = ['ghp_', 'abcdefghijklmnopqrstuvwxyz123456789xxx'].join(''); // FAKE
+  const GHP_TAIL_SAMPLE = ['ghp_', 'abcdefghijklmnopqrstuvwxyz123456789sample'].join(''); // FAKE
 
   it('findRealMatch keeps a slack / gho_ / ghp_ / ghs_ / glpat- token that a placeholder word follows', () => {
     const cases: Array<[string, string]> = [
@@ -433,6 +439,24 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
       const line = `const token = "${token}";`;
       const m = findRealMatch(line, pattern);
       expect(m, `${id} dropped as a placeholder`).not.toBeNull();
+      expect(m![0]).toBe(token);
+    }
+  });
+
+  it('keeps a slack / ghp_ token whose own last character begins the glued word', () => {
+    const cases: Array<[string, string, string]> = [
+      ['slack', SLACK_TAIL_XXX, 'xx'],
+      ['slack', SLACK_TAIL_SAMPLE, 'ample'],
+      ['github-pat', GHP_TAIL_XXX, 'xx'],
+      ['github-pat', GHP_TAIL_SAMPLE, 'ample'],
+    ];
+    for (const [id, token, rest] of cases) {
+      const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id)!;
+      const line = `const token = "${token}";`;
+      const m = findRealMatch(line, pattern);
+      expect(m, `${id} …${token.slice(-rest.length - 1)} dropped as a placeholder`).not.toBeNull();
+      // The reported value is the token plus the rest of the word (`xx`,
+      // `ample`), as for a word that starts after the token.
       expect(m![0]).toBe(token);
     }
   });

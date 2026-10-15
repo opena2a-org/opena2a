@@ -47,9 +47,13 @@ and no pattern was removed. `CREDENTIAL_PATTERNS` grows from 57 to 59 entries.
   a placeholder word that follows a value which is a complete match on its own
   no longer marks that value as a placeholder; the part in front of the word
   still has to pass the other allowlist rules (known example, low entropy,
-  comment marker). A placeholder word inside a token's fixed-length part, or
-  at its start, suppresses the match as before. Without the third argument the
-  result is unchanged.
+  comment marker). The token may end inside the word: when its own last
+  character begins the word and the text after it completes it
+  (`xoxb-…-<23 characters>x` then `xx`, `ghp_<35 characters>s` then `ample`),
+  the shortest prefix that is a complete match on its own is taken as the
+  token, so that value is kept too. A placeholder word inside a token's
+  fixed-length part, or at its start, suppresses the match as before. Without
+  the third argument the result is unchanged.
 
 Tests sweep every changed pattern at its minimum length, one over, and well
 over, check that the match reaches the end of the value, and check that a

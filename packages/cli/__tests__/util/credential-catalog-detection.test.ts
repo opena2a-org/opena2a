@@ -223,4 +223,17 @@ describe('quickCredentialScan — catalog breadth integration', () => {
     const matches = await quickCredentialScan(tmpDir);
     expect(matches.filter(m => m.value === GHO_SHORT_XXX)).toHaveLength(0);
   });
+
+  // The token's own last character begins the word: 23 body characters then
+  // `x`, and the `xx` after it completes `xxx`. FAKE
+  const SLACK_TAIL_XXX = ['xoxb-', '1234567890-1234567890-', 'abcdefghijklmnopqrstuvwxxx'].join(''); // FAKE
+
+  it('reports a catalog token whose own last character begins the glued word, once', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'config.js'), `const t = "${SLACK_TAIL_XXX}";\n`);
+    const matches = await quickCredentialScan(tmpDir);
+    const forValue = matches.filter(m => m.value === SLACK_TAIL_XXX);
+    expect(forValue).toHaveLength(1);
+    expect(forValue[0].findingId).toBe('CRED-CAT-slack');
+    expect(forValue[0].severity).toBe('high');
+  });
 });

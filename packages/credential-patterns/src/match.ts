@@ -89,6 +89,14 @@ function anchored(regex: RegExp): RegExp {
  * turns back into the live one. The part before the word must pass every
  * other allowlist rule (known example, low entropy, comment marker) itself.
  *
+ * The token may end inside the word: when its own last character begins the
+ * word and the text after it completes it (`xoxb-…-<23 characters>x` then
+ * `xx`, `ghp_<35 characters>s` then `ample`), the part before the word is one
+ * character short of a complete match. So the token is the shortest prefix of
+ * the value that is a complete match on its own and ends at or after the
+ * word's start; a prefix that already holds a complete placeholder word is
+ * never the token.
+ *
  * Needs the pattern, so it applies only when a caller passes one, and only
  * to value-only patterns: a name-gated match's value is group 1, which the
  * anchored pattern (name included) cannot match on its own.
@@ -101,10 +109,14 @@ function isPlaceholderGluedToValue(
   pattern: Pick<CredentialPattern, 'regex'> | undefined,
 ): boolean {
   if (!pattern || match[1] !== undefined || at <= 0) return false;
-  const head = value.slice(0, at);
-  const headMatch = anchored(pattern.regex).exec(head);
-  if (!headMatch) return false;
-  return !isKnownExample(line, headMatch);
+  const re = anchored(pattern.regex);
+  for (let end = at; end <= value.length; end++) {
+    const head = value.slice(0, end);
+    if (end > at && placeholderIndex(head.toLowerCase()) !== -1) return false;
+    const headMatch = re.exec(head);
+    if (headMatch) return !isKnownExample(line, headMatch);
+  }
+  return false;
 }
 
 /**
