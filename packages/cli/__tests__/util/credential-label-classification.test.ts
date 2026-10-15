@@ -242,3 +242,78 @@ describe('quickCredentialScan label routing (integration)', () => {
     expect(matches.some(x => x.findingId === 'CRED-001')).toBe(false);
   });
 });
+
+// A Slack or GitHub OAuth token assigned to a CRED-004 name (`api_key`,
+// `apikey`, `secret_key`) is captured whole by the generic local rule. The
+// breadth pass then matches the same value with the catalog `slack` /
+// `github-oauth` entry and drops its own high finding as a duplicate, so only
+// the medium CRED-004 finding remained and `review` exited 0 on a live token.
+// The local finding now carries the catalog severity whenever the catalog span
+// covers the whole value. The values below are marked FAKE; CRED-004 is not
+// name-gated, so on this path only exact known-example keys are suppressed.
+const SLACK_FAKE = ['xoxb-', '1234567890-1234567890-', 'FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE'].join('');
+const GITHUB_OAUTH_FAKE = ['gho_', 'FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE1234'].join('');
+const GENERIC_ASSIGNMENT = { title: 'Generic API Key in Assignment', envVarPrefix: 'API_KEY', severity: 'medium' };
+
+describe('refineCredentialLabel severity for a catalog token in a generic assignment', () => {
+  it('carries the catalog severity when a breadth-pass entry covers the whole value', () => {
+    const slack = refineCredentialLabel('CRED-004', SLACK_FAKE, GENERIC_ASSIGNMENT, catalog);
+    expect(slack.title).toBe('Slack Token');
+    expect(slack.severity).toBe('high');
+    const gho = refineCredentialLabel('CRED-004', GITHUB_OAUTH_FAKE, GENERIC_ASSIGNMENT, catalog);
+    expect(gho.title).toBe('GitHub OAuth Token');
+    expect(gho.severity).toBe('high');
+  });
+
+  it('leaves the local severity alone when the catalog span covers only part of the value', () => {
+    // CRED-004 captures the `-v2` tail too; the catalog gho_ span stops at the
+    // hyphen, so the breadth pass still reports the token as its own finding.
+    const partial = refineCredentialLabel('CRED-004', `${GITHUB_OAUTH_FAKE}-v2`, GENERIC_ASSIGNMENT, catalog);
+    expect(partial.title).toBe('GitHub OAuth Token');
+    expect(partial.severity).toBeUndefined();
+  });
+
+  it('leaves the local severity alone for a catalog entry the breadth pass does not run', () => {
+    // huggingface is outside BREADTH_DETECT_IDS, so no catalog finding was dropped.
+    const hf = refineCredentialLabel('CRED-004', 'hf_FAKEFAKEFAKEFAKEFAKEFAKE', GENERIC_ASSIGNMENT, catalog);
+    expect(hf.title).toBe('Hugging Face Token');
+    expect(hf.severity).toBeUndefined();
+  });
+
+  it('never lowers a local severity', () => {
+    const critical = { ...GENERIC_ASSIGNMENT, severity: 'critical' };
+    expect(refineCredentialLabel('CRED-004', SLACK_FAKE, critical, catalog).severity).toBeUndefined();
+  });
+});
+
+describe('quickCredentialScan severity for a catalog token in a generic assignment (integration)', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cred-sev-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reports a Slack token assigned to SLACK_API_KEY once, as high', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'slack.js'), `export const SLACK_API_KEY = "${SLACK_FAKE}";\n`);
+    const matches = await quickCredentialScan(tmpDir);
+    const forValue = matches.filter(x => x.value === SLACK_FAKE);
+    expect(forValue).toHaveLength(1);
+    expect(forValue[0].findingId).toBe('CRED-004');
+    expect(forValue[0].title).toBe('Slack Token');
+    expect(forValue[0].severity).toBe('high');
+  });
+
+  it('reports a GitHub OAuth token assigned to GITHUB_API_KEY once, as high', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'github.js'), `export const GITHUB_API_KEY = "${GITHUB_OAUTH_FAKE}";\n`);
+    const matches = await quickCredentialScan(tmpDir);
+    const forValue = matches.filter(x => x.value === GITHUB_OAUTH_FAKE);
+    expect(forValue).toHaveLength(1);
+    expect(forValue[0].findingId).toBe('CRED-004');
+    expect(forValue[0].title).toBe('GitHub OAuth Token');
+    expect(forValue[0].severity).toBe('high');
+  });
+});
