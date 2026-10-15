@@ -190,4 +190,37 @@ describe('quickCredentialScan — catalog breadth integration', () => {
     expect(matches.find(m => m.value === SLACK)?.findingId).toBe('CRED-CAT-slack');
     expect(matches.find(m => m.value === STRIPE)?.findingId).toBe('CRED-CAT-stripe');
   });
+
+  // A placeholder word glued to the end of a token, cut back to the token at
+  // runtime with `.replace()`. A body written as a floor takes the word into
+  // the match, and the whole-value placeholder test dropped the token. The
+  // values are not real tokens: the bodies are the alphabet. FAKE
+  const SLACK_GLUED = ['xoxb-', '1234567890-1234567890-', 'abcdefghijklmnopqrstuvwxsample'].join(''); // FAKE
+  const GHO_GLUED = ['gho_', 'abcdefghijklmnopqrstuvwxyz1234567890sample'].join(''); // FAKE
+  const GITLAB_GLUED = 'glpat-abcdefghijklmnopqrstsample'; // FAKE
+  const GHO_SHORT_XXX = ['gho_', 'abcdefghijklmnopqrstuvwxyz1234567xxx'].join(''); // FAKE: 33 body characters, then xxx
+
+  it('reports a catalog token that a placeholder word directly follows, at the catalog severity', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'config.js'), [
+      `export const SLACK_BOT_TOKEN = "${SLACK_GLUED}";`,
+      `const live = SLACK_BOT_TOKEN.replace("sample", "");`,
+      `const gho = "${GHO_GLUED}";`,
+      `const gitlab = "${GITLAB_GLUED}";`,
+    ].join('\n'));
+
+    const matches = await quickCredentialScan(tmpDir);
+
+    for (const [value, id] of [[SLACK_GLUED, 'slack'], [GHO_GLUED, 'github-oauth'], [GITLAB_GLUED, 'gitlab']]) {
+      const forValue = matches.filter(m => m.value === value);
+      expect(forValue, `${id} not reported`).toHaveLength(1);
+      expect(forValue[0].findingId).toBe(`CRED-CAT-${id}`);
+      expect(forValue[0].severity).toBe('high');
+    }
+  });
+
+  it('still suppresses a placeholder word inside the fixed-length part of a token', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'config.js'), `const gho = "${GHO_SHORT_XXX}";\n`);
+    const matches = await quickCredentialScan(tmpDir);
+    expect(matches.filter(m => m.value === GHO_SHORT_XXX)).toHaveLength(0);
+  });
 });

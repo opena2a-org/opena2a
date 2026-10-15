@@ -30,7 +30,7 @@ import {
   SOURCE_FILE_EXTENSIONS,        // Set<string> — extensions to scan for inline credentials
   SOURCE_SKIP_DIRS,              // Set<string> — directory names to skip when walking
   findRealMatch,                 // (line, pattern) => RegExpMatchArray | null
-  isKnownExample,                // (line, match) => boolean
+  isKnownExample,                // (line, match, pattern?) => boolean
   type CredentialPattern,        // { id, name, regex, envPrefix, category? }
 } from '@opena2a/credential-patterns';
 ```
@@ -53,13 +53,13 @@ The order of `CREDENTIAL_PATTERNS` is load-bearing: more specific prefixes (e.g.
 
 ## Allowlist semantics
 
-`isKnownExample(line, match)` returns true if the matched value should be excluded from results. Three rules in order:
+`isKnownExample(line, match, pattern?)` returns true if the matched value should be excluded from results. Three rules in order:
 
 1. The matched value is in `KNOWN_EXAMPLE_KEYS` (e.g. `AKIAIOSFODNN7EXAMPLE`).
-2. The matched value contains any `PLACEHOLDER_INDICATORS` substring (case-insensitive).
+2. The matched value contains any `PLACEHOLDER_INDICATORS` substring (case-insensitive). With `pattern` given, a placeholder word that directly follows a value which is a complete match of the pattern on its own (`xoxb-…-<24 characters>sample`) does not count: the part in front of the word is the credential, and it is kept unless a rule of its own suppresses it.
 3. The line carries a comment marker (`//` or `#`) AND mentions `example`, `placeholder`, or `fake`.
 
-`findRealMatch(line, pattern)` walks every match on the line (promoting non-`/g` regexes to `/g`) and returns the first one that passes `isKnownExample`. Returns null if every match is allowlisted.
+`findRealMatch(line, pattern)` walks every match on the line (promoting non-`/g` regexes to `/g`) and returns the first one that passes `isKnownExample`, which it calls with the pattern. Returns null if every match is allowlisted.
 
 ## Consumers
 

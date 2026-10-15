@@ -58,6 +58,55 @@ function isExampleInComment(line: string): boolean {
   return false;
 }
 
+/** Position of the earliest PLACEHOLDER_INDICATORS entry in `lower`, or -1. */
+function placeholderIndex(lower: string): number {
+  let at = -1;
+  for (const p of PLACEHOLDER_INDICATORS) {
+    const i = lower.indexOf(p);
+    if (i !== -1 && (at === -1 || i < at)) at = i;
+  }
+  return at;
+}
+
+const ANCHORED = new WeakMap<RegExp, RegExp>();
+
+/** `regex` wrapped as `^(?:…)$`, so it must cover a string in full. */
+function anchored(regex: RegExp): RegExp {
+  let re = ANCHORED.get(regex);
+  if (!re) {
+    re = new RegExp(`^(?:${regex.source})$`, regex.flags.replace(/[gy]/g, ''));
+    ANCHORED.set(regex, re);
+  }
+  return re;
+}
+
+/**
+ * True when the placeholder word at `at` follows a value that is a complete
+ * match of `pattern` on its own: `xoxb-…-<24 characters>sample`. A pattern
+ * whose body is a floor rather than a fixed length takes the word into the
+ * match, and a whole-value placeholder test would then drop the token in
+ * front of it, which is the token a `.replace('sample', '')` at runtime
+ * turns back into the live one. The part before the word must pass every
+ * other allowlist rule (known example, low entropy, comment marker) itself.
+ *
+ * Needs the pattern, so it applies only when a caller passes one, and only
+ * to value-only patterns: a name-gated match's value is group 1, which the
+ * anchored pattern (name included) cannot match on its own.
+ */
+function isPlaceholderGluedToValue(
+  line: string,
+  value: string,
+  at: number,
+  match: RegExpMatchArray,
+  pattern: Pick<CredentialPattern, 'regex'> | undefined,
+): boolean {
+  if (!pattern || match[1] !== undefined || at <= 0) return false;
+  const head = value.slice(0, at);
+  const headMatch = anchored(pattern.regex).exec(head);
+  if (!headMatch) return false;
+  return !isKnownExample(line, headMatch);
+}
+
 /**
  * Check if a matched credential is a known example or placeholder.
  * Returns true if the match should be excluded from results.
@@ -65,8 +114,17 @@ function isExampleInComment(line: string): boolean {
  * Exported so any scanner can apply the same allowlist. Prevents scanners
  * from blocking docs that legitimately reference public example keys like
  * AKIAIOSFODNN7EXAMPLE.
+ *
+ * `pattern` is optional. When given, a placeholder word that directly follows
+ * a value which is a complete match of the pattern on its own does not mark
+ * that value as a placeholder (see {@link isPlaceholderGluedToValue}).
+ * Without it the placeholder test runs on the whole value, as before.
  */
-export function isKnownExample(line: string, match: RegExpMatchArray): boolean {
+export function isKnownExample(
+  line: string,
+  match: RegExpMatchArray,
+  pattern?: Pick<CredentialPattern, 'regex'>,
+): boolean {
   // Prefer the captured value (group 1) when a pattern is name-gated — its
   // match[0] is "name = value", so the example/placeholder checks must run on
   // the value, not the whole match. Value-only patterns have no group 1 and
@@ -74,7 +132,8 @@ export function isKnownExample(line: string, match: RegExpMatchArray): boolean {
   const value = match[1] ?? match[0];
   if (KNOWN_EXAMPLE_KEYS.has(value)) return true;
   const lower = value.toLowerCase();
-  if (PLACEHOLDER_INDICATORS.some(p => lower.includes(p))) return true;
+  const at = placeholderIndex(lower);
+  if (at !== -1 && !isPlaceholderGluedToValue(line, value, at, match, pattern)) return true;
   // Low-entropy filler keyed by a credential name (e.g. `aws_secret_access_key
   // = "0000…"` / `DEADBEEF…`): a real ≥20-char secret never has so few distinct
   // characters (random base64 of a 40-char key has ~30+), so this can't suppress
@@ -104,7 +163,7 @@ export function findRealMatch(line: string, pattern: CredentialPattern): RegExpM
     : new RegExp(pattern.regex.source, pattern.regex.flags + 'g');
   globalRegex.lastIndex = 0;
   for (const m of line.matchAll(globalRegex)) {
-    if (!isKnownExample(line, m)) return m;
+    if (!isKnownExample(line, m, pattern)) return m;
   }
   return null;
 }

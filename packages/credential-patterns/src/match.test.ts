@@ -404,3 +404,76 @@ describe('isKnownExample — name-gated value-awareness + entropy floor (aws-sec
     expect(isKnownExample(line, m)).toBe(false); // match[1] undefined -> match[0], unchanged
   });
 });
+
+describe('isKnownExample — a placeholder word glued to a complete token', () => {
+  // A body written as a floor ({24} or {36} plus an open run) takes a word
+  // that directly follows the token into the match. The whole-value placeholder
+  // test then dropped the token in front of it, which is the evasion a
+  // `.replace('sample', '')` at runtime turns back into the live token. With
+  // the pattern passed, the part before the word is tested as a match of its
+  // own. The values are not real tokens: the bodies are the alphabet. FAKE
+  const SLACK_GLUED = ['xoxb-', '1234567890-1234567890-', 'abcdefghijklmnopqrstuvwxsample'].join(''); // FAKE
+  const GHO_GLUED = ['gho_', 'abcdefghijklmnopqrstuvwxyz1234567890sample'].join(''); // FAKE
+  const GHP_XXX = ['ghp_', 'abcdefghijklmnopqrstuvwxyz1234567890xxx'].join(''); // FAKE
+  const GHS_GLUED = ['ghs_', 'abcdefghijklmnopqrstuvwxyz1234567890sample'].join(''); // FAKE
+  const GHP_SHORT_XXX = ['ghp_', 'abcdefghijklmnopqrstuvwxyz1234567xxx'].join(''); // FAKE: 33 body characters, then xxx
+  // A body that was already a floor ({20,}) took the word in before as well.
+  const GITLAB_GLUED = 'glpat-abcdefghijklmnopqrstsample'; // FAKE
+
+  it('findRealMatch keeps a slack / gho_ / ghp_ / ghs_ / glpat- token that a placeholder word follows', () => {
+    const cases: Array<[string, string]> = [
+      ['slack', SLACK_GLUED],
+      ['github-oauth', GHO_GLUED],
+      ['github-pat', GHP_XXX],
+      ['github-app', GHS_GLUED],
+      ['gitlab', GITLAB_GLUED],
+    ];
+    for (const [id, token] of cases) {
+      const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id)!;
+      const line = `const token = "${token}";`;
+      const m = findRealMatch(line, pattern);
+      expect(m, `${id} dropped as a placeholder`).not.toBeNull();
+      expect(m![0]).toBe(token);
+    }
+  });
+
+  it('isKnownExample without the pattern keeps the whole-value test (unchanged result)', () => {
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'slack')!;
+    const line = `const token = "${SLACK_GLUED}";`;
+    const m = line.match(pattern.regex)!;
+    expect(isKnownExample(line, m)).toBe(true);
+    expect(isKnownExample(line, m, pattern)).toBe(false);
+  });
+
+  it('still suppresses a placeholder word inside the fixed-length part of the token', () => {
+    // 33 body characters then xxx: the part before the word is not a complete
+    // ghp_ token, so the value is a placeholder as before.
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'github-pat')!;
+    expect(findRealMatch(`const token = "${GHP_SHORT_XXX}";`, pattern)).toBeNull();
+  });
+
+  it('still suppresses a placeholder word at the start of the body', () => {
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'github-pat')!;
+    const line = ['const token = "ghp_', 'placeholderabcdefghijklmnopqrstuvwxyz";'].join(''); // FAKE
+    expect(findRealMatch(line, pattern)).toBeNull();
+  });
+
+  it('still suppresses a glued token on a line that marks it as an example in a comment', () => {
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'slack')!;
+    const line = `const token = "${SLACK_GLUED}"; // example`;
+    expect(findRealMatch(line, pattern)).toBeNull();
+  });
+
+  it('still suppresses a glued value whose token part has low entropy', () => {
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'github-pat')!;
+    const line = ['const token = "ghp_', '000000000000000000000000000000000000sample";'].join(''); // FAKE
+    expect(findRealMatch(line, pattern)).toBeNull();
+  });
+
+  it('leaves a name-gated pattern alone: the anchored pattern cannot match the value by itself', () => {
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'aws-secret')!;
+    // Group 1 is the 40-character value, 34 letters and digits then `sample`.
+    const line = 'aws_secret_access_key = "abcdefghijklmnopqrstuvwxyz01234567sample"'; // FAKE
+    expect(findRealMatch(line, pattern)).toBeNull();
+  });
+});

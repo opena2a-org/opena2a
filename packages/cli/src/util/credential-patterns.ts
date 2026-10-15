@@ -544,8 +544,13 @@ export const BREADTH_DETECT_IDS = new Set([
   'newrelic', 'newrelic-insight', 'sentry', 'linear',
 ]);
 
-/** Signature of the package's `isKnownExample` allowlist predicate. */
-export type IsKnownExample = (line: string, match: RegExpMatchArray) => boolean;
+/**
+ * Signature of the package's `isKnownExample` allowlist predicate. The third
+ * argument is the pattern the match came from; with it, a placeholder word
+ * glued to the end of a value that is a complete match on its own does not
+ * suppress that value. A package version without the argument ignores it.
+ */
+export type IsKnownExample = (line: string, match: RegExpMatchArray, pattern?: { regex: RegExp }) => boolean;
 
 /**
  * Lazily import the package's allowlist predicate (`isKnownExample`), which
@@ -616,7 +621,7 @@ export function collectCatalogMatches(
         : new RegExp(cp.regex.source, cp.regex.flags + 'g');
       re.lastIndex = 0;
       for (const m of line.matchAll(re)) {
-        if (isKnownExample(line, m)) {
+        if (isKnownExample(line, m, cp)) {
           suppressed?.add(`${m[1] ?? m[0]}:${filePath}`);
           continue;
         }
