@@ -10,7 +10,7 @@ import {
   removeServerConfig,
   type ServerConfig,
 } from '../util/aim-client.js';
-import { loadAuth, saveAuth, isAuthValid } from '../util/auth.js';
+import { authFor, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
 import { describeProxyRoute } from '../util/env-proxy.js';
 
 interface PolicyRule {
@@ -47,6 +47,11 @@ interface IdentityOptions {
   autoSync?: boolean;
   server?: string;
   apiKey?: string;
+  /**
+   * The server --api-key was typed with: the --server value, kept when the
+   * subcommand does not take --server, so the key goes to no other server.
+   */
+  apiKeyServer?: string;
   json?: boolean;
   /** Positional args passed from Commander (e.g. connect <url>) */
   args?: string[];
@@ -113,42 +118,6 @@ const USAGE = [
   '',
 ].join('\n');
 
-/**
- * Attempt to refresh expired OAuth credentials using the stored refresh token.
- * If the access token is still valid, this is a no-op.
- * If refresh succeeds, the new tokens are saved to ~/.opena2a/auth.json.
- * Returns true if auth is now valid (was valid or refreshed), false otherwise.
- */
-async function tryRefreshAuth(): Promise<boolean> {
-  const auth = loadAuth();
-  if (!auth) return false;
-
-  // Token still valid -- nothing to do
-  if (isAuthValid(auth)) return true;
-
-  // Token expired -- attempt refresh if we have a refresh token
-  if (!auth.refreshToken) return false;
-
-  try {
-    const client = new AimClient(auth.serverUrl);
-    const refreshed = await client.refreshAccessToken(auth.refreshToken);
-    // Save the new credentials
-    const expiresAt = new Date(Date.now() + (refreshed.expiresIn ?? 7200) * 1000).toISOString();
-    saveAuth({
-      serverUrl: auth.serverUrl,
-      accessToken: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken ?? auth.refreshToken,
-      expiresAt,
-      tokenType: refreshed.tokenType ?? 'Bearer',
-      authenticatedAt: new Date().toISOString(),
-    });
-    return true;
-  } catch {
-    // Refresh failed -- caller should prompt for re-login
-    return false;
-  }
-}
-
 export async function identity(options: IdentityOptions): Promise<number> {
   // Normalize --json flag to format
   if (options.json) {
@@ -156,11 +125,12 @@ export async function identity(options: IdentityOptions): Promise<number> {
   }
 
   // Auto-refresh expired OAuth tokens before dispatching subcommands
-  await tryRefreshAuth();
+  await refreshExpiredLogin();
 
   // Resolve --server URL when provided
   if (options.server) {
     options.server = resolveServerUrl(options.server);
+    options.apiKeyServer = options.server;
 
     const serverCommands = ['init', 'create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate', 'revoke'];
     if (!serverCommands.includes(options.subcommand)) {
@@ -236,36 +206,44 @@ async function loadAimCore(): Promise<typeof import('@opena2a/aim-core') | null>
 // ---------------------------------------------------------------------------
 
 /**
- * Build an AimClient from options. Returns null if no server is specified
- * and no stored config exists.
+ * The AIM server a command sends to: the one --server names, else the stored
+ * one (the agent connection's, else the login's).
+ */
+function targetServerUrl(options: IdentityOptions): string | undefined {
+  return options.server ? resolveServerUrl(options.server) : storedServerUrl();
+}
+
+/**
+ * Build an AimClient for the server a command sends to, signed in with what
+ * is stored for that server. Returns null if no server is specified and none
+ * is stored.
  */
 function getServerClient(options: IdentityOptions): AimClient | null {
-  const serverFlag = options.server;
-  const config = loadServerConfig();
-  const apiKey = options.apiKey ?? config?.apiKey;
+  const serverUrl = targetServerUrl(options);
+  if (!serverUrl) return null;
+  const { apiKey, token } = authFor(serverUrl, options);
+  return new AimClient(serverUrl, apiKey ? { apiKey } : { accessToken: token });
+}
 
-  if (serverFlag) {
-    const url = resolveServerUrl(serverFlag);
-    // A saved API key goes only to the server it was saved for.
-    const key = options.apiKey ?? storedApiKeyFor(url);
-    // Without an API key for this server, check global auth for matching server
-    if (!key) {
-      const globalAuth = loadAuth();
-      if (globalAuth && isAuthValid(globalAuth) && globalAuth.serverUrl === url) {
-        return new AimClient(url, { accessToken: globalAuth.accessToken });
-      }
-    }
-    return new AimClient(url, { apiKey: key });
+/**
+ * The client a tag, mcp, activity, suspend, reactivate or revoke command
+ * sends with: signed in with the token stored for the server the command acts
+ * on, and the agent connected to that server. No client when no token is
+ * stored for it.
+ */
+function signedInToServer(options: IdentityOptions): { serverUrl?: string; client?: AimClient; agentId?: string } {
+  const serverUrl = targetServerUrl(options);
+  if (!serverUrl) return {};
+  const { token, agentId } = authFor(serverUrl, options);
+  return { serverUrl, client: token ? new AimClient(serverUrl, { accessToken: token }) : undefined, agentId };
+}
+
+function writeNotLoggedIn(serverUrl: string | undefined): void {
+  if (serverUrl) {
+    process.stderr.write(`Not logged in to ${serverUrl}. Run: opena2a login --server ${serverUrl}\n`);
+  } else {
+    process.stderr.write('Not authenticated. Run: opena2a login\n');
   }
-  if (config?.serverUrl) {
-    return new AimClient(config.serverUrl, { apiKey });
-  }
-  // No server flag and no stored config -- try global auth
-  const globalAuth = loadAuth();
-  if (globalAuth && isAuthValid(globalAuth)) {
-    return new AimClient(globalAuth.serverUrl, { accessToken: globalAuth.accessToken });
-  }
-  return null;
 }
 
 /**
@@ -291,27 +269,6 @@ async function checkServerHealth(client: AimClient, serverUrl: string): Promise<
     }
     return false;
   }
-}
-
-/**
- * Resolve the auth token from stored config.
- */
-function getStoredAuth(): { token?: string; apiKey?: string; agentId?: string; serverUrl?: string } {
-  const config = loadServerConfig();
-  if (config) {
-    return {
-      token: config.accessToken ?? undefined,
-      apiKey: config.apiKey ?? undefined,
-      agentId: config.agentId,
-      serverUrl: config.serverUrl,
-    };
-  }
-  // Fallback: check global auth credentials from "opena2a login"
-  const globalAuth = loadAuth();
-  if (globalAuth && isAuthValid(globalAuth)) {
-    return { token: globalAuth.accessToken, serverUrl: globalAuth.serverUrl };
-  }
-  return {};
 }
 
 /**
@@ -362,24 +319,19 @@ async function handleList(options: IdentityOptions): Promise<number> {
 
     // If server is configured, fetch enriched data
     const client = getServerClient(options);
-    const serverConfig = loadServerConfig();
-    const auth = getStoredAuth();
-    // A stored token or API key goes only to the server it was stored for.
-    const token = client ? storedTokenFor(client.serverUrl) : undefined;
-    const apiKey = client ? storedApiKeyFor(client.serverUrl) : undefined;
-    // The agent connection is read from, and shown for, only the server it
-    // was made to: its agent ID is never sent to a server --server names.
-    const connection = connectionTo(client, serverConfig);
+    // A stored token, API key or agent ID goes only to the server it was
+    // stored for, and the agent connection is shown only for that server.
+    const { token, apiKey, agentId } = client ? authFor(client.serverUrl, options) : {};
     let serverAgent = null;
     let serverAgentList = null;
-    const effectiveServerUrl = connection?.serverUrl ?? client?.serverUrl ?? auth.serverUrl;
+    const effectiveServerUrl = client?.serverUrl;
 
     // If we have a server client with auth, try to fetch server data
     if (client && token) {
       try {
-        if (connection?.agentId) {
+        if (agentId) {
           // Fetch specific agent if we have a registered agent ID
-          serverAgent = await client.getAgent(token, connection.agentId);
+          serverAgent = await client.getAgent(token, agentId);
         } else {
           // No agent registered on this server — list all agents from server
           serverAgentList = await client.listAgents(token);
@@ -390,9 +342,9 @@ async function handleList(options: IdentityOptions): Promise<number> {
           process.stderr.write(yellow('Showing local identity only.') + '\n\n');
         }
       }
-    } else if (client && connection?.agentId && apiKey) {
+    } else if (client && agentId && apiKey) {
       try {
-        serverAgent = await client.getAgent({ apiKey }, connection.agentId);
+        serverAgent = await client.getAgent({ apiKey }, agentId);
       } catch (err) {
         if (!isJson) {
           process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
@@ -454,16 +406,16 @@ async function handleList(options: IdentityOptions): Promise<number> {
     process.stdout.write(`  Created:     ${id.createdAt}\n`);
     process.stdout.write(`  Data Dir:    ${dim(aim.getDataDir())}\n`);
 
-    if (serverAgent && connection) {
+    if (serverAgent && client && agentId) {
       process.stdout.write('\n' + bold('  Server') + '\n');
-      process.stdout.write(`  Server URL:  ${cyan(connection.serverUrl)}\n`);
+      process.stdout.write(`  Server URL:  ${cyan(client.serverUrl)}\n`);
       process.stdout.write(`  Server ID:   ${serverAgent.id}\n`);
       process.stdout.write(`  Status:      ${serverAgent.status === 'verified' ? green(serverAgent.status) : yellow(serverAgent.status)}\n`);
       process.stdout.write(`  Trust Score: ${serverAgent.trustScore}\n`);
-    } else if (connection) {
+    } else if (client && agentId) {
       process.stdout.write('\n' + bold('  Server') + '\n');
-      process.stdout.write(`  Server URL:  ${cyan(connection.serverUrl)}\n`);
-      process.stdout.write(`  Server ID:   ${connection.agentId}\n`);
+      process.stdout.write(`  Server URL:  ${cyan(client.serverUrl)}\n`);
+      process.stdout.write(`  Server ID:   ${agentId}\n`);
       process.stdout.write(`  Status:      ${dim('offline or unreachable')}\n`);
     }
 
@@ -495,9 +447,8 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
   try {
-    // If --server is provided or global auth exists, register on the server
-    const globalAuth = loadAuth();
-    if (options.server || (globalAuth && isAuthValid(globalAuth))) {
+    // If --server is provided or a login exists, register on the server
+    if (options.server || loginServerUrl()) {
       return handleServerCreate(options, name, isJson);
     }
 
@@ -538,28 +489,25 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
  * Register agent on the AIM server and store the result locally.
  */
 async function handleServerCreate(options: IdentityOptions, name: string, isJson: boolean): Promise<number> {
-  // Resolve server URL from flag or stored auth
-  const globalAuth = loadAuth();
-  const hasOAuth = globalAuth && isAuthValid(globalAuth);
-  const serverUrl = options.server
-    ? resolveServerUrl(options.server)
-    : hasOAuth ? globalAuth!.serverUrl : '';
-  const apiKey = options.apiKey;
+  // Resolve server URL from flag or the login
+  const serverUrl = options.server ? resolveServerUrl(options.server) : loginServerUrl() ?? '';
 
   if (!serverUrl) {
     process.stderr.write('No server specified. Use --server <url> or run: opena2a login\n');
     return 1;
   }
 
-  if (!apiKey && !hasOAuth) {
-    process.stderr.write('Authentication required.\n');
-    process.stderr.write('Run "opena2a login" first, or use --api-key <key>.\n');
+  // Sign in with what is stored for this server, or the key typed with --api-key
+  const { token, apiKey } = authFor(serverUrl, options);
+  if (!token && !apiKey) {
+    process.stderr.write(`Not logged in to ${serverUrl}.\n`);
+    process.stderr.write(`Run "opena2a login --server ${serverUrl}" first, or use --api-key <key>.\n`);
     return 1;
   }
 
   // Build client with OAuth token or API key
-  const client = hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl)
-    ? new AimClient(serverUrl, { accessToken: globalAuth!.accessToken })
+  const client = token
+    ? new AimClient(serverUrl, { accessToken: token })
     : new AimClient(serverUrl, { apiKey });
 
   // 1. Health check
@@ -570,7 +518,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
   try {
     // 2. Register on server (use authenticated endpoint if OAuth, public endpoint if API key)
     let resp: any;
-    if (hasOAuth && (!options.server || globalAuth!.serverUrl === serverUrl)) {
+    if (token) {
       resp = await client.createAgent({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` });
     } else {
       resp = await client.register({ name, displayName: name, description: `Agent ${name} registered via OpenA2A CLI` }, apiKey!);
@@ -657,17 +605,15 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     const client = getServerClient(options);
     // The agent connection is read only from the server it was made to: its
     // agent ID is never sent to a server --server names.
-    const connection = connectionTo(client, loadServerConfig());
+    const { token, apiKey, agentId } = client ? authFor(client.serverUrl, options) : {};
     let serverAgent = null;
 
-    if (client && connection?.agentId) {
+    if (client && agentId) {
       try {
-        const token = storedTokenFor(client.serverUrl);
-        const apiKey = storedApiKeyFor(client.serverUrl);
         if (token) {
-          serverAgent = await client.getAgent(token, connection.agentId);
+          serverAgent = await client.getAgent(token, agentId);
         } else if (apiKey) {
-          serverAgent = await client.getAgent({ apiKey }, connection.agentId);
+          serverAgent = await client.getAgent({ apiKey }, agentId);
         }
       } catch (err) {
         if (!isJson) {
@@ -700,7 +646,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
         result.server = {
           trustScore: serverAgent.trustScore,
           status: serverAgent.status,
-          serverUrl: connection?.serverUrl,
+          serverUrl: client?.serverUrl,
         };
       }
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -818,21 +764,19 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
 
   // If server is configured, fetch server-side audit logs
   const client = getServerClient(options);
-  const serverConfig = loadServerConfig();
+  const { token, apiKey, agentId } = client ? authFor(client.serverUrl, options) : {};
 
-  if (client && serverConfig?.agentId) {
+  if (client && agentId) {
     try {
-      const token = storedTokenFor(client.serverUrl);
-      const apiKey = storedApiKeyFor(client.serverUrl);
       const credential = token ?? (apiKey ? { apiKey } : undefined);
 
       if (credential) {
-        const resp = await client.getAuditLogs(credential, serverConfig.agentId, { pageSize: limit });
+        const resp = await client.getAuditLogs(credential, agentId, { pageSize: limit });
 
         if (isJson) {
           process.stdout.write(JSON.stringify({
             source: 'server',
-            serverUrl: serverConfig.serverUrl,
+            serverUrl: client.serverUrl,
             total: resp.total,
             auditLogs: resp.auditLogs,
           }, null, 2) + '\n');
@@ -840,7 +784,7 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
         }
 
         process.stdout.write(bold(`Server Audit Log (${resp.auditLogs.length} of ${resp.total})`) + '\n');
-        process.stdout.write(dim(`  Server: ${serverConfig.serverUrl}`) + '\n');
+        process.stdout.write(dim(`  Server: ${client.serverUrl}`) + '\n');
         process.stdout.write(gray('-'.repeat(70)) + '\n');
 
         if (resp.auditLogs.length === 0) {
@@ -1160,46 +1104,12 @@ async function handlePolicy(options: IdentityOptions): Promise<number> {
   }
 }
 
-/**
- * The access token stored for exactly this server, from the agent connection
- * or from "opena2a login". A token stored for another server is never returned.
- */
-function storedTokenFor(serverUrl: string): string | undefined {
-  const config = loadServerConfig();
-  if (config?.accessToken && resolveServerUrl(config.serverUrl) === serverUrl) {
-    return config.accessToken;
-  }
-  const globalAuth = loadAuth();
-  if (globalAuth && isAuthValid(globalAuth) && resolveServerUrl(globalAuth.serverUrl) === serverUrl) {
-    return globalAuth.accessToken;
-  }
-  return undefined;
-}
-
-/**
- * The agent connection, when it was made to exactly the server the client
- * sends requests to. A connection to another server is never returned, so
- * its agent ID is neither looked up on, nor reported for, a different server.
- */
-function connectionTo(client: AimClient | null, config: ServerConfig | null): ServerConfig | null {
-  return client && config && resolveServerUrl(config.serverUrl) === client.serverUrl ? config : null;
-}
-
-/**
- * The API key stored with the agent connection, when it was stored for
- * exactly this server. A key stored for another server is never returned.
- */
-function storedApiKeyFor(serverUrl: string): string | undefined {
-  const config = loadServerConfig();
-  return config?.apiKey && resolveServerUrl(config.serverUrl) === serverUrl ? config.apiKey : undefined;
-}
-
 async function handleServerPolicies(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
   // Query the server --server names, with --api-key or a token stored for it.
   const serverUrl = resolveServerUrl(options.server!);
-  const accessToken = options.apiKey ? undefined : storedTokenFor(serverUrl);
+  const accessToken = options.apiKey ? undefined : authFor(serverUrl).token;
   if (!options.apiKey && !accessToken) {
     process.stderr.write(`Not logged in to ${serverUrl}.\n`);
     process.stderr.write(`Run: opena2a login --server ${serverUrl}\n`);
@@ -1932,23 +1842,16 @@ async function handleTag(options: IdentityOptions): Promise<number> {
     return 1;
   }
 
-  const client = getServerClient(options);
-  if (!client) {
+  if (!targetServerUrl(options)) {
     process.stderr.write('No server configured. Run: opena2a login\n');
     return 1;
   }
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  const { serverUrl, client: authedClient, agentId } = signedInToServer(options);
+  if (!authedClient) {
+    writeNotLoggedIn(serverUrl);
     return 1;
   }
-
-  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
-
-  // Temporarily create an authenticated client
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   if (sub === 'list') {
     try {
@@ -2069,26 +1972,20 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
     return 1;
   }
 
-  const client = getServerClient(options);
-  if (!client) {
+  if (!targetServerUrl(options)) {
     process.stderr.write('No server configured. Run: opena2a login\n');
     return 1;
   }
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  const { serverUrl, client: authedClient, agentId } = signedInToServer(options);
+  if (!authedClient) {
+    writeNotLoggedIn(serverUrl);
     return 1;
   }
-
-  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
   if (!agentId) {
     process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
     return 1;
   }
-
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   if (sub === 'list') {
     try {
@@ -2257,26 +2154,20 @@ async function handleActivity(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
   const limit = options.limit ?? 10;
 
-  const client = getServerClient(options);
-  if (!client) {
+  if (!targetServerUrl(options)) {
     process.stderr.write('No server configured. Run: opena2a login\n');
     return 1;
   }
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  const { serverUrl, client: authedClient, agentId } = signedInToServer(options);
+  if (!authedClient) {
+    writeNotLoggedIn(serverUrl);
     return 1;
   }
-
-  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
   if (!agentId) {
     process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
     return 1;
   }
-
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   try {
     const resp = await authedClient.getAgentActivity(agentId, { pageSize: limit });
@@ -2317,20 +2208,15 @@ async function handleActivity(options: IdentityOptions): Promise<number> {
 async function handleSuspend(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  const { serverUrl, client: authedClient, agentId } = signedInToServer(options);
+  if (!authedClient) {
+    writeNotLoggedIn(serverUrl);
     return 1;
   }
-
-  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
   if (!agentId) {
     process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
     return 1;
   }
-
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   try {
     const resp = await authedClient.suspendAgent(agentId);
@@ -2357,20 +2243,15 @@ async function handleSuspend(options: IdentityOptions): Promise<number> {
 async function handleReactivate(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  const { serverUrl, client: authedClient, agentId } = signedInToServer(options);
+  if (!authedClient) {
+    writeNotLoggedIn(serverUrl);
     return 1;
   }
-
-  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
   if (!agentId) {
     process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
     return 1;
   }
-
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   try {
     const resp = await authedClient.reactivateAgent(agentId);
@@ -2396,13 +2277,11 @@ async function handleReactivate(options: IdentityOptions): Promise<number> {
 async function handleRevoke(options: IdentityOptions): Promise<number> {
   const isJson = options.format === 'json';
 
-  const auth = getStoredAuth();
-  if (!auth.token) {
-    process.stderr.write('Not authenticated. Run: opena2a login\n');
+  const { serverUrl, client: authedClient, agentId } = signedInToServer(options);
+  if (!authedClient) {
+    writeNotLoggedIn(serverUrl);
     return 1;
   }
-
-  const agentId = auth.agentId ?? loadServerConfig()?.agentId;
   if (!agentId) {
     process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
     return 1;
@@ -2416,9 +2295,6 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
     process.stderr.write(`To temporarily disable instead: opena2a identity suspend\n`);
     return 1;
   }
-
-  const serverUrl = auth.serverUrl ?? loadServerConfig()?.serverUrl ?? '';
-  const authedClient = new AimClient(serverUrl, { accessToken: auth.token });
 
   try {
     const resp = await authedClient.revokeAgent(agentId);

@@ -24,8 +24,8 @@
  * drifted the same way: `policy load <file>` printed the policy instead of
  * loading the file (the handler reads --file), its server-flag list named
  * audit and log, which answer "--server is not supported". The hints
- * suspend and revoke print named `--server cloud`, which they ignore: they
- * act on the stored connection.
+ * suspend and revoke print named `--server cloud`, while the command that
+ * printed them acted on the stored connection.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
@@ -496,8 +496,8 @@ describe('identity suspend, reactivate and revoke print commands that act on the
       expect(status, out).toBe(0);
       collect(out);
     }
-    // They act on the stored connection and ignore --server, so a --server in
-    // a hint can name another server than the one the command acts on.
+    // Without --server they act on the stored connection, so a --server in a
+    // hint could name another server than the one the command acted on.
     expect([...printed].sort()).toEqual([
       'opena2a identity reactivate',
       'opena2a identity revoke --ci',
