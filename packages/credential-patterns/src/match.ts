@@ -89,13 +89,20 @@ function anchored(regex: RegExp): RegExp {
  * turns back into the live one. The part before the word must pass every
  * other allowlist rule (known example, low entropy, comment marker) itself.
  *
- * The token may end inside the word: when its own last character begins the
- * word and the text after it completes it (`xoxb-…-<23 characters>x` then
- * `xx`, `ghp_<35 characters>s` then `ample`), the part before the word is one
- * character short of a complete match. So the token is the shortest prefix of
- * the value that is a complete match on its own and ends at or after the
- * word's start; a prefix that already holds a complete placeholder word is
- * never the token.
+ * For a pattern whose body is a fixed length followed by an open run
+ * (`[a-zA-Z0-9]{24}[a-zA-Z0-9]*`: slack and the GitHub `ghp_`, `gho_`, `ghs_`
+ * and `ghu_` tokens) the token may end inside the word: when the word begins
+ * inside the fixed length and runs past it (`xoxb-…-<23 characters>x` then
+ * `xx`, `ghp_<34 characters>sa` then `mple`), the part before the word is
+ * short of a complete match, while the pinned length slack, `ghp_`, `gho_`
+ * and `ghs_` had before stopped the match at the token. So for such a
+ * pattern the token is the shortest prefix of the value that is a complete
+ * match on its own and ends at or after the word's start; a prefix that
+ * already holds a complete placeholder word is never the token. Every other
+ * pattern takes the part before the word as the token: searching past the
+ * word's start there would take the word's first characters as the secret
+ * of a pattern whose last part has a small floor
+ * (`…/api/webhooks/<id>/your_webhook_token`).
  *
  * Needs the pattern, so it applies only when a caller passes one, and only
  * to value-only patterns: a name-gated match's value is group 1, which the
@@ -110,7 +117,8 @@ function isPlaceholderGluedToValue(
 ): boolean {
   if (!pattern || match[1] !== undefined || at <= 0) return false;
   const re = anchored(pattern.regex);
-  for (let end = at; end <= value.length; end++) {
+  const last = /\{\d+\}\[[^\]]+\]\*$/.test(pattern.regex.source) ? value.length : at;
+  for (let end = at; end <= last; end++) {
     const head = value.slice(0, end);
     if (end > at && placeholderIndex(head.toLowerCase()) !== -1) return false;
     const headMatch = re.exec(head);

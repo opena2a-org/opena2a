@@ -425,6 +425,9 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
   const SLACK_TAIL_SAMPLE = ['xoxb-', '1234567890-1234567890-', 'abcdefghijklmnopqrstuvwsample'].join(''); // FAKE
   const GHP_TAIL_XXX = ['ghp_', 'abcdefghijklmnopqrstuvwxyz123456789xxx'].join(''); // FAKE
   const GHP_TAIL_SAMPLE = ['ghp_', 'abcdefghijklmnopqrstuvwxyz123456789sample'].join(''); // FAKE
+  // The word begins two characters before the fixed length ends: 34 body
+  // characters then `sa`, and `mple` after it.
+  const GHP_TAIL_SA_MPLE = ['ghp_', 'abcdefghijklmnopqrstuvwxyz12345678sample'].join(''); // FAKE
 
   it('findRealMatch keeps a slack / gho_ / ghp_ / ghs_ / glpat- token that a placeholder word follows', () => {
     const cases: Array<[string, string]> = [
@@ -461,6 +464,13 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
     }
   });
 
+  it('keeps a ghp_ token when the glued word begins two characters before the fixed length ends', () => {
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'github-pat')!;
+    const m = findRealMatch(`const token = "${GHP_TAIL_SA_MPLE}";`, pattern);
+    expect(m, 'github-pat …sa + mple dropped as a placeholder').not.toBeNull();
+    expect(m![0]).toBe(GHP_TAIL_SA_MPLE);
+  });
+
   it('isKnownExample without the pattern keeps the whole-value test (unchanged result)', () => {
     const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'slack')!;
     const line = `const token = "${SLACK_GLUED}";`;
@@ -479,6 +489,27 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
   it('still suppresses a placeholder word at the start of the body', () => {
     const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'github-pat')!;
     const line = ['const token = "ghp_', 'placeholderabcdefghijklmnopqrstuvwxyz";'].join(''); // FAKE
+    expect(findRealMatch(line, pattern)).toBeNull();
+  });
+
+  it('still suppresses a value whose secret part is the word: Discord webhook, Slack app token, database host', () => {
+    // The last part of each pattern has a one-character floor, so the fixed
+    // part plus the word's first character would be a complete match.
+    const cases: Array<[string, string]> = [
+      ['discord-webhook', 'https://discord.com/api/webhooks/123456789012345678/your_webhook_token'], // FAKE
+      ['slack-app', 'xapp-1-A0123456789-1234567890123-xxxxxxxxxxxxxxxx'], // FAKE
+      ['postgres', 'postgres://user:password@your-host:5432/mydb'], // FAKE
+    ];
+    for (const [id, value] of cases) {
+      const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id)!;
+      expect(findRealMatch(`const value = "${value}";`, pattern), `${id} reported`).toBeNull();
+    }
+  });
+
+  it('still suppresses a word that begins before a floor pattern is complete', () => {
+    // 10 body characters, then a word that runs past the 20-character floor.
+    const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'gitlab')!;
+    const line = 'const token = "glpat-ABCDEFGHIJjust-for-testing";'; // FAKE
     expect(findRealMatch(line, pattern)).toBeNull();
   });
 

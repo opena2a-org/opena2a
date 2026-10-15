@@ -47,13 +47,19 @@ and no pattern was removed. `CREDENTIAL_PATTERNS` grows from 57 to 59 entries.
   a placeholder word that follows a value which is a complete match on its own
   no longer marks that value as a placeholder; the part in front of the word
   still has to pass the other allowlist rules (known example, low entropy,
-  comment marker). The token may end inside the word: when its own last
-  character begins the word and the text after it completes it
-  (`xoxb-…-<23 characters>x` then `xx`, `ghp_<35 characters>s` then `ample`),
-  the shortest prefix that is a complete match on its own is taken as the
-  token, so that value is kept too. A placeholder word inside a token's
-  fixed-length part, or at its start, suppresses the match as before. Without
-  the third argument the result is unchanged.
+  comment marker). For `slack`, `github-pat`, `github-oauth`, `github-app`
+  and `github-user-to-server`, whose body is a fixed length followed by an
+  open run, the token may also end inside the word: when the word begins
+  inside the fixed length and runs past it (`xoxb-…-<23 characters>x` then
+  `xx`, `ghp_<34 characters>sa` then `mple`), the shortest prefix that is a
+  complete match on its own is taken as the token, so that value is kept too,
+  as it was when the first four had a pinned length. A placeholder word that
+  lies wholly inside the fixed length, at its start or further in, suppresses
+  the match as before. For every other pattern the part in front of the word
+  has to be a complete match on its own, so a word that begins before that
+  part is complete, such as `glpat-<10 characters>just-for-testing` or
+  `…/api/webhooks/<id>/your_webhook_token`, suppresses the match as before.
+  Without the third argument the result is unchanged.
 
 Tests sweep every changed pattern at its minimum length, one over, and well
 over, check that the match reaches the end of the value, and check that a
