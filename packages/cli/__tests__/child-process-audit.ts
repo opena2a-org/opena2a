@@ -301,4 +301,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns: 'spawnSync(node dist/index.js --help) per telemetry setting, one at a time (#388)',
   },
+  'util/help-contract-exec.test.ts': {
+    shape: 'async-bounded',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawn(node dist/index.js <command> ...) once per exit-code case in a scratch HOME and ' +
+      'project, each awaited before the next starts; the CLI runs the commands it starts as ' +
+      'its own children',
+  },
 };

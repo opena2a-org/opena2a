@@ -143,7 +143,7 @@ Each command has its own exit codes, listed at the end of its `--help` under `Ex
 
 | Command | Exit 0 | Exit 1 | Exit 2 |
 |---------|--------|--------|--------|
-| `detect` | discovery finished, whatever it found, critical findings included | the directory cannot be read | an unsupported `--format` |
+| `detect` | discovery finished, whatever it found, critical findings included | the directory cannot be read, or the `--report` or `--export-csv` file could not be written | an unsupported `--format` |
 | `review` | the composite score is 50 or higher | the score is below 50 | the directory does not exist, an unsupported `--format`, `--quiet` together with `--verbose`, or the HTML report could not be written |
 | `scan-soul` | the governance score is 60 or higher (with `--strict`, also no critical control missing) | the score is below 60 (a directory with no SOUL.md scores 0), a critical control is missing under `--strict`, or the scan failed | not returned |
 | `protect --dry-run` | nothing was found, or text credentials were found (count them with `.totalFound`) | the directory does not exist, or no text credential was found but key files were, which protect cannot migrate | not returned without `--grant`; `opena2a protect --help` lists 2 to 6 |
