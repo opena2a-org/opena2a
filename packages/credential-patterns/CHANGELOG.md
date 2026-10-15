@@ -56,10 +56,17 @@ and no pattern was removed. `CREDENTIAL_PATTERNS` grows from 57 to 59 entries.
   as it was when the first four had a pinned length. A placeholder word that
   lies wholly inside the fixed length, at its start or further in, suppresses
   the match as before. For every other pattern the part in front of the word
-  has to be a complete match on its own, so a word that begins before that
-  part is complete, such as `glpat-<10 characters>just-for-testing` or
+  has to be a complete match on its own whenever the match holds the word.
+  `gitlab` and `discord-webhook` end in a part with a minimum length and no
+  maximum, so their match runs on through a word written in characters that
+  part allows, and such a word that begins before that part reaches its
+  minimum length, such as `glpat-<10 characters>just-for-testing` or
   `…/api/webhooks/<id>/your_webhook_token`, suppresses the match as before.
-  Without the third argument the result is unchanged.
+  `npm`, `github-fine` and `sendgrid` end in a part of fixed length, so their
+  match stops at that length: a word that begins inside that part and runs
+  past it leaves only its start in the match, and the match is returned as
+  before unless that start contains a placeholder word of its own. Without
+  the third argument the result is unchanged.
 
 Tests sweep every changed pattern at its minimum length, one over, and well
 over, check that the match reaches the end of the value, and check that a
