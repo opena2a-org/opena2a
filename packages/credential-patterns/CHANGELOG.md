@@ -38,6 +38,18 @@ and no pattern was removed. `CREDENTIAL_PATTERNS` grows from 57 to 59 entries.
 - Each pattern's comment cites the vendor page its format comes from.
 - Unchanged: `newrelic` (no vendor-documented body length), `telegram-bot`
   (its 35-character segment is correct) and `github-refresh`.
+- **`isKnownExample(line, match, pattern?)` takes the pattern as an optional
+  third argument, and `findRealMatch` passes it.** A body written as a floor
+  takes a placeholder word that directly follows the token into the match
+  (`xoxb-…-<24 characters>sample` is one `slack` match; with the pinned
+  length it was the token, and the word stayed outside), and the
+  whole-value placeholder test then dropped the token. With the pattern given,
+  a placeholder word that follows a value which is a complete match on its own
+  no longer marks that value as a placeholder; the part in front of the word
+  still has to pass the other allowlist rules (known example, low entropy,
+  comment marker). A placeholder word inside a token's fixed-length part, or
+  at its start, suppresses the match as before. Without the third argument the
+  result is unchanged.
 
 Tests sweep every changed pattern at its minimum length, one over, and well
 over, check that the match reaches the end of the value, and check that a
