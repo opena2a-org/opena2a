@@ -92,7 +92,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   protect: {
     exit: [
-      ['0', 'credentials migrated, nothing found, a --dry-run that found text credentials, or you declined at the prompt'],
+      ['0', 'credentials migrated, nothing found, a --dry-run that found text credentials, you declined at the prompt, or no store accepted a credential, which is then reported as skipped and stays in the source'],
       ['1', 'a migration failed, the directory does not exist, or no text credential was found but key files were that protect cannot migrate (also with --dry-run)'],
       ['2', 'cannot prompt (stdin is not a terminal and --ci was not given), the prompt was aborted, or the --atx file for --grant is missing or invalid'],
       ['3', 'the broker denied the --grant'],
@@ -115,7 +115,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   check: {
     exit: [
       ['engine', 'the exit status of hackmyagent (check for a package or repository, secure for a directory), passed through unchanged'],
-      ['1', 'the target is not a recognised form, or hackmyagent could not start'],
+      ['1', 'the target is not a recognised form, or hackmyagent could not start for a directory'],
+      ['254', 'hackmyagent is not on PATH for a package or repository, also when the npx fallback then runs it'],
     ],
     json: 'passed to hackmyagent as --format json for a directory and as --json for a package or repository',
     ci: 'passed to hackmyagent check for a package or repository; for a directory it only skips the prompt to share scan results',
@@ -179,8 +180,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   whoami: {
     exit: [
-      ['0', 'the output says whether you are logged in'],
-      ['1', 'the stored login file could not be read'],
+      ['0', 'the output says whether you are logged in; a login file that cannot be read reads as not logged in'],
+      ['1', 'a login file in the older format could not be rewritten in the current one'],
     ],
     json: 'prints the login state as JSON',
     ci: 'no effect',
@@ -213,14 +214,14 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   'scan-soul': {
     exit: [
       ['0', 'the governance score is 60 or higher (with --strict, also no critical control missing)'],
-      ['1', 'the score is below 60, a critical control is missing under --strict, or the scan failed'],
+      ['1', 'the score is below 60, a critical control is missing under --strict, the scanner is unavailable, or the scan failed'],
     ],
     json: 'prints the scan result as JSON',
     ci: 'no effect',
   },
   'harden-soul': {
     exit: [
-      ['0', 'the governance file was written, or previewed with --dry-run'],
+      ['0', 'the governance file was written, or previewed with --dry-run; a directory it cannot write to also exits 0 and reports 0 controls covered'],
       ['1', 'the scanner is unavailable, or generation failed'],
     ],
     json: 'prints the result as JSON',
@@ -278,7 +279,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   admin: {
     exit: [
       ['0', 'the operation succeeded, or usage was printed as text'],
-      ['1', 'no admin key, an invalid --registry, a registry or network error, approve or reject declined or refused without --yes, or a usage error under --json'],
+      ['1', 'no admin key, an invalid --registry or sensor id, a registry or network error, approve or reject declined or refused without --yes, or a usage error under --json'],
     ],
     json: 'prints the result as JSON; approve and reject then need --yes',
     ci: 'approve and reject refuse to run without --yes',
@@ -286,7 +287,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   baselines: {
     exit: [
       ['0', 'observations were collected'],
-      ['1', 'community contributions are not enabled, or the package was not found'],
+      ['1', 'no --package was given, community contributions are not enabled, or the package cannot be resolved from where opena2a-cli is installed'],
     ],
     json: 'prints the result as JSON',
     ci: 'prints no heading or spinner',
@@ -327,7 +328,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   config: {
     exit: [
       ['0', 'the setting was changed or shown'],
-      ['1', 'an unknown action'],
+      ['1', 'an unknown action, an unknown key or value, or config set without its key or value'],
     ],
     json: 'not used; config show always prints JSON',
     ci: 'no effect',
