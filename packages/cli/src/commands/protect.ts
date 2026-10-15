@@ -808,6 +808,7 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
           const refined = refineCredentialLabel(pattern.id, value, {
             title: pattern.title,
             envVarPrefix: pattern.envVarPrefix,
+            severity: pattern.severity,
           }, catalog);
           const envVar = deriveEnvVarName(refined.envVarPrefix, matches);
 
@@ -817,7 +818,9 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
             line: i + 1,
             findingId: pattern.id,
             envVar,
-            severity: pattern.severity,
+            // The catalog severity when the breadth pass would have reported this
+            // same value and the dedup then dropped it (see refineCredentialLabel).
+            severity: refined.severity ?? pattern.severity,
             title: refined.title,
             // Refined prose is present only when the title changed; otherwise
             // keep the local pattern's richer provider-specific copy.

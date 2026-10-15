@@ -364,28 +364,46 @@ export function classifyCredentialValue(
   value: string,
   catalog: CanonicalCredentialPattern[],
 ): { title: string; envVarPrefix: string } | null {
+  const hit = matchCatalogEntry(value, catalog);
+  return hit ? { title: hit.pattern.name, envVarPrefix: hit.pattern.envPrefix } : null;
+}
+
+/**
+ * The first catalog entry whose regex matches `value`, with the match itself so
+ * a caller can tell whether the catalog span covers the whole value.
+ */
+function matchCatalogEntry(
+  value: string,
+  catalog: CanonicalCredentialPattern[],
+): { pattern: CanonicalCredentialPattern; match: RegExpExecArray } | null {
   for (const p of catalog) {
     // The catalog regexes are non-global, but clone defensively so a stray `g`
     // flag can't leak `lastIndex` state across calls.
     const re = new RegExp(p.regex.source, p.regex.flags.replace('g', ''));
-    if (re.test(value)) {
-      return { title: p.name, envVarPrefix: p.envPrefix };
-    }
+    const match = re.exec(value);
+    if (match) return { pattern: p, match };
   }
   return null;
 }
+
+/** Severity rank for the catalog-vs-local comparison in {@link refineCredentialLabel}. */
+const SEVERITY_RANK: Record<string, number> = { critical: 3, high: 2, medium: 1, low: 0 };
 
 /**
  * A (possibly refined) credential label. `explanation`/`businessImpact` are only
  * populated when a refinement actually changed the title, in which case they
  * carry provider-neutral prose; otherwise they are absent and the caller keeps
- * the local pattern's richer provider-specific copy.
+ * the local pattern's richer provider-specific copy. `severity` is only
+ * populated when the catalog entry would have been reported by the breadth pass
+ * on its own (see {@link refineCredentialLabel}); otherwise the caller keeps the
+ * local pattern's severity.
  */
 export interface RefinedCredentialLabel {
   title: string;
   envVarPrefix: string;
   explanation?: string;
   businessImpact?: string;
+  severity?: string;
 }
 
 /**
@@ -405,22 +423,40 @@ export interface RefinedCredentialLabel {
  * When the catalog agrees with the local title (no real change) or nothing
  * matches, the fallback is returned unchanged and the caller keeps its local
  * prose.
+ *
+ * Severity: when the catalog entry is one the breadth pass
+ * ({@link BREADTH_DETECT_IDS}) reports on its own and its match covers the whole
+ * value, the breadth pass would have surfaced this same value as a catalog
+ * finding with {@link catalogSeverityForCategory} severity, and the value dedup
+ * in {@link collectCatalogMatches} then drops that finding in favour of this
+ * local one. So this local finding carries the catalog severity whenever it is
+ * the higher of the two (a Slack token or GitHub OAuth token assigned to an
+ * `api_key` name is high, not the medium of the generic CRED-004 bucket). A
+ * partial catalog match leaves the local severity alone: the breadth pass still
+ * reports the catalog span as its own finding in that case.
  */
 export function refineCredentialLabel(
   findingId: string,
   value: string,
-  fallback: { title: string; envVarPrefix: string },
+  fallback: { title: string; envVarPrefix: string; severity?: string },
   catalog: CanonicalCredentialPattern[],
 ): RefinedCredentialLabel {
   if (!REFINABLE_FINDING_IDS.has(findingId)) return fallback;
-  const classified = classifyCredentialValue(value, catalog);
-  if (!classified || classified.title === fallback.title) return fallback;
-  return {
-    title: classified.title,
-    envVarPrefix: classified.envVarPrefix,
-    explanation: `${classified.title} hardcoded in source. Anyone who can read this file can use it to access the associated account.`,
+  const hit = matchCatalogEntry(value, catalog);
+  if (!hit || hit.pattern.name === fallback.title) return fallback;
+  const refined: RefinedCredentialLabel = {
+    title: hit.pattern.name,
+    envVarPrefix: hit.pattern.envPrefix,
+    explanation: `${hit.pattern.name} hardcoded in source. Anyone who can read this file can use it to access the associated account.`,
     businessImpact: 'Grants access to the associated service. Migrate to an environment variable and rotate the credential.',
   };
+  const span = hit.match[1] ?? hit.match[0];
+  if (span === value && BREADTH_DETECT_IDS.has(hit.pattern.id)) {
+    const catalogSeverity = catalogSeverityForCategory(hit.pattern.category);
+    const localRank = SEVERITY_RANK[fallback.severity ?? ''] ?? -1;
+    if ((SEVERITY_RANK[catalogSeverity] ?? -1) > localRank) refined.severity = catalogSeverity;
+  }
+  return refined;
 }
 
 /**
@@ -797,6 +833,7 @@ export async function scanCredentialsWithCoverage(targetDir: string): Promise<Cr
           const refined = refineCredentialLabel(pattern.id, value, {
             title: pattern.title,
             envVarPrefix: pattern.envVarPrefix,
+            severity: pattern.severity,
           }, catalog);
           const base = refined.envVarPrefix;
           const existing = matches.filter(m => m.envVar.startsWith(base));
@@ -808,7 +845,9 @@ export async function scanCredentialsWithCoverage(targetDir: string): Promise<Cr
             line: i + 1,
             findingId: pattern.id,
             envVar,
-            severity: pattern.severity,
+            // The catalog severity when the breadth pass would have reported this
+            // same value and the dedup below then dropped it (see refineCredentialLabel).
+            severity: refined.severity ?? pattern.severity,
             title: refined.title,
             // Refined prose is present only when the title changed; otherwise
             // keep the local pattern's richer provider-specific copy.
