@@ -29,7 +29,7 @@ import * as path from 'node:path';
 import { probeEnv } from './child-env.js';
 import type { CredentialMatch } from './credential-patterns.js';
 import { SKIP_DIRS } from './credential-patterns.js';
-import { shellWord } from './shell-word.js';
+import { pathFrom, shellPath, shellWord } from './shell-word.js';
 
 const KEY_FILE_SEVERITY: Record<string, 'critical' | 'medium'> = {
   '.key': 'critical',
@@ -133,16 +133,47 @@ function isTracked(dir: string, relativePath: string): boolean {
 }
 
 /**
+ * The top level of the git work tree that holds `dir`, as a real path, or
+ * null when `dir` is not in one.
+ */
+function repositoryRoot(dir: string): string | null {
+  try {
+    const top = execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: probeEnv(['GIT_']),
+    }).trim();
+    return top ? fs.realpathSync(top) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * One `git rm --cached` command over every given path that git tracks in
- * `dir`, each a single-quoted shell word, in ascending order of relative
- * path. Never truncated: a command that reads complete and leaves files
- * tracked is worse than a long one. Null when none of them is tracked.
+ * `dir` (each relative to `dir`), each a single-quoted shell word, in
+ * ascending order of relative path. Never truncated: a command that reads
+ * complete and leaves files tracked is worse than a long one. Null when none
+ * of them is tracked.
+ *
+ * The command runs from `cwd`, the directory the user pastes it in. Run
+ * from the repository root it is `git rm --cached` over paths relative to
+ * that root; from anywhere else it is `git -C <root> rm --cached` over the
+ * same paths, `<root>` named from `cwd`. `paths` stays relative to `dir`.
  */
 export function untrackCommand(
   dir: string,
   relativePaths: string[],
+  cwd: string = process.cwd(),
 ): { command: string; paths: string[] } | null {
   const paths = Array.from(new Set(relativePaths)).sort().filter(p => isTracked(dir, p));
   if (paths.length === 0) return null;
-  return { command: `git rm --cached ${paths.map(shellWord).join(' ')}`, paths };
+  const root = repositoryRoot(dir);
+  if (!root) {
+    return { command: `git -C ${shellPath(dir, cwd)} rm --cached ${paths.map(shellWord).join(' ')}`, paths };
+  }
+  const realDir = fs.realpathSync(dir);
+  const fromRoot = paths.map(p => path.relative(root, path.join(realDir, p)));
+  const git = pathFrom(root, cwd) === '.' ? 'git' : `git -C ${shellPath(root, cwd)}`;
+  return { command: `${git} rm --cached ${fromRoot.map(shellWord).join(' ')}`, paths };
 }
