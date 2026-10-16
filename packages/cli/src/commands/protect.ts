@@ -1474,6 +1474,15 @@ function isInsideGitWorkTree(dir: string): 'yes' | 'no' | 'unknown' {
   return out.trim() === 'true' ? 'yes' : 'no';
 }
 
+// The file and the vault entry are the reader's to name, so each is a shell
+// parameter that refuses when unset: pasted before it is set, the shell
+// prints the message and runs nothing. FILES holds one path, so a name with
+// spaces stays one operand, and the line above it says to run it once per file.
+const RESTORE_FILES_COMMAND =
+  'git checkout -- "${FILES:?set FILES to a file protect changed, and run the line once per file}"';
+const VAULT_GET_COMMAND =
+  'npx secretless-ai secret get "${SECRET_NAME:?set SECRET_NAME to a name that secret list printed}"';
+
 /**
  * Build the Rollback block.
  *
@@ -1499,21 +1508,23 @@ function renderRollbackLines(
 
   if (report.migrated > 0) {
     if (gitState === 'yes') {
-      lines.push(dim('  git checkout -- <files>    Restore original files (credentials re-appear in source)'));
+      lines.push(dim('  Restore original files (credentials re-appear in source), once per file:'));
+      lines.push(dim(`    ${RESTORE_FILES_COMMAND}`));
     } else if (gitState === 'no') {
       lines.push(dim('  Source edits are not reversible from disk here: this is not a git'));
       lines.push(dim('  repository, and no plaintext backup is kept by design.'));
       lines.push(dim('  The value is in the vault. Read it back and restore it by hand:'));
       lines.push(dim('    ') + cyan('npx secretless-ai secret list'));
-      lines.push(dim('    ') + cyan('npx secretless-ai secret get <NAME>'));
+      lines.push(dim('    ') + cyan(VAULT_GET_COMMAND));
     } else {
       // Could not determine. Offer BOTH rather than assert either -- claiming
       // "not reversible" to someone who is in a repo is the worse error.
       lines.push(dim('  Could not determine whether this directory is a git repository.'));
-      lines.push(dim('  If it is:  ') + cyan('git checkout -- <files>'));
+      lines.push(dim('  If it is, restore each file protect changed, once per file:'));
+      lines.push(dim('    ') + cyan(RESTORE_FILES_COMMAND));
       lines.push(dim('  If it is not, the value is in the vault:'));
       lines.push(dim('    ') + cyan('npx secretless-ai secret list'));
-      lines.push(dim('    ') + cyan('npx secretless-ai secret get <NAME>'));
+      lines.push(dim('    ') + cyan(VAULT_GET_COMMAND));
     }
   }
   if (af?.configsSigned) {

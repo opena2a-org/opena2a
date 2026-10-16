@@ -392,9 +392,14 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
   process.stdout.write(`  Trust scores:      ${trustLine}\n`);
   process.stdout.write('\n');
 
+  // The server name is a shell parameter that refuses when unset: pasted
+  // before MCP_SERVER is set, the shell prints the message and runs nothing.
+  const serverOperand = '"${MCP_SERVER:?set MCP_SERVER to a server name listed above}"';
   process.stdout.write(bold('Next Steps') + '\n');
-  process.stdout.write(`  ${cyan('opena2a mcp sign <name>')}       Sign an MCP server with AIM identity\n`);
-  process.stdout.write(`  ${cyan('opena2a mcp verify <name>')}     Verify server signature and trust score\n`);
+  process.stdout.write('  Sign an MCP server with AIM identity:\n');
+  process.stdout.write(`    ${cyan(`opena2a mcp sign ${serverOperand}`)}\n`);
+  process.stdout.write('  Verify server signature and trust score:\n');
+  process.stdout.write(`    ${cyan(`opena2a mcp verify ${serverOperand}`)}\n`);
 
   return 0;
 }

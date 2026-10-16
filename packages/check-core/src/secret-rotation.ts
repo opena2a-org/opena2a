@@ -25,7 +25,13 @@ export interface SecretRotationGuide {
   typeLabel: string;
   /** Service-specific web URL where the operator can rotate the key. */
   rotationUrl?: string;
-  /** CLI command that performs (or starts) the rotation. */
+  /**
+   * CLI command that performs (or starts) the rotation. An operand the
+   * reader supplies is a shell parameter that refuses when unset,
+   * `"${NAME:?set NAME to ...}"`, never an angle-bracket placeholder:
+   * pasted before NAME is set, the shell prints the message and runs
+   * nothing.
+   */
   rotationCommand?: string;
 }
 
@@ -65,7 +71,7 @@ export const SECRET_ROTATION_TABLE: Record<string, SecretRotationGuide> = {
     typeLabel: "GCP service-account key",
     rotationUrl: "https://console.cloud.google.com/iam-admin/serviceaccounts",
     rotationCommand:
-      "gcloud iam service-accounts keys create new.json --iam-account=<sa> && gcloud iam service-accounts keys delete <old-key-id> --iam-account=<sa>",
+      'gcloud iam service-accounts keys create new.json --iam-account="${SERVICE_ACCOUNT:?set SERVICE_ACCOUNT to the email of the service account that owns the key}" && gcloud iam service-accounts keys delete "${OLD_KEY_ID:?set OLD_KEY_ID to the ID of the leaked key}" --iam-account="$SERVICE_ACCOUNT"',
   },
   stripe_secret_key: {
     typeLabel: "Stripe secret key",

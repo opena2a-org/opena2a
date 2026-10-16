@@ -122,3 +122,22 @@ describe("enrichSecretRotation", () => {
     expect(enrichSecretRotation(input)).toEqual(enrichSecretRotation(input));
   });
 });
+
+describe("rotation commands leave no <placeholder> to paste", () => {
+  // Pasted as printed, `<sa>` is a file redirection. An operand the reader
+  // supplies is a shell parameter that refuses when unset instead; the CLI
+  // test fix-verify-spans-fail-closed pastes it into bash, zsh and dash.
+  it("no rotationCommand holds a <placeholder>", () => {
+    const bad = Object.entries(SECRET_ROTATION_TABLE)
+      .filter(([, g]) => /<[A-Za-z][^<>\s]*>/.test(g.rotationCommand ?? ""))
+      .map(([type, g]) => `${type}: ${g.rotationCommand}`);
+    expect(bad).toEqual([]);
+  });
+
+  it("the GCP command names each operand as a parameter that says what to set", () => {
+    const cmd = SECRET_ROTATION_TABLE.gcp_service_account_key.rotationCommand ?? "";
+    const params = [...cmd.matchAll(/"\$\{([A-Z_]+):\?([^"}]*)\}"/g)].map((m) => [m[1], m[2]]);
+    expect(params.map(([name]) => name)).toEqual(["SERVICE_ACCOUNT", "OLD_KEY_ID"]);
+    for (const [name, message] of params) expect(message.startsWith(`set ${name} to `)).toBe(true);
+  });
+});

@@ -283,6 +283,8 @@ export function printAdvisoryWarnings(check: AdvisoryCheck): void {
 
   process.stdout.write(dim('  ' + '-'.repeat(47)) + '\n');
   process.stdout.write(`  ${yellow(`${check.advisories.length} advisory(ies)`)} affecting ${cyan(check.matchedPackages.join(', '))}\n`);
-  process.stdout.write(dim(`  Run: opena2a verify --package <name>  for details\n`));
+  // The package is a shell parameter that refuses when unset: pasted before
+  // PACKAGE is set, the shell prints the message and runs nothing.
+  process.stdout.write(dim('  For details, run: opena2a verify --package "${PACKAGE:?set PACKAGE to a package named above}"\n'));
   process.stdout.write('\n');
 }

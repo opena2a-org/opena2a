@@ -32,6 +32,14 @@ import {
 } from '../util/scoring.js';
 import { HMA_CHECK_COUNT } from '../util/canonical.js';
 
+/**
+ * The rerun this command suggests for another directory. The directory is a
+ * shell parameter that refuses when unset: pasted before PROJECT_DIR is set,
+ * the shell prints the message and runs nothing.
+ */
+const INIT_PROJECT_DIR_COMMAND =
+  'opena2a init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"';
+
 // --- Types ---
 
 export interface InitOptions {
@@ -124,7 +132,7 @@ export async function init(options: InitOptions): Promise<number> {
       process.stderr.write('\n');
       process.stderr.write(dim('  Next steps:\n'));
       process.stderr.write(dim('    Scan the current directory:  opena2a init\n'));
-      process.stderr.write(dim('    Scan a specific path:        opena2a init <path>\n'));
+      process.stderr.write(dim(`    Scan a specific path:        ${INIT_PROJECT_DIR_COMMAND}\n`));
       process.stderr.write(dim('    Show all options:            opena2a init --help\n'));
     }
     return 1;
@@ -1194,7 +1202,7 @@ function getContextualTip(
   if (report.credentialFilesScanned === 0) {
     return {
       text: 'No file in this directory was scanned for credentials. Run init on the folder that holds your code.',
-      command: 'opena2a init <project-dir>',
+      command: INIT_PROJECT_DIR_COMMAND,
     };
   }
 
@@ -1327,7 +1335,7 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
       'The credential check opens source and config files, and everything in this directory is a file type or folder it skips (for example images, archives, lockfiles, dependency and test folders, and dotfiles other than .env). Run it on the folder that holds your code:',
       72, 2,
     )) + '\n');
-    process.stdout.write(`    ${cyan('opena2a init <project-dir>')}\n\n`);
+    process.stdout.write(`    ${cyan(INIT_PROJECT_DIR_COMMAND)}\n\n`);
   }
 
   // --- Security Score ---

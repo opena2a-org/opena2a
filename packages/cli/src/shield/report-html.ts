@@ -423,7 +423,11 @@ const JS = `
 
   function init() { renderPage('overview'); bindNav(); }
 
-  function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+  // innerHTML escapes &, < and > but not ", and esc() also fills title and
+  // data-cmd attributes: a remediation such as --target "\${BINARY:?...}" ended
+  // data-cmd at its first quote, so Copy put the command on the clipboard
+  // without its operand.
+  function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML.replace(/"/g, '&quot;'); }
   // A finding no ATLAS technique describes carries a null id: print the no-value token, not an empty badge.
   function mitreCell(id) { return id ? '<span class="badge-mitre">'+esc(id)+'</span>' : '<span style="color:var(--dim)">--</span>'; }
   function formatTs(iso) { if (!iso) return '--'; try { var d = new Date(iso); if (isNaN(d.getTime())) return iso; return d.toISOString().replace('T',' ').replace(/\\.\\d+Z$/,' UTC'); } catch(e) { return iso; } }

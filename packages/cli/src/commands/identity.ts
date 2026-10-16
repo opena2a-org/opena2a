@@ -13,6 +13,24 @@ import {
 import { authFor, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
 import { describeProxyRoute } from '../util/env-proxy.js';
 
+/**
+ * Commands and flags this file prints for the reader to run next. Every
+ * operand the reader supplies is a shell parameter that refuses when unset:
+ * pasted before it is set, the shell prints the message and runs nothing.
+ */
+const SERVER_URL_OPERAND = '"${AIM_SERVER_URL:?set AIM_SERVER_URL to the URL of your AIM server}"';
+const API_KEY_OPERAND = '"${AIM_API_KEY:?set AIM_API_KEY to your API key for that AIM server}"';
+export const IDENTITY_NEXT_STEPS = {
+  connect: `opena2a identity connect ${SERVER_URL_OPERAND} --api-key ${API_KEY_OPERAND}`,
+  connectLocal: `opena2a identity connect localhost:8080 --api-key ${API_KEY_OPERAND}`,
+  serverFlag: `--server ${SERVER_URL_OPERAND}`,
+  apiKeyFlag: `--api-key ${API_KEY_OPERAND}`,
+  logEvent: 'opena2a identity log'
+    + ' --action "${AUDIT_ACTION:?set AUDIT_ACTION to the action to record, for example db:read}"'
+    + ' --target "${AUDIT_TARGET:?set AUDIT_TARGET to what it acted on, for example customers}"',
+  createAgent: 'opena2a identity create --name "${AGENT_NAME:?set AGENT_NAME to a name for the new agent}" --server cloud',
+} as const;
+
 interface PolicyRule {
   capability: string;
   action: 'allow' | 'deny';
@@ -277,7 +295,7 @@ async function checkServerHealth(client: AimClient, serverUrl: string): Promise<
 function formatServerError(err: unknown): string {
   if (err instanceof AimServerError) {
     if (err.statusCode === 401) {
-      return 'Authentication failed. Check your --api-key or run: opena2a identity connect <url>';
+      return `Authentication failed. Check your --api-key, or reconnect: ${IDENTITY_NEXT_STEPS.connect}`;
     }
     if (err.statusCode === 403) {
       return 'Access denied. Your API key may lack required permissions.';
@@ -493,7 +511,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
   const serverUrl = options.server ? resolveServerUrl(options.server) : loginServerUrl() ?? '';
 
   if (!serverUrl) {
-    process.stderr.write('No server specified. Use --server <url> or run: opena2a login\n');
+    process.stderr.write(`No server specified. Use ${IDENTITY_NEXT_STEPS.serverFlag} or run: opena2a login\n`);
     return 1;
   }
 
@@ -501,7 +519,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
   const { token, apiKey } = authFor(serverUrl, options);
   if (!token && !apiKey) {
     process.stderr.write(`Not logged in to ${serverUrl}.\n`);
-    process.stderr.write(`Run "opena2a login --server ${serverUrl}" first, or use --api-key <key>.\n`);
+    process.stderr.write(`Run "opena2a login --server ${serverUrl}" first, or use ${IDENTITY_NEXT_STEPS.apiKeyFlag}\n`);
     return 1;
   }
 
@@ -829,7 +847,7 @@ async function showLocalAudit(mod: typeof import('@opena2a/aim-core'), limit: nu
 
     if (events.length === 0) {
       process.stdout.write(dim('No audit events recorded yet.') + '\n');
-      process.stdout.write(dim('Log events with: opena2a identity log --action <action> --target <target>') + '\n');
+      process.stdout.write(dim(`Log events with: ${IDENTITY_NEXT_STEPS.logEvent}`) + '\n');
       return 0;
     }
 
@@ -915,7 +933,7 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
   if (!rawUrl) {
     process.stderr.write('Missing server URL.\n');
     process.stderr.write('Usage: opena2a identity connect <url> --api-key <key>\n');
-    process.stderr.write('       opena2a identity connect localhost:8080 --api-key <key>\n');
+    process.stderr.write(`       ${IDENTITY_NEXT_STEPS.connectLocal}\n`);
     return 1;
   }
 
@@ -1113,7 +1131,7 @@ async function handleServerPolicies(options: IdentityOptions): Promise<number> {
   if (!options.apiKey && !accessToken) {
     process.stderr.write(`Not logged in to ${serverUrl}.\n`);
     process.stderr.write(`Run: opena2a login --server ${serverUrl}\n`);
-    process.stderr.write(`  or: opena2a identity policy --server ${serverUrl} --api-key <key>\n`);
+    process.stderr.write(`  or: opena2a identity policy --server ${serverUrl} ${IDENTITY_NEXT_STEPS.apiKeyFlag}\n`);
     return 1;
   }
 
@@ -1897,7 +1915,7 @@ async function handleTag(options: IdentityOptions): Promise<number> {
 
   if (sub === 'add') {
     if (!agentId) {
-      process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+      process.stderr.write(`No agent ID found. Register an agent first: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
       return 1;
     }
     try {
@@ -1924,7 +1942,7 @@ async function handleTag(options: IdentityOptions): Promise<number> {
 
   if (sub === 'remove') {
     if (!agentId) {
-      process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+      process.stderr.write(`No agent ID found. Register an agent first: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
       return 1;
     }
     try {
@@ -1983,7 +2001,7 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
     return 1;
   }
   if (!agentId) {
-    process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+    process.stderr.write(`No agent ID found. Register an agent first: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
     return 1;
   }
 
@@ -2165,7 +2183,7 @@ async function handleActivity(options: IdentityOptions): Promise<number> {
     return 1;
   }
   if (!agentId) {
-    process.stderr.write('No agent ID found. Register an agent first: opena2a identity create --name <n> --server cloud\n');
+    process.stderr.write(`No agent ID found. Register an agent first: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
     return 1;
   }
 
@@ -2214,7 +2232,7 @@ async function handleSuspend(options: IdentityOptions): Promise<number> {
     return 1;
   }
   if (!agentId) {
-    process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
+    process.stderr.write(`No agent connected to server. Run: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
     return 1;
   }
 
@@ -2249,7 +2267,7 @@ async function handleReactivate(options: IdentityOptions): Promise<number> {
     return 1;
   }
   if (!agentId) {
-    process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
+    process.stderr.write(`No agent connected to server. Run: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
     return 1;
   }
 
@@ -2283,7 +2301,7 @@ async function handleRevoke(options: IdentityOptions): Promise<number> {
     return 1;
   }
   if (!agentId) {
-    process.stderr.write('No agent connected to server. Run: opena2a identity create --name <name> --server cloud\n');
+    process.stderr.write(`No agent connected to server. Run: ${IDENTITY_NEXT_STEPS.createAgent}\n`);
     return 1;
   }
 

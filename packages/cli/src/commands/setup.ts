@@ -6,6 +6,14 @@ import { loadAuth, isAuthValid } from '../util/auth.js';
 import { resolveDashboardUrl } from '../util/server-url.js';
 import { scanMcpServers } from './detect.js';
 
+/**
+ * The trust query setup suggests once an agent is registered. The package is
+ * a shell parameter that refuses when unset: pasted before PACKAGE is set,
+ * the shell prints the message and runs nothing.
+ */
+export const SETUP_TRUST_COMMAND =
+  'opena2a trust "${PACKAGE:?set PACKAGE to an npm package or MCP server name}"';
+
 export interface SetupOptions {
   targetDir: string;
   ci?: boolean;
@@ -312,7 +320,7 @@ export async function setup(options: SetupOptions): Promise<number> {
     process.stdout.write(bold('  Next:') + '\n');
     process.stdout.write(dim('    opena2a watch                  # live activity tail\n'));
     process.stdout.write(dim('    opena2a identity list          # list your agents\n'));
-    process.stdout.write(dim('    opena2a trust <package>        # trust query for any npm/MCP\n'));
+    process.stdout.write(dim(`    ${SETUP_TRUST_COMMAND}   # trust query for any npm/MCP\n`));
     if (isCloud) {
       process.stdout.write('\n');
       process.stdout.write(dim('  Self-hosted instead? Re-run: ') + cyan('opena2a login --server localhost:8080') + dim(' (or any URL of an AIM instance you control).') + '\n');
