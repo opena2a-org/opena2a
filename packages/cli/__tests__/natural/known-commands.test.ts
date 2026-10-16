@@ -48,6 +48,17 @@ const UNREGISTERED_INVOCATIONS = [
   ['undo', '.', '--ci'],
 ];
 
+// `opena2a nanomind setup`, a command another tool printed, resolved to the
+// 11-step `opena2a shield init`. An unregistered word followed by a lone
+// command verb is a mistyped `<group> <verb>` command, not a phrase. As
+// above, each case is asserted unregistered: once a word is registered (as
+// `nanomind` may be), the same argv runs that command instead.
+const UNREGISTERED_GROUP_VERBS = [
+  ['nanomodel', 'setup'],
+  ['foo', 'scan'],
+  ['nanomodel', 'Start'],
+];
+
 describe('shouldTryNaturalLanguageFallback (#291)', () => {
   it('never tries an unregistered verb in its flag-bearing or bare compound form', () => {
     for (const argv of UNREGISTERED_INVOCATIONS) {
@@ -64,6 +75,18 @@ describe('shouldTryNaturalLanguageFallback (#291)', () => {
 
   it('still tries an unquoted multi-word phrase', () => {
     expect(shouldTryNaturalLanguageFallback(['find', 'leaked', 'credentials'])).toBe(true);
+    expect(shouldTryNaturalLanguageFallback(['find', 'secrets'])).toBe(true);
+    expect(shouldTryNaturalLanguageFallback(['get', 'started'])).toBe(true);
+    expect(shouldTryNaturalLanguageFallback(['initialize', 'project'])).toBe(true);
+  });
+
+  // A mistyped `<group> <verb>` command must reach Commander and exit non-zero.
+  it('never tries an unknown word followed by a lone command verb', () => {
+    for (const argv of UNREGISTERED_GROUP_VERBS) {
+      expect(knownCommandNames(), argv[0]).not.toContain(argv[0]);
+      expect(shouldTryNaturalLanguageFallback(argv), argv.join(' ')).toBe(false);
+      expect(looksLikeCommandInvocation(argv), argv.join(' ')).toBe(true);
+    }
   });
 
   it('needs at least two tokens', () => {
@@ -103,6 +126,17 @@ describe('built CLI rejects unregistered verbs in both forms (#291)', () => {
 
   it('dist/index.js exists', () => {
     expect(existsSync(CLI_PATH)).toBe(true);
+  });
+
+  const [group, verb] = UNREGISTERED_GROUP_VERBS[0];
+  it(`opena2a ${group} ${verb} exits non-zero and never offers the 11-step setup`, () => {
+    if (!existsSync(CLI_PATH)) return;
+    expect(knownCommandNames()).not.toContain(group);
+    const { stdout, stderr, status } = run([group, verb]);
+    expect(status).not.toBe(0);
+    expect(stderr).toContain(`unknown command '${group}'`);
+    expect(stdout).not.toContain('Matched:');
+    expect(stdout).not.toContain('shield init');
   });
 
   for (const argv of UNREGISTERED_INVOCATIONS.slice(0, 3)) {
