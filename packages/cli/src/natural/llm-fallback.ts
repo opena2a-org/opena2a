@@ -1,6 +1,7 @@
 import { bold, cyan, yellow, gray, dim, green } from '../util/colors.js';
 import { HMA_CHECK_COUNT } from '../util/canonical.js';
 import { classifyWithNanoMindDaemon } from './nanomind-classifier.js';
+import { isMutatingCommand } from './intent-map.js';
 import type { NanoMindAttackClass } from './nanomind-types.js';
 
 /**
@@ -248,8 +249,11 @@ export async function llmFallback(input: string): Promise<LLMSuggestion | null> 
 /**
  * Prompt user to confirm a matched command. Returns true if confirmed.
  * In non-TTY / CI mode, does not auto-execute -- returns false.
+ * The default answer is no for a command that changes the project, the
+ * keychain or a running daemon (see MUTATING_COMMANDS), so pressing Enter
+ * never starts one; a read-only command keeps the default yes.
  */
-async function confirmExecution(command: string): Promise<boolean> {
+export async function confirmExecution(command: string): Promise<boolean> {
   if (!process.stdin.isTTY || process.env.CI) {
     process.stdout.write(`${gray('Run with:')} ${cyan(command)}\n`);
     return false;
@@ -259,7 +263,7 @@ async function confirmExecution(command: string): Promise<boolean> {
     const { confirm } = await import('@inquirer/prompts');
     return confirm({
       message: `Run ${command}?`,
-      default: true,
+      default: !isMutatingCommand(command),
     });
   } catch {
     return false;

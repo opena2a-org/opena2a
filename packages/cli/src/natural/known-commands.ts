@@ -39,18 +39,35 @@ export function isKnownCommand(name: string): boolean {
 const COMPOUND_VERB = /^[a-z0-9]+(?:-[a-z0-9]+)+$/i;
 
 /**
+ * Verbs that end a `<group> <verb>` command (`secrets scan`, `guard sign`,
+ * `runtime start`). Two tokens of that shape whose group is not registered
+ * are a mistyped command, not a phrase. Noun-ending phrases such as
+ * `compliance check` or `security audit` are left to the matcher.
+ */
+export const COMMAND_VERBS: readonly string[] = [
+  'setup', 'init', 'initialize', 'install', 'uninstall', 'configure',
+  'start', 'stop', 'restart', 'run', 'scan', 'verify', 'sign', 'resign',
+  'create', 'delete', 'remove', 'enable', 'disable', 'update', 'upgrade',
+  'reset', 'login', 'logout', 'publish', 'rollback', 'harden', 'clean', 'fix',
+];
+
+/**
  * True when argv reads as an explicit command invocation rather than an
- * unquoted natural-language phrase: a flag after the first token, or a first
- * token shaped like a compound subcommand. Such input must reach Commander,
- * which reports the unknown verb and exits non-zero. Before #291 the NL
- * matcher answered for it: `opena2a fix-all --with-aim` printed "Matched:
- * opena2a identity" and exited 0, so a user and any CI consumer saw success
- * for a command that does not exist. The quoted form (`opena2a "..."`) stays
- * the way to ask a question that contains a flag-like word.
+ * unquoted natural-language phrase: a flag after the first token, a first
+ * token shaped like a compound subcommand, or exactly two tokens whose second
+ * is a command verb. Such input must reach Commander, which reports the
+ * unknown verb and exits non-zero. Before #291 the NL matcher answered for
+ * it: `opena2a fix-all --with-aim` printed "Matched: opena2a identity" and
+ * exited 0, so a user and any CI consumer saw success for a command that
+ * does not exist; `opena2a nanomind setup` (a command another tool printed)
+ * resolved to the 11-step `opena2a shield init`. The quoted form
+ * (`opena2a "..."`) stays the way to ask a question that contains a
+ * flag-like word.
  */
 export function looksLikeCommandInvocation(args: readonly string[]): boolean {
   if (args.length === 0) return false;
   if (COMPOUND_VERB.test(args[0])) return true;
+  if (args.length === 2 && COMMAND_VERBS.includes(args[1].toLowerCase())) return true;
   return args.slice(1).some(a => a.startsWith('-'));
 }
 
