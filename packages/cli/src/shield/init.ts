@@ -21,6 +21,14 @@ import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { runtimeInitSilent } from '../commands/runtime.js';
 
+/**
+ * The rerun the credential audit suggests when it read no file. The directory
+ * is a shell parameter that refuses when unset: pasted before PROJECT_DIR is
+ * set, the shell prints the message and runs nothing.
+ */
+export const SHIELD_INIT_PROJECT_DIR_COMMAND =
+  'opena2a shield init --dir "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"';
+
 interface InitResult {
   scan: EnvironmentScan;
   policy: ShieldPolicy;
@@ -106,7 +114,7 @@ export async function shieldInit(options: {
         process.stdout.write(dim('  Everything in this directory is a file type or folder the audit skips\n'));
         process.stdout.write(dim('  (for example images, lockfiles, dependency and test folders, and\n'));
         process.stdout.write(dim('  dotfiles other than .env). Run it on the folder that holds your code:\n'));
-        process.stdout.write(`    ${cyan('opena2a shield init --dir <project-dir>')}\n`);
+        process.stdout.write(`    ${cyan(SHIELD_INIT_PROJECT_DIR_COMMAND)}\n`);
       } else if (matches.length === 0) {
         process.stdout.write(green('  No hardcoded credentials found\n'));
       } else {

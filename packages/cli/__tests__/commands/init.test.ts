@@ -796,7 +796,7 @@ describe('init', () => {
     expect(text).not.toContain('No security findings detected');
     expect(text).not.toContain('Strong baseline');
     expect(text).toContain('No files were scanned for credentials, so this is not a clean result.');
-    expect(text).toContain('opena2a init <project-dir>');
+    expect(text).toContain('opena2a init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"');
   });
 
   it('a directory with a readable source file keeps the clean wording', async () => {

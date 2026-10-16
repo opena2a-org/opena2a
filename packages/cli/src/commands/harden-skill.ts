@@ -87,7 +87,11 @@ export async function hardenSkill(options: HardenSkillOptions): Promise<number> 
     targetDir = process.cwd();
     const skillFiles = findSkillFilesNonRecursive(targetDir);
     if (skillFiles.length === 0) {
-      const msg = 'No skill files found in current directory.\nProvide a path with: opena2a harden-skill <file>\nOr create a new skill with: opena2a skill create\n';
+      // The path is a shell parameter that refuses when unset: pasted before
+      // SKILL_FILE is set, the shell prints the message and runs nothing.
+      const msg = 'No skill files found in current directory.\n'
+        + 'Provide a path with: opena2a harden-skill "${SKILL_FILE:?set SKILL_FILE to the path of the skill file to harden}"\n'
+        + 'Or create a new skill with: opena2a skill create\n';
       if (isJson) {
         process.stdout.write(JSON.stringify({ error: msg.trim() }, null, 2) + '\n');
       } else {

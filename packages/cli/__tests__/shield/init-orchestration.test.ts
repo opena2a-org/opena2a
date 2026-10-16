@@ -258,7 +258,7 @@ describe('shield init credential audit over a directory it reads no file in', ()
     const audit = auditSection(textOutput());
     expect(audit).not.toContain('No hardcoded credentials found');
     expect(audit).toContain('No files were scanned for credentials, so this is not a clean result.');
-    expect(audit).toContain('opena2a shield init --dir <project-dir>');
+    expect(audit).toContain('opena2a shield init --dir "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"');
     expect(result.credentialFilesScanned).toBe(0);
     // Status and exit code are unchanged: only the wording moves.
     expect(result.steps.find(s => s.name === 'Credential audit')?.status).toBe('done');

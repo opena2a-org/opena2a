@@ -63,7 +63,9 @@ export async function login(options: LoginOptions): Promise<number> {
     } else {
       console.error('Browser login is unavailable in --ci mode (the device-code flow needs a browser).');
       console.error('For non-interactive use, pass an API key directly to server commands, e.g.:');
-      console.error('  opena2a identity list --server cloud --api-key <key>');
+      // The key is a shell parameter that refuses when unset: pasted before
+      // AIM_API_KEY is set, the shell prints the message and runs nothing.
+      console.error('  opena2a identity list --server cloud --api-key "${AIM_API_KEY:?set AIM_API_KEY to your AIM Cloud API key}"');
       console.error('Or run "opena2a login" once on a workstation to cache credentials in the keychain.');
     }
     return 1;

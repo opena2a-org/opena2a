@@ -241,15 +241,27 @@ describe('review HTML Copy controls', () => {
   });
 
   it('a placeholder is shown without a Copy control, with what to replace', () => {
+    // The catalog carries no placeholder any more; the per-finding fallback
+    // for a skill finding that names no file still does, so the list is
+    // never empty.
     const withPlaceholder = Object.values(FINDING_CATALOG)
       .map(f => f.remediation)
       .filter(r => /<[\w-]+>/.test(r) && !/filter-repo/.test(r));
-    expect(withPlaceholder.length).toBeGreaterThan(0);
     for (const cmd of ['hackmyagent check <skill-path>', ...withPlaceholder]) {
       const w = allWithheld.find(x => x.cmd === cmd);
       expect(w, `"${cmd}" is still on the page`).toBeDefined();
       expect(w!.note).toMatch(/replace <[\w-]+>/);
     }
+  });
+
+  it('a catalog remediation that leaves an operand to the reader is copied whole', () => {
+    // The operand is a shell parameter that refuses when unset, so the step
+    // sits behind Copy, and the copied text keeps every quote of it.
+    const withOperand = Object.values(FINDING_CATALOG)
+      .map(f => f.remediation)
+      .filter(r => /"\$\{[A-Z_]+:\?set [A-Z_]+ to [^"}]+\}"/.test(r));
+    expect(withOperand.length).toBeGreaterThan(0);
+    for (const cmd of withOperand) expect(allCopies, cmd).toContain(cmd);
   });
 
   it('a history rewrite is shown in words without a Copy control', () => {
@@ -320,7 +332,7 @@ describe('review HTML Copy controls', () => {
       'f.fix',
       "'hackmyagent check ' + (f.sampleFiles && f.sampleFiles[0] ? shellArg(f.sampleFiles[0].split(':')[0]) : '<skill-path>')",
       "'npx secretless-ai init'",
-      "'hackmyagent check <skill-path>'",
+      "'hackmyagent check \"${SKILL_PATH:?set SKILL_PATH to the skill file to inspect}\"'",
       "'hackmyagent secure --fix'",
       "'opena2a runtime start'",
       'f.remediation',

@@ -326,4 +326,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(git ls-files --error-unmatch) per path and execFileSync(git rev-parse ' +
       '--show-toplevel) once per untrack command, one at a time',
   },
+  'fix-verify-spans-fail-closed.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git init) once for a scratch repository, then protect runs ' +
+      'execFileSync(git rev-parse --is-inside-work-tree) per rendered rollback block; ' +
+      'spawnSync(env -u <NAME> bash|zsh|dash -c <printed command>) per printed command and ' +
+      'shell, with a PATH that holds only stub scripts, one at a time',
+  },
 };

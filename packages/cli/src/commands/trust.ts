@@ -294,7 +294,9 @@ export async function trust(options: TrustOptions): Promise<number> {
     } else {
       process.stderr.write(red(`Failed to query trust profile: ${errMsg}`) + '\n');
       process.stderr.write(dim(`Registry: ${registryUrl}`) + '\n');
-      process.stderr.write(dim('Check your registry URL in ~/.opena2a/config.json or use --registry-url <url>') + '\n');
+      // The URL is a shell parameter that refuses when unset: pasted before
+      // REGISTRY_URL is set, the shell prints the message and runs nothing.
+      process.stderr.write(dim('Check your registry URL in ~/.opena2a/config.json or use --registry-url "${REGISTRY_URL:?set REGISTRY_URL to the base URL of the registry to query}"') + '\n');
       if (options.verbose) {
         process.stderr.write(dim(`Full error: ${err instanceof Error ? err.stack ?? err.message : String(err)}`) + '\n');
       }

@@ -32,7 +32,12 @@ export interface FindingDefinition {
    * mitigation, tactic or case-study id, and never a placeholder string.
    */
   mitreAtlas: string | null;
-  /** One command, printed as written and runnable as written. */
+  /**
+   * One command, printed as written and runnable as written. An operand the
+   * reader supplies is a shell parameter that refuses when unset,
+   * `"${NAME:?set NAME to ...}"`, never an angle-bracket placeholder: pasted
+   * before NAME is set, the shell prints the message and runs nothing.
+   */
   remediation: string;
   /**
    * The step no command performs, shown before `remediation`: revoking a key
@@ -170,7 +175,7 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'proc',
     owaspAgentic: 'ASI05',
     mitreAtlas: 'AML.T0006',
-    remediation: 'opena2a shield evaluate --action process.spawn --target <binary>',
+    remediation: 'opena2a shield evaluate --action process.spawn --target "${BINARY:?set BINARY to the program named in the finding}"',
     description: 'An AI agent spawned a process that was flagged as suspicious by the runtime protection engine.',
   },
   'SHIELD-PROC-002': {
@@ -180,7 +185,9 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'proc',
     owaspAgentic: 'ASI07',
     mitreAtlas: 'AML.T0007',
-    remediation: 'opena2a shield evaluate --action network.connect --target <host>',
+    // TARGET_HOST, not HOST: zsh sets HOST to the machine's own name, so
+    // "${HOST:?...}" would never refuse there.
+    remediation: 'opena2a shield evaluate --action network.connect --target "${TARGET_HOST:?set TARGET_HOST to the host named in the finding}"',
     description: 'An anomalous network connection was made by an AI agent. This may indicate data exfiltration or C2 communication.',
   },
   'SHIELD-INT-001': {
@@ -228,7 +235,10 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'sup',
     owaspAgentic: 'ASI04',
     mitreAtlas: 'AML.T0024',
-    remediation: 'npm audit fix || go get -u <package>',
+    // No Shield event source reads Go modules, so the step names npm only.
+    // The earlier `npm audit fix || go get -u` step ran `npm audit fix`
+    // before the package operand was ever checked.
+    remediation: 'npm update "${PACKAGE:?set PACKAGE to the npm package named in the finding}"',
     description: 'A known security vulnerability was found in an installed dependency. Update the package to a patched version.',
   },
   'SHIELD-SUP-002': {
@@ -238,7 +248,7 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'sup',
     owaspAgentic: 'ASI04',
     mitreAtlas: 'AML.T0024',
-    remediation: 'opena2a registry check <package>',
+    remediation: 'opena2a registry check "${PACKAGE:?set PACKAGE to the npm package named in the finding}"',
     description: 'A package with a low trust score was installed. Review the package for legitimacy before use in production.',
   },
   'SHIELD-BAS-001': {
@@ -248,7 +258,7 @@ export const FINDING_CATALOG: Record<string, FindingDefinition> = {
     category: 'bas',
     owaspAgentic: 'ASI10',
     mitreAtlas: 'AML.T0043',
-    remediation: 'opena2a shield baseline --agent <agent>',
+    remediation: 'opena2a shield baseline --agent "${AGENT:?set AGENT to the agent named in the finding}"',
     description: 'An agent exhibited behavior that deviates significantly from its established baseline. Review the agent activity log.',
   },
 };

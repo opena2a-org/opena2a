@@ -108,7 +108,9 @@ describe('identity policy --server <url>', () => {
     expect(stdout).toBe('');
     expect(stderr).toContain(`Not logged in to ${named.url}.`);
     expect(stderr).toContain(`opena2a login --server ${named.url}`);
-    expect(stderr).toContain(`opena2a identity policy --server ${named.url} --api-key <key>`);
+    expect(stderr).toContain(
+      `opena2a identity policy --server ${named.url} --api-key "\${AIM_API_KEY:?set AIM_API_KEY to your API key for that AIM server}"`,
+    );
   });
 
   it('uses the login token when --server names the logged-in server', async () => {
