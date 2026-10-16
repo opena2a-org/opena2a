@@ -309,4 +309,21 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'project, each awaited before the next starts; the CLI runs the commands it starts as ' +
       'its own children',
   },
+  'commands/init.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git init | add | commit) to build a scratch repository for the key-file ' +
+      'case; init then runs execFileSync(git ls-files --error-unmatch) per key file on it and ' +
+      'execFileSync(git rev-parse --show-toplevel) for the Fix of a tracked one, one at a time',
+  },
+  'util/crypto-key-files.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'execFileSync(git init | add | commit | check-ignore) in a scratch repository and ' +
+      'execFileSync(sh -c <the printed .gitignore command>) once; the module under test runs ' +
+      'execFileSync(git ls-files --error-unmatch) per path and execFileSync(git rev-parse ' +
+      '--show-toplevel) once per untrack command, one at a time',
+  },
 };
