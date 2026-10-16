@@ -1,5 +1,6 @@
 /**
- * Detect cryptographic key/cert files committed to source.
+ * Detect cryptographic key/cert files in the scanned tree, tracked by git or
+ * not; the finding says which.
  *
  * `quickCredentialScan` matches text patterns inside files. Private keys
  * stored as `.key` / `.pem` / `.p12` / `.pfx` files are credentials by
@@ -49,12 +50,67 @@ const TITLE_BY_EXT: Record<string, string> = {
   '.cer': 'X.509 certificate file',
 };
 
+/**
+ * The key file of the encrypted credential store that `hackmyagent fix-all`
+ * writes (its credvault plugin): a hex AES-256-GCM key beside the
+ * `secrets.enc` it decrypts. hackmyagent writes no ignore rule for it.
+ */
+const VAULT_STORE_KEY = '.opena2a/credvault/store.key';
+
+function isVaultStoreKey(relativePath: string): boolean {
+  const posix = relativePath.split(path.sep).join('/');
+  return posix === VAULT_STORE_KEY || posix.endsWith(`/${VAULT_STORE_KEY}`);
+}
+
+/**
+ * What the finding says, from what was measured: the file type, whether git
+ * tracks the file, and whether it is the vault store key. Severity is by file
+ * type only.
+ */
+function describeKeyFile(
+  severity: 'critical' | 'medium',
+  tracked: boolean,
+  vault: boolean,
+): { explanation: string; businessImpact: string } {
+  const where = tracked ? 'tracked by git' : 'in the working tree, not tracked by git';
+  if (vault) {
+    return tracked
+      ? {
+        explanation: `Store key of the credential vault that hackmyagent fix-all writes to .opena2a/credvault/, ${where}. It decrypts secrets.enc beside it, so anyone with repository access and that file can read the stored credentials.`,
+        businessImpact: 'Revoke or replace the credentials the vault holds, remove the key from history, and ignore .opena2a/credvault/store.key so it is not committed again.',
+      }
+      : {
+        explanation: `Store key of the credential vault that hackmyagent fix-all writes to .opena2a/credvault/, ${where}. It decrypts secrets.enc beside it, and hackmyagent writes no ignore rule for it, so a commit that adds the directory includes it.`,
+        businessImpact: 'Ignore .opena2a/credvault/store.key so the key is never committed beside the store it decrypts.',
+      };
+  }
+  if (severity === 'critical') {
+    return tracked
+      ? {
+        explanation: `Cryptographic key file ${where}. Anyone with repository access has the key material, in every clone and in the history.`,
+        businessImpact: 'Rotate the key, remove the file from history, and store keys outside the repository (env var, vault, KMS).',
+      }
+      : {
+        explanation: `Cryptographic key file ${where}. Anyone who can read this directory has the key material, and a commit that adds the directory includes it unless an ignore rule excludes it.`,
+        businessImpact: 'Keep the key out of every commit with an ignore rule, or store it outside the repository (env var, vault, KMS). If it was ever committed or shared, revoke or replace it with the CA or service that issued it.',
+      };
+  }
+  return {
+    explanation: tracked
+      ? `X.509 certificate ${where}. Certs are usually public, but committing them often signals lax handling of the matching private key.`
+      : `X.509 certificate ${where}. Certs are usually public, but a cert beside the source often signals lax handling of the matching private key.`,
+    businessImpact: 'Audit cert handling and verify the matching private key is not stored alongside.',
+  };
+}
+
 export function scanCryptoKeyFiles(targetDir: string): CredentialMatch[] {
   const matches: CredentialMatch[] = [];
   walk(targetDir, (full) => {
     const ext = path.extname(full).toLowerCase();
     const severity = KEY_FILE_SEVERITY[ext];
     if (!severity) return;
+    const relativePath = path.relative(targetDir, full);
+    const vault = severity === 'critical' && isVaultStoreKey(relativePath);
     matches.push({
       value: path.basename(full),
       filePath: full,
@@ -62,13 +118,8 @@ export function scanCryptoKeyFiles(targetDir: string): CredentialMatch[] {
       findingId: severity === 'critical' ? 'CRED-KEYFILE' : 'CRED-CERTFILE',
       envVar: '',
       severity,
-      title: TITLE_BY_EXT[ext] ?? 'Key/cert file in source',
-      explanation: severity === 'critical'
-        ? 'Cryptographic key file checked into source. Anyone with repository access has the key material.'
-        : 'X.509 certificate checked into source. Certs are usually public, but committing them often signals lax handling of the matching private key.',
-      businessImpact: severity === 'critical'
-        ? 'Rotate the key, remove the file from history, and store keys outside the repository (env var, vault, KMS).'
-        : 'Audit cert handling and verify the matching private key is not stored alongside.',
+      title: vault ? 'Vault store key' : (TITLE_BY_EXT[ext] ?? 'Key/cert file in source'),
+      ...describeKeyFile(severity, isTracked(targetDir, relativePath), vault),
     });
   });
   return matches;
@@ -176,4 +227,39 @@ export function untrackCommand(
   const fromRoot = paths.map(p => path.relative(root, path.join(realDir, p)));
   const git = pathFrom(root, cwd) === '.' ? 'git' : `git -C ${shellPath(root, cwd)}`;
   return { command: `${git} rm --cached ${fromRoot.map(shellWord).join(' ')}`, paths };
+}
+
+/**
+ * The .gitignore rule that matches `relativePath` and nothing else: anchored
+ * with a leading `/` to the directory of the .gitignore, with the pattern
+ * characters `\ * ? [` and trailing spaces escaped so a file name is never a
+ * glob.
+ */
+function ignoreRule(relativePath: string): string {
+  const rule = relativePath.split(path.sep).join('/').replace(/[\\*?[]/g, '\\$&');
+  return `/${rule.replace(/ +$/, spaces => '\\ '.repeat(spaces.length))}`;
+}
+
+/**
+ * One command that appends an anchored rule to `dir`/.gitignore for every
+ * given path git does not track in `dir`, each a single-quoted shell word, in
+ * ascending order of relative path; the files stay on disk. The empty first
+ * line keeps the rules on their own lines when .gitignore does not end with a
+ * newline. Null when git tracks all of them; those take {@link untrackCommand}.
+ *
+ * The command runs from `cwd`, the directory the user pastes it in. Run from
+ * `dir` it appends to `.gitignore`; from anywhere else it names
+ * `dir`/.gitignore from `cwd`, because the rules are anchored to `dir`: in
+ * another directory's .gitignore they name a path in that directory, not the
+ * file. `paths` stays relative to `dir`.
+ */
+export function ignoreCommand(
+  dir: string,
+  relativePaths: string[],
+  cwd: string = process.cwd(),
+): { command: string; paths: string[] } | null {
+  const paths = Array.from(new Set(relativePaths)).sort().filter(p => !isTracked(dir, p));
+  if (paths.length === 0) return null;
+  const gitignore = pathFrom(dir, cwd) === '.' ? '.gitignore' : shellPath(path.join(dir, '.gitignore'), cwd);
+  return { command: `printf '%s\\n' '' ${paths.map(p => shellWord(ignoreRule(p))).join(' ')} >> ${gitignore}`, paths };
 }

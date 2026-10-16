@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
-import { scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
+import { ignoreCommand, scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
 import { pathFrom, shellPath, shellWord } from '../util/shell-word.js';
 import { advisoriesNotChecked, checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { getRegistryUrl } from '../util/report-submission.js';
@@ -599,9 +599,15 @@ function groupFindings(
     });
   }
 
-  // Group credential findings by findingId
+  // Group credential findings by findingId. Key and cert files also split on
+  // their explanation, which states whether git tracks the file and whether
+  // it is the vault store key, so each group reads true for every file in it
+  // and takes one Fix (`git rm --cached` or a .gitignore rule).
   for (const cred of creds) {
-    const existing = groups.get(cred.findingId);
+    const groupKey = cred.findingId === 'CRED-KEYFILE' || cred.findingId === 'CRED-CERTFILE'
+      ? `${cred.findingId}\0${cred.explanation ?? ''}`
+      : cred.findingId;
+    const existing = groups.get(groupKey);
     if (existing) {
       existing.count++;
       existing.locations.push({
@@ -609,7 +615,7 @@ function groupFindings(
         line: cred.line,
       });
     } else {
-      groups.set(cred.findingId, {
+      groups.set(groupKey, {
         findingId: cred.findingId,
         title: cred.title,
         severity: cred.severity,
@@ -813,15 +819,16 @@ function generateActions(
     });
   }
 
-  // Tracked key files only (CRED-KEYFILE): a certificate is not in it, and a
-  // key git does not track has nothing to untrack. The command names every
-  // tracked key file, never a placeholder and never truncated; revoking the
-  // key and the .gitignore step are words, never part of the command.
-  const keyfileUntrack = targetDir
-    ? untrackCommand(targetDir, keyfileCreds
-      .filter(c => c.findingId === 'CRED-KEYFILE')
-      .map(c => path.relative(targetDir, c.filePath)))
-    : null;
+  // Key files (CRED-KEYFILE) only; a certificate is in neither action. Tracked
+  // keys get `git rm --cached`, keys git does not track get the .gitignore
+  // rules, as each finding's Fix does. Each command names every file it
+  // covers, never a placeholder and never truncated; revoking the key is a
+  // step in words, never part of the command.
+  const keyfilePaths = keyfileCreds
+    .filter(c => c.findingId === 'CRED-KEYFILE')
+    .map(c => path.relative(targetDir ?? '', c.filePath));
+  const keyfileUntrack = targetDir ? untrackCommand(targetDir, keyfilePaths) : null;
+  const keyfileIgnore = targetDir ? ignoreCommand(targetDir, keyfilePaths) : null;
   if (keyfileUntrack) {
     const n = keyfileUntrack.paths.length;
     const them = n === 1 ? 'it' : 'them';
@@ -831,6 +838,17 @@ function generateActions(
       command: keyfileUntrack.command,
       why: 'A key file committed to git is readable by anyone with repository access, in every clone and in the history, even after the file is untracked. Only the CA or service that issued the key can revoke it; no opena2a command can, and opena2a protect does not handle key files.',
       approach: 'Revoke or replace each key with the CA or service that issued it first. Then run the command: it stops git tracking each file and leaves it on disk. Add the extensions to .gitignore so the files are not committed again, and treat the committed history as leaked.',
+      detail: `Files: ${fileExamples}${n > 3 ? ` (+${n - 3} more)` : ''}`,
+    });
+  }
+  if (keyfileIgnore) {
+    const n = keyfileIgnore.paths.length;
+    const fileExamples = keyfileIgnore.paths.slice(0, 3).map(p => path.basename(p)).join(', ');
+    actions.push({
+      description: `Keep ${n} private key${n === 1 ? '' : 's'} that git does not track out of the next commit with a .gitignore rule`,
+      command: keyfileIgnore.command,
+      why: 'A key file in the working tree is readable by anyone who can read the directory, and a commit that adds the directory includes it unless an ignore rule excludes it. If a key was ever committed or shared, only the CA or service that issued it can revoke it; no opena2a command can, and opena2a protect does not handle key files.',
+      approach: 'Run the command: it appends one rule per file to the .gitignore of the scanned directory, anchored to that directory, and leaves the files on disk. Its empty first line keeps the rules on their own lines when .gitignore does not end with a newline. Moving the keys outside the repository also keeps them out of commits.',
       detail: `Files: ${fileExamples}${n > 3 ? ` (+${n - 3} more)` : ''}`,
     });
   }
@@ -1070,10 +1088,17 @@ export function getToolRecommendation(
   // content, and `opena2a protect` neither revokes nor untracks them. The Fix
   // is the `git rm --cached` command over the finding's files that git
   // tracks; revoking the key happens at the CA or service that issued it and
-  // is stated in words, never as a command. No tracked file, no Fix.
+  // is stated in words, never as a command. When git tracks none of them
+  // (no commit yet, ignored, or no repository), the Fix appends a .gitignore
+  // rule per file, anchored to `reportDir`, to `reportDir`/.gitignore named
+  // from the directory `init` was run in, so the next commit leaves them out.
+  // init groups key files by tracked state, so one finding takes one of the two.
   if (findingId === 'CRED-KEYFILE' || findingId === 'CRED-CERTFILE') {
-    const untrack = untrackCommand(reportDir, finding.locations.map(l => path.relative(reportDir, l.file)));
-    return untrack ? { command: untrack.command, label: 'git rm --cached' } : null;
+    const relativePaths = finding.locations.map(l => path.relative(reportDir, l.file));
+    const untrack = untrackCommand(reportDir, relativePaths);
+    if (untrack) return { command: untrack.command, label: 'git rm --cached' };
+    const ignore = ignoreCommand(reportDir, relativePaths);
+    return ignore ? { command: ignore.command, label: '.gitignore' } : null;
   }
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
     return { command: 'opena2a protect', label: 'opena2a protect' };

@@ -177,6 +177,45 @@ describe('init commands name files from the directory init runs in', () => {
     expect(fix.command).toBe(`git rm --cached 'server.key'`);
   });
 
+  // A key git does not track takes a rule anchored to the scanned directory,
+  // which matches the key only in that directory's .gitignore: appended to
+  // the .gitignore of the directory the Fix is pasted in, it names a path
+  // there instead.
+  it('the untracked key-file Fix appends its rule to the scanned directory .gitignore, run from the shell directory', () => {
+    git(scanned, ['init', '-q']);
+
+    const fix = getToolRecommendation(located('CRED-KEYFILE', 'server.key'), scanned)!;
+    expect(fix).toEqual({
+      command: String.raw`printf '%s\n' '' '/server.key' >> 'project/.gitignore'`,
+      label: '.gitignore',
+    });
+    runPrinted(shellDir, fix.command);
+    expect(fs.readFileSync(path.join(scanned, '.gitignore'), 'utf-8')).toBe('.env\n\n/server.key\n');
+    expect(fs.existsSync(path.join(shellDir, '.gitignore'))).toBe(false);
+    expect(() => git(scanned, ['check-ignore', '-q', '--', 'server.key'])).not.toThrow();
+    expect(fs.existsSync(path.join(scanned, 'server.key'))).toBe(true);
+  });
+
+  it('the untracked key-file Fix names the scanned directory .gitignore absolutely from outside it, under a repository root above it', () => {
+    git(shellDir, ['init', '-q']);
+    const elsewhere = path.join(shellDir, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    vi.spyOn(process, 'cwd').mockReturnValue(elsewhere);
+
+    const fix = getToolRecommendation(located('CRED-KEYFILE', 'server.key'), scanned)!;
+    expect(fix.command).toBe(String.raw`printf '%s\n' '' '/server.key' >> '${path.join(scanned, '.gitignore')}'`);
+    runPrinted(elsewhere, fix.command);
+    expect(fs.existsSync(path.join(elsewhere, '.gitignore'))).toBe(false);
+    expect(() => git(shellDir, ['check-ignore', '-q', '--', 'project/server.key'])).not.toThrow();
+  });
+
+  it('the untracked key-file Fix appends to .gitignore when the shell directory is the scanned one', () => {
+    vi.spyOn(process, 'cwd').mockReturnValue(scanned);
+
+    const fix = getToolRecommendation(located('CRED-KEYFILE', 'server.key'), scanned)!;
+    expect(fix.command).toBe(String.raw`printf '%s\n' '' '/server.key' >> .gitignore`);
+  });
+
   it('the template-leak action greps the template from the shell directory', async () => {
     fs.writeFileSync(path.join(scanned, '.env.example'), `ANTHROPIC_API_KEY=${'sk-' + 'ant-api03-' + 'Q'.repeat(85)}\n`);
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network disabled in this test'); }));

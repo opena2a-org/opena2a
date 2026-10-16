@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { init } from '../../src/commands/init.js';
+import { init, getToolRecommendation } from '../../src/commands/init.js';
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
   const chunks: string[] = [];
@@ -505,6 +506,50 @@ describe('init', () => {
     expect(report.securityScore).toBeLessThan(70);
   });
 
+  // A key file in a repository with no commit is in the working tree, not
+  // checked into source, and its Fix keeps it out of the next commit. Once it
+  // is committed, the explanation says tracked and the Fix is `git rm --cached`.
+  // init runs in the directory it scans, where its commands are pasted.
+  it('reports an untracked key file as untracked with a .gitignore Fix, and a committed one as tracked with git rm --cached', async () => {
+    const git = (args: string[]) => execFileSync('git', [
+      '-C', tempDir,
+      '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false',
+      '-c', 'user.name=t', '-c', 'user.email=t@t.invalid',
+      ...args,
+    ], { stdio: 'ignore' });
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'x.key'), 'FAKE\n');
+    git(['init', '-q']);
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+    try {
+      const before = JSON.parse((await captureStdout(() => init({ targetDir: tempDir, format: 'json' }))).output);
+      const untracked = before.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
+      expect(untracked.explanation).not.toContain('checked into source');
+      expect(untracked.explanation).toContain('in the working tree, not tracked by git');
+      const ignoreFix = getToolRecommendation(untracked, before.directory);
+      expect(ignoreFix).not.toBeNull();
+      expect(ignoreFix!.command).toBe(String.raw`printf '%s\n' '' '/x.key' >> .gitignore`);
+      expect(untracked.fix).toBe(ignoreFix!.command);
+      const ignoreAction = before.actions.find((a: any) => a.command === ignoreFix!.command);
+      expect(ignoreAction).toBeDefined();
+      expect(ignoreAction.description).toContain('git does not track');
+      expect(before.actions.some((a: any) => a.command.startsWith('git rm --cached'))).toBe(false);
+
+      git(['add', '--', 'x.key']);
+      git(['commit', '-qm', 'x']);
+      const after = JSON.parse((await captureStdout(() => init({ targetDir: tempDir, format: 'json' }))).output);
+      const tracked = after.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
+      expect(tracked.explanation).toContain('tracked by git');
+      expect(tracked.explanation).not.toContain('not tracked');
+      expect(tracked.fix).toBe(`git rm --cached 'x.key'`);
+      expect(getToolRecommendation(tracked, after.directory)).toEqual({ command: `git rm --cached 'x.key'`, label: 'git rm --cached' });
+      expect(after.actions.some((a: any) => a.command.startsWith('printf'))).toBe(false);
+    } finally {
+      cwd.mockRestore();
+    }
+  });
+
   it('scales MCP-tools deduction by server count across multiple configs (#116)', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
@@ -652,10 +697,11 @@ describe('init', () => {
     const keyfile = report.findings.find((f: any) => f.findingId === 'CRED-KEYFILE');
     expect(keyfile).toBeDefined();
     // `opena2a protect` neither revokes nor untracks a key file, so it is
-    // never the Fix. The Fix is `git rm --cached` over the tracked files;
-    // this temp dir is not a git repository, so there is nothing to untrack
-    // and no Fix line.
-    expect(keyfile.fix).toBeUndefined();
+    // never the Fix. This temp dir is not a git repository, so git tracks
+    // nothing and the Fix is the .gitignore rule that keeps the key out of
+    // the first commit. init runs outside the temp dir here, so the Fix names
+    // the temp dir's .gitignore, the one the rule is anchored to.
+    expect(keyfile.fix).toBe(String.raw`printf '%s\n' '' '/leak.key' >> '${path.join(tempDir, '.gitignore')}'`);
 
     const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
     expect(mcpFinding).toBeDefined();

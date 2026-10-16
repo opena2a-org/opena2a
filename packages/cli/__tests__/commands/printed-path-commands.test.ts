@@ -186,13 +186,24 @@ describe('printed commands over scanned paths run as printed', () => {
     }
   });
 
-  it('emits no key-file recommendation and no Fix when no key file is tracked', async () => {
+  it('gives untracked key files the .gitignore Fix, not git rm --cached, and it runs as printed', async () => {
     git(repo, ['rm', '-q', '--cached', '--', ...KEY_FILES]);
     const report = JSON.parse(await captureStdout(() => init({ targetDir: repo, format: 'json' })));
     expect(report.actions.some((a: { command: string }) => a.command.startsWith('git rm --cached'))).toBe(false);
     const keyfile = report.findings.find((f: { findingId: string }) => f.findingId === 'CRED-KEYFILE');
     expect(keyfile).toBeDefined();
-    expect(keyfile.fix).toBeUndefined();
-    expect(getToolRecommendation(keyfile, repo)).toBeNull();
+    expect(keyfile.fix).toBe(
+      String.raw`printf '%s\n' '' '/-n2.key' '/a b'\''c.key' '/server.key' '/x$(touch CANARY).key' >> .gitignore`,
+    );
+    expect(getToolRecommendation(keyfile, report.directory)).toEqual({ command: keyfile.fix, label: '.gitignore' });
+    expect(report.actions.some((a: { command: string }) => a.command === keyfile.fix)).toBe(true);
+
+    runPrinted(repo, keyfile.fix);
+    for (const p of KEY_FILES) {
+      expect(() => git(repo, ['check-ignore', '-q', '--', p]), `${keyfile.fix} ignores ${p}`).not.toThrow();
+      expect(fs.existsSync(path.join(repo, p)), `${keyfile.fix} leaves ${p} on disk`).toBe(true);
+    }
+    expect(indexed(repo)).toContain(CERT_FILE);
+    expect(fs.existsSync(path.join(repo, 'CANARY'))).toBe(false);
   });
 });
