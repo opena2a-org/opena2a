@@ -13,6 +13,7 @@ import * as os from 'node:os';
 import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
+import { registryNameFor } from '../util/mcp-registry-name.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +68,8 @@ export interface DetectedMcpServer {
   verified: boolean;
   capabilities: string[];
   risk: RiskLevel;
+  /** The npm package the server runs, which is the name the Registry knows it by; absent when it runs none. */
+  registryName?: string;
   registryData?: McpRegistryData;
   scanResult?: McpScanResult;
   scanSuggestion?: string;
@@ -266,8 +269,12 @@ export function parseMcpConfig(
       // Extract capabilities from server name and config
       const capabilities = inferMcpCapabilities(name, e);
       const risk = classifyMcpRisk(name, capabilities, transport);
+      const registryName = registryNameFor({ transport, command: e.command, args: e.args, url: e.url });
 
-      servers.push({ name, transport, source: label, verified: false, capabilities, risk });
+      servers.push({
+        name, transport, source: label, verified: false, capabilities, risk,
+        ...(registryName ? { registryName } : {}),
+      });
     }
 
     return servers;
@@ -1261,14 +1268,19 @@ export async function detect(options: DetectOptions): Promise<number> {
       // `|| 'https://api.oa2a.org'` fallback here was a second copy of the
       // canonical constant with nothing keeping it in sync.
       const registryUrl = await getRegistryUrl();
-      const assets = mcpServers.map((s) => ({ name: s.name, type: 'mcp_server' }));
+      // Look a server up under the package it runs; its config key names
+      // nothing in the registry, so a server that runs no package is not sent.
+      const assets = mcpServers.flatMap((s) => (s.registryName ? [{ name: s.registryName, type: 'mcp_server' }] : []));
       registryEnrichments = await enrichFromRegistry(assets, registryUrl);
 
       // Attach registry data to each MCP server
       for (const server of mcpServers) {
-        const key = `${server.name}:mcp_server`;
+        if (!server.registryName) continue;
+        const key = `${server.registryName}:mcp_server`;
         const enrichment = registryEnrichments.get(key);
-        if (enrichment) {
+        // A "listed" record was never scanned; its score of 0 measures
+        // nothing, so the server stays without trust data.
+        if (enrichment && enrichment.verdict !== 'listed') {
           server.registryData = {
             trustScore: enrichment.trustScore,
             trustLevel: enrichment.trustLevel,

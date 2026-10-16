@@ -16,6 +16,14 @@ import * as os from 'node:os';
 
 const hostPs = vi.hoisted(() => ({ output: null as string | null }));
 
+// `detect --registry` reaches the Registry only through this stub.
+const registryEnrichment = vi.hoisted(() => ({ enrichFromRegistry: vi.fn() }));
+
+vi.mock('../../src/util/registry-enrichment.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/util/registry-enrichment.js')>()),
+  enrichFromRegistry: registryEnrichment.enrichFromRegistry,
+}));
+
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
@@ -230,6 +238,24 @@ describe('parseMcpConfig', () => {
     expect(servers[0].transport).toBe('sse');
   });
 
+  it('records the package a server runs as its registry name, not its config key', () => {
+    const configPath = path.join(tempDir, 'mcp.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      mcpServers: {
+        'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+        local: { command: 'node', args: ['server.js'] },
+        remote: { url: 'https://api.example.com/mcp' },
+      },
+    }));
+
+    const servers = parseMcpConfig(configPath, 'test-source');
+    expect(servers.map((s) => [s.name, s.registryName])).toEqual([
+      ['filesystem-root', '@modelcontextprotocol/server-filesystem'],
+      ['local', undefined],
+      ['remote', undefined],
+    ]);
+  });
+
   it('returns empty array for non-existent file', () => {
     const servers = parseMcpConfig('/nonexistent/path/mcp.json', 'test');
     expect(servers).toHaveLength(0);
@@ -424,6 +450,47 @@ describe('detect command', () => {
     expect(typeof result.identity.totalAgents).toBe('number');
     expect(typeof result.identity.soulFiles).toBe('number');
     expect(typeof result.identity.capabilityPolicies).toBe('number');
+  });
+
+  it('--registry looks a server up under the package it runs and leaves an unscanned record without trust data', async () => {
+    const savedHome = process.env.HOME;
+    process.env.HOME = path.join(tempDir, 'home');
+    fs.writeFileSync(
+      path.join(tempDir, 'mcp.json'),
+      JSON.stringify({
+        mcpServers: {
+          'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+          'database-admin': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres'] },
+          local: { command: 'node', args: ['server.js'] },
+        },
+      })
+    );
+    const record = (name: string, trustScore: number, trustLevel: number, verdict: string) => [
+      `${name}:mcp_server`,
+      { name, packageType: 'mcp_server', trustScore, trustLevel, verdict, communityScans: 0, verified: false, scanStatus: '' },
+    ] as const;
+    registryEnrichment.enrichFromRegistry.mockResolvedValue(new Map([
+      record('@modelcontextprotocol/server-filesystem', 0.7866666666666666, 3, 'passed'),
+      record('@modelcontextprotocol/server-postgres', 0, 2, 'listed'),
+    ]));
+
+    try {
+      const { exitCode, output } = await captureStdout(() =>
+        detect({ targetDir: tempDir, format: 'json', ci: true, registry: true })
+      );
+      expect(exitCode).toBe(0);
+      expect(registryEnrichment.enrichFromRegistry.mock.calls[0][0]).toEqual([
+        { name: '@modelcontextprotocol/server-filesystem', type: 'mcp_server' },
+        { name: '@modelcontextprotocol/server-postgres', type: 'mcp_server' },
+      ]);
+      const byName = Object.fromEntries(JSON.parse(output).mcpServers.map((s: any) => [s.name, s]));
+      expect(byName['filesystem-root'].registryData.trustScore).toBe(0.7866666666666666);
+      expect(byName['database-admin'].registryData).toBeUndefined();
+      expect(byName['local'].registryData).toBeUndefined();
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+    }
   });
 
   it('includes MCP servers from project-local config in JSON', async () => {
