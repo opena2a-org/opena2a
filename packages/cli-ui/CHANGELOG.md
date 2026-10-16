@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- `escapePathForDisplay`, `escapeForDisplay`, `hasDisplayHazard`,
+  `escapeJsonDisplayHazards`, `quotePathForDisplay` and
+  `excerptLinesForDisplay` render a name taken from a scanned tree on one
+  line with every control, format, bidi, zero-width and blank-rendering
+  character made visible (`\e`, `\n`, `\u202e`, `\u{e0041}`) instead of
+  printed raw or dropped. The alphabet is the one hackmyagent prints, plus
+  the blank-rendering U+034F, U+17B4, U+17B5, U+180B to U+180F and U+2800
+  that secretless-ai escapes; `DISPLAY_HAZARD_SOURCE` exports it so a CLI
+  keeping its own copy can test for drift. `sanitizeForTerminal` is
+  unchanged and stays the sanitizer for registry prose.
 - A check's own verdict family, `pass` / `fail` / `unverified` (type
   `CheckVerdict`). `renderVerdict` prints `✔ PASS` in green and `✖ FAIL`
   in red, the symbol and color of `safe` and `blocked`, and `? UNVERIFIED`
