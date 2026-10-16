@@ -29,6 +29,28 @@ export interface TrustOptions {
 
 // --- Constants ---
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A scan older than this many days is marked `(stale)`. It is the threshold
+ * `ai-trust check` uses (its `--stale-days` default, and `days > 90` before
+ * its `(stale)` marker), so `trust` and `registry` mark the same scan alike.
+ */
+const SCAN_STALE_AFTER_DAYS = 90;
+
+/** The version the Registry stores for a package it lists but has not resolved. */
+const PLACEHOLDER_VERSION = '0.0.0-discovered';
+
+/**
+ * Scan statuses with no completed scan behind them: the lookup's own
+ * `not_scanned`, the ones `ai-trust check` prints as "Not scanned" (empty,
+ * `pending`, `not_applicable`), and a scan still running or one that failed
+ * to run.
+ */
+const UNSCANNED_STATUSES = new Set(['', 'not_scanned', 'pending', 'not_applicable', 'scanning', 'error']);
+
+const WARNING_STATUSES = new Set(['warnings', 'warning', 'failed', 'critical']);
+const CLEAN_STATUSES = new Set(['clean', 'passed']);
 
 // --- Testable internals ---
 
@@ -248,9 +270,12 @@ export async function trust(options: TrustOptions): Promise<number> {
     }
 
     if (isJson) {
+      // `trustScore` stays as the Registry sent it; `scored` says whether a
+      // completed scan backs it.
+      const record = { ...result.data, scored: isScored(result.data) };
       const output = options.verbose
-        ? { ...result.data, _debug: { requestUrl, responseTime: `${elapsed}ms`, httpStatus: result.status } }
-        : result.data;
+        ? { ...record, _debug: { requestUrl, responseTime: `${elapsed}ms`, httpStatus: result.status } }
+        : record;
       process.stdout.write(JSON.stringify(output, null, 2) + '\n');
     } else {
       printTrustProfile(result.data, options.verbose ?? false, requestUrl, elapsed);
@@ -282,21 +307,34 @@ export async function trust(options: TrustOptions): Promise<number> {
 
 function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestUrl?: string, elapsed?: number): void {
   const verifiedLabel = data.publisherVerified ? green('verified') : yellow('unverified');
-  const scoreDisplay = Math.round(data.trustScore * 100);
-  const scoreColor = scoreDisplay >= 70 ? green : scoreDisplay >= 30 ? yellow : red;
+  const scanBacked = isScanBacked(data);
   const levelColor = data.trustLevel === 'certified' || data.trustLevel === 'verified' ? green
     : data.trustLevel === 'claimed' || data.trustLevel === 'scanned' ? yellow
+    : data.trustLevel === 'blocked' ? red
     : dim;
 
   const typeLabel = data.displayType ?? formatPackageType(data.packageType);
+  const versionLabel = !isPlaceholderVersion(data.version) ? `v${data.version}`
+    : scanBacked ? 'version unknown'
+    : 'version unknown (not scanned)';
 
   process.stdout.write('\n');
-  process.stdout.write(bold(`${data.name} v${data.version}`) + '\n');
+  process.stdout.write(bold(`${data.name} ${versionLabel}`) + '\n');
   if (typeLabel) {
     process.stdout.write(`Type:      ${typeLabel}\n`);
   }
   process.stdout.write(`Publisher: ${data.publisher} (${verifiedLabel})\n`);
-  process.stdout.write(`Trust:     ${scoreColor(`${scoreDisplay}%`)} (${levelColor(data.trustLevel)})\n`);
+  const verdict = trustVerdict(data);
+  process.stdout.write(`Verdict:   ${VERDICT_COLOR[verdict](verdict)} (${verdictReason(verdict, data)})\n`);
+  if (isScored(data)) {
+    const scoreDisplay = Math.round(data.trustScore * 100);
+    const scoreColor = scoreDisplay >= 70 ? green : scoreDisplay >= 30 ? yellow : red;
+    process.stdout.write(`Trust:     ${scoreColor(`${scoreDisplay}%`)} (${levelColor(data.trustLevel)})\n`);
+  } else {
+    // A score the Registry derives from its listing alone is not a measurement,
+    // so no number is printed; `--json` still carries it, with `scored: false`.
+    process.stdout.write(`Trust:     ${dim(scanBacked ? 'no score' : 'not scanned')} (${levelColor(data.trustLevel)})\n`);
+  }
 
   // Security Posture
   process.stdout.write('\n');
@@ -322,13 +360,16 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
       : scan.status === 'warnings' ? yellow
       : red;
     process.stdout.write(`  Scan Status:  ${statusColor(scan.status)}\n`);
-    process.stdout.write(`  Findings:     ${scan.findingsCount ?? 0} (${scan.highCount ?? 0} high)\n`);
+    if (scanBacked) {
+      process.stdout.write(`  Findings:     ${scan.findingsCount ?? 0} (${scan.highCount ?? 0} high)\n`);
+    }
     if (scan.actionRequired) {
       // Registry data may cite a bundled tool (e.g. "hackmyagent scan <pkg>");
       // show the opena2a-prefixed form the user actually has (issue #190).
       process.stdout.write(`  Action:       ${yellow(rebrandBundledCommands(scan.actionRequired))}\n`);
     }
-    process.stdout.write(`  Last Scanned: ${formatRelativeTime(scan.lastScannedAt)}\n`);
+    const scannedAt = scan.lastScannedAt || data.lastScanned;
+    process.stdout.write(`  Last Scanned: ${scanBacked && !scannedAt ? 'not recorded' : formatScanAge(scannedAt)}\n`);
   } else {
     process.stdout.write(dim('  No scan data yet. Run: opena2a scan') + '\n');
   }
@@ -356,7 +397,8 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
       process.stdout.write(`  Dependencies: ${sc.totalDependencies}\n`);
     }
     process.stdout.write(`  Vulns:        ${critLabel}, ${highLabel}, ${medLabel}, ${lowLabel}\n`);
-    process.stdout.write(`  Published:    ${formatRelativeTime(sc.lastPublished)}\n`);
+    // No Published line: `supplyChain.lastPublished` is not a publish date
+    // (see SupplyChainInfo in atp-types.ts).
     if (sc.maintainerCount > 0) {
       process.stdout.write(`  Maintainers:  ${sc.maintainerCount}\n`);
     }
@@ -395,7 +437,7 @@ function printTrustProfile(data: TrustLookupResponse, verbose: boolean, requestU
     if (elapsed !== undefined) process.stdout.write(`  Time:     ${dim(`${elapsed}ms`)}\n`);
     process.stdout.write(`  Agent ID: ${dim(data.agentId)}\n`);
     process.stdout.write(`  Source:   ${dim(data.source ?? 'npm')}\n`);
-    process.stdout.write(`  Version:  ${dim(data.version)}\n`);
+    process.stdout.write(`  Version:  ${dim(isPlaceholderVersion(data.version) ? 'unknown' : data.version)}\n`);
     if (data.lastScanned) process.stdout.write(`  Scanned:  ${dim(data.lastScanned)}\n`);
   }
 
@@ -469,6 +511,83 @@ export function formatRelativeTime(isoDate: string | null | undefined): string {
     return `${months} months ago`;
   } catch {
     return 'never';
+  }
+}
+
+/** formatRelativeTime, with `(stale)` after a scan older than SCAN_STALE_AFTER_DAYS. */
+export function formatScanAge(isoDate: string | null | undefined): string {
+  const age = formatRelativeTime(isoDate);
+  if (age === 'never') return age;
+  const days = Math.floor((Date.now() - new Date(isoDate as string).getTime()) / DAY_MS);
+  return days > SCAN_STALE_AFTER_DAYS ? `${age} (stale)` : age;
+}
+
+// --- Record interpretation ---
+
+export type TrustVerdict = 'BLOCKED' | 'WARNING' | 'NOT SCANNED' | 'SAFE' | 'UNKNOWN';
+
+const VERDICT_COLOR: Record<TrustVerdict, (text: string) => string> = {
+  BLOCKED: red,
+  WARNING: yellow,
+  'NOT SCANNED': dim,
+  SAFE: green,
+  UNKNOWN: dim,
+};
+
+function isPlaceholderVersion(version: string | undefined): boolean {
+  return !version || version === PLACEHOLDER_VERSION;
+}
+
+/** True when a completed scan backs the record. */
+export function isScanBacked(data: TrustLookupResponse): boolean {
+  if (data.scanSummary) return !UNSCANNED_STATUSES.has(data.scanSummary.status ?? '');
+  return data.posture != null;
+}
+
+/** True when the trust score is a number a completed scan backs. */
+export function isScored(data: TrustLookupResponse): boolean {
+  return isScanBacked(data) && typeof data.trustScore === 'number' && Number.isFinite(data.trustScore);
+}
+
+/**
+ * Verdict direction for a lookup record.
+ *
+ * `opena2a registry` runs `ai-trust check`, which prints the `verdict` field
+ * of the Registry's `/api/v1/trust/query` answer. The `/v1/trust/lookup`
+ * answer this command reads has no `verdict` field, so the direction is
+ * derived from the fields it has. First match wins:
+ *   1. BLOCKED      `trustLevel` is `blocked`.
+ *   2. WARNING      a critical or high count above 0, in `scanSummary` or in
+ *                   the `supplyChain` vulnerability counts.
+ *   3. NOT SCANNED  no completed scan backs the record (isScanBacked).
+ *   4. WARNING      `scanSummary.status` is `warnings`, `warning`, `failed`
+ *                   or `critical`.
+ *   5. SAFE         `scanSummary.status` is `clean` or `passed`.
+ *   6. UNKNOWN      any other status, or a posture with no scan summary.
+ */
+export function trustVerdict(data: TrustLookupResponse): TrustVerdict {
+  if (data.trustLevel === 'blocked') return 'BLOCKED';
+  const scan = data.scanSummary;
+  const sc = data.supplyChain;
+  const severeCount = (scan?.criticalCount ?? 0) + (scan?.highCount ?? 0)
+    + (sc?.criticalVulnerabilities ?? 0) + (sc?.highVulnerabilities ?? 0);
+  if (severeCount > 0) return 'WARNING';
+  if (!isScanBacked(data)) return 'NOT SCANNED';
+  const status = scan?.status ?? '';
+  if (WARNING_STATUSES.has(status)) return 'WARNING';
+  if (CLEAN_STATUSES.has(status)) return 'SAFE';
+  return 'UNKNOWN';
+}
+
+function verdictReason(verdict: TrustVerdict, data: TrustLookupResponse): string {
+  switch (verdict) {
+    case 'BLOCKED': return 'blocked by the Registry';
+    case 'WARNING': return 'review before installing';
+    case 'NOT SCANNED': return 'no security scan on record';
+    case 'SAFE': return 'no known issues';
+    case 'UNKNOWN': return data.scanSummary
+      ? `scan status '${data.scanSummary.status}'`
+      : 'no scan status in the Registry record';
   }
 }
 
