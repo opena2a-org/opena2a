@@ -906,8 +906,10 @@ loads for it, not the rest of the installed package) and asks the registry
 whether that hash matches its record. "no data" means the registry returned
 neither a match nor a mismatch; it is not a pass.
 
-Without --package it checks hackmyagent, secretless-ai, aibrowserguard and
-ai-trust. opena2a-cli is not in that list; check it with --package opena2a-cli.
+Without --package it checks hackmyagent, secretless-ai and ai-trust; each is
+installed with opena2a-cli. opena2a-cli is not in that list; check it with
+--package opena2a-cli. A package that is not installed gets an install command
+only when opena2a-cli installs it.
 No command compares a package's installed files with the published tarball.
 To check the registry's tarball for a version against its provenance
 attestation, see

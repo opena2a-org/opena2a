@@ -8,6 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { bold, green, yellow, red, dim } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
 import { table } from '../util/format.js';
@@ -49,10 +50,38 @@ export interface ResolvedPackage {
 
 // --- Constants ---
 
-/** Checked when no --package is given. The verify help names each one. */
+/**
+ * Checked when no --package is given: the engines opena2a-cli installs with
+ * it. Each one is a dependency in package.json (a test checks this), and the
+ * verify help names each one.
+ */
 export const VERIFIABLE_PACKAGES = [
-  'hackmyagent', 'secretless-ai', 'aibrowserguard', 'ai-trust',
+  'hackmyagent', 'secretless-ai', 'ai-trust',
 ];
+
+const CLI_PACKAGE_NAME = 'opena2a-cli';
+
+let cliPackageNames: Set<string> | null = null;
+
+/**
+ * opena2a-cli and the packages `npm install -g opena2a-cli` installs with it,
+ * read from its own package.json. Only these get an install command when they
+ * are not installed; any other name may not exist on npm at all.
+ */
+function packagesInstalledWithCli(): Set<string> {
+  if (cliPackageNames) return cliPackageNames;
+  const names = new Set<string>([CLI_PACKAGE_NAME, ...VERIFIABLE_PACKAGES]);
+  try {
+    // From dist/commands/ or src/commands/, walk up to the package root
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, '..', '..', 'package.json'), 'utf-8'));
+    for (const name of Object.keys(pkg.dependencies ?? {})) names.add(name);
+    for (const name of Object.keys(pkg.optionalDependencies ?? {})) names.add(name);
+  } catch {
+    // Keep the CLI and its default list, which the test pins to dependencies.
+  }
+  cliPackageNames = names;
+  return names;
+}
 
 // --- Testable internals ---
 
@@ -322,7 +351,11 @@ function printResults(results: VerifyResult[], registryUrl: string): void {
   // Detailed per-package output
   for (const r of results) {
     if (r.registryStatus === 'not_installed') {
-      process.stdout.write(yellow(`  ${r.packageName}: not installed`) + dim(` -- Install: npm install -g ${r.packageName}`) + '\n');
+      if (packagesInstalledWithCli().has(r.packageName)) {
+        process.stdout.write(yellow(`  ${r.packageName}: not installed`) + dim(` -- Install: npm install -g ${CLI_PACKAGE_NAME}`) + '\n');
+      } else {
+        process.stdout.write(yellow(`  ${r.packageName}: not installed; not part of ${CLI_PACKAGE_NAME}`) + '\n');
+      }
       continue;
     }
 
