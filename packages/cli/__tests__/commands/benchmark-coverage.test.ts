@@ -11,7 +11,7 @@
  * coverage-gated scoring: score only what was evaluated, disclose the rest,
  * and never award a passing rating over incomplete coverage.
  */
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,8 @@ const L1_IDS = [
   'CRED-002', 'CRED-003', 'CRED-004', 'SEM-CRED-001', 'MCP-006',
   'PERM-001', 'PERM-002', 'PROMPT-001', 'DEP-001', 'LOG-001',
 ];
+/** The level vocabulary the stub serves; a test may swap it with the catalogue. */
+let levelIds: string[] = L1_IDS;
 
 const CATEGORIES = [
   {
@@ -53,7 +55,7 @@ vi.mock('hackmyagent', () => ({
   OASB_1_CATEGORIES: CATEGORIES,
   getControlsForLevel: (lvl: string) =>
     CATEGORIES.flatMap(c => c.controls).filter(c => (lvl === 'L1' ? c.level === 'L1' : true)),
-  getCheckIdsForLevel: () => L1_IDS,
+  getCheckIdsForLevel: () => levelIds,
   calculateRating: (l1: number) => (l1 === 100 ? 'Certified' : l1 >= 90 ? 'Passing' : 'Not Passing'),
   HardeningScanner: class {
     async scan() { return { findings: hardeningFindings }; }
@@ -103,6 +105,157 @@ async function runText(): Promise<string> {
 beforeEach(() => {
   hardeningFindings = [];
   credentialMatches = [];
+});
+
+const DEFAULT_CATEGORIES = [...CATEGORIES];
+
+afterEach(() => {
+  CATEGORIES.splice(0, CATEGORIES.length, ...DEFAULT_CATEGORIES);
+  levelIds = L1_IDS;
+});
+
+/** One L1 category whose single control lists `checkIds`. */
+function category(id: number, name: string, checkIds: string[]): (typeof CATEGORIES)[number] {
+  return {
+    id, name, description: '',
+    controls: [{ id: `C${id}`, name: 'x', category: name, level: 'L1', scored: true, description: '', checkIds }],
+  };
+}
+
+/**
+ * A catalogue in which, as in the real OASB-1 L1 set, one check id belongs to
+ * controls in more than one category: PERM-001, TOOL-001, PROMPT-001, NET-003
+ * and LOG-001 are each listed twice or three times. 17 category entries, 11
+ * distinct ids, and every id in the level sits in at least one category.
+ */
+function useSharedCatalogue(): void {
+  CATEGORIES.splice(0, CATEGORIES.length,
+    category(2, 'Capability & Authorization', ['PERM-001', 'TOOL-001']),
+    category(3, 'Input Security', ['PROMPT-001', 'NET-003']),
+    category(4, 'Output Security', ['TOOL-001', 'NET-003', 'OUT-001']),
+    category(5, 'Credential Protection', ['CRED-002', 'CRED-003', 'CRED-004', 'LOG-001']),
+    category(8, 'Memory & Context Integrity', ['PROMPT-001']),
+    category(9, 'Operational Security', ['PERM-001', 'NET-003', 'OPS-001']),
+    category(10, 'Monitoring & Response', ['LOG-001', 'MON-001']),
+  );
+  levelIds = [...new Set(CATEGORIES.flatMap(c => c.controls.flatMap(ctl => ctl.checkIds)))];
+}
+
+/** Hardening findings that evaluate `ids`, failing the ones in `failing`. */
+function evaluate(ids: string[], failing: string[]): Array<Record<string, unknown>> {
+  return ids.map(id => ({ checkId: id, passed: !failing.includes(id), severity: 'info' }));
+}
+
+/** The header's `(X of Y ... evaluated)` figures. */
+function headerCounts(text: string): { evaluated: number; total: number } {
+  const m = text.match(/^\s*L1:.*\((\d+) of (\d+)[^)]*evaluated\)/m);
+  expect(m, 'L1 score line').not.toBeNull();
+  return { evaluated: Number(m![1]), total: Number(m![2]) };
+}
+
+/** The `(X of Y ... assessed` figures of every category line, summed. */
+function categorySums(text: string): { assessed: number; total: number } {
+  let assessed = 0;
+  let total = 0;
+  for (const line of text.split('\n')) {
+    const m = line.match(/^ {4}\d+\. .*\((\d+) of (\d+)[^)]*assessed/);
+    if (!m) continue;
+    assessed += Number(m[1]);
+    total += Number(m[2]);
+  }
+  return { assessed, total };
+}
+
+/** The "Failing controls to address" entries: category name -> ids. */
+function failingList(text: string): Map<string, string[]> {
+  const lines = text.split('\n');
+  const start = lines.findIndex(l => l.trim() === 'Failing controls to address:');
+  const listed = new Map<string, string[]>();
+  if (start === -1) return listed;
+  for (const line of lines.slice(start + 1)) {
+    const m = line.match(/^ {4}- (.+?): (.+)$/);
+    if (!m) break;
+    listed.set(m[1], m[2].split(', '));
+  }
+  return listed;
+}
+
+function failingCount(text: string): number {
+  const m = text.match(/^\s*Failing:\s+(\d+)$/m);
+  expect(m, 'Failing line').not.toBeNull();
+  return Number(m![1]);
+}
+
+describe('benchmark header, categories and failing list add up', () => {
+  it('category assessed figures sum to the header when a check id sits in two categories', async () => {
+    useSharedCatalogue();
+    hardeningFindings = evaluate(
+      ['PERM-001', 'TOOL-001', 'NET-003', 'PROMPT-001', 'LOG-001', 'OPS-001'],
+      ['PERM-001', 'NET-003', 'OPS-001'],
+    );
+    const text = await runText();
+
+    const header = headerCounts(text);
+    // CRED-002/003/004 come from the credential scan.
+    expect(header).toEqual({ evaluated: 9, total: 11 });
+    expect(categorySums(text)).toEqual({ assessed: header.evaluated, total: header.total });
+
+    const listed = failingList(text);
+    expect([...listed.values()].flat().length).toBe(failingCount(text));
+    expect(failingCount(text)).toBe(3);
+  });
+
+  it('lists every failing category, and as many ids as the Failing line counts', async () => {
+    useSharedCatalogue();
+    hardeningFindings = evaluate(
+      ['PERM-001', 'PROMPT-001', 'OUT-001', 'CRED-003', 'MON-001'],
+      ['PERM-001', 'PROMPT-001', 'OUT-001', 'CRED-003', 'MON-001'],
+    );
+    const text = await runText();
+
+    const listed = failingList(text);
+    expect([...listed.keys()]).toEqual([
+      'Capability & Authorization',
+      'Input Security',
+      'Output Security',
+      'Credential Protection',
+      'Monitoring & Response',
+    ]);
+    expect([...listed.values()].flat().length).toBe(failingCount(text));
+    expect(failingCount(text)).toBe(5);
+  });
+
+  it('the score line says the percentage is over evaluated controls', async () => {
+    const text = await runText();
+    expect(text).toMatch(/^\s*L1:\s+\d+% of evaluated controls \(\d+ of \d+ evaluated\)$/m);
+  });
+
+  it('names where a shared check id is counted, and explains it only when one exists', async () => {
+    const note = 'Controls per category can repeat a check id; the level total counts each id once.';
+    expect(await runText()).not.toContain(note);
+
+    useSharedCatalogue();
+    hardeningFindings = evaluate(['PERM-001', 'TOOL-001', 'NET-003'], []);
+    const text = await runText();
+    expect(text).toContain(note);
+    expect(text).toMatch(/Operational Security: .*2 shared with Capability & Authorization, Input Security\)/);
+    expect(text).toMatch(/Memory & Context Integrity: counted under Input Security/);
+  });
+
+  it('JSON categories add up to coverage and summary', async () => {
+    useSharedCatalogue();
+    hardeningFindings = evaluate(['PERM-001', 'NET-003', 'OPS-001', 'LOG-001'], ['PERM-001', 'NET-003']);
+    const r = await runJson();
+    const sum = (f: (c: any) => number) => r.categories.reduce((n: number, c: any) => n + f(c), 0);
+
+    expect(sum(c => c.evaluated)).toBe(r.coverage.evaluated);
+    expect(sum(c => c.totalChecks)).toBe(r.coverage.total);
+    expect(sum(c => c.failing.length)).toBe(r.summary.failingControls);
+    expect(r.coverage.total).toBe(11);
+
+    const memory = r.categories.find((c: any) => c.id === 8);
+    expect(memory.sharedCheckIds).toEqual([{ checkId: 'PROMPT-001', countedUnder: 'Input Security' }]);
+  });
 });
 
 describe('benchmark coverage gating (#250)', () => {
