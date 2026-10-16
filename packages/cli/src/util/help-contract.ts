@@ -53,6 +53,11 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     'hackmyagent is not installed or could not start',
     'passed to hackmyagent fix-all as --json',
   ),
+  nanomind: engineContract(
+    'hackmyagent nanomind',
+    'hackmyagent is not installed or could not start',
+    'not supported; a note is printed and the output stays text',
+  ),
   secrets: engineContract(
     'secretless-ai',
     'secretless-ai is not installed or could not start',

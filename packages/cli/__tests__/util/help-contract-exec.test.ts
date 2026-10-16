@@ -357,6 +357,20 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
       output: /fix-all is not installed/,
     }],
   },
+  nanomind: {
+    engine: [{
+      when: 'the exit status of hackmyagent nanomind, passed through unchanged',
+      args: ['nanomind', '--no-such-option'],
+      engine: () => [workspaceBin('hackmyagent'), 'nanomind', '--no-such-option'],
+      output: /unknown option '--no-such-option'/,
+    }],
+    '1': [{
+      when: 'hackmyagent is not installed or could not start',
+      args: ['nanomind', 'status'],
+      hide: ['hackmyagent'],
+      output: /nanomind is not installed/,
+    }],
+  },
   secrets: {
     engine: [{
       when: 'the exit status of secretless-ai, passed through unchanged',

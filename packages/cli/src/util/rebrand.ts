@@ -30,11 +30,14 @@
 /**
  * hackmyagent verbs opena2a forwards faithfully. CONSERVATIVE on purpose: the
  * `scan` adapter exposes `scan`/`secure`, the router routes `check <pkg>` to
- * HMA, and the `rollback` / `fix-all` adapters pass their verb straight
- * through (#269). Other HMA verbs (harden-soul, trust, detect, ...) have
- * opena2a commands whose semantics may differ, so we do not claim them.
+ * HMA, and the `rollback` / `fix-all` / `nanomind` adapters pass their verb
+ * straight through (#269). Other HMA verbs (harden-soul, trust, detect, ...)
+ * have opena2a commands whose semantics may differ, so we do not claim them:
+ * `opena2a harden-soul` calls the programmatic API, which takes no backup
+ * before it writes and exits 0 when the write is refused, where
+ * `hackmyagent harden-soul` backs up first and exits 1.
  */
-const HMA_VERBS = ['secure', 'scan', 'check', 'rollback', 'fix-all'] as const;
+const HMA_VERBS = ['secure', 'scan', 'check', 'rollback', 'fix-all', 'nanomind'] as const;
 
 /**
  * secretless-ai verbs. The `secrets` adapter forwards args verbatim (no

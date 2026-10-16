@@ -275,6 +275,19 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     jsonOutputFlag: '--json',
     ...CHILD_ENV_CONTRACTS.hackmyagent,
   },
+  // `check --nanomind` prints "Model not set up. Run: opena2a nanomind setup"
+  // (HMA_CLI_PREFIX). Forwarded like rollback and fix-all so the cited setup
+  // and status commands run.
+  nanomind: {
+    name: 'nanomind',
+    method: 'import',
+    packageName: 'hackmyagent',
+    subcommand: 'nanomind',
+    description: 'Install or check the NanoMind-Guard daemon that check --nanomind uses (HackMyAgent)',
+    // `hackmyagent nanomind setup|status` take no output flags.
+    acceptsFormatFlag: false,
+    ...CHILD_ENV_CONTRACTS.hackmyagent,
+  },
   secrets: {
     name: 'secrets',
     method: 'import',

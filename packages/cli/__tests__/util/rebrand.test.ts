@@ -142,6 +142,23 @@ describe('rebrandBundledCommands — #191 import/python surfaces', () => {
     });
   });
 
+  describe('hackmyagent nanomind verb (registered as a passthrough)', () => {
+    it('rewrites the setup and status citations to the registered opena2a verb', () => {
+      expect(rebrandBundledCommands('Run: hackmyagent nanomind setup')).toBe('Run: opena2a nanomind setup');
+      expect(rebrandBundledCommands('Verify: hackmyagent nanomind status'))
+        .toBe('Verify: opena2a nanomind status');
+    });
+  });
+
+  describe('hackmyagent harden-soul (not rewritten)', () => {
+    it('leaves the citation alone: opena2a harden-soul writes without the backup rollback restores', () => {
+      // `hackmyagent harden-soul` takes a backup before it writes and exits 1
+      // when the write is refused; `opena2a harden-soul` calls the
+      // programmatic API without either, so it is not a faithful equivalent.
+      expect(rebrandBundledCommands('Run: hackmyagent harden-soul .')).toBe('Run: hackmyagent harden-soul .');
+    });
+  });
+
   describe('ADVERSARIAL — must NOT corrupt non-citation tool mentions', () => {
     it('preserves a Python import statement (verbatim from cryptoserve help)', () => {
       // `import` is not a cryptoserve CLI verb, so `cryptoserve import` never matches.
