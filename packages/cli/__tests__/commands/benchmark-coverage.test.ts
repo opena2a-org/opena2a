@@ -11,7 +11,10 @@
  * coverage-gated scoring: score only what was evaluated, disclose the rest,
  * and never award a passing rating over incomplete coverage.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { tmpdir } from 'node:os';
 
 /** OASB L1 vocabulary, trimmed to what these tests exercise. */
 const L1_IDS = [
@@ -73,10 +76,18 @@ vi.mock('../../src/util/credential-patterns.js', async (importOriginal) => {
 
 const { benchmark } = await import('../../src/commands/benchmark.js');
 
+/** Both scans are mocked, so the target's content does not matter; it only
+ *  has to exist, because `benchmark` refuses a missing target before scanning. */
+const target = fs.mkdtempSync(path.join(tmpdir(), 'bench-coverage-'));
+
+afterAll(() => {
+  fs.rmSync(target, { recursive: true, force: true });
+});
+
 async function runJson(): Promise<Record<string, any>> {
   let out = '';
   const spy = vi.spyOn(process.stdout, 'write').mockImplementation((c: any) => { out += c; return true; });
-  await benchmark({ targetDir: '/tmp/does-not-matter', format: 'json' });
+  await benchmark({ targetDir: target, format: 'json' });
   spy.mockRestore();
   return JSON.parse(out);
 }
@@ -84,7 +95,7 @@ async function runJson(): Promise<Record<string, any>> {
 async function runText(): Promise<string> {
   let out = '';
   const spy = vi.spyOn(process.stdout, 'write').mockImplementation((c: any) => { out += c; return true; });
-  await benchmark({ targetDir: '/tmp/does-not-matter', verbose: true });
+  await benchmark({ targetDir: target, verbose: true });
   spy.mockRestore();
   return out;
 }

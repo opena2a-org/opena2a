@@ -34,7 +34,10 @@
  * thin-but-true number beats a complete-looking false one.
  */
 
+import { readdirSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { quickCredentialScan } from '../util/credential-patterns.js';
+import { shellWord } from '../util/shell-word.js';
 
 export interface BenchmarkOptions {
   targetDir?: string;
@@ -105,6 +108,38 @@ async function getHMA(): Promise<any> {
     process.stderr.write('Install: npm install -g hackmyagent\n');
     return null;
   }
+}
+
+/** A user-supplied path made safe to echo on one terminal line: control
+ *  characters (ESC, newline, the rest of C0 and C1, and DEL) are removed, so
+ *  a crafted directory name cannot inject an escape sequence or forge a line
+ *  of its own. */
+function printable(value: string): string {
+  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+}
+
+/**
+ * Why a target cannot be scanned, or null when it can.
+ *
+ * The HardeningScanner resolves on a missing directory rather than throwing,
+ * so without this check a mistyped path printed a rating and a percentage
+ * over a run that read nothing, and exited 0.
+ */
+function unscannableTarget(dir: string): 'does not exist' | 'is not a directory' | 'could not be read' | null {
+  let isDirectory: boolean;
+  try {
+    isDirectory = statSync(dir).isDirectory();
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? 'does not exist' : 'could not be read';
+  }
+  if (!isDirectory) return 'is not a directory';
+  try {
+    readdirSync(dir);
+  } catch {
+    return 'could not be read';
+  }
+  return null;
 }
 
 /**
@@ -183,6 +218,19 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
   }
 
   const targetDir = options.targetDir ?? process.cwd();
+
+  // Refuse a target that cannot be scanned before any scan runs. Exit 2 keeps
+  // a CI gate red and stays distinct from findings; it is not gated on --ci.
+  // No rating and no percentage is printed on either channel, in any format.
+  const problem = unscannableTarget(targetDir);
+  if (problem) {
+    const shown = printable(resolve(targetDir));
+    const quoted = /^[A-Za-z0-9_./-]+$/.test(shown) ? shown : shellWord(shown);
+    process.stderr.write(`opena2a benchmark: ${shown} ${problem}, so nothing was scanned.\n`);
+    process.stderr.write(`  Verify: ls -ld ${quoted}\n`);
+    return 2;
+  }
+
   const level = (options.level ?? 'L1').toUpperCase();
 
   if (!['L1', 'L2', 'L3'].includes(level)) {
