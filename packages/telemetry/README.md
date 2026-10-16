@@ -186,7 +186,7 @@ Only these fields, exactly:
 |--------------|-----------------------------|----------------------------------|
 | `tool`       | `"dvaa"`                    | Which tool fired the event       |
 | `version`    | `"0.8.1"`                   | Version distribution             |
-| `installId`  | `<random UUID>`             | Unique-installs aggregate (DAU)  |
+| `installId`  | a SHA-256, written as a UUID, of the OS machine ID, or of the hostname, platform and Node major where no machine ID can be read; random only when neither can be read | Unique-installs aggregate (DAU)  |
 | `event`      | `"install" \| "start" \| "command" \| "error"` | Event class |
 | `name`       | `"scan"` (command events)   | Command-use heatmap              |
 | `success`    | `true` (command events)     | Success rate per command         |
