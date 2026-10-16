@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -95,9 +95,13 @@ describe('printed commands over scanned paths run as printed', () => {
     fs.writeFileSync(path.join(repo, TEXT_CRED_FILE), `const k = "${FAKE_ANTHROPIC_KEY}";\n`);
     fs.writeFileSync(path.join(repo, TEMPLATE_FILE), 'ANTHROPIC_API_KEY=FAKE\n');
     git(repo, ['add', '--', ...ALL_FILES]);
+    // The commands are printed for the directory init runs in, and these
+    // cells run them in `repo`; init runs there too.
+    vi.spyOn(process, 'cwd').mockReturnValue(repo);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fs.rmSync(repo, { recursive: true, force: true });
   });
 

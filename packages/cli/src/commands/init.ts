@@ -6,12 +6,13 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
 import { scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
-import { shellWord } from '../util/shell-word.js';
+import { pathFrom, shellPath, shellWord } from '../util/shell-word.js';
 import { advisoriesNotChecked, checkAdvisories, printAdvisoryWarnings, type AdvisoryCheck } from '../util/advisories.js';
 import { getRegistryUrl } from '../util/report-submission.js';
 import { wordWrap, severityLabel, severityColor } from '../util/format.js';
@@ -352,25 +353,25 @@ export async function init(options: InitOptions): Promise<number> {
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
           process.stdout.write(`  ${dim('  Keys provisioned for Maps silently authenticate to Gemini if the')}\n`);
           process.stdout.write(`  ${dim('  Generative Language API is enabled in the same GCP project.')}\n`);
-          process.stdout.write(`  ${dim('  Scan:    opena2a protect --dry-run')}\n`);
-          process.stdout.write(`  ${dim('           (scans and reports drift, no live API checks)')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (live Gemini API access check; reports drift, changes no file)')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
           process.stdout.write(`  ${dim('           (runs live Gemini API access check and applies fixes)')}\n`);
         } else if (findingId === 'DRIFT-002') {
           process.stdout.write(`  ${yellow(findingId)}  AWS key may access Bedrock AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
           process.stdout.write(`  ${dim('  IAM policies frequently over-provision. A key scoped for S3/EC2')}\n`);
           process.stdout.write(`  ${dim('  may also pass STS auth and call Bedrock LLM endpoints.')}\n`);
-          process.stdout.write(`  ${dim('  Scan:    opena2a protect --dry-run')}\n`);
-          process.stdout.write(`  ${dim('           (scans and reports drift, no live API checks)')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (live STS + Bedrock access check; reports drift, changes no file)')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
           process.stdout.write(`  ${dim('           (runs live STS + Bedrock access check and applies fixes)')}\n`);
         } else {
           process.stdout.write(`  ${yellow(findingId)}  Credential scope drift  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
-          process.stdout.write(`  ${dim('  Scan:    opena2a protect --dry-run')}\n`);
-          process.stdout.write(`  ${dim('           (scans and reports drift, no live API checks)')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect')}\n`);
+          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim('           (live access check; reports drift, changes no file)')}\n`);
+          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
           process.stdout.write(`  ${dim('           (runs live access check and applies fixes)')}\n`);
         }
         process.stdout.write('\n');
@@ -775,9 +776,11 @@ function generateActions(
   // template). The command reveals every offending line so the user can
   // sanitize it; no dead end at `protect` (which reports "nothing to migrate").
   if (templateLeaks.length > 0) {
-    const files = Array.from(new Set(templateLeaks.map(l =>
-      targetDir ? path.relative(targetDir, l.filePath) : path.basename(l.filePath))));
-    const quoted = files.map(shellWord).join(' ');
+    const leakFiles = Array.from(new Set(templateLeaks.map(l => l.filePath)));
+    const files = leakFiles.map(f => targetDir ? path.relative(targetDir, f) : path.basename(f));
+    // The description names the files as the report does; the command names
+    // them from the directory `init` was run in, where it is pasted.
+    const quoted = leakFiles.map(f => shellPath(f)).join(' ');
     actions.push({
       description: `Sanitize ${files.join(', ')} — replace credential-shaped values with placeholders`,
       command: `grep -nE 'AKIA|gh[ps]_|AIza|sk-ant-api|sk-proj-|sk-[A-Za-z0-9]{40}|sk_live_' ${quoted}`,
@@ -972,6 +975,10 @@ function generateNextSteps(
 
 // Exported for regression testing of the per-finding Verify command strings
 // (e.g. the ENV-DOTENV command must not error on a project with no .gitignore).
+//
+// Every path in a Verify is named from the directory `init` was run in, which
+// is where the user pastes it and is not `reportDir` when a directory was
+// given (`shellPath`: relative under the current directory, else absolute).
 export function getVerificationCommand(
   finding: GroupedFinding,
   reportDir: string,
@@ -982,7 +989,7 @@ export function getVerificationCommand(
     finding.locations.length > 0
   ) {
     const loc = finding.locations[0];
-    const rel = shellWord(path.relative(reportDir, loc.file));
+    const rel = shellPath(loc.file);
     // Keyfile/certfile findings target binary or PEM-armored files. `sed -n
     // '1p'` on a `.p12`/`.pfx` dumps raw binary to the terminal — a
     // verification dead-end. For PEM-armored `.pem`/`.key`/`.crt`/`.cer` the
@@ -1004,14 +1011,16 @@ export function getVerificationCommand(
   // remediation (placeholder + rotate) lives in the finding + the action.
   if (finding.findingId === 'ENV-EXAMPLE-LEAK' && finding.locations.length > 0) {
     const loc = finding.locations[0];
-    return `sed -n '${loc.line}p' ${shellWord(path.relative(reportDir, loc.file))}`;
+    return `sed -n '${loc.line}p' ${shellPath(loc.file)}`;
   }
 
-  // HMA findings -- title contains "~/.zshrc:132 contains ..." pattern
+  // HMA findings -- title contains "~/.zshrc:132 contains ..." pattern. A
+  // quoted word does not expand `~`, so it is expanded here.
   if (finding.findingId.startsWith('HMA-')) {
     const match = finding.title.match(/^(.+?):(\d+)\s+contains\s+/);
     if (match) {
-      return `sed -n '${match[2]}p' ${match[1]}`;
+      const file = match[1].startsWith('~/') ? path.join(os.homedir(), match[1].slice(2)) : match[1];
+      return `sed -n '${match[2]}p' ${shellPath(file)}`;
     }
   }
 
@@ -1023,33 +1032,29 @@ export function getVerificationCommand(
     // writes to stderr ("No such file"), so a bare `cat .gitignore | grep` errors
     // on an empty/new project (issue: 0.10.8 release-test P3). Suppress the error
     // and print 0 — which correctly reads as ".env is not ignored".
-    return "grep -c '\\.env' .gitignore 2>/dev/null || echo 0";
+    return `grep -c '\\.env' ${shellPath(path.join(reportDir, '.gitignore'))} 2>/dev/null || echo 0`;
   }
-  if (finding.findingId === 'MCP-TOOLS') {
+  if (finding.findingId === 'MCP-TOOLS' || finding.findingId === 'MCP-CRED') {
     // Show the first MCP config file found
-    for (const f of ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json']) {
+    for (const f of HYGIENE_FILE_PROBES[finding.findingId]) {
       if (fs.existsSync(path.join(reportDir, f))) {
-        return `cat ${f}`;
+        return `cat ${shellPath(path.join(reportDir, f))}`;
       }
     }
-    return 'cat mcp.json';
-  }
-  if (finding.findingId === 'MCP-CRED') {
-    for (const f of ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json']) {
-      if (fs.existsSync(path.join(reportDir, f))) {
-        return `cat ${f}`;
-      }
-    }
-    return 'cat mcp.json';
+    return `cat ${shellPath(path.join(reportDir, 'mcp.json'))}`;
   }
   if (finding.findingId === 'AI-CONFIG') {
-    return 'cat .gitignore';
+    return `cat ${shellPath(path.join(reportDir, '.gitignore'))}`;
   }
   if (finding.findingId === 'AI-SKILLS') {
-    return 'ls *.skill.md SKILL.md 2>/dev/null';
+    // The globs stay outside the quotes so the shell expands them.
+    const dir = pathFrom(reportDir);
+    const prefix = dir === '.' ? '' : `${shellWord(dir)}/`;
+    return `ls ${prefix}*.skill.md ${prefix}SKILL.md 2>/dev/null`;
   }
   if (finding.findingId === 'AI-SOUL') {
-    return 'head -20 soul.md';
+    const soul = finding.locations[0]?.file ?? path.join(reportDir, 'soul.md');
+    return `head -20 ${shellPath(soul)}`;
   }
   return null;
 }
