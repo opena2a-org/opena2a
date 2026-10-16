@@ -61,6 +61,20 @@ describe('adapter registry', () => {
     }
   });
 
+  it('forwards nanomind to the bundled hackmyagent nanomind command', () => {
+    // `check --nanomind` cites `opena2a nanomind setup`; the verb must resolve
+    // to the engine's own subcommand, with the scanner's child environment.
+    const config = ADAPTER_REGISTRY.nanomind;
+    expect(config).toBeDefined();
+    expect(config.method).toBe('import');
+    expect(config.packageName).toBe('hackmyagent');
+    expect(config.subcommand).toBe('nanomind');
+    expect(config.acceptsFormatFlag).toBe(false);
+    expect(config.envAllow).toEqual(ADAPTER_REGISTRY.scan.envAllow);
+    expect(config.envAllowPrefixes).toEqual(ADAPTER_REGISTRY.scan.envAllowPrefixes);
+    expect(createAdapter('nanomind')).not.toBeNull();
+  });
+
   it('creates correct adapter types', () => {
     expect(createAdapter('scan')).not.toBeNull();
     expect(createAdapter('train')).not.toBeNull();
