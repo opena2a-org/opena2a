@@ -2,7 +2,24 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { PackageNotFoundError, RegistryApiError } from '@opena2a/registry-client';
 import { mcpCommand, _internals } from '../../src/commands/mcp-audit.js';
+
+// No test reaches the network: every trust lookup goes to this stub, which
+// fails unless a test answers for the name it is asked about.
+const registryStub = vi.hoisted(() => ({ checkTrust: vi.fn() }));
+
+vi.mock('@opena2a/registry-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@opena2a/registry-client')>();
+  return {
+    ...actual,
+    RegistryClient: class {
+      checkTrust(name: string, type?: string) {
+        return registryStub.checkTrust(name, type);
+      }
+    },
+  };
+});
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
   const chunks: string[] = [];
@@ -51,6 +68,8 @@ describe('mcp-audit', () => {
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-mcp-test-'));
+    registryStub.checkTrust.mockReset();
+    registryStub.checkTrust.mockRejectedValue(new Error('registry not stubbed for this test'));
   });
 
   afterEach(() => {
@@ -845,6 +864,197 @@ describe('mcp-audit', () => {
       const result = JSON.parse(output);
       expect(result.servers).toHaveLength(2);
       expect(result.servers.map((s: any) => s.name).sort()).toEqual(['server-a', 'server-b']);
+    });
+  });
+
+  describe('registryNameFor', () => {
+    const stdio = (command: string, args: string[]) => ({ transport: 'stdio', command, args });
+
+    it('returns the scoped package an npx server runs', () => {
+      expect(_internals.registryNameFor(stdio('npx', ['-y', '@modelcontextprotocol/server-filesystem', '/'])))
+        .toBe('@modelcontextprotocol/server-filesystem');
+    });
+
+    it('strips a version suffix and keeps a scope', () => {
+      expect(_internals.registryNameFor(stdio('npx', ['-y', 'pkg@1.2.3']))).toBe('pkg');
+      expect(_internals.registryNameFor(stdio('npx', ['--yes', '@scope/pkg@latest']))).toBe('@scope/pkg');
+    });
+
+    it('reads npm exec, pnpm dlx and bunx', () => {
+      expect(_internals.registryNameFor(stdio('npm', ['exec', '--yes', '--', '@scope/pkg@2.0.0', '.']))).toBe('@scope/pkg');
+      expect(_internals.registryNameFor(stdio('pnpm', ['dlx', 'pkg@1']))).toBe('pkg');
+      expect(_internals.registryNameFor(stdio('bunx', ['pkg', '--port', '3000']))).toBe('pkg');
+      expect(_internals.registryNameFor(stdio('/usr/local/bin/npx', ['-y', 'pkg']))).toBe('pkg');
+    });
+
+    it('returns the package --package= names, not the binary after it', () => {
+      expect(_internals.registryNameFor(stdio('npx', ['-y', '--package=@scope/pkg@1.0.0', 'pkg-bin']))).toBe('@scope/pkg');
+    });
+
+    it('returns null for a node <file>, a bare binary and a URL server', () => {
+      expect(_internals.registryNameFor(stdio('node', ['server.js']))).toBeNull();
+      expect(_internals.registryNameFor(stdio('mcp-server-git', ['--repository', '.']))).toBeNull();
+      expect(_internals.registryNameFor(stdio('npm', ['run', 'serve']))).toBeNull();
+      expect(_internals.registryNameFor(stdio('pnpm', ['start']))).toBeNull();
+      expect(_internals.registryNameFor({ transport: 'sse', url: 'http://localhost:5000/sse' })).toBeNull();
+    });
+
+    it('returns null when the runner argument is not an npm package name', () => {
+      expect(_internals.registryNameFor(stdio('npx', ['-y', './local-server']))).toBeNull();
+      expect(_internals.registryNameFor(stdio('npx', ['github:user/repo']))).toBeNull();
+      expect(_internals.registryNameFor(stdio('npx', ['user/repo']))).toBeNull();
+      expect(_internals.registryNameFor(stdio('npx', ['-y']))).toBeNull();
+    });
+  });
+
+  describe('trust lookup', () => {
+    let savedHome: string | undefined;
+
+    // The server entries of the adversarial fixture's mcp.json. Its env blocks
+    // are left out: they hold credential-shaped values and the lookup never
+    // reads them.
+    const FIXTURE_MCP = {
+      mcpServers: {
+        'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+        'shell-executor': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-shell'] },
+        'database-admin': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres'] },
+        'network-fetch': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-fetch'] },
+        'external-analytics': { command: 'node', args: ['analytics-agent.js'] },
+        'wildcard-tools': { transport: { type: 'sse', url: 'http://0.0.0.0:9999/mcp' }, tools: ['*'] },
+      },
+    };
+
+    // filesystem is scored, shell has no record (404), postgres is listed and
+    // never scanned, fetch cannot be reached.
+    function answerLikeTheRegistry(): void {
+      registryStub.checkTrust.mockImplementation(async (name: string) => {
+        if (name === '@modelcontextprotocol/server-filesystem') {
+          return { packageId: '7b70f85f-d988-4fbf-8d5e-993ce58ed10c', name, trustScore: 0.7866666666666666, trustLevel: 3, verdict: 'passed', found: true };
+        }
+        if (name === '@modelcontextprotocol/server-postgres') {
+          return { packageId: '16b7fe58-7e28-41d0-a88c-e2bef2a2c7d9', name, trustScore: 0, trustLevel: 2, verdict: 'listed', scanStatus: '', found: true };
+        }
+        if (name === '@modelcontextprotocol/server-fetch') {
+          throw new RegistryApiError('Network error contacting registry', 'network');
+        }
+        throw new PackageNotFoundError(name);
+      });
+    }
+
+    function rowFor(output: string, serverName: string): string {
+      return output.split('\n').find(line => line.trimStart().startsWith(`${serverName} `)) ?? '';
+    }
+
+    beforeEach(() => {
+      savedHome = process.env.HOME;
+      process.env.HOME = path.join(tempDir, 'home');
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify(FIXTURE_MCP));
+    });
+
+    afterEach(() => {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+    });
+
+    it('looks up the package a server runs, not its config key', async () => {
+      answerLikeTheRegistry();
+
+      const { exitCode, output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, format: 'text' }),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(rowFor(output, 'filesystem-root')).toContain('trust: 79');
+      expect(registryStub.checkTrust).toHaveBeenCalledWith('@modelcontextprotocol/server-filesystem', 'mcp_server');
+      expect(registryStub.checkTrust).not.toHaveBeenCalledWith('filesystem-root', expect.anything());
+      expect(registryStub.checkTrust).toHaveBeenCalledTimes(4);
+    });
+
+    it('tells a missing record, an unscanned record, a server without a package and a failed lookup apart', async () => {
+      answerLikeTheRegistry();
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, format: 'text' }),
+      );
+
+      expect(rowFor(output, 'shell-executor')).toContain('not in registry');
+      expect(rowFor(output, 'database-admin')).toContain('listed, not scanned');
+      expect(rowFor(output, 'database-admin')).not.toContain('trust:');
+      expect(rowFor(output, 'network-fetch')).toContain('lookup failed');
+      expect(rowFor(output, 'external-analytics')).toContain('no package to look up');
+      expect(output).not.toContain('no trust score');
+      expect(output).toContain(
+        'Trust scores:      1 / 4 looked up; 1 listed, not scanned; 1 lookup failed; 1 server has no package name',
+      );
+    });
+
+    it('reads an answer without a record as not in registry', async () => {
+      const server = { name: 'pg', transport: 'stdio' as const, command: 'npx', args: ['-y', 'pkg'], pinnedVersion: false, sourceFile: 'mcp.json', sourceLabel: 'project-local' };
+      const answer = (data: object) => () => Promise.resolve({ checkTrust: async () => data as any });
+
+      expect(await _internals.lookupTrust(server, answer({ name: 'pkg', trustScore: 0, verdict: 'unknown', found: false })))
+        .toEqual({ registryName: 'pkg', trustLookup: 'notInRegistry', trustScore: null });
+      expect(await _internals.lookupTrust(server, answer({ name: 'pkg', verdict: 'passed', found: true })))
+        .toEqual({ registryName: 'pkg', trustLookup: 'failed', trustScore: null });
+      expect(await _internals.lookupTrust(server, null))
+        .toEqual({ registryName: 'pkg', trustLookup: 'skipped', trustScore: null });
+    });
+
+    it('carries registryName and trustLookup per server in JSON', async () => {
+      answerLikeTheRegistry();
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, format: 'json' }),
+      );
+
+      const result = JSON.parse(output);
+      const byName = Object.fromEntries(result.servers.map((s: any) => [s.name, s]));
+      expect(byName['filesystem-root']).toMatchObject({
+        registryName: '@modelcontextprotocol/server-filesystem',
+        trustLookup: 'scored',
+        trustScore: 79,
+      });
+      expect(byName['shell-executor']).toMatchObject({ registryName: '@modelcontextprotocol/server-shell', trustLookup: 'notInRegistry', trustScore: null });
+      expect(byName['database-admin']).toMatchObject({ trustLookup: 'notScanned', trustScore: null });
+      expect(byName['network-fetch']).toMatchObject({ trustLookup: 'failed', trustScore: null });
+      expect(byName['external-analytics']).toMatchObject({ registryName: null, trustLookup: 'noPackage', trustScore: null });
+      expect(result.summary).toMatchObject({ total: 5, trustScores: 1, lookedUp: 4, notScanned: 1, lookupsFailed: 1, noPackage: 1 });
+    });
+
+    it('--ci sends no lookup and labels the rows as not looked up', async () => {
+      const text = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, ci: true, format: 'text' }),
+      );
+      const json = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, ci: true, format: 'json' }),
+      );
+
+      expect(registryStub.checkTrust).not.toHaveBeenCalled();
+      expect(rowFor(text.output, 'filesystem-root')).toContain('not looked up (--ci)');
+      expect(rowFor(text.output, 'external-analytics')).toContain('no package to look up');
+      expect(text.output).toContain('Trust scores:      not looked up (--ci); 1 server has no package name');
+      const byName = Object.fromEntries(JSON.parse(json.output).servers.map((s: any) => [s.name, s]));
+      expect(byName['filesystem-root']).toMatchObject({ registryName: '@modelcontextprotocol/server-filesystem', trustLookup: 'skipped' });
+      expect(byName['external-analytics']).toMatchObject({ registryName: null, trustLookup: 'noPackage' });
+    });
+
+    it('mcp verify looks up the package the server runs', async () => {
+      answerLikeTheRegistry();
+      await captureStdout(() =>
+        mcpCommand({ subcommand: 'sign', server: 'filesystem-root', targetDir: tempDir, format: 'json' }),
+      );
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'verify', server: 'filesystem-root', targetDir: tempDir, format: 'json' }),
+      );
+
+      expect(JSON.parse(output)).toMatchObject({
+        status: 'verified',
+        trustScore: 79,
+        registryName: '@modelcontextprotocol/server-filesystem',
+        trustLookup: 'scored',
+      });
+      expect(registryStub.checkTrust).not.toHaveBeenCalledWith('filesystem-root', expect.anything());
     });
   });
 

@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 import { bold, dim, green, yellow, red, cyan, gray } from '../util/colors.js';
 import { getVersion } from '../util/version.js';
+import { registryNameFor } from '../util/mcp-registry-name.js';
 
 // No local default: the registry host is resolved once, centrally, so this
 // command cannot drift onto a different answer than `trust` / `claim` / `config
@@ -153,23 +154,75 @@ function computeConfigHash(entry: McpServerEntry): string {
 
 // ── Registry trust score ──────────────────────────────────────────────
 
-async function fetchTrustScore(serverName: string): Promise<number | null> {
-  try {
+/**
+ * scored: the registry holds a record and a score. notScanned: it holds a
+ * record that was never scanned (verdict "listed"), whose score of 0 measures
+ * nothing. notInRegistry: it answered and holds no record. noPackage: the
+ * server is not started from an npm package, so there is no name to look up.
+ * failed: the lookup did not get an answer. skipped: --ci, which sends no
+ * lookup.
+ */
+type TrustLookup = 'scored' | 'notScanned' | 'notInRegistry' | 'noPackage' | 'failed' | 'skipped';
+
+interface TrustResult {
+  registryName: string | null;
+  trustLookup: TrustLookup;
+  trustScore: number | null;
+}
+
+interface TrustClient {
+  checkTrust(name: string, type?: string): Promise<{ found: boolean; trustScore: number; verdict: string }>;
+}
+
+/** One registry client per command run, created by the first lookup and shared by the rest. */
+function trustClientOnce(): () => Promise<TrustClient> {
+  let client: Promise<TrustClient> | undefined;
+  return () => (client ??= (async () => {
     const { RegistryClient } = await import('@opena2a/registry-client');
     const { getRegistryUrl } = await import('../util/report-submission.js');
-    const client = new RegistryClient({
+    return new RegistryClient({
       baseUrl: await getRegistryUrl(),
       userAgent: `opena2a-cli/${getVersion()}`,
       timeoutMs: 5000,
     });
-    const data = await client.checkTrust(serverName, 'mcp_server');
+  })());
+}
+
+/**
+ * Look the server up under the package it runs, never under its config key:
+ * the key is a label the user chose and names nothing in the registry.
+ * A null client means no lookup is sent (--ci).
+ */
+async function lookupTrust(
+  server: McpServerEntry | null,
+  getClient: (() => Promise<TrustClient>) | null,
+): Promise<TrustResult> {
+  const registryName = server ? registryNameFor(server) : null;
+  if (!registryName) return { registryName: null, trustLookup: 'noPackage', trustScore: null };
+  if (!getClient) return { registryName, trustLookup: 'skipped', trustScore: null };
+  try {
+    const client = await getClient();
+    const data = await client.checkTrust(registryName, 'mcp_server');
+    if (!data.found) return { registryName, trustLookup: 'notInRegistry', trustScore: null };
+    if (data.verdict === 'listed') return { registryName, trustLookup: 'notScanned', trustScore: null };
     // trustScore is 0-1 from the registry, convert to 0-100
-    if (typeof data.trustScore === 'number') {
-      return Math.round(data.trustScore * 100);
-    }
-    return null;
-  } catch {
-    return null;
+    if (typeof data.trustScore !== 'number') return { registryName, trustLookup: 'failed', trustScore: null };
+    return { registryName, trustLookup: 'scored', trustScore: Math.round(data.trustScore * 100) };
+  } catch (err) {
+    // A 404 is an answer: the registry holds no record of the package.
+    const notFound = (err as { code?: unknown } | null)?.code === 'not_found';
+    return { registryName, trustLookup: notFound ? 'notInRegistry' : 'failed', trustScore: null };
+  }
+}
+
+function trustLabel(result: TrustResult | undefined): string {
+  switch (result?.trustLookup) {
+    case 'scored': return cyan(`trust: ${result.trustScore}`);
+    case 'notScanned': return dim('listed, not scanned');
+    case 'notInRegistry': return dim('not in registry');
+    case 'noPackage': return dim('no package to look up');
+    case 'skipped': return dim('not looked up (--ci)');
+    default: return yellow('lookup failed');
   }
 }
 
@@ -209,21 +262,23 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
     identityStatus.set(server.name, { signed, verified });
   }
 
-  // Fetch trust scores (best-effort, parallel)
-  const trustScores: Map<string, number | null> = new Map();
-  if (!options.ci) {
-    const promises = allServers.map(async (s) => {
-      const score = await fetchTrustScore(s.name);
-      trustScores.set(s.name, score);
-    });
-    await Promise.all(promises);
-  }
+  // Look up trust scores (best-effort, parallel); --ci sends no lookup
+  const trustResults: Map<McpServerEntry, TrustResult> = new Map();
+  const getClient = options.ci ? null : trustClientOnce();
+  await Promise.all(allServers.map(async (s) => {
+    trustResults.set(s, await lookupTrust(s, getClient));
+  }));
 
   // Count summary
   const total = allServers.length;
   const signedCount = [...identityStatus.values()].filter(s => s.signed).length;
   const verifiedCount = [...identityStatus.values()].filter(s => s.verified).length;
-  const trustCount = [...trustScores.values()].filter(s => s !== null).length;
+  const lookups = [...trustResults.values()].map(r => r.trustLookup);
+  const trustCount = lookups.filter(l => l === 'scored').length;
+  const notScannedCount = lookups.filter(l => l === 'notScanned').length;
+  const noPackageCount = lookups.filter(l => l === 'noPackage').length;
+  const failedCount = lookups.filter(l => l === 'failed').length;
+  const lookedUpCount = options.ci ? 0 : total - noPackageCount;
 
   if (isJson) {
     const result = {
@@ -238,9 +293,20 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
         capabilities: s.capabilities,
         signed: identityStatus.get(s.name)?.signed ?? false,
         verified: identityStatus.get(s.name)?.verified ?? false,
-        trustScore: trustScores.get(s.name) ?? null,
+        registryName: trustResults.get(s)?.registryName ?? null,
+        trustLookup: trustResults.get(s)?.trustLookup ?? 'failed',
+        trustScore: trustResults.get(s)?.trustScore ?? null,
       })),
-      summary: { total, signed: signedCount, verified: verifiedCount, trustScores: trustCount },
+      summary: {
+        total,
+        signed: signedCount,
+        verified: verifiedCount,
+        trustScores: trustCount,
+        lookedUp: lookedUpCount,
+        notScanned: notScannedCount,
+        lookupsFailed: failedCount,
+        noPackage: noPackageCount,
+      },
     };
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     return 0;
@@ -272,10 +338,6 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
     for (const server of group.servers) {
       const status = identityStatus.get(server.name);
       const signLabel = status?.signed ? green('signed') : yellow('not signed');
-      const trustScore = trustScores.get(server.name);
-      const trustLabel = trustScore !== null && trustScore !== undefined
-        ? cyan(`trust: ${trustScore}`)
-        : dim('no trust score');
 
       const commandStr = server.transport === 'stdio'
         ? [server.command, ...(server.args ?? [])].filter(a => a !== '-y').join(' ')
@@ -284,7 +346,7 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
       const nameCol = server.name.padEnd(20);
       const transportCol = server.transport.padEnd(8);
 
-      process.stdout.write(`  ${nameCol} ${dim(transportCol)} ${dim(commandStr.substring(0, 45).padEnd(45))}  ${signLabel}  ${trustLabel}\n`);
+      process.stdout.write(`  ${nameCol} ${dim(transportCol)} ${dim(commandStr.substring(0, 45).padEnd(45))}  ${signLabel}  ${trustLabel(trustResults.get(server))}\n`);
 
       if (options.verbose) {
         if (server.pinnedVersion) {
@@ -315,7 +377,19 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
   process.stdout.write(`  Servers found:     ${total}\n`);
   process.stdout.write(`  Signed:            ${signedCount} / ${total}\n`);
   process.stdout.write(`  Verified:          ${verifiedCount} / ${total}\n`);
-  process.stdout.write(`  Trust scores:      ${trustCount} / ${total}\n`);
+  // Only servers started from an npm package can be looked up, so the count
+  // is out of those, and the rest are named rather than counted as misses.
+  const noPackageNote = noPackageCount > 0
+    ? `; ${noPackageCount} ${noPackageCount === 1 ? 'server has' : 'servers have'} no package name`
+    : '';
+  const notScannedNote = notScannedCount > 0 ? `; ${notScannedCount} listed, not scanned` : '';
+  const failedNote = failedCount > 0
+    ? `; ${failedCount} ${failedCount === 1 ? 'lookup' : 'lookups'} failed`
+    : '';
+  const trustLine = options.ci
+    ? `not looked up (--ci)${noPackageNote}`
+    : `${trustCount} / ${lookedUpCount} looked up${notScannedNote}${failedNote}${noPackageNote}`;
+  process.stdout.write(`  Trust scores:      ${trustLine}\n`);
   process.stdout.write('\n');
 
   process.stdout.write(bold('Next Steps') + '\n');
@@ -476,8 +550,8 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
     configMatch = currentHash === identity.configHash;
   }
 
-  // Fetch trust score
-  const trustScore = await fetchTrustScore(serverName);
+  // Look up the trust score of the package the server runs
+  const trust = await lookupTrust(server, trustClientOnce());
 
   // Compute fingerprint
   let fingerprint = '';
@@ -498,7 +572,9 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
       configMatch,
       configFound: server !== null,
       fingerprint,
-      trustScore,
+      trustScore: trust.trustScore,
+      registryName: trust.registryName,
+      trustLookup: trust.trustLookup,
       createdAt: identity.createdAt,
     }, null, 2) + '\n');
     return passed ? 0 : 1;
@@ -514,11 +590,9 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
   process.stdout.write(`  Signature:       ${signatureValid ? green('valid') : red('invalid')}\n`);
   process.stdout.write(`  Config match:    ${configMatch ? green('current config matches signed config') : (server ? red('config has changed since signing') : yellow('server not found in current configs'))}\n`);
 
-  if (trustScore !== null) {
-    process.stdout.write(`  Trust score:     ${cyan(String(trustScore))}\n`);
-  } else {
-    process.stdout.write(`  Trust score:     ${dim('not available')}\n`);
-  }
+  const lookedUpAs = trust.registryName ? dim(` (${trust.registryName})`) : '';
+  const trustText = trust.trustLookup === 'scored' ? cyan(String(trust.trustScore)) : trustLabel(trust);
+  process.stdout.write(`  Trust score:     ${trustText}${lookedUpAs}\n`);
 
   process.stdout.write('\n');
 
@@ -574,5 +648,6 @@ export const _internals = {
   getIdentityDir,
   extractCapabilities,
   detectPinnedVersion,
-  fetchTrustScore,
+  lookupTrust,
+  registryNameFor,
 };
