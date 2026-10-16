@@ -12,7 +12,7 @@ You are a CISO, security engineer, or compliance analyst. Developers on your tea
 
 ## Step 1: Discover Shadow AI
 
-Run detection on a developer workstation to see what AI tools are active. This command changes nothing in the directory it scans. It does write to the home directory of the account that runs it: it keeps a scan count in `~/.opena2a/config.json`, creating that file on its first run, and while usage telemetry is on it stores an install ID in `~/.config/opena2a/telemetry.json` (under `$XDG_CONFIG_HOME` when that is set). With `"$HOME"` as the target, `detect` treats the top of the home directory as the project, so a `.mcp.json` and AI config files kept there are listed as the project's; it reads the process table and the machine-wide MCP configs under the home directory whatever the target.
+Run detection on a developer workstation to see what AI tools are active. With the command below, `detect` changes nothing in the directory it scans outside the two CLI folders that hold the files named next. It does write to the home directory of the account that runs it: it keeps a scan count in `~/.opena2a/config.json`, creating that file on its first run, and while usage telemetry is on it stores an install ID in `~/.config/opena2a/telemetry.json` (under `$XDG_CONFIG_HOME` when that is set). With `"$HOME"` as the target, `detect` treats the top of the home directory as the project, so a `.mcp.json` and AI config files kept there are listed as the project's; it reads the process table and the machine-wide MCP configs under the home directory whatever the target.
 
 ```bash
 npx opena2a-cli detect "$HOME"

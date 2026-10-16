@@ -11,7 +11,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { telemetryHelpLine } from '../src/util/telemetry-help.js';
@@ -58,6 +66,16 @@ function telemetryBlock(help: string): string {
   const start = help.indexOf('\nTelemetry:\n');
   expect(start).toBeGreaterThan(-1);
   return help.slice(start, help.indexOf('\nLearn more:', start));
+}
+
+/** Each file under `dir`, keyed by its path relative to `dir`, with its content. */
+function snapshot(dir: string, sub = '', files = new Map<string, string>()): Map<string, string> {
+  for (const entry of readdirSync(join(dir, sub), { withFileTypes: true })) {
+    const rel = join(sub, entry.name);
+    if (entry.isDirectory()) snapshot(dir, rel, files);
+    else if (entry.isFile()) files.set(rel, readFileSync(join(dir, rel), 'utf8'));
+  }
+  return files;
 }
 
 describe('telemetryHelpLine', () => {
@@ -146,6 +164,30 @@ describe('security-team guide states what detect writes and sends', () => {
     const guide = readFileSync(GUIDE_PATH, 'utf8');
     expect(guide).not.toContain('does not modify any files');
     expect(guide).toContain('`~/.opena2a/config.json`');
+  });
+
+  it('with the home directory as the target, detect changes only its scan count there, and the guide says so', () => {
+    if (!existsSync(CLI_PATH)) return;
+    // The guide's command scans "$HOME", so the scan count detect keeps under
+    // the home directory is inside the directory it scans.
+    const home = join(sandbox, 'home');
+    mkdirSync(join(home, '.cursor'), { recursive: true });
+    writeFileSync(join(home, '.mcp.json'), '{"mcpServers":{}}\n');
+    writeFileSync(join(home, '.cursor', 'mcp.json'), '{"mcpServers":{}}\n');
+    writeFileSync(join(home, '.cursorrules'), 'Use TypeScript.\n');
+    const before = snapshot(home);
+    runCli(['detect', home], 'off');
+    const after = snapshot(home);
+    expect([...after.keys()].filter((file) => after.get(file) !== before.get(file))).toEqual([
+      join('.opena2a', 'config.json'),
+    ]);
+    expect([...before.keys()].filter((file) => !after.has(file))).toEqual([]);
+
+    const guide = readFileSync(GUIDE_PATH, 'utf8');
+    expect(guide).not.toContain('This command changes nothing in the directory it scans.');
+    expect(guide).toContain(
+      '`detect` changes nothing in the directory it scans outside the two CLI folders that hold the files named next',
+    );
   });
 
   it('the guide does not name --registry as the only network use', () => {
