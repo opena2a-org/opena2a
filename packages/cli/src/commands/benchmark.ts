@@ -312,6 +312,14 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
     const { rating, reason } = gateRating(score, baseRating);
 
     // --- Per-category breakdown ----------------------------------------
+    // One check id can belong to controls in more than one category (PERM-001
+    // is both Capability & Authorization and Operational Security). Counting
+    // it in each made the category lines sum to 46 controls and 14 assessed
+    // under a header of 39 and 13. Each id is counted once, under the first
+    // category that lists it; a later category names it as shared instead.
+    // `getCheckIdsForLevel` is the union of these same controls, so the
+    // category figures sum to the level's.
+    const countedUnder = new Map<string, string>();
     const categories = (OASB_1_CATEGORIES as OASBCategory[]).map((cat: OASBCategory) => {
       const catControls = cat.controls.filter((c: OASBControl) => {
         if (level === 'L1') return c.level === 'L1';
@@ -325,19 +333,27 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
         return {
           id: cat.id, name: cat.name, applicable: false,
           compliance: null, evaluated: 0, totalChecks: 0, failing: [] as string[],
+          sharedCheckIds: [] as Array<{ checkId: string; countedUnder: string }>,
         };
       }
-      const catScore = scoreCheckIds(catIds, assessment);
+      const sharedCheckIds = catIds
+        .filter(id => countedUnder.has(id))
+        .map(id => ({ checkId: id, countedUnder: countedUnder.get(id)! }));
+      const ownIds = catIds.filter(id => !countedUnder.has(id));
+      for (const id of ownIds) countedUnder.set(id, cat.name);
+      const catScore = scoreCheckIds(ownIds, assessment);
       return {
         id: cat.id,
         name: cat.name,
         applicable: true,
         compliance: catScore.compliance,
         evaluated: catScore.evaluated.length,
-        totalChecks: catIds.length,
+        totalChecks: ownIds.length,
         failing: catScore.failing,
+        sharedCheckIds,
       };
     });
+    const hasSharedCheckIds = categories.some(c => c.sharedCheckIds.length > 0);
 
     const result = {
       benchmark: OASB_1_NAME ?? 'OASB-1',
@@ -377,9 +393,11 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
       process.stdout.write(`  Level:      ${level}\n`);
       process.stdout.write(`  Rating:     ${rating}\n`);
       if (reason) process.stdout.write(`              ${reason}\n`);
-      const scoreText = score.compliance === null ? 'not assessable' : `${score.compliance}%`;
+      const scoreText = score.compliance === null
+        ? 'not assessable'
+        : `${score.compliance}% of evaluated controls`;
       process.stdout.write(
-        `  ${level}:         ${scoreText} (${score.evaluated.length} of ${total} controls evaluated)\n`,
+        `  ${level}:         ${scoreText} (${score.evaluated.length} of ${total} evaluated)\n`,
       );
       if (score.notEvaluated.length > 0) {
         process.stdout.write(`  Not evaluated: ${score.notEvaluated.length} control(s) — these are NOT counted as passing\n`);
@@ -394,8 +412,20 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
             process.stdout.write(`    ${cat.id}. ${cat.name}: n/a (no ${level} controls)\n`);
             continue;
           }
+          const sharedWith = [...new Set(cat.sharedCheckIds.map(s => s.countedUnder))].join(', ');
+          if (cat.totalChecks === 0) {
+            process.stdout.write(
+              `    ${cat.id}. ${cat.name}: counted under ${sharedWith} (all ${cat.sharedCheckIds.length} shared)\n`,
+            );
+            continue;
+          }
+          const shared = cat.sharedCheckIds.length > 0
+            ? `, ${cat.sharedCheckIds.length} shared with ${sharedWith}`
+            : '';
           if (cat.compliance === null) {
-            process.stdout.write(`    ${cat.id}. ${cat.name}: not evaluated (0 of ${cat.totalChecks} controls assessed)\n`);
+            process.stdout.write(
+              `    ${cat.id}. ${cat.name}: not evaluated (0 of ${cat.totalChecks} controls assessed${shared})\n`,
+            );
             continue;
           }
           // The badge is qualified by coverage for the same reason the headline
@@ -406,8 +436,12 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
             ? (fullyAssessed ? '[PASS]' : '[PASS, PARTIAL COVERAGE]')
             : cat.compliance >= 70 ? '[PARTIAL]' : '[NEEDS WORK]';
           process.stdout.write(
-            `    ${cat.id}. ${cat.name}: ${cat.compliance}% ${bar} (${cat.evaluated} of ${cat.totalChecks} assessed)\n`,
+            `    ${cat.id}. ${cat.name}: ${cat.compliance}% ${bar} (${cat.evaluated} of ${cat.totalChecks} assessed${shared})\n`,
           );
+        }
+        if (hasSharedCheckIds) {
+          process.stdout.write(`  Controls per category can repeat a check id; the level total counts each id once.\n`);
+          process.stdout.write(`  A shared id is counted under the first category that lists it.\n`);
         }
         process.stdout.write('\n');
         if (score.notEvaluated.length > 0) {
@@ -417,10 +451,11 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
       }
 
       // Path forward, recovery-framed and honest about what is missing.
-      const failingCats = categories.filter(c => c.applicable && c.compliance !== null && c.compliance < 100);
+      // Every failing category, so the ids listed add up to the Failing line.
+      const failingCats = categories.filter(c => c.failing.length > 0);
       if (failingCats.length > 0) {
         process.stdout.write(`  Failing controls to address:\n`);
-        for (const cat of failingCats.slice(0, 3)) {
+        for (const cat of failingCats) {
           process.stdout.write(`    - ${cat.name}: ${cat.failing.join(', ')}\n`);
         }
         process.stdout.write(`\n  Fix credentials:  opena2a protect ${targetDir}\n`);
