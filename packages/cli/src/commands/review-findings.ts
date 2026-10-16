@@ -35,11 +35,18 @@ export interface ReportCommand {
 export interface ReportVerify extends Omit<ReportCommand, 'changes'> { expect: string }
 
 export interface ReportRecovery {
-  /** atLeast: the re-scored part, HMA's share shows on the next run. nextRun: not re-scorable here. */
-  kind: 'computed' | 'atLeast' | 'none' | 'nextRun';
+  /**
+   * atLeast: the re-scored part, HMA's share shows on the next run. nextRun: not re-scorable here.
+   * floorPinned: the fix moves a score input, but `holder` keeps the composite where it is.
+   * none: the composite does not change and no floor holder is the reason; while a floor
+   * holds, that means the fix moves no score input.
+   */
+  kind: 'computed' | 'atLeast' | 'none' | 'nextRun' | 'floorPinned';
   points: number | null;
   from: number;
   to: number | null;
+  /** Set only for floorPinned: the floor holders this fix does not move. */
+  holder?: string[];
 }
 
 export interface ReportFinding {
@@ -114,6 +121,12 @@ const UNRATED_FACTOR = 0.8;
 const CATEGORY_CLASS: Record<FindingCategory, number> = {
   Secrets: 0, 'Agent instructions': 0, 'MCP config': 1, 'Git hygiene': 1, 'Supply chain': 1,
   Dependencies: 1, Configuration: 1, Runtime: 1, Governance: 2,
+};
+
+/** The finding sources behind each floor participant (buildFloorParticipants in review.ts). */
+const HOLDER_SOURCES: Record<string, FindingSource[]> = {
+  'Project Scan': ['hygiene'], Credentials: ['credential-scan'], 'Config Integrity': ['guard'],
+  'HMA Scan': ['hma'], 'Project Governance': ['shadow-ai'], 'Shield Runtime Risk': ['shield'],
 };
 
 /** HMA checks whose root cause is an env file git would stage. */
@@ -257,10 +270,18 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
     const after = effect ? score(effect(state)) : current;
     const points = after.composite - from;
     // A floor held by an analyzer this fix cannot move pins the result exactly.
-    const exact = uncomputed.length === 0 || floorHolders(after).some(h => !uncomputed.includes(h));
-    if (exact) return points > 0 ? { kind: 'computed', points, from, to: after.composite } : { kind: 'none', points: 0, from, to: from };
+    const holder = floorHolders(after).filter(h => !uncomputed.includes(h));
+    const exact = uncomputed.length === 0 || holder.length > 0;
+    if (exact && points > 0) return { kind: 'computed', points, from, to: after.composite };
+    if (exact && holder.length > 0 && (uncomputed.length > 0 || movesAnInput(after))) {
+      return { kind: 'floorPinned', points: 0, from, to: from, holder };
+    }
+    if (exact) return { kind: 'none', points: 0, from, to: from };
     return points > 0 ? { kind: 'atLeast', points, from, to: after.composite } : { kind: 'nextRun', points: null, from, to: null };
   };
+  /** Whether a re-scored state differs from the current one in any dimension or floor input. */
+  const movesAnInput = (after: ScoreResult) => (Object.keys(current.inputs) as ScoreDimension[]).some(d => after.inputs[d] !== current.inputs[d])
+    || after.participants.some((p, i) => p.score !== current.participants[i].score || p.ran !== current.participants[i].ran);
 
   const drafts: Draft[] = [];
   const hmaFailed = hmaData.available ? hmaData.allFailedFindings : [];
@@ -549,6 +570,24 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
     .filter(a => a.points > 0)
     .sort((a, b) => b.points - a.points);
   const potentialScore = score(gains.reduce((s, a) => a.effect(s), state)).composite;
+  const floorHeldBy = floorHolders(current);
+  // No action re-scores a gain while a floor holds the score: name each holder and
+  // what moves it, and leave the potential score to the next run rather than print
+  // the current score as the best this tree can reach.
+  const held = gains.length === 0 && floorHeldBy.length > 0;
+  const cited = new Set(reportFindings.flatMap(f => [f.fix?.command, f.then?.command]));
+  const holderAction = (holder: string): string => {
+    if (holder === 'Credentials' && cited.has('opena2a protect')) return 'opena2a protect';
+    const sources = HOLDER_SOURCES[holder] ?? [];
+    const own = reportFindings.filter(f => f.foundBy.some(b => sources.includes(b.source)));
+    const severity = ['critical', 'high'].find(sev => own.some(f => f.severity === sev));
+    const counted = severity ? own.filter(f => f.severity === severity) : own;
+    if (counted.length === 0) return `address what ${holder} reports`;
+    return `address the ${plural(counted.length, severity ? `${severity} finding` : 'finding')} under ${holder}`;
+  };
+  const opportunities: RecoverySummary['opportunities'] = held
+    ? floorHeldBy.map(holder => ({ dimension: holder, pointsRecoverable: null, action: holderAction(holder), kind: 'nextRun' as const }))
+    : gains.map(a => ({ dimension: a.dimension, pointsRecoverable: a.points, action: a.action }));
 
   return {
     reportFindings,
@@ -563,13 +602,13 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       })),
       weightedScore: current.weighted,
       floorBand: input.floorBand,
-      floorHeldBy: floorHolders(current),
+      floorHeldBy,
     },
     recoverySummary: {
       currentScore: current.composite,
-      potentialScore,
-      totalRecoverable: potentialScore - current.composite,
-      opportunities: gains.map(a => ({ dimension: a.dimension, pointsRecoverable: a.points, action: a.action })),
+      potentialScore: held ? null : potentialScore,
+      totalRecoverable: held ? null : potentialScore - current.composite,
+      opportunities,
     },
   };
 }

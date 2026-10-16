@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { CRITICAL_BAND, scoreReview, type DetectPhaseData, type HmaFinding, type InitPhaseData } from '../../src/commands/review.js';
 import { buildReviewFindings, maskEvidenceLine } from '../../src/commands/review-findings.js';
 import type { EnvFileFact } from '../../src/commands/review-facts.js';
+import type { CredentialMatch } from '../../src/util/credential-patterns.js';
 
 const CLI_PATH = resolve(__dirname, '../../dist/index.js');
 const SECRET = 'q7Zr2Lw9Kx4Vb8Nm3Tc6'; // synthetic; must never reach the output
@@ -17,16 +18,25 @@ const hma = (checkId: string, severity: string, category: string, file?: string,
 const checks = (warn: string[]): InitPhaseData['hygieneChecks'] => ['.gitignore', '.env protection', 'Lock file', 'Security config']
   .map(label => ({ label, status: warn.includes(label) ? 'warn' : label === 'Security config' ? 'info' : 'pass', detail: '' }));
 
-function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; hmaFindings: HmaFinding[]; guard: 'unsigned' | 'valid'; detect?: Partial<DetectPhaseData> }) {
+/** Built-in credential scan matches in src/config.ts, one per line, none of them reported by HMA. */
+const credentialMatches = (severity: string, count: number): CredentialMatch[] => Array.from({ length: count }, (_, i) => ({
+  value: MASK, filePath: '/tmp/x/src/config.ts', line: i + 1, findingId: 'CRED-010', envVar: `SERVICE_KEY_${i + 1}`, severity, title: 'Service key',
+}));
+
+function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; hmaFindings: HmaFinding[]; guard: 'unsigned' | 'valid'; detect?: Partial<DetectPhaseData>; credentials?: CredentialMatch[] }) {
   const hygieneChecks = checks(o.warn);
   const guardData = { filesMonitored: 0, tamperedFiles: [], signatureStatus: o.guard, candidates: ['package.json'] };
-  const credentialData = { matches: [], totalFindings: 0, bySeverity: {} } as never;
+  const matches = o.credentials ?? [];
+  const bySeverity: Record<string, number> = {};
+  for (const m of matches) bySeverity[m.severity] = (bySeverity[m.severity] ?? 0) + 1;
+  const credentialData = { matches, totalFindings: matches.length, bySeverity } as never;
   const shieldData = { classifiedFindings: [], policyLoaded: false, eventCount: 0 } as never;
   const detectData = { mcpServers: [], aiConfigs: [], ...o.detect } as DetectPhaseData;
   return buildReviewFindings({
     targetDir: '/tmp/x',
     initData: { projectType: 'Node.js', hygieneChecks, envFiles: o.envFiles ?? [], advisories: [], matchedPackages: [] } as never,
-    credentialData, guardData, shieldData, detectData, findings: [],
+    credentialData, guardData, shieldData, detectData,
+    findings: matches.map(m => ({ id: m.findingId, title: m.title, severity: m.severity, source: 'credential-scan', detail: `src/config.ts:${m.line}`, remediation: '' })),
     hmaData: { available: true, score: o.hmaScore, allFailedFindings: o.hmaFindings } as never,
     state: { hygieneChecks, credentials: credentialData, guard: guardData, shield: shieldData, hma: { available: true, score: o.hmaScore }, detect: detectData },
     score: scoreReview,
@@ -157,7 +167,9 @@ describe('review findings while HMA holds the floor', () => {
   it('names HMA as holding the score and gives every other finding 0', () => {
     const r = hmaFixture();
     expect(r.scoreModel.floorHeldBy).toContain('HMA Scan');
-    expect(r.recoverySummary.totalRecoverable).toBe(0);
+    // No re-scored gain exists, so the total is not reported as 0; the holders are named instead.
+    expect(r.recoverySummary.totalRecoverable).toBeNull();
+    expect(r.recoverySummary.opportunities.map(o => o.dimension)).toEqual(r.scoreModel.floorHeldBy);
     const others = r.reportFindings.filter(f => !f.foundBy.some(b => b.source === 'hma'));
     expect(others.length).toBe(3);
     for (const f of others) expect(f.recovery.points).toBe(0);
@@ -170,6 +182,82 @@ describe('review findings while HMA holds the floor', () => {
     const fixOf = (id: string) => r.reportFindings.find(f => f.foundBy[0].checkId === id)?.fix?.command ?? null;
     expect(['SKILL-001', 'AIM-001', 'GW-001', 'CRED-001', 'SOUL-001', 'HMA-000'].map(fixOf)).toEqual([
       'opena2a check SKILL.md', 'opena2a fix-all --with-aim', 'opena2a secure --fix', 'opena2a secrets init', null, null,
+    ]);
+  });
+});
+
+describe('recovery while a floor holder pins the score', () => {
+  // HMA at 0 holds the floor. Five critical credentials keep the credential
+  // dimension at 0 after any one of them is moved, so it holds the floor too.
+  const heldTree = () => build({
+    warn: ['Lock file'],
+    hmaScore: 0,
+    guard: 'valid',
+    credentials: credentialMatches('critical', 5),
+    hmaFindings: [
+      hma('SKILL-001', 'critical', 'skill', 'SKILL.md', { fix: 'hackmyagent check SKILL.md' }),
+      hma('SOUL-001', 'high', 'soul-governance', 'SOUL.md'),
+    ],
+  });
+  // HMA at 0 alone; one high credential sits below the critical band but above 0.
+  const hmaOnly = () => build({
+    warn: ['Lock file'],
+    hmaScore: 0,
+    guard: 'valid',
+    credentials: credentialMatches('high', 1),
+    hmaFindings: [
+      hma('SKILL-001', 'critical', 'skill', 'SKILL.md', { fix: 'hackmyagent check SKILL.md' }),
+      hma('GW-001', 'critical', 'gateway', 'gateway.json', { fix: 'hackmyagent secure --fix' }),
+    ],
+  });
+
+  it('names each floor holder and what moves it, and computes no potential score', () => {
+    const r = heldTree();
+    expect(r.scoreModel.floorHeldBy).toEqual(['Credentials', 'HMA Scan']);
+    expect(r.recoverySummary).toEqual({
+      currentScore: 0, potentialScore: null, totalRecoverable: null,
+      opportunities: [
+        { dimension: 'Credentials', pointsRecoverable: null, action: 'opena2a protect', kind: 'nextRun' },
+        { dimension: 'HMA Scan', pointsRecoverable: null, action: 'address the 1 critical finding under HMA Scan', kind: 'nextRun' },
+      ],
+    });
+  });
+
+  it('gives HMA as the one holder when no other dimension is at the floor', () => {
+    const r = hmaOnly();
+    expect(r.scoreModel.floorHeldBy).toEqual(['HMA Scan']);
+    expect(r.recoverySummary).toEqual({
+      currentScore: 0, potentialScore: null, totalRecoverable: null,
+      opportunities: [{ dimension: 'HMA Scan', pointsRecoverable: null, action: 'address the 2 critical findings under HMA Scan', kind: 'nextRun' }],
+    });
+  });
+
+  it('marks a fix that moves its own dimension but not the composite as floorPinned, naming the holder', () => {
+    const r = heldTree();
+    const credential = r.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!;
+    expect(credential.recovery).toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['Credentials'] });
+    const lockFile = r.reportFindings.find(f => f.foundBy[0].checkId === 'Lock file')!;
+    expect(lockFile.recovery).toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['Credentials', 'HMA Scan'] });
+    const only = hmaOnly();
+    expect(only.reportFindings.find(f => f.foundBy[0].checkId === 'Lock file')!.recovery)
+      .toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['HMA Scan'] });
+    // A fix that may also move the one holder cannot be re-scored here.
+    expect(only.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!.recovery.kind).toBe('nextRun');
+  });
+
+  it('keeps none for a fix that changes no score input', () => {
+    const r = heldTree();
+    expect(r.optionalHardening.map(h => [h.id, h.recovery])).toEqual([['shield-policy', { kind: 'none', points: 0, from: 0, to: 0 }]]);
+  });
+
+  it('keeps a computed opportunity numeric when the floor holder is the dimension the action moves', () => {
+    // One critical credential holds the floor at 20; opena2a protect lifts it.
+    const r = build({ warn: [], hmaScore: 90, guard: 'valid', credentials: credentialMatches('critical', 1), hmaFindings: [] });
+    expect(r.scoreModel.floorHeldBy).toEqual(['Credentials']);
+    expect(r.recoverySummary.potentialScore).toBeGreaterThan(r.recoverySummary.currentScore);
+    expect(r.recoverySummary.totalRecoverable).toBe(r.recoverySummary.potentialScore! - r.recoverySummary.currentScore);
+    expect(r.recoverySummary.opportunities).toEqual([
+      { dimension: 'Credentials', pointsRecoverable: r.recoverySummary.totalRecoverable, action: 'opena2a protect' },
     ]);
   });
 });

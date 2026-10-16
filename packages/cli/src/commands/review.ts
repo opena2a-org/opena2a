@@ -354,17 +354,34 @@ export interface DetectPhaseData {
   recoverablePoints: number;
 }
 
-export interface RecoveryOpportunity {
-  dimension: string;
-  pointsRecoverable: number;
-  action: string;
-}
+/** A re-scored gain, or (kind nextRun) a floor holder: what moves it, with the gain measured on the next run. */
+export type RecoveryOpportunity =
+  | { dimension: string; pointsRecoverable: number; action: string }
+  | { dimension: string; pointsRecoverable: null; action: string; kind: 'nextRun' };
 
+/** potentialScore and totalRecoverable are null when a floor holds the score and no gain is re-scored. */
 export interface RecoverySummary {
   currentScore: number;
-  potentialScore: number;
-  totalRecoverable: number;
+  potentialScore: number | null;
+  totalRecoverable: number | null;
   opportunities: RecoveryOpportunity[];
+}
+
+/**
+ * The text-mode line for a score a floor holds with no re-scored gain: which
+ * analyzers hold it and what moves each. Null when a gain is re-scored or no
+ * floor holds the score.
+ */
+export function floorPathLine(summary: RecoverySummary): string | null {
+  if (summary.potentialScore !== null) return null;
+  const held = summary.opportunities.filter(o => o.pointsRecoverable === null);
+  if (held.length === 0) return null;
+  const steps = held.map(o => (o.action.startsWith('opena2a ') ? `run ${o.action}` : o.action));
+  return `Path forward: held at ${summary.currentScore} by ${joinWords(held.map(o => o.dimension))}; ${joinWords(steps)}, then re-run review`;
+}
+
+function joinWords(items: string[]): string {
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
 // --- Core ---
@@ -696,9 +713,12 @@ export async function review(options: ReviewOptions): Promise<number> {
   const topRecovery = recoverySummary.opportunities.slice(0, 3)
     .map(o => `+${o.pointsRecoverable} ${o.dimension.toLowerCase()}`)
     .join(', ');
-  const recoveryHint = recoverySummary.totalRecoverable > 0
+  const recoveryHint = recoverySummary.totalRecoverable !== null && recoverySummary.totalRecoverable > 0
     ? ` -- path to ${recoverySummary.potentialScore} available (${topRecovery})`
     : '';
+  // A floor holds the score and no fix re-scores a gain: name the holders instead.
+  // --quiet prints only the score, the finding counts and the report path.
+  const floorPath = quiet ? null : floorPathLine(recoverySummary);
   // Scope label (#252). The composite is NOT an average — applyDominantAnalyzerFloor
   // caps it at the worst participating dimension once that dimension is in the
   // critical band, so a single critical credential legitimately drags the whole
@@ -721,6 +741,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     : '';
   process.stdout.write(
     `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}${dim(scopeNote)}` +
+    (floorPath ? `\n  ${floorPath}` : '') +
     `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)` +
     `${yellow(chainNote)}\n`,
   );

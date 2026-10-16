@@ -93,7 +93,12 @@ function recoveryLabel(r) {
   if (r.kind === 'computed') return '+' + r.points;
   if (r.kind === 'atLeast') return 'at least +' + r.points;
   if (r.kind === 'none') return 'no score change';
+  if (r.kind === 'floorPinned') return 'held at ' + r.from + ' by ' + holderWords(r);
   return 'measured on the next run';
+}
+/** The analyzers holding a floorPinned score, in words. */
+function holderWords(r) {
+  return joinWords((r.holder || []).map(function(n) { return FLOOR_LABEL[n] || n; }));
 }
 function scoreSentences(top) {
   var model = report.scoreModel;
@@ -184,6 +189,7 @@ function fixFirstCard(f, n) {
   var r = f.recovery;
   if (r && r.kind === 'computed') h += textRow('Recovery', esc('+' + r.points + ' (' + r.from + ' -> ' + r.to + ', re-scored)'));
   if (r && r.kind === 'atLeast') h += textRow('Recovery', esc('at least +' + r.points + ' (' + r.from + ' -> ' + r.to + ' re-scored; the rest is measured on the next run)'));
+  if (r && r.kind === 'floorPinned') h += textRow('Recovery', esc('no score change while ' + holderWords(r) + ' ' + ((r.holder || []).length === 1 ? 'holds' : 'hold') + ' the score at ' + r.from));
   h += textRow('Found by', esc(foundByText(f)));
   var locs = f.locations || [];
   var ev = f.evidence || [];
