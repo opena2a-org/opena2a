@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { REVIEW_ASSETS_DIR, assembleReviewClientScript } from '../../src/report/review-assets.js';
+import { floorPathLine } from '../../src/commands/review.js';
 
 /** The Overview's markup, rendered by the report's own client script. */
 function renderOverview(report: object): string {
@@ -155,6 +156,19 @@ describe('review report: Summary', () => {
     expect(t).not.toMatch(/available from the first fix/);
   });
 
+  it('a fix the floor pins says which analyzer holds the score, not that it is measured on the next run', () => {
+    const pinned = { ...ENV_GROUP, recovery: { kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['HMA Scan'] } };
+    const t = text(renderOverview(report({
+      compositeScore: 0,
+      reportFindings: [pinned],
+      fixFirst: [pinned.fingerprint],
+      scoreModel: { weightSet: 'withHma', weights: [], weightedScore: 72, floorBand: 30, floorHeldBy: ['HMA Scan'] },
+    })));
+    expect(t).toContain('held at 0 by HMA');
+    expect(t).toContain('Recovery no score change while HMA holds the score at 0');
+    expect(t).not.toContain('measured on the next run');
+  });
+
   it('counts only the MCP servers declared in this project, not ones configured on this machine', () => {
     const t = text(renderOverview(report({
       detectData: {
@@ -212,6 +226,31 @@ describe('review report: Fix first', () => {
     expect(t).toContain('URL-embedded credentials are logged by proxies');
     const noReason = renderOverview(report({ reportFindings: [{ ...FILE_MODE, reason: null }], fixFirst: [FILE_MODE.fingerprint] }));
     expect(text(noReason)).not.toContain('Why here');
+  });
+});
+
+describe('review text output: the path line while a floor holds the score', () => {
+  const held = (opportunities: object[]) => ({ currentScore: 0, potentialScore: null, totalRecoverable: null, opportunities }) as never;
+
+  it('names the holder and what moves it when no gain is computed', () => {
+    expect(floorPathLine(held([
+      { dimension: 'HMA Scan', pointsRecoverable: null, action: 'address the 117 critical findings under HMA Scan', kind: 'nextRun' },
+    ]))).toBe('Path forward: held at 0 by HMA Scan; address the 117 critical findings under HMA Scan, then re-run review');
+  });
+
+  it('names every holder and runs a cited command', () => {
+    expect(floorPathLine(held([
+      { dimension: 'Credentials', pointsRecoverable: null, action: 'opena2a protect', kind: 'nextRun' },
+      { dimension: 'HMA Scan', pointsRecoverable: null, action: 'address the 3 critical findings under HMA Scan', kind: 'nextRun' },
+    ]))).toBe('Path forward: held at 0 by Credentials and HMA Scan; run opena2a protect and address the 3 critical findings under HMA Scan, then re-run review');
+  });
+
+  it('adds no line when a gain is computed or nothing holds the score', () => {
+    expect(floorPathLine({
+      currentScore: 88, potentialScore: 91, totalRecoverable: 3,
+      opportunities: [{ dimension: 'Config integrity', pointsRecoverable: 3, action: 'opena2a guard sign' }],
+    })).toBeNull();
+    expect(floorPathLine({ currentScore: 100, potentialScore: 100, totalRecoverable: 0, opportunities: [] })).toBeNull();
   });
 });
 
