@@ -149,6 +149,15 @@ export {
   sanitizeArray,
   sanitizeForTerminal,
 } from "./terminal-safe.js";
+export {
+  DISPLAY_HAZARD_SOURCE,
+  escapeForDisplay,
+  escapeJsonDisplayHazards,
+  escapePathForDisplay,
+  excerptLinesForDisplay,
+  hasDisplayHazard,
+  quotePathForDisplay,
+} from "./display-safe.js";
 // Terminal grammar primitives (0.6.0). The star export carries renderVerdict,
 // renderScore, renderFinding, renderProgress, renderError and envelope; the
 // explicit renderNextSteps export above (CTA objects, 0.3.0) keeps the barrel
