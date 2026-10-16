@@ -26,7 +26,12 @@ export interface TrustFactors {
   feedback: number;
 }
 
-export type TrustLevel = 'discovered' | 'scanned' | 'claimed' | 'verified' | 'certified';
+/**
+ * The lookup maps the Registry's live trust level onto these strings. Its
+ * Warning and Listed levels both arrive as 'discovered'; Blocked arrives as
+ * 'blocked'.
+ */
+export type TrustLevel = 'blocked' | 'discovered' | 'scanned' | 'claimed' | 'verified' | 'certified';
 
 export interface SupplyChainInfo {
   totalDependencies?: number;
@@ -34,16 +39,31 @@ export interface SupplyChainInfo {
   highVulnerabilities: number;
   mediumVulnerabilities?: number;
   lowVulnerabilities?: number;
-  lastPublished: string;
+  /**
+   * Not a package publish date. For a package the lookup answers from
+   * `registry_packages`, the Registry fills it from `latest_published_at`, the
+   * time the Registry created its latest version record; the response does not
+   * say which column it came from, so `trust` does not print it.
+   */
+  lastPublished?: string;
   maintainerCount: number;
   weeklyDownloads?: number;
 }
 
+/**
+ * `status` is `not_scanned` when the Registry has no scan on record, the
+ * latest version's scan status (`passed`, `warnings`, `failed`, `scanning`,
+ * `error`) when it has one, or `clean`, `warnings` or `critical` from the
+ * package's known-vulnerability counts.
+ */
 export interface ScanSummary {
   status: string;
-  lastScannedAt: string;
-  findingsCount: number;
-  highCount: number;
+  lastScannedAt?: string;
+  findingsCount?: number;
+  criticalCount?: number;
+  highCount?: number;
+  mediumCount?: number;
+  lowCount?: number;
   actionRequired?: string;
 }
 
@@ -65,7 +85,7 @@ export interface TrustLookupResponse {
   capabilities?: string[];
   supplyChain?: SupplyChainInfo;
   scanSummary?: ScanSummary;
-  lastScanned: string;
+  lastScanned?: string;
   profileUrl: string;
 }
 

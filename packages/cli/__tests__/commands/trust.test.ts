@@ -416,6 +416,171 @@ describe('trust stale copy + zero-downloads (#123)', () => {
   });
 });
 
+describe('trust record fields: verdict, unscanned score, stale scan, placeholder version', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  // The shape the Registry returned for lodash on 2026-10-16: no scan on
+  // record, a registry-listing score, and the placeholder version.
+  function unscannedRecord(overrides?: Partial<TrustLookupResponse>): TrustLookupResponse {
+    return makeTrustResponse({
+      name: 'lodash',
+      version: '0.0.0-discovered',
+      publisherVerified: false,
+      trustScore: 0.4,
+      trustLevel: 'discovered',
+      posture: undefined,
+      factors: undefined,
+      capabilities: undefined,
+      scanSummary: {
+        status: 'not_scanned',
+        actionRequired: 'This package has not been scanned yet. Submit a scan: hackmyagent scan lodash',
+      },
+      supplyChain: {
+        criticalVulnerabilities: 0,
+        highVulnerabilities: 0,
+        mediumVulnerabilities: 0,
+        lowVulnerabilities: 0,
+        lastPublished: '2026-03-04T03:03:39Z',
+        maintainerCount: 0,
+        weeklyDownloads: 0,
+      },
+      lastScanned: undefined,
+      profileUrl: 'https://registry.opena2a.org/agents/test-agent-uuid',
+      ...overrides,
+    });
+  }
+
+  // The shape the Registry returned for @modelcontextprotocol/server-filesystem
+  // on 2026-10-16: scanned, one high finding, scan date past the stale threshold.
+  function scannedWithHighFinding(lastScannedAt: string): TrustLookupResponse {
+    return makeTrustResponse({
+      name: '@modelcontextprotocol/server-filesystem',
+      version: '0.0.0-discovered',
+      trustScore: 0.79,
+      trustLevel: 'scanned',
+      posture: undefined,
+      factors: undefined,
+      capabilities: undefined,
+      scanSummary: {
+        status: 'warnings',
+        lastScannedAt,
+        findingsCount: 1,
+        highCount: 1,
+        actionRequired: '1 high-severity findings. Review recommended.',
+      },
+      supplyChain: {
+        criticalVulnerabilities: 0,
+        highVulnerabilities: 1,
+        mediumVulnerabilities: 0,
+        lowVulnerabilities: 0,
+        lastPublished: '2026-02-20T02:29:37Z',
+        maintainerCount: 0,
+        weeklyDownloads: 248_336,
+      },
+      lastScanned: lastScannedAt,
+    });
+  }
+
+  async function renderText(data: TrustLookupResponse): Promise<string> {
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({ ok: true, status: 200, data });
+    const { output } = await captureStdout(() =>
+      trust({ packageName: data.name, registryUrl: 'https://test-registry.example.com', ci: true, format: 'text' }));
+    return output;
+  }
+
+  async function renderJson(data: TrustLookupResponse): Promise<any> {
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({ ok: true, status: 200, data });
+    const { output } = await captureStdout(() =>
+      trust({ packageName: data.name, registryUrl: 'https://test-registry.example.com', ci: true, format: 'json' }));
+    return JSON.parse(output);
+  }
+
+  it('prints no percentage for a record with no scan on file', async () => {
+    const output = await renderText(unscannedRecord());
+    expect(output).not.toContain('%');
+    expect(output).toMatch(/Trust:\s+not scanned \(discovered\)/);
+    // A finding count of 0 is a measurement; an unscanned record has none.
+    expect(output).not.toMatch(/Findings:/);
+  });
+
+  it('prints no percentage when there is neither a scan summary nor a posture', async () => {
+    const output = await renderText(unscannedRecord({ scanSummary: undefined }));
+    expect(output).not.toContain('%');
+    expect(output).toMatch(/Trust:\s+not scanned \(discovered\)/);
+  });
+
+  it('keeps the raw trustScore in JSON and marks it unscored', async () => {
+    const parsed = await renderJson(unscannedRecord());
+    expect(parsed.trustScore).toBe(0.4);
+    expect(parsed.scored).toBe(false);
+  });
+
+  it('marks a scan-backed score as scored in JSON', async () => {
+    const parsed = await renderJson(scannedWithHighFinding(new Date(Date.now() - 10 * DAY_MS).toISOString()));
+    expect(parsed.trustScore).toBe(0.79);
+    expect(parsed.scored).toBe(true);
+  });
+
+  it('marks a scan date older than 90 days as stale', async () => {
+    const output = await renderText(scannedWithHighFinding(new Date(Date.now() - 228 * DAY_MS).toISOString()));
+    expect(output).toMatch(/Last Scanned: .*\(stale\)/);
+  });
+
+  it('does not mark a scan date within 90 days as stale', async () => {
+    const output = await renderText(scannedWithHighFinding(new Date(Date.now() - 30 * DAY_MS).toISOString()));
+    expect(output).toMatch(/Last Scanned: /);
+    expect(output).not.toContain('(stale)');
+  });
+
+  it('prints a Verdict that is not SAFE for a record with one high finding', async () => {
+    const output = await renderText(scannedWithHighFinding(new Date(Date.now() - 228 * DAY_MS).toISOString()));
+    const verdictLines = output.split('\n').filter(l => /^Verdict:/.test(l));
+    expect(verdictLines).toHaveLength(1);
+    expect(verdictLines[0]).toMatch(/^Verdict:\s+WARNING/);
+    expect(verdictLines[0]).not.toContain('SAFE');
+  });
+
+  it('prints a SAFE Verdict for a clean scanned record', async () => {
+    const data = scannedWithHighFinding(new Date(Date.now() - 10 * DAY_MS).toISOString());
+    data.scanSummary = { status: 'clean', lastScannedAt: data.scanSummary!.lastScannedAt, findingsCount: 0, highCount: 0 };
+    data.supplyChain = { ...data.supplyChain!, highVulnerabilities: 0 };
+    const output = await renderText(data);
+    expect(output).toMatch(/^Verdict:\s+SAFE/m);
+    expect(output).toMatch(/Trust:\s+79% \(scanned\)/);
+  });
+
+  it('prints a NOT SCANNED Verdict for an unscanned record', async () => {
+    const output = await renderText(unscannedRecord());
+    expect(output).toMatch(/^Verdict:\s+NOT SCANNED/m);
+    expect(output).not.toContain('SAFE');
+  });
+
+  it('prints a BLOCKED Verdict when the Registry blocks the package', async () => {
+    const data = scannedWithHighFinding(new Date(Date.now() - 10 * DAY_MS).toISOString());
+    data.trustLevel = 'blocked';
+    const output = await renderText(data);
+    expect(output).toMatch(/^Verdict:\s+BLOCKED/m);
+  });
+
+  it('does not print the 0.0.0-discovered placeholder as a version', async () => {
+    const output = await renderText(unscannedRecord());
+    expect(output).not.toContain('v0.0.0');
+    expect(output).toContain('lodash version unknown (not scanned)');
+  });
+
+  it('does not print the placeholder version in verbose request details', async () => {
+    vi.spyOn(_internals, 'fetchTrustLookup').mockResolvedValue({ ok: true, status: 200, data: unscannedRecord() });
+    const { output } = await captureStdout(() =>
+      trust({ packageName: 'lodash', registryUrl: 'https://test-registry.example.com', ci: true, format: 'text', verbose: true }));
+    expect(output).not.toContain('0.0.0-discovered');
+  });
+
+  it('does not print the Registry ingest timestamp as the publish date', async () => {
+    const output = await renderText(scannedWithHighFinding(new Date(Date.now() - 228 * DAY_MS).toISOString()));
+    expect(output).not.toMatch(/Published:/);
+  });
+});
+
 describe('formatRelativeTime (#122)', () => {
   it("returns 'never' for null", () => {
     expect(formatRelativeTime(null)).toBe('never');
