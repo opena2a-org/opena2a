@@ -131,7 +131,7 @@ const BUNDLED_CITATION = /\b(?:hackmyagent|secretless-ai|ai-trust|cryptoserve)\b
 const MASK = '••••';
 const SECRET_WORD = '(?:key|token|secret|passw|pwd|auth|credential|private)';
 const URL_PASSWORD = /(\b[a-z][\w+.-]{0,64}:\/\/[^\s:/@]+:)[^\s@]{1,256}@/gi;
-const NAMED_VALUE = new RegExp(`(["']?[\\w.-]{0,64}${SECRET_WORD}[\\w.-]{0,64}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,;}]+)`, 'gi');
+const NAMED_VALUE = new RegExp(`(${SECRET_WORD}[\\w.-]{0,64}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,;}]+)`, 'gi');
 const FLAG_VALUE = new RegExp(`(--?[\\w-]{0,64}${SECRET_WORD}[\\w-]{0,64}[ =])(\\S+)`, 'gi');
 const ASSIGNMENT = /^(\s*(?:export\s+)?["']?[\w.-]+["']?\s*[:=]\s*)(\S.*)$/;
 const LONG_TOKEN = /[A-Za-z0-9_+/-]{16,}/g;

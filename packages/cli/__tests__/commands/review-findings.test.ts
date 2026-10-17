@@ -115,24 +115,37 @@ describe('review findings on the envcase tree', () => {
 });
 
 describe('maskEvidenceLine on one long line', () => {
-  /** A line of `size` characters built from `unit`, then a secret, masked within the time bound. */
-  const masksInTime = (unit: string, size: number) => {
+  /** The fastest of three maskings of a line of `size` characters built from `unit`, then a
+   *  secret, in milliseconds; the output is checked on every run. */
+  const fastestMs = (unit: string, size: number) => {
     const line = unit.repeat(Math.ceil(size / unit.length)).slice(0, size) + ' api_key=' + SECRET;
-    const started = performance.now();
-    const out = maskEvidenceLine(line, true);
-    const ms = performance.now() - started;
-    expect(ms, `${JSON.stringify(unit)} run took ${ms.toFixed(0)} ms`).toBeLessThan(5000);
-    expect(out).not.toContain(SECRET);
-    expect(out.length).toBeLessThanOrEqual(160);
+    let fastest = Infinity;
+    for (let run = 0; run < 3; run++) {
+      const started = performance.now();
+      const out = maskEvidenceLine(line, true);
+      fastest = Math.min(fastest, performance.now() - started);
+      expect(out).not.toContain(SECRET);
+      expect(out.length).toBeLessThanOrEqual(160);
+    }
+    return fastest;
   };
 
-  it('masks a 200 KB line in time linear in its length, whatever the line is made of', () => {
-    for (const unit of ['a', '-', 'key', 'a-', 'key=', 'http://u:FAKE@h/', '"key":"v",']) masksInTime(unit, 200_000);
-  });
-
-  it('masks a 400 KB line of URL prefixes that no `@` follows in time linear in its length', () => {
-    for (const unit of ['http://u:p/', 'x://y:']) masksInTime(unit, 400_000);
-  });
+  // The line is doubled from 8 KB until masking it takes a measurable time (8 ms, or the line
+  // reaches 4 MB); a line twice as long must then take less than three times as long. A pass
+  // linear in the length takes about twice as long, a quadratic one about four times. The bound
+  // is a ratio of two timings taken the same way, not a time, so it holds on a loaded machine.
+  it.each(['a', '-', 'key', 'a-', 'key=', 'http://u:FAKE@h/', '"key":"v",', 'http://u:p/', 'x://y:'])(
+    'masks a line of repeated %s in time linear in its length', unit => {
+      let size = 8_000;
+      let atN = fastestMs(unit, size);
+      while (atN < 8 && size < 4_000_000) {
+        size *= 2;
+        atN = fastestMs(unit, size);
+      }
+      const at2N = fastestMs(unit, size * 2);
+      const times = `${JSON.stringify(unit)}: ${atN.toFixed(1)} ms at ${size / 1000} KB, ${at2N.toFixed(1)} ms at ${size / 500} KB`;
+      expect(at2N / atN, times).toBeLessThan(3);
+    }, 60_000);
 });
 
 describe('review findings while HMA holds the floor', () => {
