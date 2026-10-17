@@ -111,16 +111,18 @@ async function getHMA(): Promise<any> {
 }
 
 /**
- * A refused target as the refusal prints it: `shown` is its one form on both
- * lines, `operand` what the Verify command takes.
+ * A refused target as the refusal prints it: `shown` names it on the message
+ * line, `operand` is what the Verify command takes.
  *
  * A path that prints as itself is bare when it holds only [A-Za-z0-9_./-] and
- * shell-quoted otherwise, so the Verify line pastes as printed. A path holding
- * a control, bidi or zero-width character cannot print as itself: cli-ui's
+ * shell-quoted otherwise, the same string on both lines, so the Verify line
+ * pastes as printed. A path holding a character that `hasDisplayHazard` flags,
+ * such as a control character, a bidi control or a zero-width character,
+ * cannot print as itself: cli-ui's
  * `$'...'` form shows it with each such character escaped (`\e`, `\u202e`), so
- * none of them reaches the terminal raw. A command built from that rendering
- * would name a different path, so its Verify command takes the `<dir>`
- * placeholder instead.
+ * none of them reaches the terminal raw. Not every shell reads that rendering
+ * back as the same path, so its Verify command takes the `<dir>` placeholder
+ * instead.
  */
 async function refusedTarget(dir: string): Promise<{ shown: string; operand: string }> {
   const { hasDisplayHazard, quotePathForDisplay } = await import('@opena2a/cli-ui');
