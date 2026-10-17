@@ -110,12 +110,24 @@ async function getHMA(): Promise<any> {
   }
 }
 
-/** A user-supplied path made safe to echo on one terminal line: control
- *  characters (ESC, newline, the rest of C0 and C1, and DEL) are removed, so
- *  a crafted directory name cannot inject an escape sequence or forge a line
- *  of its own. */
-function printable(value: string): string {
-  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+/**
+ * A refused target as the refusal prints it: `shown` is its one form on both
+ * lines, `operand` what the Verify command takes.
+ *
+ * A path that prints as itself is bare when it holds only [A-Za-z0-9_./-] and
+ * shell-quoted otherwise, so the Verify line pastes as printed. A path holding
+ * a control, bidi or zero-width character cannot print as itself: cli-ui's
+ * `$'...'` form shows it with each such character escaped (`\e`, `\u202e`), so
+ * none of them reaches the terminal raw. A command built from that rendering
+ * would name a different path, so its Verify command takes the `<dir>`
+ * placeholder instead.
+ */
+async function refusedTarget(dir: string): Promise<{ shown: string; operand: string }> {
+  const { hasDisplayHazard, quotePathForDisplay } = await import('@opena2a/cli-ui');
+  const resolved = resolve(dir);
+  if (hasDisplayHazard(resolved)) return { shown: quotePathForDisplay(resolved), operand: '<dir>' };
+  const word = /^[A-Za-z0-9_./-]+$/.test(resolved) ? resolved : shellWord(resolved);
+  return { shown: word, operand: word };
 }
 
 /**
@@ -224,10 +236,9 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
   // No rating and no percentage is printed on either channel, in any format.
   const problem = unscannableTarget(targetDir);
   if (problem) {
-    const shown = printable(resolve(targetDir));
-    const quoted = /^[A-Za-z0-9_./-]+$/.test(shown) ? shown : shellWord(shown);
+    const { shown, operand } = await refusedTarget(targetDir);
     process.stderr.write(`opena2a benchmark: ${shown} ${problem}, so nothing was scanned.\n`);
-    process.stderr.write(`  Verify: ls -ld ${quoted}\n`);
+    process.stderr.write(`  Verify: ls -ld ${operand}\n`);
     return 2;
   }
 
