@@ -38,6 +38,21 @@ export async function watch(options: WatchOptions): Promise<number> {
 
   const client = new AimClient(auth.serverUrl, { accessToken: auth.accessToken });
 
+  let lastSeenId: string | null = null;
+  let running = true;
+
+  // Handle graceful shutdown. The handlers go in before the banner says
+  // Ctrl+C stops the watch: an interrupt sent the moment that line appears
+  // must end the run with exit 0, not by the signal's default action.
+  const cleanup = () => {
+    running = false;
+    if (!isJson) {
+      process.stdout.write('\n' + dim('  Stopped watching.') + '\n');
+    }
+  };
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
   if (!isJson) {
     process.stdout.write(bold('Agent Activity Watch') + '\n');
     process.stdout.write(dim(`  Agent: ${agentId}`) + '\n');
@@ -53,19 +68,6 @@ export async function watch(options: WatchOptions): Promise<number> {
     );
     process.stdout.write(gray('-'.repeat(70)) + '\n');
   }
-
-  let lastSeenId: string | null = null;
-  let running = true;
-
-  // Handle graceful shutdown
-  const cleanup = () => {
-    running = false;
-    if (!isJson) {
-      process.stdout.write('\n' + dim('  Stopped watching.') + '\n');
-    }
-  };
-  process.on('SIGINT', cleanup);
-  process.on('SIGTERM', cleanup);
 
   try {
     while (running) {
