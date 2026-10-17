@@ -115,36 +115,41 @@ describe('review findings on the envcase tree', () => {
 });
 
 describe('maskEvidenceLine on one long line', () => {
-  /** The fastest of three maskings of a line of `size` characters built from `unit`, then a
-   *  secret, in milliseconds; the output is checked on every run. */
-  const fastestMs = (unit: string, size: number) => {
-    const line = unit.repeat(Math.ceil(size / unit.length)).slice(0, size) + ' api_key=' + SECRET;
-    let fastest = Infinity;
-    for (let run = 0; run < 3; run++) {
-      const started = performance.now();
-      const out = maskEvidenceLine(line, true);
-      fastest = Math.min(fastest, performance.now() - started);
-      expect(out).not.toContain(SECRET);
-      expect(out.length).toBeLessThanOrEqual(160);
-    }
-    return fastest;
-  };
+  /** A line of `size` characters built from `unit`, then a secret. */
+  const lineOf = (unit: string, size: number) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size) + ' api_key=' + SECRET;
 
-  // The line is doubled from 8 KB until masking it takes a measurable time (8 ms, or the line
-  // reaches 4 MB); a line twice as long must then take less than three times as long. A pass
-  // linear in the length takes about twice as long, a quadratic one about four times. The bound
-  // is a ratio of two timings taken the same way, not a time, so it holds on a loaded machine.
+  /** The processor time of one masking of `line`, in milliseconds; the output is checked on every run. */
+  const cpuMs = (line: string) => {
+    const before = process.cpuUsage();
+    const out = maskEvidenceLine(line, true);
+    const used = process.cpuUsage(before);
+    expect(out).not.toContain(SECRET);
+    expect(out.length).toBeLessThanOrEqual(160);
+    return (used.user + used.system) / 1000;
+  };
+  const fastestMs = (line: string) => Math.min(cpuMs(line), cpuMs(line), cpuMs(line));
+  const median = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1];
+
+  // Processor time, not elapsed time, so time the process spends waiting for a CPU is not
+  // counted. The line is doubled from 1 KB until the fastest of three maskings takes at least
+  // 0.25 ms (or the line is 512 KB); then that line and one 8 times as long are masked in turn,
+  // nine times each. Linear work grows 8 times and quadratic work 64 times, so the median of
+  // the nine ratios must be under 24; a few ratios that another thread or a slower core
+  // distorts do not carry the median. The bound guards against a super-linear regression, not
+  // against a larger constant.
   it.each(['a', '-', 'key', 'a-', 'key=', 'http://u:FAKE@h/', '"key":"v",', 'http://u:p/', 'x://y:'])(
     'masks a line of repeated %s in time linear in its length', unit => {
-      let size = 8_000;
-      let atN = fastestMs(unit, size);
-      while (atN < 8 && size < 4_000_000) {
-        size *= 2;
-        atN = fastestMs(unit, size);
+      let size = 1_000;
+      while (size < 512_000 && fastestMs(lineOf(unit, size)) < 0.25) size *= 2;
+      const lineN = lineOf(unit, size), line8N = lineOf(unit, size * 8);
+      const msN: number[] = [], ms8N: number[] = [];
+      for (let pair = 0; pair < 9; pair++) {
+        msN.push(cpuMs(lineN));
+        ms8N.push(cpuMs(line8N));
       }
-      const at2N = fastestMs(unit, size * 2);
-      const times = `${JSON.stringify(unit)}: ${atN.toFixed(1)} ms at ${size / 1000} KB, ${at2N.toFixed(1)} ms at ${size / 500} KB`;
-      expect(at2N / atN, times).toBeLessThan(3);
+      const ratio = median(ms8N.map((ms, i) => ms / msN[i]));
+      const times = `${JSON.stringify(unit)}: ${median(msN).toFixed(2)} ms at ${size / 1000} KB, ${median(ms8N).toFixed(2)} ms at ${(size * 8) / 1000} KB`;
+      expect(ratio, `${times}, median ratio ${ratio.toFixed(1)}`).toBeLessThan(24);
     }, 60_000);
 });
 
