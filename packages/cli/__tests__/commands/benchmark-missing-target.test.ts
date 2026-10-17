@@ -164,16 +164,53 @@ describe('benchmark refuses a target it cannot scan', () => {
     },
   );
 
-  it('strips control characters from the target and quotes it in the Verify line', async () => {
+  it('shows a control character in the target as an escape and gives Verify the <dir> placeholder', async () => {
     const target = path.join(tmp, 'my dir\x1b[31mx');
     const r = await captureOutput(() => benchmark({ targetDir: target }));
 
     expect(r.exitCode).toBe(2);
     expect(r.stderr).not.toContain('\x1b');
-    const shown = path.join(tmp, 'my dir[31mx');
     expect(r.stderr).toBe(
-      `opena2a benchmark: ${shown} does not exist, so nothing was scanned.\n`
-      + `  Verify: ls -ld '${shown}'\n`,
+      `opena2a benchmark: $'${tmp}/my dir\\e[31mx' does not exist, so nothing was scanned.\n`
+      + '  Verify: ls -ld <dir>\n',
+    );
+  });
+
+  it('shows a bidi override (U+202E) in the target as \\u202e, never raw', async () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const target = path.join(tmp, `report${rlo}gnp.txt`);
+    const r = await captureOutput(() => benchmark({ targetDir: target }));
+
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).not.toContain(rlo);
+    expect(r.stderr).toBe(
+      `opena2a benchmark: $'${tmp}/report\\u202egnp.txt' does not exist, so nothing was scanned.\n`
+      + '  Verify: ls -ld <dir>\n',
+    );
+    expect(scanner.scan).not.toHaveBeenCalled();
+  });
+
+  it('shows a zero-width space (U+200B) in the target as \\u200b, never raw', async () => {
+    const zwsp = String.fromCodePoint(0x200b);
+    const target = path.join(tmp, `my${zwsp}dir`);
+    const r = await captureOutput(() => benchmark({ targetDir: target }));
+
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).not.toContain(zwsp);
+    expect(r.stderr).toBe(
+      `opena2a benchmark: $'${tmp}/my\\u200bdir' does not exist, so nothing was scanned.\n`
+      + '  Verify: ls -ld <dir>\n',
+    );
+  });
+
+  it('prints a target that needs quoting in the same quoted form on both lines', async () => {
+    const target = path.join(tmp, 'my dir');
+    const r = await captureOutput(() => benchmark({ targetDir: target }));
+
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toBe(
+      `opena2a benchmark: '${target}' does not exist, so nothing was scanned.\n`
+      + `  Verify: ls -ld '${target}'\n`,
     );
   });
 
