@@ -1046,35 +1046,30 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the filesystem path for an MCP server from its command field.
- * Handles common patterns: npx <pkg>, node <path>, direct paths.
+ * Where to scan an MCP server. The npm package the server runs, when it is
+ * installed under the project's node_modules or the global npm prefix, is the
+ * directory the scan describes and the only one whose scan may be sent to the
+ * Registry. A server that runs no npm package, or whose package is not
+ * installed in either place, is scanned in the project directory, the context
+ * its config sits in: that scan describes the project, not the package, so it
+ * stays local. The key of the config entry is a label the user chose and
+ * names no directory.
  */
-function resolveMcpServerPath(server: DetectedMcpServer, projectDir: string): string | null {
-  // The source field contains info like "claude_desktop (project)" or "vscode (global)"
-  // The name is typically the package name or server identifier
-  // Try common resolution paths
+function resolveMcpServerPath(server: DetectedMcpServer, projectDir: string): { targetDir: string; packageDir: boolean } {
+  if (server.registryName) {
+    const localPath = path.join(projectDir, 'node_modules', server.registryName);
+    if (fs.existsSync(localPath)) return { targetDir: localPath, packageDir: true };
 
-  // Check if it exists as a direct path in the project
-  const directPath = path.join(projectDir, 'node_modules', server.name);
-  if (fs.existsSync(directPath)) return directPath;
-
-  // Check scoped package patterns (e.g., @playwright/mcp -> node_modules/@playwright/mcp)
-  if (server.name.includes('/')) {
-    const scopedPath = path.join(projectDir, 'node_modules', server.name);
-    if (fs.existsSync(scopedPath)) return scopedPath;
+    try {
+      const globalPrefix = execSync('npm prefix -g', { encoding: 'utf-8' }).trim();
+      const globalPath = path.join(globalPrefix, 'lib', 'node_modules', server.registryName);
+      if (fs.existsSync(globalPath)) return { targetDir: globalPath, packageDir: true };
+    } catch {
+      // npm not available
+    }
   }
 
-  // Try global node_modules
-  try {
-    const globalPrefix = execSync('npm prefix -g', { encoding: 'utf-8' }).trim();
-    const globalPath = path.join(globalPrefix, 'lib', 'node_modules', server.name);
-    if (fs.existsSync(globalPath)) return globalPath;
-  } catch {
-    // npm not available
-  }
-
-  // Fall back to the project directory itself (scan around the MCP config context)
-  return projectDir;
+  return { targetDir: projectDir, packageDir: false };
 }
 
 /**
@@ -1112,17 +1107,19 @@ async function scanUnknownAssets(
   }
 
   for (const server of servers) {
-    const targetPath = resolveMcpServerPath(server, projectDir);
-    if (!targetPath) continue;
+    const { targetDir, packageDir } = resolveMcpServerPath(server, projectDir);
 
     try {
       if (verbose) {
         process.stderr.write(dim(`  Scanning ${server.name}...\n`));
+        if (server.registryName && !packageDir) {
+          process.stderr.write(dim(`  ${server.registryName} is not installed under node_modules or the global npm prefix; the project directory is scanned and the result is not sent.\n`));
+        }
       }
 
       const scanner = new HardeningScanner();
       const scanResult = await Promise.race([
-        scanner.scan({ targetDir: targetPath, ci: true }),
+        scanner.scan({ targetDir, ci: true }),
         new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
       ]);
 
@@ -1138,9 +1135,11 @@ async function scanUnknownAssets(
 
       // Submit to registry if contribute is enabled. The server is sent under
       // the npm package it runs, the name the Registry knows it by and the one
-      // the lookup used; a server that runs none is scanned but not sent, since
-      // its config key names no package.
-      if (contributeEnabled && registryUrl && server.registryName) {
+      // the lookup used, and only when that package's directory is what was
+      // scanned. A server that runs no npm package, or whose package is not
+      // installed here, was scanned in the project directory and is not sent:
+      // that scan describes the project, and its config key names no package.
+      if (contributeEnabled && registryUrl && server.registryName && packageDir) {
         try {
           const { submitScanReport } = await import('../util/report-submission.js');
           const report = {

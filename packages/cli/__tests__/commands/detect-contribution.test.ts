@@ -1,15 +1,19 @@
 // Regression: what `opena2a detect` sends to the Registry when contribution
-// is on.
+// is on, and what directory the scan it sends describes.
 //
 // Every run outside --ci published a summary of the scanned tree as a scan of
 // a package named `shadow-ai-audit`, typed `detect`, which the Registry
 // recorded as a community scan of an npm package of that name. A scan of the
 // servers the Registry did not know (--auto-scan, or the prompt) sent each
 // server under the key of its config entry, such as `filesystem-root`, which
-// names no package. detect now sends only the scan of each such server, under
-// the npm package the server runs and as an `mcp_server` package in the `npm`
-// ecosystem; a server that runs no npm package is scanned but not sent, and
-// the tree's summary is not sent.
+// names no package, and looked that key up under node_modules, so the
+// directory it scanned was the project directory. detect now sends only the
+// scan of such a server whose npm package is installed, under the project's
+// node_modules or the global npm prefix, and the directory scanned is that
+// package's; it is sent under the package name, as an `mcp_server` package in
+// the `npm` ecosystem. A server whose package is not installed, or that runs
+// no npm package, is scanned in the project directory and not sent, and the
+// tree's summary is not sent.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -37,7 +41,7 @@ vi.mock('../../src/util/registry-enrichment.js', async (importOriginal) => ({
 }));
 
 // One scan result for every server; what the scanner finds is not what this
-// file tests.
+// file tests. Which directory it is given is.
 const scanner = vi.hoisted(() => ({
   scan: vi.fn(async () => ({
     overallScore: 90,
@@ -59,8 +63,8 @@ vi.mock('hackmyagent', () => ({
   },
 }));
 
-// No host process is an agent, and the global npm prefix holds no package, so
-// each server is scanned in the project directory.
+// No host process is an agent, and the global npm prefix holds only what a
+// case installs there.
 const host = vi.hoisted(() => ({ npmPrefix: '' }));
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -99,6 +103,19 @@ function writeMcpConfig(dir: string, mcpServers: Record<string, unknown>): void 
   fs.writeFileSync(path.join(dir, 'mcp.json'), JSON.stringify({ mcpServers }));
 }
 
+/** Lay a package out as npm does, `<root>/node_modules/<name>/package.json`, and return its directory. */
+function installPackage(root: string, name: string): string {
+  const dir = path.join(root, 'node_modules', name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: '0.0.0' }));
+  return dir;
+}
+
+/** The directory each scan was given, in scan order. */
+function scannedDirs(): string[] {
+  return scanner.scan.mock.calls.map((call) => (call as unknown as [{ targetDir: string }])[0].targetDir);
+}
+
 describe('detect contribution', () => {
   let tempDir: string;
   let tempHome: string;
@@ -126,7 +143,10 @@ describe('detect contribution', () => {
     fs.rmSync(host.npmPrefix, { recursive: true, force: true });
   });
 
-  it('a scanned server is sent under the npm package it runs, as an mcp_server package in the npm ecosystem', async () => {
+  // The config key is a label; the package is found under node_modules by the
+  // name the server runs.
+  it('a server whose npm package is installed under node_modules is scanned there and sent under that package, as an mcp_server package in the npm ecosystem', async () => {
+    const packageDir = installPackage(tempDir, '@modelcontextprotocol/server-filesystem');
     writeMcpConfig(tempDir, {
       'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
     });
@@ -134,7 +154,7 @@ describe('detect contribution', () => {
     const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
 
     expect(exitCode).toBe(0);
-    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(scannedDirs()).toEqual([packageDir]);
     expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
     const [registryUrl, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(registryUrl).toBe('https://api.oa2a.org');
@@ -146,7 +166,40 @@ describe('detect contribution', () => {
     expect(server.scanResult.contributed).toBe(true);
   });
 
-  it('a scanned server that runs no npm package is not sent: its config key names no package', async () => {
+  // Before, the config key was looked up under node_modules, found nothing,
+  // and the project directory's scan went out under the package name.
+  it('a server whose npm package is not installed is scanned in the project directory and not sent', async () => {
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scannedDirs()).toEqual([tempDir]);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'filesystem-root');
+    expect(server.scanResult.contributed).toBe(false);
+  });
+
+  it('a server whose npm package is installed under the global npm prefix is scanned there and sent', async () => {
+    const packageDir = installPackage(path.join(host.npmPrefix, 'lib'), '@modelcontextprotocol/server-filesystem');
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scannedDirs()).toEqual([packageDir]);
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
+    const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(report.packageName).toBe('@modelcontextprotocol/server-filesystem');
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'filesystem-root');
+    expect(server.scanResult.contributed).toBe(true);
+  });
+
+  it('a scanned server that runs no npm package is scanned in the project directory and not sent: its config key names no package', async () => {
     writeMcpConfig(tempDir, {
       local: { command: 'node', args: ['server.js'] },
     });
@@ -154,13 +207,14 @@ describe('detect contribution', () => {
     const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
 
     expect(exitCode).toBe(0);
-    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(scannedDirs()).toEqual([tempDir]);
     expect(submission.submitScanReport).not.toHaveBeenCalled();
     const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'local');
     expect(server.scanResult.contributed).toBe(false);
   });
 
-  it('of two scanned servers, only the one that runs an npm package is sent', async () => {
+  it('of two scanned servers, only the one whose npm package is installed is sent, with the scan of its package directory', async () => {
+    const packageDir = installPackage(tempDir, '@modelcontextprotocol/server-postgres');
     writeMcpConfig(tempDir, {
       local: { command: 'node', args: ['server.js'] },
       'database-admin': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres@latest'] },
@@ -168,7 +222,7 @@ describe('detect contribution', () => {
 
     await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
 
-    expect(scanner.scan).toHaveBeenCalledTimes(2);
+    expect([...scannedDirs()].sort()).toEqual([packageDir, tempDir].sort());
     expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
     const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(report.packageName).toBe('@modelcontextprotocol/server-postgres');
@@ -190,8 +244,9 @@ describe('detect contribution', () => {
     expect(submission.submitScanReport).not.toHaveBeenCalled();
   });
 
-  it('with contribution off, a scanned server is not sent', async () => {
+  it('with contribution off, a scanned server whose package is installed is not sent', async () => {
     submission.isContributeEnabled.mockResolvedValue(false);
+    installPackage(tempDir, '@modelcontextprotocol/server-filesystem');
     writeMcpConfig(tempDir, {
       'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
     });
