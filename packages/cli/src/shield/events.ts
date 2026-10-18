@@ -162,6 +162,11 @@ export function readRegularFileText(path: string): string | null {
 function readChainTail(eventsPath: string): { prevHash: string; unterminated: boolean } {
   if (!existsSync(eventsPath)) return { prevHash: GENESIS_HASH, unterminated: false };
 
+  // Two different answers on purpose. A read that fails (permission, I/O) is
+  // answered with genesis, as the plain readFileSync this replaced was, so
+  // that a log the writer cannot read does not stop the write. A path that
+  // holds something other than a regular file is refused, as the reader
+  // refuses it: appending to a pipe or a directory is never right.
   let content: string | null;
   try {
     content = readRegularFileText(eventsPath);
