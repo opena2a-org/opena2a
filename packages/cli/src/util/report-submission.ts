@@ -36,8 +36,14 @@ export interface ScanReport {
   packageName: string;
   /** Package version */
   packageVersion?: string;
-  /** Package type (npm, pypi, go, mcp_server, a2a_agent) */
+  /**
+   * Package type: a Registry package type (`mcp_server`, `a2a_agent`), sent as
+   * the published scan's `projectType`; or, for a package the Registry
+   * resolves by name alone, its ecosystem (`npm`, as `review` sends).
+   */
   packageType?: string;
+  /** Ecosystem the package is published in (`npm`, `pypi` or `github`), when `packageType` names a package type. */
+  ecosystem?: string;
   /** Scanner name */
   scannerName: string;
   /** Scanner version */
@@ -136,6 +142,31 @@ export function normalizeGovernanceReport(raw: Record<string, unknown>): ScanRep
 
 // --- Submission ---
 
+/** The ecosystems the Registry keeps a community scan and a queued contribution for. */
+const REGISTRY_ECOSYSTEMS = new Set(['npm', 'pypi', 'github']);
+
+/**
+ * The two identity fields the Registry reads from a published scan. It reads
+ * the package type from `projectType` and the ecosystem from `ecosystem`, and
+ * a report's `packageType` has carried either kind of value (`npm` from
+ * review, `mcp_server` from detect): a value that names an ecosystem goes to
+ * `ecosystem` with no `projectType`, so that the Registry resolves the package
+ * by name alone as before; any other value goes to `projectType`, with the
+ * report's own `ecosystem` beside it. Only the fields that have a value are
+ * returned, so the published body carries no empty field.
+ */
+function registryIdentity(report: ScanReport): { projectType?: string; ecosystem?: string } {
+  const type = report.packageType;
+  const fields: { projectType?: string; ecosystem?: string } = {};
+  if (type !== undefined && REGISTRY_ECOSYSTEMS.has(type)) {
+    fields.ecosystem = report.ecosystem ?? type;
+  } else {
+    if (type !== undefined) fields.projectType = type;
+    if (report.ecosystem !== undefined) fields.ecosystem = report.ecosystem;
+  }
+  return fields;
+}
+
 export async function submitScanReport(
   registryUrl: string,
   report: ScanReport,
@@ -149,7 +180,9 @@ export async function submitScanReport(
       toolVersion: report.scannerVersion ?? '0.1.0',
       packageName: report.packageName,
       packageVersion: report.packageVersion,
-      ecosystem: report.packageType,
+      // The ecosystem as the report names it; the Registry keeps the event
+      // only for npm, pypi or github and skips any other value.
+      ecosystem: report.ecosystem ?? report.packageType,
       totalChecks: (report.criticalCount + report.highCount + report.mediumCount + report.lowCount + report.infoCount) || 0,
       passed: 0, // not available from ScanReport shape
       critical: report.criticalCount,
@@ -191,7 +224,7 @@ export async function submitScanReport(
       const result = await client.publishScan({
         name: report.packageName,
         version: report.packageVersion,
-        type: report.packageType,
+        ...registryIdentity(report),
         score: report.overallScore,
         maxScore: 100,
         tool: report.scannerName || 'opena2a-cli',
@@ -356,68 +389,6 @@ export async function recordScanAndMaybePrompt(
   } catch {
     // Non-critical
   }
-}
-
-// --- Detect scan normalization ---
-
-/**
- * Normalize a detect result into the ScanReport format.
- * Maps shadow AI findings so the registry can aggregate:
- * - Which agents and MCP servers are in use across the community
- * - What governance gaps are most common
- * - Which MCP capabilities are widespread
- */
-export function normalizeDetectReport(result: {
-  summary: { governanceScore: number; totalAgents: number; mcpServers: number; aiConfigs: number };
-  agents: { name: string; category: string; governanceStatus: string }[];
-  mcpServers: { name: string; capabilities: string[]; source: string }[];
-  findings: { severity: string; category: string; title: string; whyItMatters: string }[];
-  scanDirectory: string;
-}): ScanReport {
-  const score = result.summary.governanceScore;
-  let criticalCount = 0;
-  let highCount = 0;
-  let mediumCount = 0;
-  let lowCount = 0;
-
-  const findings: ScanFinding[] = result.findings.map((f, i) => {
-    if (f.severity === 'critical') criticalCount++;
-    else if (f.severity === 'high') highCount++;
-    else if (f.severity === 'medium') mediumCount++;
-    else lowCount++;
-
-    return {
-      findingId: `DETECT-${f.category.toUpperCase()}-${String(i + 1).padStart(3, '0')}`,
-      severity: f.severity,
-      category: f.category,
-      title: f.title,
-      description: f.whyItMatters,
-    };
-  });
-
-  // Include MCP tool names for community intelligence
-  const mcpTools = result.mcpServers
-    .filter(s => s.source.includes('(project)'))
-    .map(s => s.name);
-
-  const verdict = score >= 80 ? 'pass' : score >= 50 ? 'warnings' : 'fail';
-
-  return {
-    packageName: 'shadow-ai-audit',
-    packageType: 'detect',
-    scannerName: 'opena2a-detect',
-    scannerVersion: '0.6.3',
-    overallScore: score,
-    scanDurationMs: 0,
-    criticalCount,
-    highCount,
-    mediumCount,
-    lowCount,
-    infoCount: 0,
-    verdict,
-    findings,
-    mcpTools: mcpTools.length > 0 ? mcpTools : undefined,
-  };
 }
 
 /**

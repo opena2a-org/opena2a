@@ -62,7 +62,7 @@ const IMPLICIT_INHERIT: readonly string[] = [
   'commands/claim.ts:139',
   'commands/detect.ts:210',
   'commands/detect.ts:1069',
-  'commands/detect.ts:1400',
+  'commands/detect.ts:1404',
   'commands/guard.ts:706',
   'commands/login.ts:280',
   'commands/onepassword-migration.ts:213',

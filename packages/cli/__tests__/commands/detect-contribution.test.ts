@@ -1,0 +1,205 @@
+// Regression: what `opena2a detect` sends to the Registry when contribution
+// is on.
+//
+// Every run outside --ci published a summary of the scanned tree as a scan of
+// a package named `shadow-ai-audit`, typed `detect`, which the Registry
+// recorded as a community scan of an npm package of that name. A scan of the
+// servers the Registry did not know (--auto-scan, or the prompt) sent each
+// server under the key of its config entry, such as `filesystem-root`, which
+// names no package. detect now sends only the scan of each such server, under
+// the npm package the server runs and as an `mcp_server` package in the `npm`
+// ecosystem; a server that runs no npm package is scanned but not sent, and
+// the tree's summary is not sent.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+
+const submission = vi.hoisted(() => ({
+  isContributeEnabled: vi.fn(async () => true),
+  submitScanReport: vi.fn(async () => true),
+  recordScanAndMaybePrompt: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../src/util/report-submission.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/util/report-submission.js')>()),
+  recordScanAndMaybePrompt: submission.recordScanAndMaybePrompt,
+  isContributeEnabled: submission.isContributeEnabled,
+  getRegistryUrl: async () => 'https://api.oa2a.org',
+  submitScanReport: submission.submitScanReport,
+}));
+
+// The Registry knows none of the servers, so every one is scanned.
+vi.mock('../../src/util/registry-enrichment.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/util/registry-enrichment.js')>()),
+  enrichFromRegistry: async () => new Map(),
+}));
+
+// One scan result for every server; what the scanner finds is not what this
+// file tests.
+const scanner = vi.hoisted(() => ({
+  scan: vi.fn(async () => ({
+    overallScore: 90,
+    maxScore: 100,
+    findings: [],
+    criticalCount: 0,
+    highCount: 0,
+    mediumCount: 0,
+    lowCount: 0,
+    infoCount: 0,
+    scanDurationMs: 5,
+    scannerVersion: '0.30.0',
+  })),
+}));
+
+vi.mock('hackmyagent', () => ({
+  HardeningScanner: class {
+    scan = scanner.scan;
+  },
+}));
+
+// No host process is an agent, and the global npm prefix holds no package, so
+// each server is scanned in the project directory.
+const host = vi.hoisted(() => ({ npmPrefix: '' }));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    execSync: ((command: string, options?: Parameters<typeof actual.execSync>[1]) => {
+      if (command === 'ps aux') return 'USER PID %CPU %MEM VSZ RSS TT STAT STARTED TIME COMMAND\n';
+      if (command === 'npm prefix -g') return host.npmPrefix;
+      return actual.execSync(command, options);
+    }) as typeof actual.execSync,
+  };
+});
+
+import { detect } from '../../src/commands/detect.js';
+
+async function runDetect(options: Parameters<typeof detect>[0]): Promise<{ exitCode: number; stdout: string }> {
+  const chunks: string[] = [];
+  const origOut = process.stdout.write;
+  const origErr = process.stderr.write;
+  process.stdout.write = ((chunk: unknown) => {
+    chunks.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = (() => true) as typeof process.stderr.write;
+  try {
+    const exitCode = await detect(options);
+    return { exitCode, stdout: chunks.join('') };
+  } finally {
+    process.stdout.write = origOut;
+    process.stderr.write = origErr;
+  }
+}
+
+function writeMcpConfig(dir: string, mcpServers: Record<string, unknown>): void {
+  fs.writeFileSync(path.join(dir, 'mcp.json'), JSON.stringify({ mcpServers }));
+}
+
+describe('detect contribution', () => {
+  let tempDir: string;
+  let tempHome: string;
+  let savedHome: string | undefined;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-'));
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-home-'));
+    host.npmPrefix = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-prefix-'));
+    // detect reads MCP configs under the home directory too; none of the
+    // host's may reach these runs.
+    savedHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    submission.isContributeEnabled.mockClear();
+    submission.submitScanReport.mockClear();
+    submission.recordScanAndMaybePrompt.mockClear();
+    scanner.scan.mockClear();
+  });
+
+  afterEach(() => {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    fs.rmSync(host.npmPrefix, { recursive: true, force: true });
+  });
+
+  it('a scanned server is sent under the npm package it runs, as an mcp_server package in the npm ecosystem', async () => {
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
+    const [registryUrl, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(registryUrl).toBe('https://api.oa2a.org');
+    expect(report.packageName).toBe('@modelcontextprotocol/server-filesystem');
+    expect(report.packageType).toBe('mcp_server');
+    expect(report.ecosystem).toBe('npm');
+    expect(report.scannerName).toBe('HackMyAgent');
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'filesystem-root');
+    expect(server.scanResult.contributed).toBe(true);
+  });
+
+  it('a scanned server that runs no npm package is not sent: its config key names no package', async () => {
+    writeMcpConfig(tempDir, {
+      local: { command: 'node', args: ['server.js'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'local');
+    expect(server.scanResult.contributed).toBe(false);
+  });
+
+  it('of two scanned servers, only the one that runs an npm package is sent', async () => {
+    writeMcpConfig(tempDir, {
+      local: { command: 'node', args: ['server.js'] },
+      'database-admin': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres@latest'] },
+    });
+
+    await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(scanner.scan).toHaveBeenCalledTimes(2);
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
+    const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(report.packageName).toBe('@modelcontextprotocol/server-postgres');
+    expect(report.packageType).toBe('mcp_server');
+    expect(report.ecosystem).toBe('npm');
+  });
+
+  // Text mode outside --ci is where the tree's summary used to be sent. The
+  // run still counts toward the contribute prompt, which shows the step ran.
+  it('the summary of the scanned tree is not sent', async () => {
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    const { exitCode } = await runDetect({ targetDir: tempDir, format: 'text', ci: false });
+
+    expect(exitCode).toBe(0);
+    expect(submission.recordScanAndMaybePrompt).toHaveBeenCalledTimes(1);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+  });
+
+  it('with contribution off, a scanned server is not sent', async () => {
+    submission.isContributeEnabled.mockResolvedValue(false);
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    submission.isContributeEnabled.mockResolvedValue(true);
+  });
+});
