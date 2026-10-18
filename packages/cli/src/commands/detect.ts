@@ -6,14 +6,14 @@
  * project. Reports identity, governance posture, and risk classification.
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
-import { registryNameFor } from '../util/mcp-registry-name.js';
+import { registryNameFor, hasNpmPackageNameForm } from '../util/mcp-registry-name.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1056,12 +1056,13 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
  * names no directory.
  *
  * The package name is the one registryNameFor read from the launch command,
- * so it fits the npm name grammar: one `/` after a scope at most, no `..`
- * segment. installedPackageDir still refuses a name of any other form, and a
- * directory that does not lie under the node_modules directory it was looked
- * up in, whatever produced the name. The global prefix is the answer of
- * `npm prefix -g` that globalNpmPrefix accepted, or none; then the package
- * counts as not installed there, as when npm is absent.
+ * so it has the form of an npm package name: `name` or `@scope/name`, no
+ * path segment of any other kind. installedPackageDir checks that form again
+ * itself and answers only a directory that lies under the node_modules
+ * directory it was looked up in, whatever produced the name. The global
+ * prefix is the answer of `npm prefix -g` that globalNpmPrefix accepted, or
+ * none; then the package counts as not installed there, as when npm is
+ * absent.
  */
 function resolveMcpServerPath(server: DetectedMcpServer, projectDir: string): { targetDir: string; packageDir: boolean } {
   if (server.registryName) {
@@ -1094,15 +1095,22 @@ const CONTROL_CHARACTER = /[\x00-\x1f\x7f]/;
  * absent, does not answer within NPM_PREFIX_TIMEOUT_MS, or prints anything
  * other than one absolute path in normalized form: one line with no control
  * character, no `.` or `..` segment and no repeated separator, so that the
- * place looked in is the one the answer names. The command is a fixed string
- * with nothing interpolated into it. Its output is one path, so the default
- * maxBuffer of execSync (1 MiB) bounds what is read; an answer past it
- * throws and counts as no answer.
+ * place looked in is the one the answer names.
+ *
+ * npm is started as a program with its two arguments, not through a shell:
+ * nothing is interpolated and no shell parses anything. It is the operator's
+ * own npm, the first on PATH, as the git, gh and npx this CLI starts
+ * elsewhere are; the CLI runs with the operator's environment and does not
+ * try to tell one npm from another. On Windows, where `npm` is a `.cmd`
+ * wrapper that only a shell runs, the start fails and the global prefix
+ * counts as unknown. The output is one path, so the default maxBuffer
+ * (1 MiB) bounds what is read; an answer past it throws and counts as no
+ * answer.
  */
 function globalNpmPrefix(): string | null {
   let answer: string;
   try {
-    answer = execSync('npm prefix -g', { encoding: 'utf-8', timeout: NPM_PREFIX_TIMEOUT_MS }).trim();
+    answer = execFileSync('npm', ['prefix', '-g'], { encoding: 'utf-8', timeout: NPM_PREFIX_TIMEOUT_MS }).trim();
   } catch {
     return null;
   }
@@ -1112,35 +1120,37 @@ function globalNpmPrefix(): string | null {
 }
 
 /**
- * `<nodeModulesDir>/<packageName>` when that directory exists and lies under
- * nodeModulesDir; null otherwise.
+ * The real path of the directory of package `packageName` under
+ * nodeModulesDir, or null when the package is not installed there.
  *
- * The name is refused before it is resolved when it is empty or absolute,
- * carries a control character, or has a segment that is empty, `.` or `..`:
- * such a name could resolve to a directory outside node_modules, or to one
- * inside it under another package's name. The resolved candidate is then
- * kept only when path.relative places it under the resolved node_modules
- * directory, and when its real path, symbolic links followed, is under that
- * directory's real path: a link under node_modules to a place outside it, as
- * `npm link` lays out a development copy, is not an installed copy of the
- * package, and a scan of it would describe that other place. A link that
- * stays under node_modules, as pnpm lays packages out, is followed. The
- * directory returned is the one named, not its real path.
+ * The name must have the form of an npm package name (hasNpmPackageNameForm:
+ * `name` or `@scope/name`, at most 214 characters, ASCII letters, digits,
+ * `.`, `_`, `~` and `-`), which names one directory one or two levels below
+ * node_modules and nothing else; a path of either separator kind, a `.` or
+ * `..` segment, a drive letter, a control character and a character outside
+ * ASCII are refused before anything is resolved. The names registryNameFor
+ * produces have that form by construction; the check here is the lookup's
+ * own.
+ *
+ * The directory is then resolved in one step, symbolic links followed, which
+ * also fails when it does not exist, and is kept only when the result lies
+ * under the real path of node_modules: a link under node_modules to a place
+ * outside it, as `npm link` lays out a development copy, is not an installed
+ * copy of the package, and a scan of it would describe that other place. A
+ * link that stays under node_modules, as pnpm lays packages out, is
+ * followed. The real path is what is answered, so the scan reads the
+ * directory that was checked, not a link that could be re-pointed between
+ * the check and the scan.
  */
 export function installedPackageDir(nodeModulesDir: string, packageName: string): string | null {
-  if (!packageName || path.isAbsolute(packageName) || CONTROL_CHARACTER.test(packageName)) return null;
-  if (packageName.split(/[\\/]/).some((segment) => segment === '' || segment === '.' || segment === '..')) return null;
-
-  const root = path.resolve(nodeModulesDir);
-  const candidate = path.resolve(root, packageName);
-  if (!isUnder(root, candidate) || !fs.existsSync(candidate)) return null;
-
+  if (!hasNpmPackageNameForm(packageName)) return null;
   try {
-    if (!isUnder(fs.realpathSync(root), fs.realpathSync(candidate))) return null;
+    const root = fs.realpathSync(path.resolve(nodeModulesDir));
+    const dir = fs.realpathSync(path.join(root, packageName));
+    return isUnder(root, dir) ? dir : null;
   } catch {
     return null;
   }
-  return candidate;
 }
 
 /** Whether `child` is a proper descendant of `parent`, both resolved paths. */
