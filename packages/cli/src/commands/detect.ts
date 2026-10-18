@@ -1136,13 +1136,17 @@ async function scanUnknownAssets(
 
       let contributed = false;
 
-      // Submit to registry if contribute is enabled
-      if (contributeEnabled && registryUrl) {
+      // Submit to registry if contribute is enabled. The server is sent under
+      // the npm package it runs, the name the Registry knows it by and the one
+      // the lookup used; a server that runs none is scanned but not sent, since
+      // its config key names no package.
+      if (contributeEnabled && registryUrl && server.registryName) {
         try {
           const { submitScanReport } = await import('../util/report-submission.js');
           const report = {
-            packageName: server.name,
+            packageName: server.registryName,
             packageType: 'mcp_server',
+            ecosystem: 'npm',
             scannerName: 'HackMyAgent',
             scannerVersion: scanResult.scannerVersion ?? '1.0.0',
             overallScore: score,
@@ -1409,21 +1413,13 @@ export async function detect(options: DetectOptions): Promise<number> {
     confirm.write(`Asset inventory: ${options.exportCsv}\n`);
   }
 
-  // Community contribution: track scan count and submit when opted in.
-  // This lets the registry aggregate shadow AI data across the community:
-  // which agents/MCP servers are in use, common governance gaps, etc.
+  // Count the scan toward the contribute prompt. The tree's summary is not
+  // sent to the Registry: it names no package the Registry can resolve. What
+  // detect contributes is the scan of each MCP server the Registry did not
+  // know, under the npm package the server runs (scanUnknownAssets).
   try {
-    const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport, normalizeDetectReport } =
-      await import('../util/report-submission.js');
+    const { recordScanAndMaybePrompt } = await import('../util/report-submission.js');
     await recordScanAndMaybePrompt();
-
-    if (options.ci !== true && (await isContributeEnabled())) {
-      const registryUrl = await getRegistryUrl();
-      if (registryUrl) {
-        const report = normalizeDetectReport(result);
-        await submitScanReport(registryUrl, report, options.verbose);
-      }
-    }
   } catch {
     // Non-critical -- never block on contribution failures
   }
