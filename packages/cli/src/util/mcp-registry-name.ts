@@ -18,6 +18,22 @@ export interface McpServerLaunch {
 // git+https://..., file:...) and GitHub shorthand (user/repo) do not match.
 const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][\w.~-]*\/)?[a-z0-9][\w.~-]*$/i;
 
+/** The longest name npm publishes, scope and separator included. */
+const NPM_PACKAGE_NAME_MAX_LENGTH = 214;
+
+/**
+ * Whether `name` has the form of an npm package name: `name` or
+ * `@scope/name`, at most 214 characters, each part starting with a letter or
+ * digit and made of ASCII letters, digits, `.`, `_`, `~` and `-`. A string
+ * of that form names one directory one or two levels below a node_modules
+ * directory and nothing else: a path of either separator kind, a `.` or `..`
+ * segment, a drive letter, a control character and a character outside
+ * ASCII are not of that form.
+ */
+export function hasNpmPackageNameForm(name: string): boolean {
+  return name.length <= NPM_PACKAGE_NAME_MAX_LENGTH && NPM_PACKAGE_NAME.test(name);
+}
+
 /**
  * The npm package of a stdio server started by a package runner, without a
  * version suffix and with its scope; null for a `node <file>` server, any
@@ -57,5 +73,5 @@ function packageRunnerArgs(command: string, args: string[]): string[] | null {
 function packageName(spec: string): string | null {
   const versionAt = spec.indexOf('@', spec.startsWith('@') ? 1 : 0);
   const name = versionAt === -1 ? spec : spec.slice(0, versionAt);
-  return NPM_PACKAGE_NAME.test(name) ? name : null;
+  return hasNpmPackageNameForm(name) ? name : null;
 }

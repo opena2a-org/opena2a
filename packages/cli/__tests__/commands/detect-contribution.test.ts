@@ -14,9 +14,11 @@
 // the `npm` ecosystem. A server whose package is not installed, or that runs
 // no npm package, is scanned in the project directory and not sent, and the
 // tree's summary is not sent. A package directory counts as installed only
-// when it lies under the node_modules directory it was looked up in, symbolic
-// links followed, and the global npm prefix only when `npm prefix -g` answers
-// one absolute path in normalized form.
+// when its name has the form of an npm package name and its real path,
+// symbolic links followed, lies under the node_modules directory it was
+// looked up in; that real path is what is scanned. The global npm prefix is
+// read by starting npm with its arguments, not through a shell, and is used
+// only when it answers one absolute path in normalized form.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -67,18 +69,32 @@ vi.mock('hackmyagent', () => ({
 }));
 
 // No host process is an agent, and the global npm prefix holds only what a
-// case installs there.
-const host = vi.hoisted(() => ({ npmPrefix: '' }));
+// case installs there. The prefix is answered to a start of npm as a program
+// with its arguments; every such start, and every shell command, is
+// recorded, so a case can check that npm was started that way and never
+// through a shell.
+const host = vi.hoisted(() => ({
+  npmPrefix: '',
+  npmStarts: [] as Array<{ file: string; args: string[] }>,
+  shellCommands: [] as string[],
+}));
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
     execSync: ((command: string, options?: Parameters<typeof actual.execSync>[1]) => {
+      host.shellCommands.push(command);
       if (command === 'ps aux') return 'USER PID %CPU %MEM VSZ RSS TT STAT STARTED TIME COMMAND\n';
-      if (command === 'npm prefix -g') return host.npmPrefix;
       return actual.execSync(command, options);
     }) as typeof actual.execSync,
+    execFileSync: ((file: string, args?: readonly string[], options?: Parameters<typeof actual.execFileSync>[2]) => {
+      if (file === 'npm' && args?.join(' ') === 'prefix -g') {
+        host.npmStarts.push({ file, args: [...args] });
+        return host.npmPrefix;
+      }
+      return actual.execFileSync(file, args, options);
+    }) as typeof actual.execFileSync,
   };
 });
 
@@ -106,12 +122,17 @@ function writeMcpConfig(dir: string, mcpServers: Record<string, unknown>): void 
   fs.writeFileSync(path.join(dir, 'mcp.json'), JSON.stringify({ mcpServers }));
 }
 
-/** Lay a package out as npm does, `<root>/node_modules/<name>/package.json`, and return its directory. */
+/**
+ * Lay a package out as npm does, `<root>/node_modules/<name>/package.json`,
+ * and return its real path: the directory the lookup answers and the scan
+ * reads, which under a linked temporary directory differs from the path
+ * given.
+ */
 function installPackage(root: string, name: string): string {
   const dir = path.join(root, 'node_modules', name);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: '0.0.0' }));
-  return dir;
+  return fs.realpathSync(dir);
 }
 
 /** The directory each scan was given, in scan order. */
@@ -131,6 +152,8 @@ describe('detect contribution', () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-home-'));
     prefixDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-prefix-'));
     host.npmPrefix = prefixDir;
+    host.npmStarts.length = 0;
+    host.shellCommands.length = 0;
     // detect reads MCP configs under the home directory too; none of the
     // host's may reach these runs.
     savedHome = process.env.HOME;
@@ -265,24 +288,40 @@ describe('detect contribution', () => {
   });
 
   // The package looked for is the one the launch names. A launch whose package
-  // argument is a path, or a name no npm package can have, names no package:
-  // the lookup never leaves node_modules, the project directory is scanned,
-  // and nothing is sent.
-  it('a server whose launch names a path or a malformed package name is scanned in the project directory and not sent', async () => {
+  // argument is a path, a Windows drive path, a name longer than npm allows,
+  // or a name no npm package can have, names no package: the lookup never
+  // leaves node_modules, the project directory is scanned, and nothing is
+  // sent.
+  it('a server whose launch names a path, a drive path, an over-long name or a malformed package name is scanned in the project directory and not sent', async () => {
     writeMcpConfig(tempDir, {
       traversal: { command: 'npx', args: ['-y', '../../../outside/server'] },
       absolute: { command: 'npx', args: ['-y', '/opt/outside/server'] },
+      drive: { command: 'npx', args: ['-y', 'C:\\outside\\server'] },
+      long: { command: 'npx', args: ['-y', 'a'.repeat(215)] },
       control: { command: 'npx', args: ['-y', 'server\u0000name'] },
     });
 
     const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
 
     expect(exitCode).toBe(0);
-    expect(scannedDirs()).toEqual([tempDir, tempDir, tempDir]);
+    expect(scannedDirs()).toEqual([tempDir, tempDir, tempDir, tempDir, tempDir]);
     expect(submission.submitScanReport).not.toHaveBeenCalled();
     const servers = JSON.parse(stdout).mcpServers as Array<{ name: string; scanResult: { contributed: boolean } }>;
-    expect(servers.map((s) => s.name).sort()).toEqual(['absolute', 'control', 'traversal']);
+    expect(servers.map((s) => s.name).sort()).toEqual(['absolute', 'control', 'drive', 'long', 'traversal']);
     for (const server of servers) expect(server.scanResult.contributed).toBe(false);
+  });
+
+  // The prefix is read by starting npm as a program with its two arguments.
+  // No shell is started for it, so nothing is parsed on the way to npm.
+  it('reads the global npm prefix by starting npm with its arguments, not through a shell', async () => {
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(host.npmStarts).toEqual([{ file: 'npm', args: ['prefix', '-g'] }]);
+    expect(host.shellCommands.filter((command) => command.includes('npm'))).toEqual([]);
   });
 
   // `npm prefix -g` prints one absolute path. An answer in any other form is
@@ -384,14 +423,16 @@ describe('detect contribution', () => {
   });
 
   // pnpm lays a package out under node_modules/.pnpm and links it from
-  // node_modules/<name>: the link stays under node_modules and is followed.
-  it.skipIf(process.platform === 'win32')('a server whose package under node_modules is a link to a directory under node_modules is scanned there and sent', async () => {
+  // node_modules/<name>: the link stays under node_modules and is followed,
+  // and the directory scanned is the one it points to, so a link re-pointed
+  // after the lookup changes nothing.
+  it.skipIf(process.platform === 'win32')('a server whose package under node_modules is a link to a directory under node_modules is scanned in that directory and sent', async () => {
     const store = path.join(tempDir, 'node_modules', '.pnpm', '@modelcontextprotocol+server-filesystem@0.0.0');
     const real = installPackage(store, '@modelcontextprotocol/server-filesystem');
     const link = path.join(tempDir, 'node_modules', '@modelcontextprotocol', 'server-filesystem');
     fs.mkdirSync(path.dirname(link), { recursive: true });
-    fs.symlinkSync(path.relative(path.dirname(link), real), link, 'dir');
-    expect(fs.realpathSync(link)).toBe(fs.realpathSync(real));
+    fs.symlinkSync(path.relative(fs.realpathSync(path.dirname(link)), real), link, 'dir');
+    expect(fs.realpathSync(link)).toBe(real);
     writeMcpConfig(tempDir, {
       'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
     });
@@ -399,7 +440,7 @@ describe('detect contribution', () => {
     const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
 
     expect(exitCode).toBe(0);
-    expect(scannedDirs()).toEqual([link]);
+    expect(scannedDirs()).toEqual([real]);
     expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
     const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(report.packageName).toBe('@modelcontextprotocol/server-filesystem');
@@ -410,16 +451,19 @@ describe('detect contribution', () => {
 
 // The lookup itself, with names registryNameFor never produces: the
 // directory it answers must lie under the node_modules directory it was
-// given, whatever the name.
+// given, whatever the name, and a name that is not of the npm form is
+// refused whether or not a directory of that name exists.
 describe('installedPackageDir', () => {
   let root: string;
   let nodeModules: string;
+  let pkg: string;
+  let scopedPkg: string;
 
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-lookup-'));
     nodeModules = path.join(root, 'node_modules');
-    installPackage(root, 'pkg');
-    installPackage(root, '@scope/pkg');
+    pkg = installPackage(root, 'pkg');
+    scopedPkg = installPackage(root, '@scope/pkg');
     fs.mkdirSync(path.join(root, 'outside'), { recursive: true });
   });
 
@@ -427,12 +471,59 @@ describe('installedPackageDir', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('answers the directory of an installed unscoped or scoped package, and null for one that is not installed', () => {
-    expect(installedPackageDir(nodeModules, 'pkg')).toBe(path.join(nodeModules, 'pkg'));
-    expect(installedPackageDir(nodeModules, '@scope/pkg')).toBe(path.join(nodeModules, '@scope', 'pkg'));
+  it('answers the real path of an installed unscoped or scoped package, and null for one that is not installed', () => {
+    expect(installedPackageDir(nodeModules, 'pkg')).toBe(pkg);
+    expect(installedPackageDir(nodeModules, '@scope/pkg')).toBe(scopedPkg);
     expect(installedPackageDir(nodeModules, 'other')).toBeNull();
     expect(installedPackageDir(nodeModules, '@scope/other')).toBeNull();
     expect(installedPackageDir(path.join(root, 'no-such-dir'), 'pkg')).toBeNull();
+  });
+
+  // Windows path forms are refused on every platform, before anything is
+  // resolved: on a POSIX filesystem `C:\pkg` is a legal directory name, and a
+  // directory of that name under node_modules is still not a package.
+  it('refuses a name that is not of the npm form, whether or not a directory of that name exists: a Windows path form, a path of more than two levels, a character outside ASCII', () => {
+    for (const existing of ['pkg name', 'пакет', 'C:\\pkg']) {
+      fs.mkdirSync(path.join(nodeModules, existing), { recursive: true });
+      expect(fs.existsSync(path.join(nodeModules, existing))).toBe(true);
+    }
+    for (const name of [
+      'C:\\pkg',
+      'C:pkg',
+      '\\\\server\\share\\pkg',
+      '\\\\?\\C:\\pkg',
+      'pkg\\sub',
+      'pkg/sub',
+      'a/b/c',
+      '@scope/pkg/sub',
+      '@scope',
+      '@/pkg',
+      '.pkg',
+      '_pkg',
+      'pkg name',
+      'pkg:1',
+      'pkg@1.0.0',
+      'пакет',
+      'pkg\u202e',
+      'pk\u0301g',
+      'pkg\u00a0',
+      'pkg\uff0fother',
+      'pkg\u2215other',
+    ]) {
+      expect(installedPackageDir(nodeModules, name), JSON.stringify(name)).toBeNull();
+    }
+  });
+
+  // npm publishes no name longer than 214 characters. The bound is the
+  // lookup's own: both directories exist.
+  it.skipIf(process.platform === 'win32')('answers a name of the longest length npm allows and refuses one a character longer, both installed', () => {
+    const longest = 'a'.repeat(214);
+    const longer = 'a'.repeat(215);
+    const longestDir = installPackage(root, longest);
+    installPackage(root, longer);
+
+    expect(installedPackageDir(nodeModules, longest)).toBe(longestDir);
+    expect(installedPackageDir(nodeModules, longer)).toBeNull();
   });
 
   it('refuses a name that would resolve outside node_modules, or inside it under another name', () => {
@@ -461,14 +552,14 @@ describe('installedPackageDir', () => {
     }
   });
 
-  it.skipIf(process.platform === 'win32')('follows a link that stays under node_modules and refuses one that leaves it', () => {
+  it.skipIf(process.platform === 'win32')('follows a link that stays under node_modules, answering the directory it points to, and refuses one that leaves it', () => {
     const inside = path.join(nodeModules, '.store', 'linked');
     fs.mkdirSync(inside, { recursive: true });
     fs.symlinkSync(inside, path.join(nodeModules, 'linked-inside'), 'dir');
     fs.symlinkSync(path.join(root, 'outside'), path.join(nodeModules, 'linked-outside'), 'dir');
     fs.symlinkSync(os.homedir(), path.join(nodeModules, 'linked-home'), 'dir');
 
-    expect(installedPackageDir(nodeModules, 'linked-inside')).toBe(path.join(nodeModules, 'linked-inside'));
+    expect(installedPackageDir(nodeModules, 'linked-inside')).toBe(fs.realpathSync(inside));
     expect(installedPackageDir(nodeModules, 'linked-outside')).toBeNull();
     expect(installedPackageDir(nodeModules, 'linked-home')).toBeNull();
   });
