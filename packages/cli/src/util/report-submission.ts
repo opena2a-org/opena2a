@@ -37,12 +37,14 @@ export interface ScanReport {
   /** Package version */
   packageVersion?: string;
   /**
-   * Package type: a Registry package type (`mcp_server`, `a2a_agent`), sent as
-   * the published scan's `projectType`; or, for a package the Registry
-   * resolves by name alone, its ecosystem (`npm`, as `review` sends).
+   * Package type: a Registry package type (`mcp_server`, `a2a_agent`), or a
+   * scan kind (`governance`, `trust`), sent as the published scan's
+   * `projectType`; or, for a package the Registry resolves by name alone, its
+   * ecosystem (`npm`, as `review` sends). A report carrying any other value is
+   * not sent.
    */
   packageType?: string;
-  /** Ecosystem the package is published in (`npm`, `pypi` or `github`), when `packageType` names a package type. */
+  /** Ecosystem the package is published in (`npm`, `pypi` or `github`), when `packageType` names a package type. A report carrying any other value is not sent. */
   ecosystem?: string;
   /** Scanner name */
   scannerName: string;
@@ -145,30 +147,42 @@ export function normalizeGovernanceReport(raw: Record<string, unknown>): ScanRep
 /** The ecosystems the Registry keeps a community scan and a queued contribution for. */
 const REGISTRY_ECOSYSTEMS = new Set(['npm', 'pypi', 'github']);
 
+/** The package types the Registry keeps a package under. */
+const REGISTRY_PACKAGE_TYPES = new Set(['mcp_server', 'a2a_agent', 'skill', 'ai_tool', 'llm', 'library']);
+
 /**
- * The two identity fields the Registry reads from a published scan. It reads
- * the package type from `projectType` and the ecosystem from `ecosystem`, and
- * a report's `packageType` has carried either kind of value (`npm` from
- * review, `mcp_server` from detect): a value that names an ecosystem goes to
- * `ecosystem` with no `projectType`, so that the Registry resolves the package
- * by name alone as before; any other value goes to `projectType`, with the
- * report's own `ecosystem` beside it. Only the fields that have a value are
- * returned, so the published body carries no empty field. Both values are
- * literals the CLI sets where it builds the report (`npm` from review,
- * `mcp_server` and `npm` from detect, `governance` from scan-soul, `trust`
- * from identity), never a string read from a scanned tree or a config, so
- * they are not validated here.
+ * The kinds of scan the CLI publishes that are not a Registry package type:
+ * a governance file (`governance`, from scan-soul) and an agent's trust
+ * profile (`trust`, from identity).
  */
-function registryIdentity(report: ScanReport): { projectType?: string; ecosystem?: string } {
-  const type = report.packageType;
-  const fields: { projectType?: string; ecosystem?: string } = {};
-  if (type !== undefined && REGISTRY_ECOSYSTEMS.has(type)) {
-    fields.ecosystem = report.ecosystem ?? type;
-  } else {
-    if (type !== undefined) fields.projectType = type;
-    if (report.ecosystem !== undefined) fields.ecosystem = report.ecosystem;
-  }
-  return fields;
+const PUBLISHED_SCAN_KINDS = new Set(['governance', 'trust']);
+
+/**
+ * The two identity fields the Registry reads from a published scan, or null
+ * when the report's package type or ecosystem is not one of the values
+ * listed above, and then the report is not sent. The Registry reads the
+ * package type from `projectType` and the ecosystem from `ecosystem`, and a
+ * report's `packageType` has carried either kind of value (`npm` from review,
+ * `mcp_server` from detect): a value that names an ecosystem goes to
+ * `ecosystem` with no `projectType`, so that the Registry resolves the
+ * package by name alone as before; a Registry package type or a scan kind
+ * goes to `projectType`, with the report's own `ecosystem` beside it. Only
+ * the fields that have a value are returned, so the published body carries no
+ * empty field. The reports the CLI builds carry literals it sets (`npm` from
+ * review, `mcp_server` and `npm` from detect, `governance` from scan-soul,
+ * `trust` from identity); a report the CLI parses from a delegated scanner's
+ * JSON output carries whatever that scanner printed, so the values of every
+ * report are checked here alike.
+ */
+function registryIdentity(report: ScanReport): { projectType?: string; ecosystem?: string } | null {
+  // A report parsed from a scanner's JSON may carry null for a value it lacks.
+  const type = report.packageType ?? undefined;
+  const ecosystem = report.ecosystem ?? undefined;
+  if (ecosystem !== undefined && !REGISTRY_ECOSYSTEMS.has(ecosystem)) return null;
+  if (type === undefined) return ecosystem === undefined ? {} : { ecosystem };
+  if (REGISTRY_ECOSYSTEMS.has(type)) return { ecosystem: ecosystem ?? type };
+  if (!REGISTRY_PACKAGE_TYPES.has(type) && !PUBLISHED_SCAN_KINDS.has(type)) return null;
+  return ecosystem === undefined ? { projectType: type } : { projectType: type, ecosystem };
 }
 
 export async function submitScanReport(
@@ -176,6 +190,11 @@ export async function submitScanReport(
   report: ScanReport,
   verbose?: boolean,
 ): Promise<boolean> {
+  // A report whose package type or ecosystem is not one registryIdentity
+  // knows is neither queued nor published.
+  const identity = registryIdentity(report);
+  if (!identity) return false;
+
   // Also queue via @opena2a/contribute for buffered submission
   try {
     const { contribute } = await import('@opena2a/contribute');
@@ -228,7 +247,7 @@ export async function submitScanReport(
       const result = await client.publishScan({
         name: report.packageName,
         version: report.packageVersion,
-        ...registryIdentity(report),
+        ...identity,
         score: report.overallScore,
         maxScore: 100,
         tool: report.scannerName || 'opena2a-cli',

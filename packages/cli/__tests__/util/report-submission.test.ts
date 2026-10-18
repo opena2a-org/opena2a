@@ -6,7 +6,9 @@
 // copy, which the Registry keeps only for the npm, pypi and github
 // ecosystems, so a report typed `mcp_server` was skipped there. The Registry
 // reads the package type from `projectType` and the ecosystem from
-// `ecosystem`, and that is where each value now goes.
+// `ecosystem`, and that is where each value now goes. A report carrying a
+// value that is neither a Registry package type, an ecosystem nor a scan kind
+// the CLI publishes is not sent.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -116,6 +118,53 @@ describe('submitScanReport identity fields', () => {
     expect(body).not.toHaveProperty('projectType');
     expect(body).not.toHaveProperty('ecosystem');
     expect(body).not.toHaveProperty('type');
+  });
+
+  // A report parsed from a scanner's JSON output may carry null for a value
+  // it lacks; null is no value.
+  it('a report carrying null as its package type and ecosystem publishes neither field', async () => {
+    const sent = await submitScanReport(REGISTRY_URL, report({
+      packageName: 'revfix',
+      packageType: null as unknown as string,
+      ecosystem: null as unknown as string,
+    }));
+
+    expect(sent).toBe(true);
+    const body = published();
+    expect(body).not.toHaveProperty('projectType');
+    expect(body).not.toHaveProperty('ecosystem');
+  });
+
+  // scan-soul and identity publish a kind of scan that is not a Registry
+  // package type, and keep sending it as projectType.
+  it('a scan-soul or identity report publishes its scan kind as projectType and no ecosystem', async () => {
+    for (const kind of ['governance', 'trust']) {
+      registry.publishScan.mockClear();
+      await submitScanReport(REGISTRY_URL, report({ packageName: 'SOUL.md', packageType: kind }));
+
+      const body = published();
+      expect(body.projectType).toBe(kind);
+      expect(body).not.toHaveProperty('ecosystem');
+    }
+  });
+
+  // The values are checked where they are sent: a report the CLI parsed from
+  // a scanner's output carries whatever that scanner printed.
+  it('a report whose package type or ecosystem is not one of the values sent is neither queued nor published', async () => {
+    for (const identity of [
+      { packageType: 'detect' },
+      { packageType: 'Node.js + MCP server' },
+      { packageType: 42 as unknown as string },
+      { packageType: 'mcp_server', ecosystem: 'Node.js' },
+      { packageType: 'npm', ecosystem: 'unknown' },
+      { ecosystem: 'mcp_server' },
+    ]) {
+      const sent = await submitScanReport(REGISTRY_URL, report({ packageName: 'revfix', ...identity }));
+
+      expect(sent, JSON.stringify(identity)).toBe(false);
+      expect(registry.publishScan, JSON.stringify(identity)).not.toHaveBeenCalled();
+      expect(queue.scanResult, JSON.stringify(identity)).not.toHaveBeenCalled();
+    }
   });
 
   it('the rest of the published scan is unchanged', async () => {

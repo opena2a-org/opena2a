@@ -1091,32 +1091,60 @@ const NPM_PREFIX_TIMEOUT_MS = 10_000;
 const CONTROL_CHARACTER = /[\x00-\x1f\x7f]/;
 
 /**
- * The global npm prefix as `npm prefix -g` printed it, or null when npm is
- * absent, does not answer within NPM_PREFIX_TIMEOUT_MS, or prints anything
- * other than one absolute path in normalized form: one line with no control
- * character, no `.` or `..` segment and no repeated separator, so that the
- * place looked in is the one the answer names.
+ * The global npm prefix as `npm prefix -g` printed it, or null when npmOnPath
+ * finds no npm to start, npm does not answer within NPM_PREFIX_TIMEOUT_MS, or
+ * it prints anything other than one absolute path in normalized form: one
+ * line with no control character, no `.` or `..` segment and no repeated
+ * separator, so that the place looked in is the one the answer names.
  *
- * npm is started as a program with its two arguments, not through a shell:
- * nothing is interpolated and no shell parses anything. It is the operator's
- * own npm, the first on PATH, as the git, gh and npx this CLI starts
- * elsewhere are; the CLI runs with the operator's environment and does not
- * try to tell one npm from another. On Windows, where `npm` is a `.cmd`
- * wrapper that only a shell runs, the start fails and the global prefix
+ * npm is started by the absolute path npmOnPath answered, as a program with
+ * its two arguments, not through a shell: nothing is interpolated and no
+ * shell parses anything. It is the operator's own npm, the first on PATH, as
+ * the git, gh and npx this CLI starts elsewhere are; the CLI does not try to
+ * tell one npm from another. On Windows, where `npm` is a `.cmd` wrapper that
+ * only a shell runs, no program named `npm` starts and the global prefix
  * counts as unknown. The output is one path, so the default maxBuffer
  * (1 MiB) bounds what is read; an answer past it throws and counts as no
  * answer.
  */
 function globalNpmPrefix(): string | null {
+  const npm = npmOnPath();
+  if (!npm) return null;
   let answer: string;
   try {
-    answer = execFileSync('npm', ['prefix', '-g'], { encoding: 'utf-8', timeout: NPM_PREFIX_TIMEOUT_MS }).trim();
+    answer = execFileSync(npm, ['prefix', '-g'], { encoding: 'utf-8', timeout: NPM_PREFIX_TIMEOUT_MS }).trim();
   } catch {
+    // npm failed, timed out or printed more than maxBuffer: the prefix is unknown.
     return null;
   }
   if (!answer || CONTROL_CHARACTER.test(answer) || !path.isAbsolute(answer)) return null;
   if (path.normalize(answer) !== answer) return null;
   return answer;
+}
+
+/**
+ * The absolute path of the npm that PATH names: the first PATH directory
+ * holding an executable file named `npm`. Null when no directory holds one,
+ * and null when PATH holds an empty or relative entry (`.`, `bin`, or the
+ * empty entry a leading, trailing or doubled separator leaves): such an entry
+ * is resolved against the directory the CLI was started in, which can be the
+ * project being scanned, so a program placed there could answer as npm, or
+ * as the `node` that npm's launcher looks up on the same PATH. With such an
+ * entry npm is not started at all, and the global prefix counts as unknown.
+ */
+function npmOnPath(): string | null {
+  const dirs = (process.env.PATH ?? '').split(path.delimiter);
+  if (dirs.some((dir) => !path.isAbsolute(dir))) return null;
+  for (const dir of dirs) {
+    const candidate = path.join(dir, 'npm');
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // No executable npm in this directory; the next one is looked in.
+    }
+  }
+  return null;
 }
 
 /**
@@ -1132,7 +1160,15 @@ function globalNpmPrefix(): string | null {
  * produces have that form by construction; the check here is the lookup's
  * own.
  *
- * The directory is then resolved in one step, symbolic links followed, which
+ * The name is then taken apart at the `/` of its scope, if it has one, and
+ * each part is joined only after it is found, spelled exactly so, letter case
+ * included, among the entries of the directory it is joined to. The path
+ * built is node_modules/<name> or node_modules/<scope>/<name> and nothing
+ * else, and on a case-insensitive filesystem a name that differs from the
+ * installed directory only in letter case, which would open the directory of
+ * another package, finds nothing.
+ *
+ * That path is then resolved in one step, symbolic links followed, which
  * also fails when it does not exist, and is kept only when the result lies
  * under the real path of node_modules: a link under node_modules to a place
  * outside it, as `npm link` lays out a development copy, is not an installed
@@ -1141,14 +1177,22 @@ function globalNpmPrefix(): string | null {
  * followed. The real path is what is answered, so the scan reads the
  * directory that was checked, not a link that could be re-pointed between
  * the check and the scan.
+ *
+ * @internal Exported for its tests; detect reaches it through resolveMcpServerPath.
  */
 export function installedPackageDir(nodeModulesDir: string, packageName: string): string | null {
   if (!hasNpmPackageNameForm(packageName)) return null;
   try {
     const root = fs.realpathSync(path.resolve(nodeModulesDir));
-    const dir = fs.realpathSync(path.join(root, packageName));
+    let candidate = root;
+    for (const part of packageName.split('/')) {
+      if (!fs.readdirSync(candidate).includes(part)) return null;
+      candidate = path.join(candidate, part);
+    }
+    const dir = fs.realpathSync(candidate);
     return isUnder(root, dir) ? dir : null;
   } catch {
+    // node_modules or a part of the name is missing or unreadable: not installed there.
     return null;
   }
 }

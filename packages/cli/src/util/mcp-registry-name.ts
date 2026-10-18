@@ -21,6 +21,9 @@ const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][\w.~-]*\/)?[a-z0-9][\w.~-]*$/i;
 /** The longest name npm publishes, scope and separator included. */
 const NPM_PACKAGE_NAME_MAX_LENGTH = 214;
 
+/** A string hasNpmPackageNameForm has checked: it has the form of an npm package name. */
+export type NpmPackageName = string & { readonly __brand: 'NpmPackageName' };
+
 /**
  * Whether `name` has the form of an npm package name: `name` or
  * `@scope/name`, at most 214 characters, each part starting with a letter or
@@ -28,9 +31,10 @@ const NPM_PACKAGE_NAME_MAX_LENGTH = 214;
  * of that form names one directory one or two levels below a node_modules
  * directory and nothing else: a path of either separator kind, a `.` or `..`
  * segment, a drive letter, a control character and a character outside
- * ASCII are not of that form.
+ * ASCII are not of that form. Where it answers true, `name` is narrowed to
+ * NpmPackageName.
  */
-export function hasNpmPackageNameForm(name: string): boolean {
+export function hasNpmPackageNameForm(name: string): name is NpmPackageName {
   return name.length <= NPM_PACKAGE_NAME_MAX_LENGTH && NPM_PACKAGE_NAME.test(name);
 }
 
