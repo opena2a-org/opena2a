@@ -14,11 +14,14 @@
 // the `npm` ecosystem. A server whose package is not installed, or that runs
 // no npm package, is scanned in the project directory and not sent, and the
 // tree's summary is not sent. A package directory counts as installed only
-// when its name has the form of an npm package name and its real path,
+// when its name has the form of an npm package name, each part of the name is
+// spelled as the directory entry is, letter case included, and its real path,
 // symbolic links followed, lies under the node_modules directory it was
 // looked up in; that real path is what is scanned. The global npm prefix is
-// read by starting npm with its arguments, not through a shell, and is used
-// only when it answers one absolute path in normalized form.
+// read by starting, by its absolute path and not through a shell, the first
+// npm found in a PATH directory, never when PATH holds an empty or relative
+// entry, and is used only when it answers one absolute path in normalized
+// form.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -69,10 +72,10 @@ vi.mock('hackmyagent', () => ({
 }));
 
 // No host process is an agent, and the global npm prefix holds only what a
-// case installs there. The prefix is answered to a start of npm as a program
-// with its arguments; every such start, and every shell command, is
-// recorded, so a case can check that npm was started that way and never
-// through a shell.
+// case installs there. The prefix is answered to a start of npm, by name or
+// by a path ending in `npm`, as a program with its arguments; every such
+// start, and every shell command, is recorded, so a case can check which npm
+// was started, that it was started that way, and never through a shell.
 const host = vi.hoisted(() => ({
   npmPrefix: '',
   npmStarts: [] as Array<{ file: string; args: string[] }>,
@@ -89,7 +92,7 @@ vi.mock('node:child_process', async (importOriginal) => {
       return actual.execSync(command, options);
     }) as typeof actual.execSync,
     execFileSync: ((file: string, args?: readonly string[], options?: Parameters<typeof actual.execFileSync>[2]) => {
-      if (file === 'npm' && args?.join(' ') === 'prefix -g') {
+      if (/(?:^|[\\/])npm$/.test(file) && args?.join(' ') === 'prefix -g') {
         host.npmStarts.push({ file, args: [...args] });
         return host.npmPrefix;
       }
@@ -149,12 +152,17 @@ describe('detect contribution', () => {
   let tempHome: string;
   /** The directory the global prefix answer names; a case may answer with something else. */
   let prefixDir: string;
+  /** The one PATH directory of a run, holding an executable file named `npm` that the mock answers for. */
+  let binDir: string;
   let savedHome: string | undefined;
+  let savedPath: string | undefined;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-'));
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-home-'));
     prefixDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-prefix-'));
+    binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-bin-'));
+    fs.writeFileSync(path.join(binDir, 'npm'), '', { mode: 0o755 });
     host.npmPrefix = prefixDir;
     host.npmStarts.length = 0;
     host.shellCommands.length = 0;
@@ -162,6 +170,9 @@ describe('detect contribution', () => {
     // host's may reach these runs.
     savedHome = process.env.HOME;
     process.env.HOME = tempHome;
+    // npm is looked up on PATH; the host's PATH may not reach these runs.
+    savedPath = process.env.PATH;
+    process.env.PATH = binDir;
     submission.isContributeEnabled.mockClear();
     submission.submitScanReport.mockClear();
     submission.recordScanAndMaybePrompt.mockClear();
@@ -171,9 +182,12 @@ describe('detect contribution', () => {
   afterEach(() => {
     if (savedHome === undefined) delete process.env.HOME;
     else process.env.HOME = savedHome;
+    if (savedPath === undefined) delete process.env.PATH;
+    else process.env.PATH = savedPath;
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
     fs.rmSync(prefixDir, { recursive: true, force: true });
+    fs.rmSync(binDir, { recursive: true, force: true });
   });
 
   // The config key is a label; the package is found under node_modules by the
@@ -336,17 +350,76 @@ describe('detect contribution', () => {
     for (const server of servers) expect(server.scanResult.contributed).toBe(false);
   });
 
-  // The prefix is read by starting npm as a program with its two arguments.
-  // No shell is started for it, so nothing is parsed on the way to npm.
-  it('reads the global npm prefix by starting npm with its arguments, not through a shell', async () => {
+  // The prefix is read by starting npm as a program with its two arguments,
+  // by the absolute path of the npm found in a PATH directory. No shell is
+  // started for it, so nothing is parsed on the way to npm.
+  it('reads the global npm prefix by starting the npm found on PATH, by its absolute path, with its arguments, not through a shell', async () => {
     writeMcpConfig(tempDir, {
       'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
     });
 
     await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
 
-    expect(host.npmStarts).toEqual([{ file: 'npm', args: ['prefix', '-g'] }]);
+    expect(host.npmStarts).toEqual([{ file: path.join(binDir, 'npm'), args: ['prefix', '-g'] }]);
     expect(host.shellCommands.filter((command) => command.includes('npm'))).toEqual([]);
+  });
+
+  // An empty or relative PATH entry is looked up in the directory the CLI was
+  // started in, which can be the project being scanned: a program named npm
+  // there, or a `node` that npm's launcher finds on the same PATH, would run.
+  // With such an entry npm is not started, even with an npm in another entry.
+  it('with an empty or relative entry in PATH, npm is not started, so the global prefix is not searched and the server is not sent', async () => {
+    installPackage(path.join(host.npmPrefix, 'lib'), '@modelcontextprotocol/server-filesystem');
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    for (const searchPath of [
+      ['.', binDir].join(path.delimiter),
+      ['bin', binDir].join(path.delimiter),
+      ['', binDir].join(path.delimiter),
+      [binDir, ''].join(path.delimiter),
+      [binDir, '', binDir].join(path.delimiter),
+      '',
+    ]) {
+      process.env.PATH = searchPath;
+      host.npmStarts.length = 0;
+      scanner.scan.mockClear();
+      submission.submitScanReport.mockClear();
+
+      const { exitCode } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+      expect(exitCode, JSON.stringify(searchPath)).toBe(0);
+      expect(host.npmStarts, JSON.stringify(searchPath)).toEqual([]);
+      expect(scannedDirs(), JSON.stringify(searchPath)).toEqual([tempDir]);
+      expect(submission.submitScanReport, JSON.stringify(searchPath)).not.toHaveBeenCalled();
+    }
+  });
+
+  // The npm started is the first PATH entry's file named npm that may be
+  // executed; a file that may not, or a directory of that name, is passed by.
+  it.skipIf(process.platform === 'win32')('starts the first executable file named npm in PATH order, and none when no PATH directory holds one', async () => {
+    const notExecutable = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-noexec-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-contrib-dir-'));
+    try {
+      fs.writeFileSync(path.join(notExecutable, 'npm'), '', { mode: 0o644 });
+      fs.mkdirSync(path.join(directory, 'npm'));
+      writeMcpConfig(tempDir, {
+        'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+      });
+
+      process.env.PATH = [notExecutable, directory, binDir].join(path.delimiter);
+      await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+      expect(host.npmStarts).toEqual([{ file: path.join(binDir, 'npm'), args: ['prefix', '-g'] }]);
+
+      host.npmStarts.length = 0;
+      process.env.PATH = [notExecutable, directory].join(path.delimiter);
+      await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+      expect(host.npmStarts).toEqual([]);
+    } finally {
+      fs.rmSync(notExecutable, { recursive: true, force: true });
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   // `npm prefix -g` prints one absolute path. An answer in any other form is
@@ -502,6 +575,17 @@ describe('installedPackageDir', () => {
     expect(installedPackageDir(nodeModules, 'other')).toBeNull();
     expect(installedPackageDir(nodeModules, '@scope/other')).toBeNull();
     expect(installedPackageDir(path.join(root, 'no-such-dir'), 'pkg')).toBeNull();
+  });
+
+  // On a case-insensitive filesystem `PKG` opens the directory of `pkg`, a
+  // different package, whose scan would then be sent under the other name.
+  // Each part of the name must be spelled as the directory entry is.
+  it('refuses a name that differs from the installed directory only in letter case', () => {
+    for (const name of ['PKG', 'Pkg', '@SCOPE/pkg', '@Scope/pkg', '@scope/PKG', '@SCOPE/PKG']) {
+      expect(installedPackageDir(nodeModules, name), name).toBeNull();
+    }
+    expect(installedPackageDir(nodeModules, 'pkg')).toBe(pkg);
+    expect(installedPackageDir(nodeModules, '@scope/pkg')).toBe(scopedPkg);
   });
 
   // Windows path forms are refused on every platform, before anything is
