@@ -153,7 +153,11 @@ const REGISTRY_ECOSYSTEMS = new Set(['npm', 'pypi', 'github']);
  * `ecosystem` with no `projectType`, so that the Registry resolves the package
  * by name alone as before; any other value goes to `projectType`, with the
  * report's own `ecosystem` beside it. Only the fields that have a value are
- * returned, so the published body carries no empty field.
+ * returned, so the published body carries no empty field. Both values are
+ * literals the CLI sets where it builds the report (`npm` from review,
+ * `mcp_server` and `npm` from detect, `governance` from scan-soul, `trust`
+ * from identity), never a string read from a scanned tree or a config, so
+ * they are not validated here.
  */
 function registryIdentity(report: ScanReport): { projectType?: string; ecosystem?: string } {
   const type = report.packageType;
