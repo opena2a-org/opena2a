@@ -100,18 +100,22 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 import { detect, installedPackageDir } from '../../src/commands/detect.js';
 
-async function runDetect(options: Parameters<typeof detect>[0]): Promise<{ exitCode: number; stdout: string }> {
+async function runDetect(options: Parameters<typeof detect>[0]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const chunks: string[] = [];
+  const errChunks: string[] = [];
   const origOut = process.stdout.write;
   const origErr = process.stderr.write;
   process.stdout.write = ((chunk: unknown) => {
     chunks.push(String(chunk));
     return true;
   }) as typeof process.stdout.write;
-  process.stderr.write = (() => true) as typeof process.stderr.write;
+  process.stderr.write = ((chunk: unknown) => {
+    errChunks.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
   try {
     const exitCode = await detect(options);
-    return { exitCode, stdout: chunks.join('') };
+    return { exitCode, stdout: chunks.join(''), stderr: errChunks.join('') };
   } finally {
     process.stdout.write = origOut;
     process.stderr.write = origErr;
@@ -240,6 +244,27 @@ describe('detect contribution', () => {
     expect(submission.submitScanReport).not.toHaveBeenCalled();
     const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'local');
     expect(server.scanResult.contributed).toBe(false);
+  });
+
+  // The line is for a server whose launch names an npm package that was not
+  // found: it says which package, and what was scanned instead. A server that
+  // runs no npm package names nothing to look for, so it gets no such line.
+  it('with --verbose, a line names the npm package that is not installed, and a server that runs no npm package gets no such line', async () => {
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+      local: { command: 'node', args: ['server.js'] },
+    });
+
+    const { exitCode, stderr } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true, verbose: true });
+
+    expect(exitCode).toBe(0);
+    expect(scannedDirs()).toEqual([tempDir, tempDir]);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const notInstalled = stderr.split('\n').filter((line) => line.includes('is not installed under node_modules or the global npm prefix'));
+    expect(notInstalled).toHaveLength(1);
+    expect(notInstalled[0]).toContain('@modelcontextprotocol/server-filesystem is not installed under node_modules or the global npm prefix; the project directory is scanned and the result is not sent.');
+    expect(stderr).toContain('Scanning local...');
+    expect(stderr).not.toMatch(/local is not installed/);
   });
 
   it('of two scanned servers, only the one whose npm package is installed is sent, with the scan of its package directory', async () => {
