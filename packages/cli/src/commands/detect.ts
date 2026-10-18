@@ -1054,22 +1054,48 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
  * its config sits in: that scan describes the project, not the package, so it
  * stays local. The key of the config entry is a label the user chose and
  * names no directory.
+ *
+ * The package name is the one registryNameFor read from the launch command,
+ * so it fits the npm name grammar: one `/` after a scope at most, no `..`
+ * segment. The directory is still accepted only when it resolves under the
+ * node_modules directory it was looked up in. The global prefix is what
+ * `npm prefix -g` prints, taken only as one absolute path and only when npm
+ * answers within NPM_PREFIX_TIMEOUT_MS; otherwise the package counts as not
+ * installed there, as when npm is absent.
  */
 function resolveMcpServerPath(server: DetectedMcpServer, projectDir: string): { targetDir: string; packageDir: boolean } {
   if (server.registryName) {
-    const localPath = path.join(projectDir, 'node_modules', server.registryName);
-    if (fs.existsSync(localPath)) return { targetDir: localPath, packageDir: true };
+    const localPath = installedPackageDir(path.join(projectDir, 'node_modules'), server.registryName);
+    if (localPath) return { targetDir: localPath, packageDir: true };
 
     try {
-      const globalPrefix = execSync('npm prefix -g', { encoding: 'utf-8' }).trim();
-      const globalPath = path.join(globalPrefix, 'lib', 'node_modules', server.registryName);
-      if (fs.existsSync(globalPath)) return { targetDir: globalPath, packageDir: true };
+      const globalPrefix = execSync('npm prefix -g', { encoding: 'utf-8', timeout: NPM_PREFIX_TIMEOUT_MS }).trim();
+      if (globalPrefix && !/[\r\n]/.test(globalPrefix) && path.isAbsolute(globalPrefix)) {
+        const globalPath = installedPackageDir(path.join(globalPrefix, 'lib', 'node_modules'), server.registryName);
+        if (globalPath) return { targetDir: globalPath, packageDir: true };
+      }
     } catch {
-      // npm not available
+      // npm not available, or it did not answer in time
     }
   }
 
   return { targetDir: projectDir, packageDir: false };
+}
+
+/** How long `npm prefix -g` may take before the global prefix counts as unknown. */
+const NPM_PREFIX_TIMEOUT_MS = 10_000;
+
+/**
+ * `<nodeModulesDir>/<packageName>` when that directory exists and lies under
+ * nodeModulesDir; null otherwise. The name is resolved as a path, so one that
+ * would leave the directory (a `..` segment, an absolute path) lands outside
+ * it and is refused here, whatever produced it.
+ */
+function installedPackageDir(nodeModulesDir: string, packageName: string): string | null {
+  const root = path.resolve(nodeModulesDir);
+  const candidate = path.resolve(root, packageName);
+  if (!candidate.startsWith(root + path.sep)) return null;
+  return fs.existsSync(candidate) ? candidate : null;
 }
 
 /**
