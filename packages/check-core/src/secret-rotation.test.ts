@@ -140,4 +140,17 @@ describe("rotation commands leave no <placeholder> to paste", () => {
     expect(params.map(([name]) => name)).toEqual(["SERVICE_ACCOUNT", "OLD_KEY_ID"]);
     for (const [name, message] of params) expect(message.startsWith(`set ${name} to `)).toBe(true);
   });
+
+  it("the GCP command checks both operands before its first gcloud step", () => {
+    // The shell runs the first command of an `&&` list before it expands the
+    // second, so a check inside the delete step would come after `keys create`
+    // had run with only SERVICE_ACCOUNT set.
+    const cmd = SECRET_ROTATION_TABLE.gcp_service_account_key.rotationCommand ?? "";
+    const [firstStep, ...laterSteps] = cmd.split(" && ");
+    expect(firstStep).toContain('"${SERVICE_ACCOUNT:?');
+    expect(firstStep).toContain('"${OLD_KEY_ID:?');
+    expect(firstStep).not.toContain("gcloud");
+    expect(laterSteps.length).toBeGreaterThan(0);
+    for (const step of laterSteps) expect(step).not.toContain(":?");
+  });
 });

@@ -538,7 +538,11 @@ describe('each converted span, pasted with its parameters unset, refuses before 
         if (all.status === 0 || all.status === null) failures.push(`${label}: exit ${all.status}`);
         if (!all.stderr.includes(params[0]?.message ?? '\u0000')) failures.push(`${label}: stderr ${JSON.stringify(all.stderr)}`);
         if (all.ran !== '') failures.push(`${label}: ran ${JSON.stringify(all.ran)}`);
-        // With two parameters, each one alone unset still refuses with its own message.
+        // With two parameters, each one alone unset still refuses with its own
+        // message, and still before anything runs: a span of two commands
+        // joined by && checks both operands in its first command, since the
+        // shell would otherwise run the first command before it expands the
+        // second one's parameter.
         if (names.length > 1) {
           for (const p of names) {
             const others = Object.fromEntries(names.filter(n => n !== p).map(n => [n, 'value-set-by-test']));
@@ -546,6 +550,7 @@ describe('each converted span, pasted with its parameters unset, refuses before 
             const message = params.find(x => x.name === p)!.message;
             if (one.status === 0 || one.status === null) failures.push(`${label} with only ${p} unset: exit ${one.status}`);
             if (!one.stderr.includes(message)) failures.push(`${label} with only ${p} unset: stderr ${JSON.stringify(one.stderr)}`);
+            if (one.ran !== '') failures.push(`${label} with only ${p} unset: ran ${JSON.stringify(one.ran)}`);
           }
         }
       }
