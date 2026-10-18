@@ -30,7 +30,10 @@ export interface SecretRotationGuide {
    * reader supplies is a shell parameter that refuses when unset,
    * `"${NAME:?set NAME to ...}"`, never an angle-bracket placeholder:
    * pasted before NAME is set, the shell prints the message and runs
-   * nothing.
+   * nothing. A command of several steps joined by `&&` checks every
+   * operand in its first step, `: "${A:?...}" "${B:?...}" && ...`: the
+   * shell runs the first step before it expands the second, so a check
+   * placed in a later step would come after the earlier steps had run.
    */
   rotationCommand?: string;
 }
@@ -71,7 +74,7 @@ export const SECRET_ROTATION_TABLE: Record<string, SecretRotationGuide> = {
     typeLabel: "GCP service-account key",
     rotationUrl: "https://console.cloud.google.com/iam-admin/serviceaccounts",
     rotationCommand:
-      'gcloud iam service-accounts keys create new.json --iam-account="${SERVICE_ACCOUNT:?set SERVICE_ACCOUNT to the email of the service account that owns the key}" && gcloud iam service-accounts keys delete "${OLD_KEY_ID:?set OLD_KEY_ID to the ID of the leaked key}" --iam-account="$SERVICE_ACCOUNT"',
+      ': "${SERVICE_ACCOUNT:?set SERVICE_ACCOUNT to the email of the service account that owns the key}" "${OLD_KEY_ID:?set OLD_KEY_ID to the ID of the leaked key}" && gcloud iam service-accounts keys create new.json --iam-account="$SERVICE_ACCOUNT" && gcloud iam service-accounts keys delete "$OLD_KEY_ID" --iam-account="$SERVICE_ACCOUNT"',
   },
   stripe_secret_key: {
     typeLabel: "Stripe secret key",
