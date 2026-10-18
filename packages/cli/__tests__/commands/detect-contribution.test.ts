@@ -257,4 +257,59 @@ describe('detect contribution', () => {
     expect(submission.submitScanReport).not.toHaveBeenCalled();
     submission.isContributeEnabled.mockResolvedValue(true);
   });
+
+  // The package looked for is the one the launch names. A launch whose package
+  // argument is a path, or a name no npm package can have, names no package:
+  // the lookup never leaves node_modules, the project directory is scanned,
+  // and nothing is sent.
+  it('a server whose launch names a path or a malformed package name is scanned in the project directory and not sent', async () => {
+    writeMcpConfig(tempDir, {
+      traversal: { command: 'npx', args: ['-y', '../../../outside/server'] },
+      absolute: { command: 'npx', args: ['-y', '/opt/outside/server'] },
+      control: { command: 'npx', args: ['-y', 'server\u0000name'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scannedDirs()).toEqual([tempDir, tempDir, tempDir]);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const servers = JSON.parse(stdout).mcpServers as Array<{ name: string; scanResult: { contributed: boolean } }>;
+    expect(servers.map((s) => s.name).sort()).toEqual(['absolute', 'control', 'traversal']);
+    for (const server of servers) expect(server.scanResult.contributed).toBe(false);
+  });
+
+  // `npm prefix -g` prints one absolute path. An answer in any other form is
+  // not a place to look for the package. Before, a relative answer was joined
+  // as it came and resolved against the working directory.
+  it('a global npm prefix answered as a relative path is not searched, so the server is scanned in the project directory and not sent', async () => {
+    installPackage(path.join(host.npmPrefix, 'lib'), '@modelcontextprotocol/server-filesystem');
+    host.npmPrefix = path.relative(process.cwd(), host.npmPrefix);
+    expect(path.isAbsolute(host.npmPrefix)).toBe(false);
+    expect(fs.existsSync(path.join(host.npmPrefix, 'lib', 'node_modules', '@modelcontextprotocol/server-filesystem'))).toBe(true);
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scannedDirs()).toEqual([tempDir]);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'filesystem-root');
+    expect(server.scanResult.contributed).toBe(false);
+  });
+
+  it('a global npm prefix answered as more than one line is not searched', async () => {
+    installPackage(path.join(host.npmPrefix, 'lib'), '@modelcontextprotocol/server-filesystem');
+    host.npmPrefix = `${host.npmPrefix}\n${host.npmPrefix}`;
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(scannedDirs()).toEqual([tempDir]);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+  });
 });

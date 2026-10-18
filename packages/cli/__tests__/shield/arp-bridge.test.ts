@@ -234,7 +234,8 @@ describe('importARPEvents', () => {
       // A pipe with no writer blocks a plain read until one appears and
       // closes it. After RESCUE_MS this child opens the pipe for writing and
       // closes it at once, so a read that blocks reaches end of file, and is
-      // caught by the elapsed time, rather than hanging the run.
+      // caught by the elapsed time, rather than hanging the run. The pipe path
+      // reaches the child in its argument vector; no shell is involved.
       const RESCUE_MS = 5_000;
       const rescue = spawn(process.execPath, ['-e', `
         const fs = require('node:fs');
