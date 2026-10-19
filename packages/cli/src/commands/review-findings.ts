@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { rebrandBundledCommands } from '../util/rebrand.js';
 import { ADAPTER_REGISTRY } from '../adapters/registry.js';
 import { knownCommandNames } from '../natural/known-commands.js';
+import { FIXED_VERSION_FORM } from '../util/advisories.js';
 import type {
   CredentialPhaseData, DetectPhaseData, GuardPhaseData, HmaFinding, HmaPhaseData,
   InitPhaseData, RecoverySummary, ReviewFinding, ScoreDimension, ScoreResult, ScoreState,
@@ -511,7 +512,11 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
   for (const a of initData.advisories) {
     const packages = a.packages.filter(p => initData.matchedPackages.includes(p));
     const named = (packages.length > 0 ? packages : a.packages).join(', ');
-    const fixed = a.fixed ?? [];
+    // Only plain version numbers are named, here as well as where they are
+    // read: a version becomes part of the install command and the advice.
+    const fixed = (a.fixed ?? [])
+      .map(f => ({ ...f, versions: f.versions.filter(v => FIXED_VERSION_FORM.test(v)) }))
+      .filter(f => f.versions.length > 0);
     // One npm package with one fixed version gets the install command; the
     // name must have npm's form, since it becomes part of a shell command.
     const npmFix = packages.length === 1 && fixed.length === 1 && fixed[0].package === packages[0]

@@ -290,6 +290,51 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(f.advice).toBe('Upgrade vulnerable-package to a version OA2A-2026-0001 does not affect.');
   });
 
+  it('a fixed version with shell characters gets no command and is named nowhere in the finding', async () => {
+    mockFetch.mockResolvedValue(listResponse([{
+      ...ADVISORY,
+      affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ fixed: '1.3.0-$(touch pwned)' }, { fixed: '1.3.0;id' }] }] }],
+    }]));
+
+    const f = advisoryFinding((await runReview()).report);
+
+    expect(f.fix).toBeNull();
+    expect(f.verify).toBeNull();
+    expect(JSON.stringify(f)).not.toContain('pwned');
+    expect(JSON.stringify(f)).not.toContain('1.3.0;id');
+    expect(f.advice).toBe('Upgrade vulnerable-package to a version OA2A-2026-0001 does not affect.');
+  });
+
+  // Regression: the answer was read as received, and one entry of the wrong
+  // shape stopped review and init with a TypeError.
+  const WRONG_SHAPE = [
+    null,
+    { ...ADVISORY, id: 'OA2A-2026-0011', affected: [{ package: { name: 'vulnerable-package', ecosystem: 7 }, ranges: [{ type: 'SEMVER', events: [{ fixed: '1.3.0' }] }] }] },
+    { ...ADVISORY, id: 'OA2A-2026-0012', affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: { events: [{ fixed: '1.3.0' }] } }] },
+  ];
+
+  it('review reads an advisory answer of the wrong shape and reports the advisories it can read', async () => {
+    mockFetch.mockResolvedValue(listResponse(WRONG_SHAPE));
+
+    const { report } = await runReview();
+    const found = report.reportFindings.filter((f: any) => f.foundBy.some((b: any) => b.source === 'advisories'));
+
+    expect(report.initData.advisoriesChecked).toBe(true);
+    expect(report.initData.advisoryRead).toEqual(expect.objectContaining({ listed: 2, total: 3 }));
+    expect(found.map((f: any) => f.foundBy[0].checkId).sort()).toEqual(['OA2A-2026-0011', 'OA2A-2026-0012']);
+    // An ecosystem that is not text is not npm, so no install command.
+    expect(found.find((f: any) => f.foundBy[0].checkId === 'OA2A-2026-0011').fix).toBeNull();
+  });
+
+  it('init reads the same answer and prints the advisories it can read', async () => {
+    mockFetch.mockResolvedValue(listResponse(WRONG_SHAPE));
+
+    const { stdout } = await silenced(() => init({ targetDir: tempDir, format: 'text' }));
+
+    expect(stdout).toContain('ID: OA2A-2026-0011');
+    expect(stdout).toContain('ID: OA2A-2026-0012');
+  });
+
   it('the Hygiene tab states the window and the advisories the Registry reported but the request did not read', async () => {
     mockFetch.mockResolvedValue(listResponse([], 250));
 
@@ -311,6 +356,15 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(stderr).toContain('Advisories not checked: Registry URL must use HTTPS: http://registry.internal.example');
     expect(report.initData.advisoryRead.notCheckedReason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
     expect(hygieneText(report)).toContain('Reason: Registry URL must use HTTPS: http://registry.internal.example.');
+  });
+
+  it('the Hygiene tab shows markup in the reason as text', async () => {
+    registry.answer = new Error('Invalid registry URL: https://registry.example.test/<img src=x onerror=alert(1)>');
+
+    const { report } = await runReview();
+
+    // Rendered as markup, the tag would be stripped from the visible text.
+    expect(hygieneText(report)).toContain('Reason: Invalid registry URL: https://registry.example.test/&lt;img src=x onerror=alert(1)&gt;.');
   });
 
   it('OPENA2A_ADVISORIES=off makes no request and says how to turn the check back on', async () => {

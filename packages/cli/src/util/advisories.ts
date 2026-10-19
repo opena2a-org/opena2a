@@ -75,6 +75,10 @@ const ADVISORY_TIMEOUT_MS = 5_000;
 /** Set to `off` to make `review` and `init` skip the advisory request. */
 export const ADVISORIES_ENV = 'OPENA2A_ADVISORIES';
 
+/** The form of a fixed version that is kept: a plain version number. The
+ *  value is shown in the report and can become part of an install command. */
+export const FIXED_VERSION_FORM = /^v?\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/;
+
 /** The result when no advisory list was read. */
 export function advisoriesNotChecked(reason: string | null = null, turnedOff = false): AdvisoryCheck {
   return { advisories: [], matchedPackages: [], total: 0, listed: 0, fromCache: false, checked: false, reason, turnedOff };
@@ -108,6 +112,68 @@ function shownUrl(registryUrl: string): string {
   }
 }
 
+// --- Shape ---
+
+// The Registry's answer and the cache file are outside data, so the list is
+// checked here, once, and the code after it reads only what passed.
+
+type Fields = Record<string, unknown>;
+
+function isFields(value: unknown): value is Fields {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The objects in `value` when it is a list; none when it is not. */
+function objectsIn(value: unknown): Fields[] {
+  return Array.isArray(value) ? value.filter(isFields) : [];
+}
+
+function textIn(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * The advisories of a list, holding the fields the CLI reads. An entry that
+ * is not an object is left out, a list field that is not a list is read as
+ * empty, and a text field that is not text as ''. Read as received, a `null`
+ * entry or an `affected` object stopped `review` and `init` with a TypeError.
+ */
+function readableAdvisories(list: unknown[]): Advisory[] {
+  return objectsIn(list).map(entry => ({
+    id: textIn(entry.id),
+    summary: textIn(entry.summary),
+    published: textIn(entry.published),
+    severity: objectsIn(entry.severity)
+      .filter(s => typeof s.score === 'string')
+      .map(s => ({ type: textIn(s.type), score: textIn(s.score) })),
+    affected: objectsIn(entry.affected).map(a => {
+      const pkg: Fields = isFields(a.package) ? a.package : {};
+      return {
+        package: { name: textIn(pkg.name), ecosystem: textIn(pkg.ecosystem) },
+        ranges: objectsIn(a.ranges).map(r => ({
+          type: textIn(r.type),
+          events: objectsIn(r.events).map(e => ({
+            ...(typeof e.introduced === 'string' ? { introduced: e.introduced } : {}),
+            ...(typeof e.fixed === 'string' ? { fixed: e.fixed } : {}),
+          })),
+        })),
+      };
+    }),
+  }));
+}
+
+/** An answer, from the Registry or the cache, as the response the code reads;
+ *  null when it holds no advisory list. Without a numeric total, the total is
+ *  the number of entries the list holds, those left out included. */
+function advisoryResponse(body: unknown): AdvisoryResponse | null {
+  if (!isFields(body) || !Array.isArray(body.advisories)) return null;
+  return {
+    advisories: readableAdvisories(body.advisories),
+    total: typeof body.total === 'number' ? body.total : body.advisories.length,
+    format: textIn(body.format),
+  };
+}
+
 // --- Cache ---
 
 // The advisory list is the Registry's, not the project's, so it is cached in
@@ -130,14 +196,12 @@ function readCache(registryUrl: string): CachedAdvisories | null {
 
   try {
     const raw = fs.readFileSync(cachePath, 'utf-8');
-    const cached = JSON.parse(raw) as CachedAdvisories;
+    const cached: unknown = JSON.parse(raw);
+    if (!isFields(cached)) return null;
     // A list read from another Registry is not this Registry's list.
-    if (
-      cached.registryUrl === registryUrl
-      && Array.isArray(cached.data?.advisories)
-      && Date.now() - cached.fetchedAt < CACHE_TTL_MS
-    ) {
-      return cached;
+    const data = cached.registryUrl === registryUrl ? advisoryResponse(cached.data) : null;
+    if (data && typeof cached.fetchedAt === 'number' && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+      return { fetchedAt: cached.fetchedAt, registryUrl, data };
     }
   } catch {
     // Corrupted cache
@@ -148,6 +212,9 @@ function readCache(registryUrl: string): CachedAdvisories | null {
 function writeCache(registryUrl: string, data: AdvisoryResponse): void {
   const cachePath = getCachePath();
   const cacheDir = path.dirname(cachePath);
+  // Two runs may write at once; nothing locks the file. A file left holding
+  // text that does not parse is read as no cache, so the next run asks the
+  // Registry again.
   try {
     // On a first run this write creates ~/.opena2a, so it sets the mode of the
     // directory the other files there rely on: owner only, as their writers do.
@@ -188,10 +255,10 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
     });
 
     if (!response.ok) return { reason: `${where} answered HTTP ${response.status}` };
-    const body = await response.json() as Partial<AdvisoryResponse> | null;
+    const data = advisoryResponse(await response.json());
     // A body without an advisory list is not a list that was read.
-    if (!body || !Array.isArray(body.advisories)) return { reason: `${where} answered without an advisory list` };
-    return { data: body as AdvisoryResponse };
+    if (!data) return { reason: `${where} answered without an advisory list` };
+    return { data };
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {
       return { reason: `${where} did not answer within ${ADVISORY_TIMEOUT_MS / 1000} seconds` };
@@ -360,7 +427,7 @@ export function fixedVersions(advisory: Advisory, pkg: string): string[] {
     for (const range of affected.ranges ?? []) {
       for (const event of range.events ?? []) {
         const v = event?.fixed;
-        if (typeof v === 'string' && /^v?\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(v) && !versions.includes(v)) {
+        if (typeof v === 'string' && FIXED_VERSION_FORM.test(v) && !versions.includes(v)) {
           versions.push(v);
         }
       }

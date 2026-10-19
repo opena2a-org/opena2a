@@ -66,10 +66,25 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
       }
     }
   } catch {
-    // File doesn't exist yet — will be created by appendFileSync
+    // File doesn't exist yet — will be created by openSync below
   }
 
-  fs.appendFileSync(filePath, serialized + '\n', { encoding: 'utf-8', mode: 0o600 });
+  // The mode given to openSync applies only when it creates the log, so a log
+  // an earlier version created readable by others is narrowed to the owner
+  // before this event is written to it.
+  const fd = fs.openSync(filePath, 'a', 0o600);
+  try {
+    if ((fs.fstatSync(fd).mode & 0o077) !== 0) {
+      try {
+        fs.fchmodSync(fd, 0o600);
+      } catch {
+        // A log this user may not change the mode of keeps its owner's mode
+      }
+    }
+    fs.appendFileSync(fd, serialized + '\n', 'utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
 
   return fullEvent;
 }

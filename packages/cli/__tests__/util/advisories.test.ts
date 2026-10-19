@@ -414,4 +414,78 @@ describe('advisories', () => {
     expect(fixedVersions(advisory, 'pkg')).toEqual(['1.3.0', '2.0.1-rc.1']);
     expect(fixedVersions(advisory, 'missing')).toEqual([]);
   });
+
+  // Regression: the answer was read as received, so a `null` entry or an
+  // `affected` object stopped review and init with a TypeError.
+  describe('an advisory list of the wrong shape', () => {
+    const WELL_FORMED = {
+      id: 'OA2A-2026-0005',
+      summary: 'Advisory in vulnerable-package',
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      published: '2026-10-01T00:00:00Z',
+      affected: [{
+        package: { name: 'vulnerable-package', ecosystem: 'npm' },
+        ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.3.0' }] }],
+      }],
+    };
+    const MALFORMED = [
+      null,
+      'not an advisory',
+      { id: 'OA2A-2026-0006', summary: 'affected is an object', affected: { package: { name: 'vulnerable-package' } } },
+      { id: 'OA2A-2026-0007', summary: 'affected holds no object', affected: [null, 5] },
+      { id: 'OA2A-2026-0008', summary: 'ecosystem and ranges', affected: [{ package: { name: 'vulnerable-package', ecosystem: 7 }, ranges: { events: [] } }] },
+      { id: 'OA2A-2026-0009', summary: 'events is an object', affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: { fixed: '9.9.9' } }] }] },
+    ];
+
+    beforeEach(() => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+        name: 'test-project',
+        dependencies: { 'vulnerable-package': '1.0.0' },
+      }));
+    });
+
+    it('leaves out what is not an advisory, reads the rest, and matches as before', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ advisories: [...MALFORMED, WELL_FORMED], total: 7, format: 'osv' }),
+      });
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(result.checked).toBe(true);
+      expect(result.listed).toBe(5);
+      expect(result.total).toBe(7);
+      expect(result.matchedPackages).toEqual(['vulnerable-package']);
+      expect(result.advisories.map(a => a.id)).toEqual(['OA2A-2026-0008', 'OA2A-2026-0009', 'OA2A-2026-0005']);
+      expect(result.advisories[0].affected[0].package.ecosystem).toBe('');
+      expect(fixedVersions(result.advisories[1], 'vulnerable-package')).toEqual([]);
+      expect(result.advisories[2]).toEqual(WELL_FORMED);
+    });
+
+    it('counts the entries left out in the total when the answer gives none', async () => {
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [null, WELL_FORMED] }) });
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(result.listed).toBe(1);
+      expect(result.total).toBe(2);
+    });
+
+    it('reads a cached list the same way', async () => {
+      const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'advisories.json'), JSON.stringify({
+        fetchedAt: Date.now(),
+        registryUrl: 'https://registry.test',
+        data: { advisories: [...MALFORMED, WELL_FORMED], total: 7, format: 'osv' },
+      }));
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.fromCache).toBe(true);
+      expect(result.listed).toBe(5);
+      expect(result.advisories.map(a => a.id)).toEqual(['OA2A-2026-0008', 'OA2A-2026-0009', 'OA2A-2026-0005']);
+    });
+  });
 });

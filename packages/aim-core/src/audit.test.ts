@@ -116,4 +116,19 @@ describe('audit', () => {
     expect(mode(dataDir)).toBe(0o700);
     expect(mode(path.join(dataDir, 'audit.jsonl'))).toBe(0o600);
   });
+
+  // Regression: the mode applied only when the log was created, so a log an
+  // earlier version created 0o644 stayed readable by others.
+  it('narrows an existing log readable by others to 0o600 when it writes the next event', () => {
+    const dataDir = path.join(tmpDir, 'aim-core');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const logPath = path.join(dataDir, 'audit.jsonl');
+    fs.writeFileSync(logPath, '');
+    fs.chmodSync(logPath, 0o644);
+
+    logEvent(dataDir, { plugin: 'test', action: 'act', target: 't', result: 'allowed' });
+
+    expect(fs.statSync(logPath).mode & 0o777).toBe(0o600);
+    expect(readAuditLog(dataDir)).toHaveLength(1);
+  });
 });
