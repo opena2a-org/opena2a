@@ -151,6 +151,22 @@ describe('the install command of a matched advisory', () => {
       expect(f?.advice, version).toBe('Upgrade vulnerable-package to a version OA2A-2026-0001 does not affect.');
     }
   });
+
+  it('is not built for a package name outside npm\'s form, so no such name reaches a command', () => {
+    for (const name of ['vulnerable-package;id', '$(id)', 'a b', 'pkg|id', '`id`', 'Vulnerable-Package', '../vulnerable-package']) {
+      const f = build({
+        warn: [], hmaScore: 100, hmaFindings: [], guard: 'valid',
+        matchedPackages: [name],
+        advisories: [{
+          id: 'OA2A-2026-0001', summary: 'Advisory', severity: 'HIGH', packages: [name],
+          fixed: [{ package: name, ecosystem: 'npm', versions: ['1.3.0'] }],
+        }],
+      }).reportFindings.find(x => x.foundBy.some(b => b.source === 'advisories'));
+      expect(f?.fix, name).toBeNull();
+      expect(f?.verify, name).toBeNull();
+      expect(f?.advice, name).toBe(`Upgrade to the version OA2A-2026-0001 names as fixed: ${name} 1.3.0, or later.`);
+    }
+  });
 });
 
 describe('maskEvidenceLine on one long line', () => {

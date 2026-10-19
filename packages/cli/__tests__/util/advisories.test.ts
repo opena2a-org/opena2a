@@ -14,7 +14,7 @@ vi.mock('node:os', async (importOriginal) => {
   };
 });
 
-import { checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
+import { ADVISORY_LIMIT, ADVISORY_TEXT_LIMIT, checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
 
 const mockFetch = vi.fn();
 
@@ -251,6 +251,61 @@ describe('advisories', () => {
     expect(other.fromCache).toBe(false);
   });
 
+  // The cache is written to a file of its own and renamed into place, so a
+  // run that reads it while another writes it never reads a partial list.
+  it('writes the cache whole: the cache directory holds only advisories.json after a write', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+    await checkAdvisories(tempDir, 'https://registry.test');
+
+    const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+    expect(fs.readdirSync(cacheDir)).toEqual(['advisories.json']);
+    expect(JSON.parse(fs.readFileSync(path.join(cacheDir, 'advisories.json'), 'utf-8')).registryUrl).toBe('https://registry.test');
+  });
+
+  it('reads a cache file holding a partial write as no cache, asks the Registry and replaces it', async () => {
+    const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const cachePath = path.join(cacheDir, 'advisories.json');
+    fs.writeFileSync(cachePath, `{"fetchedAt":${Date.now()},"registryUrl":"https://registry.test","data":{"advisories":[{"id":"OA2A-20`);
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.checked).toBe(true);
+    expect(result.fromCache).toBe(false);
+    expect(JSON.parse(fs.readFileSync(cachePath, 'utf-8')).data).toEqual({ advisories: [], total: 0, format: 'osv' });
+    expect(fs.readdirSync(cacheDir)).toEqual(['advisories.json']);
+  });
+
+  // The answer is outside data: what is read of it is bounded by the count
+  // the request asks for and by a length per text field.
+  it('reads at most the advisories the request asks for and cuts each text field to its limit', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project', dependencies: { 'vulnerable-package': '1.0.0' } }));
+    const advisory = (i: number) => ({
+      id: `OA2A-2026-${String(i).padStart(4, '0')}`,
+      summary: i === 0 ? 'x'.repeat(ADVISORY_TEXT_LIMIT * 4) : `Advisory ${i}`,
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      published: '2026-10-01T00:00:00Z',
+      affected: [{ package: { name: i === 0 ? 'vulnerable-package' : `package-${i}`, ecosystem: 'npm' } }],
+    });
+    const answer = Array.from({ length: ADVISORY_LIMIT + 50 }, (_, i) => advisory(i));
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: answer, total: answer.length, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(result.checked).toBe(true);
+    expect(result.listed).toBe(ADVISORY_LIMIT);
+    expect(result.total).toBe(ADVISORY_LIMIT + 50);
+    expect(result.matchedPackages).toEqual(['vulnerable-package']);
+    expect(result.advisories[0].summary).toBe('x'.repeat(ADVISORY_TEXT_LIMIT));
+    // The cache holds the list as read, within the same bounds.
+    const cached = JSON.parse(fs.readFileSync(path.join(tempHome, '.opena2a', 'cache', 'advisories.json'), 'utf-8'));
+    expect(cached.data.advisories).toHaveLength(ADVISORY_LIMIT);
+    expect(cached.data.total).toBe(ADVISORY_LIMIT + 50);
+  });
+
   it('printAdvisoryWarnings outputs to stdout', () => {
     const chunks: string[] = [];
     const origWrite = process.stdout.write;
@@ -355,6 +410,22 @@ describe('advisories', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  // The password of a configured URL may hold a space or an `@` of its own;
+  // neither leaves part of it in the reason.
+  it('names a refused URL without its password whatever the password holds', async () => {
+    const spaced = 'http://someone:FAKE pw@registry.internal.example';
+    const withAt = 'http://someone:FAKE@pw@registry.internal.example';
+    for (const url of [spaced, withAt]) {
+      const direct = await checkAdvisories(tempDir, url);
+      expect(direct.checked, url).toBe(false);
+      expect(direct.reason, url).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+
+      const resolved = await readAdvisories(tempDir, async () => { throw new Error(`Invalid registry URL: ${url}`); });
+      expect(resolved.reason, url).toBe('Invalid registry URL: http://registry.internal.example');
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('names why no list was read: an HTTP status, a timeout, an unreachable host', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 503 });
     expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test answered HTTP 503');
@@ -413,6 +484,20 @@ describe('advisories', () => {
     };
     expect(fixedVersions(advisory, 'pkg')).toEqual(['1.3.0', '2.0.1-rc.1']);
     expect(fixedVersions(advisory, 'missing')).toEqual([]);
+  });
+
+  // A fixed version has a bounded length in every part, so a value of any
+  // size is refused by the form, not matched against it at length.
+  it('fixedVersions drops a version longer than the form allows', () => {
+    const advisory = (fixed: string) => ({
+      id: 'OA2A-2026-0010', summary: 'x', severity: [], published: '2026-10-01T00:00:00Z',
+      affected: [{ package: { name: 'pkg', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed }] }] }],
+    });
+    expect(fixedVersions(advisory('1.3.0-' + 'a'.repeat(64)), 'pkg')).toEqual(['1.3.0-' + 'a'.repeat(64)]);
+    expect(fixedVersions(advisory('1.3.0-' + 'a'.repeat(65)), 'pkg')).toEqual([]);
+    expect(fixedVersions(advisory('1'.repeat(10) + '.0.0'), 'pkg')).toEqual(['1'.repeat(10) + '.0.0']);
+    expect(fixedVersions(advisory('1'.repeat(11) + '.0.0'), 'pkg')).toEqual([]);
+    expect(fixedVersions(advisory('1.0.0-' + 'a-.'.repeat(10_000)), 'pkg')).toEqual([]);
   });
 
   // Regression: the answer was read as received, so a `null` entry or an

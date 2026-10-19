@@ -68,16 +68,22 @@ export interface AdvisoryCheck {
 
 /** The request reads the advisories published in this many days... */
 export const ADVISORY_WINDOW_DAYS = 30;
-/** ...and at most this many of them. */
+/** ...and at most this many of them. An answer holding more is read up to
+ *  this many; the Registry's total still counts the rest as not read. */
 export const ADVISORY_LIMIT = 100;
 const ADVISORY_TIMEOUT_MS = 5_000;
+/** A text field of an advisory is read up to this many characters. */
+export const ADVISORY_TEXT_LIMIT = 1_024;
 
 /** Set to `off` to make `review` and `init` skip the advisory request. */
 export const ADVISORIES_ENV = 'OPENA2A_ADVISORIES';
 
-/** The form of a fixed version that is kept: a plain version number. The
- *  value is shown in the report and can become part of an install command. */
-export const FIXED_VERSION_FORM = /^v?\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/;
+/** The form of a fixed version that is kept: a plain version number, each
+ *  of its numbers at most 10 digits and its pre-release or build part at
+ *  most 64 characters. The value is shown in the report and can become part
+ *  of an install command, so the pattern admits no other character and no
+ *  length beyond those. */
+export const FIXED_VERSION_FORM = /^v?\d{1,10}(?:\.\d{1,10}){0,2}(?:[-+][0-9A-Za-z.-]{1,64})?$/;
 
 /** The result when no advisory list was read. */
 export function advisoriesNotChecked(reason: string | null = null, turnedOff = false): AdvisoryCheck {
@@ -89,10 +95,12 @@ function advisoriesTurnedOff(): boolean {
 }
 
 /** The first line of an error's message, with any `user:password@` removed
- *  from a URL in it: the line is shown in the terminal and the report. */
+ *  from a URL in it: everything from `//` to the last `@` before the path,
+ *  whatever the password holds (a space or an `@` of its own included). The
+ *  line is shown in the terminal and the report. */
 function firstLine(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  return (message.split('\n')[0] ?? '').replace(/\/\/[^/\s@]*@/g, '//').trim();
+  return (message.split('\n')[0] ?? '').replace(/\/\/[^/]*@/g, '//').trim();
 }
 
 /** The Registry URL without a trailing `/`, so the request path is joined
@@ -128,8 +136,11 @@ function objectsIn(value: unknown): Fields[] {
   return Array.isArray(value) ? value.filter(isFields) : [];
 }
 
+/** The text of a field, cut to ADVISORY_TEXT_LIMIT characters at a code
+ *  point boundary; '' when the field is not text. */
 function textIn(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+  if (typeof value !== 'string') return '';
+  return value.length > ADVISORY_TEXT_LIMIT ? value.slice(0, ADVISORY_TEXT_LIMIT).replace(/[\uD800-\uDBFF]$/, '') : value;
 }
 
 /**
@@ -137,9 +148,11 @@ function textIn(value: unknown): string {
  * is not an object is left out, a list field that is not a list is read as
  * empty, and a text field that is not text as ''. Read as received, a `null`
  * entry or an `affected` object stopped `review` and `init` with a TypeError.
+ * At most ADVISORY_LIMIT entries are read, the count the request asks for,
+ * so an answer or a cache file of any size is read within that bound.
  */
 function readableAdvisories(list: unknown[]): Advisory[] {
-  return objectsIn(list).map(entry => ({
+  return objectsIn(list).slice(0, ADVISORY_LIMIT).map(entry => ({
     id: textIn(entry.id),
     summary: textIn(entry.summary),
     published: textIn(entry.published),
@@ -212,20 +225,30 @@ function readCache(registryUrl: string): CachedAdvisories | null {
 function writeCache(registryUrl: string, data: AdvisoryResponse): void {
   const cachePath = getCachePath();
   const cacheDir = path.dirname(cachePath);
-  // Two runs may write at once; nothing locks the file. A file left holding
-  // text that does not parse is read as no cache, so the next run asks the
-  // Registry again.
+  // The list is written to a file of its own and renamed into place, so a run
+  // that reads the cache while another writes it reads the last complete
+  // list, never a partial one. A file left holding text that does not parse
+  // is read as no cache, and the next run asks the Registry again.
+  const tempPath = `${cachePath}.${process.pid}.tmp`;
   try {
     // On a first run this write creates ~/.opena2a, so it sets the mode of the
     // directory the other files there rely on: owner only, as their writers do.
     fs.mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(cachePath, JSON.stringify({
+    // 'wx' creates the file, so the mode applies; a file of that name left
+    // behind by an earlier run is not written into.
+    fs.writeFileSync(tempPath, JSON.stringify({
       fetchedAt: Date.now(),
       registryUrl,
       data,
-    } as CachedAdvisories), { encoding: 'utf-8', mode: 0o600 });
+    } as CachedAdvisories), { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(tempPath, cachePath);
   } catch {
-    // Cache write failure is non-critical
+    // Cache write failure is non-critical; a temporary file is not left behind.
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // Nothing to remove, or no right to
+    }
   }
 }
 

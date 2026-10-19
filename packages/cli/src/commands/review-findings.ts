@@ -519,6 +519,8 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       .filter(f => f.versions.length > 0);
     // One npm package with one fixed version gets the install command; the
     // name must have npm's form, since it becomes part of a shell command.
+    // Neither form admits a shell character, and the command is shown to the
+    // user: the CLI never runs it.
     const npmFix = packages.length === 1 && fixed.length === 1 && fixed[0].package === packages[0]
       && fixed[0].ecosystem.toLowerCase() === 'npm' && fixed[0].versions.length === 1
       && NPM_NAME_FORM.test(packages[0])
