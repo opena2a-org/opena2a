@@ -72,7 +72,13 @@ const RELAY_SCRIPT = stepScript(
   'review',
   'Bind the merge group and read the pull request review',
 );
-const APPROVER = /^approvers="([^"]+)"$/m.exec(GATE_SCRIPT)?.[1] ?? '';
+// The approver set the gate script names: whitespace-separated logins, the
+// owner and then the gate-reviewer App's bot. Each entry is matched by exact
+// login and account type, so a planted review carries both.
+const APPROVERS = /^approvers="([^"]+)"$/m.exec(GATE_SCRIPT)?.[1] ?? '';
+const [OWNER = '', GATE_BOT = ''] = APPROVERS.split(' ');
+/** The App that opens gate-file pull requests. Its approval never counts. */
+const FLEET_BOT = 'benignhacker-fleet[bot]';
 
 // ---------------------------------------------------------------------------
 // The stub gh. Only `gh api` is routed: `-X`, `-f`, `--jq` and `--paginate`
@@ -530,8 +536,8 @@ describe('merge-group bind block', () => {
     expect(relay).toBe(gate);
   });
 
-  it('finds the approver the gate script names', () => {
-    expect(APPROVER).toMatch(/^[A-Za-z0-9-]+$/);
+  it('finds the approver set the gate script names: the owner and the gate-reviewer bot', () => {
+    expect(APPROVERS.split(' ')).toEqual(['thebenignhacker', 'benign-gate-reviewer[bot]']);
   });
 
   it('has bash and jq to run the workflow scripts', () => {
@@ -634,7 +640,11 @@ describe('gate-file verdicts', () => {
     { filename: SRC_FILE, status: 'modified', sha: BLOB },
     { filename, status: 'modified', sha: MAIN_BLOB },
   ];
-  const review = (state: string, commit: string) => ({ state, user: { login: APPROVER }, commit_id: commit });
+  const review = (state: string, commit: string, login = OWNER, type = 'User') => ({
+    state,
+    user: { login, type },
+    commit_id: commit,
+  });
   const contentRoute = (head: string): string =>
     `GET repos/${REPO}/contents/${GATE_WORKFLOW_FILE}?ref=${head}`;
 
@@ -701,6 +711,59 @@ describe('gate-file verdicts', () => {
     const out = runGate(s);
     expect(out.status, out.stderr).toBe(0);
     expect(onlyPost(out).conclusion).toBe('action_required');
+  });
+
+  it('passes a gate-file change the gate-reviewer bot approved on the head', () => {
+    const s = pullRequestEvent(gateFiles());
+    s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', H, GATE_BOT, 'Bot')] };
+    const out = runGate(s);
+    expect(out.status, out.stderr).toBe(0);
+    expect(onlyPost(out)).toMatchObject({ conclusion: 'success', 'output[title]': 'Gate-file change approved' });
+  });
+
+  it('asks for approval when the gate-reviewer bot approved an older commit', () => {
+    const s = pullRequestEvent(gateFiles());
+    s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', OTHER, GATE_BOT, 'Bot')] };
+    const out = runGate(s);
+    expect(out.status, out.stderr).toBe(0);
+    expect(onlyPost(out).conclusion).toBe('action_required');
+  });
+
+  it('asks for approval when the approval on the head is from outside the set or from the wrong account type', () => {
+    const approvals: [string, string][] = [
+      [FLEET_BOT, 'Bot'],
+      [GATE_BOT, 'User'],
+      [OWNER, 'Bot'],
+      [GATE_BOT.replace(/\[bot\]$/, ''), 'Bot'],
+      [APPROVERS, 'User'],
+    ];
+    for (const [login, type] of approvals) {
+      const s = pullRequestEvent(gateFiles());
+      s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', H, login, type)] };
+      const out = runGate(s);
+      expect(out.status, `${login} / ${type}: ${out.stderr}`).toBe(0);
+      expect(onlyPost(out).conclusion, `${login} / ${type}`).toBe('action_required');
+    }
+  });
+
+  it('posts nothing for a review by the App that opens gate-file pull requests', () => {
+    const s = pullRequestEvent(gateFiles());
+    s.env = { ...s.env, EVENT_NAME: 'pull_request_review', REVIEW_AUTHOR: FLEET_BOT };
+    const out = runGate(s);
+    expect(out.status, out.stderr).toBe(0);
+    expect(out.calls).toHaveLength(0);
+    expect(out.stdout).toContain(`Review by ${FLEET_BOT} is not an input to the verdict; nothing posted.`);
+  });
+
+  it('evaluates a review by either member of the set', () => {
+    for (const member of [OWNER, GATE_BOT]) {
+      const s = pullRequestEvent(gateFiles());
+      s.env = { ...s.env, EVENT_NAME: 'pull_request_review', REVIEW_AUTHOR: member };
+      s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', H, GATE_BOT, 'Bot')] };
+      const out = runGate(s);
+      expect(out.status, `${member}: ${out.stderr}`).toBe(0);
+      expect(onlyPost(out).conclusion, member).toBe('success');
+    }
   });
 
   it('refuses a proposed gate workflow that references a secret, even when approved', () => {
