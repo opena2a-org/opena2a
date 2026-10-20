@@ -722,14 +722,29 @@ describe('gate-file verdicts', () => {
   });
 
   it('asks for approval when the gate-reviewer bot approved an older commit', () => {
-    const s = pullRequestEvent(gateFiles());
-    s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', OTHER, GATE_BOT, 'Bot')] };
-    const out = runGate(s);
+    const approvedOn = (commit: string): Outcome => {
+      const s = pullRequestEvent(gateFiles());
+      s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', commit, GATE_BOT, 'Bot')] };
+      return runGate(s);
+    };
+    // Paired control: the same approval on the head passes, so only the older
+    // commit turns the one below away.
+    const control = approvedOn(H);
+    expect(control.status, control.stderr).toBe(0);
+    expect(onlyPost(control).conclusion).toBe('success');
+    const out = approvedOn(OTHER);
     expect(out.status, out.stderr).toBe(0);
     expect(onlyPost(out).conclusion).toBe('action_required');
   });
 
   it('asks for approval when the approval on the head is from outside the set or from the wrong account type', () => {
+    // Paired control: the gate-reviewer bot's own approval on the head passes,
+    // so each approval below is turned away by its login or account type.
+    const control = pullRequestEvent(gateFiles());
+    control.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', H, GATE_BOT, 'Bot')] };
+    const passed = runGate(control);
+    expect(passed.status, passed.stderr).toBe(0);
+    expect(onlyPost(passed).conclusion).toBe('success');
     const approvals: [string, string][] = [
       [FLEET_BOT, 'Bot'],
       [GATE_BOT, 'User'],
@@ -747,9 +762,18 @@ describe('gate-file verdicts', () => {
   });
 
   it('posts nothing for a review by the App that opens gate-file pull requests', () => {
-    const s = pullRequestEvent(gateFiles());
-    s.env = { ...s.env, EVENT_NAME: 'pull_request_review', REVIEW_AUTHOR: FLEET_BOT };
-    const out = runGate(s);
+    const reviewEvent = (author: string): Scenario => {
+      const s = pullRequestEvent(gateFiles());
+      s.env = { ...s.env, EVENT_NAME: 'pull_request_review', REVIEW_AUTHOR: author };
+      s.routes[REVIEWS_ROUTE] = { body: [review('APPROVED', H, GATE_BOT, 'Bot')] };
+      return s;
+    };
+    // Paired control: the same review event by the gate-reviewer bot evaluates
+    // and posts, so only the review author makes the one below post nothing.
+    const control = runGate(reviewEvent(GATE_BOT));
+    expect(control.status, control.stderr).toBe(0);
+    expect(onlyPost(control).conclusion).toBe('success');
+    const out = runGate(reviewEvent(FLEET_BOT));
     expect(out.status, out.stderr).toBe(0);
     expect(out.calls).toHaveLength(0);
     expect(out.stdout).toContain(`Review by ${FLEET_BOT} is not an input to the verdict; nothing posted.`);
