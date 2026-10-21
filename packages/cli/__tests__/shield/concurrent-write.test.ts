@@ -62,7 +62,7 @@ const START_DELAY_MS = 1_500;
  * inside the rejection for a non-zero one: a child that prints the documented
  * `shield: lock-timeout` fail-open warning and then exits 0 is precisely the
  * child whose stderr explains a later fork, and discarding it left the round
- * assertion with nothing to say (OPA-01.AC3).
+ * assertion with nothing to say.
  */
 function spawnChild(
   home: string,
@@ -87,14 +87,14 @@ function spawnChild(
 }
 
 /**
- * Ceiling on SIMULTANEOUSLY LIVE spawned children (QGF-40.AC1). Each live
+ * Ceiling on SIMULTANEOUSLY LIVE spawned children. Each live
  * child is a tsx process running the CLI in its own child node process —
  * about 22 tasks per live child — so an unbounded fan-out at N writers holds
  * 2N processes at once; at the default N=8 that fan-out was the measured
  * per-worker worst case that cost the packages/cli suite fifteen of its
  * sixteen vitest workers under a 512-pid cgroup (see ../../vitest.workers.ts).
  *
- * QGF-40.AC2 — the concurrency level still exercised, and why it suffices:
+ * The concurrency level still exercised, and why it suffices:
  * up to MAX_LIVE_CHILDREN = 4 writer processes are spawned in the same tick
  * and spin until the same `startAt` instant, so four writers enter
  * `writeEvent` simultaneously and contend for the event lock in the same
@@ -106,7 +106,7 @@ function spawnChild(
  * slot and start after `startAt`, arriving while earlier writers still hold
  * and release the lock, which keeps exercising the acquire/release handoff.
  *
- * QGF-40.AC3 — this is a literal constant on purpose: the ceiling is raised
+ * This is a literal constant on purpose: the ceiling is raised
  * by editing this line, never by an environment variable, so the
  * SHIELD_CONCURRENT_WRITERS override raises the TOTAL writer count only,
  * never the number simultaneously live.

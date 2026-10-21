@@ -1,5 +1,7 @@
 This file is retired. opena2a-cli changes from 0.10.12 on, including unreleased ones, are recorded in the repository-root [CHANGELOG.md](../../CHANGELOG.md); add new entries there, not here.
 
+The 0.9.0 entry in this file called usage telemetry anonymous and its 0.9.1 entry called a contributed summary anonymized, which was misleading: each usage event carries the install ID, and each contributed summary is sent with a contributor token made on the machine.
+
 # Changelog
 
 ## 0.10.11

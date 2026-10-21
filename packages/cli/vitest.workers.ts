@@ -13,18 +13,18 @@ import { readFileSync } from 'node:fs';
 // Per worker, with the fan-out bound in place: the worker fork (about 7 threads) plus the
 // children of the one file that spawns concurrently —
 // __tests__/shield/concurrent-write.test.ts holds at most MAX_LIVE_CHILDREN = 4 `tsx <cli>`
-// children live at once (QGF-40.AC1; the census measured about 11 threads per tsx process and
+// children live at once (the census measured about 11 threads per tsx process and
 // per the node child each tsx runs the CLI in), so the worst case is
 // 7 + (2 x 4) x 11 = 95 tasks per worker, re-derived from the same per-process figures the
 // unbounded 183 (7 + 16 x 11) was measured from. max(1, min(cpus, (512 - 172 - 64) / 95)) = 2
 // in that lane: the bound gives a worker back where the unbounded fan-out left 1 of 16.
-// Confirm with the census loop from qgf QGF-40.AC6 whenever these constants change:
+// Confirm with this census loop whenever these constants change:
 //   while :; do cat /sys/fs/cgroup/pids.current; sleep 0.5; done
 // during one full `npx vitest run` in packages/cli; the peak must stay at least
 // SPAWN_HEADROOM below pids.max.
 //
 // Re-derive the constants when the pool, the esbuild service or the tests' spawn fan-out
-// changes; __tests__/vitest-workers-derivation.test.ts pins the arithmetic (QGF-40.AC4) and
+// changes; __tests__/vitest-workers-derivation.test.ts pins the arithmetic and
 // fails if MAX_LIVE_CHILDREN grows past what TASKS_PER_WORKER covers.
 export const BASE_TASKS = 172;
 export const TASKS_PER_WORKER = 95;

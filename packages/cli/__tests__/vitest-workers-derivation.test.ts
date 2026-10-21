@@ -1,5 +1,5 @@
 /**
- * Pins the worker-cap derivation in ../vitest.workers.ts (QGF-40.AC4): with
+ * Pins the worker-cap derivation in ../vitest.workers.ts: with
  * the concurrent-write fan-out bounded, a 512-pid cgroup must get at least
  * two vitest workers back, and the per-worker constant must keep covering
  * the ceiling the bound actually enforces.

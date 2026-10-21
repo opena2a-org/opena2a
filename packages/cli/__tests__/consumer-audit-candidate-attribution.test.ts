@@ -10,9 +10,9 @@
  * and call the composer directly.
  *
  * That import is possible at all only because the module stopped auditing on
- * load; QGF-112.AC3 pins that, and pins it in child processes rather than here,
- * because "importing performs an install" is not a claim a test can make about
- * a module it has already imported.
+ * load; the two "imports without ..." cases below pin that, and pin it in
+ * child processes rather than here, because "importing performs an install"
+ * is not a claim a test can make about a module it has already imported.
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';

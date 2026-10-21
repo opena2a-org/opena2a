@@ -1,8 +1,8 @@
 /**
- * OPA-03.AC3 — self-test of the front-door conformance runner against the
- * two committed fixture binaries in test-fixtures/ (plain Node scripts,
- * no build): one conforming, one violating every property in turn. A
- * runner that reports pass on the violating fixture fails this criterion.
+ * Self-test of the front-door conformance runner against the two committed
+ * fixture binaries in test-fixtures/ (plain Node scripts, no build): one
+ * conforming, one violating every property in turn. A runner that reports
+ * pass on the violating fixture fails this test.
  */
 import { describe, it, expect } from "vitest";
 import path from "node:path";
@@ -19,7 +19,7 @@ const ALL_PROPERTIES = [
   "commands-parse-against-help",
 ];
 
-describe("frontDoorConformance self-test (OPA-03.AC3)", () => {
+describe("frontDoorConformance self-test", () => {
   it(
     "reports the conforming fixture all-pass across the five properties",
     async () => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Conforming front-door fixture for src/conformance.test.ts (OPA-03.AC3).
+// Conforming front-door fixture for src/conformance.test.ts.
 // Plain Node script, no build step. Holds all five grammar properties:
 // verdict line first, human/JSON parity, exit code == envelope.exitCode,
 // no ANSI when piped, and every cited command parses against --help.

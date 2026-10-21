@@ -160,3 +160,30 @@ test('the root CHANGELOG corrects the anonymity claims of the retired opena2a-cl
   const root = readFileSync(path.join(REPO_ROOT, ROOT_CHANGELOG), 'utf8');
   assert.ok(root.includes(CLI_ANONYMITY_CORRECTION), 'correction missing from the root CHANGELOG');
 });
+
+// A reader who opens the retired file meets those two entries there, not in
+// the root change log, so the retired file carries the correction too, above
+// the history it keeps.
+const CLI_CHANGELOG = 'packages/cli/CHANGELOG.md';
+const RETIRED_CLI_CORRECTION =
+  'The 0.9.0 entry in this file called usage telemetry anonymous and its 0.9.1 entry called a contributed summary anonymized, which was misleading: each usage event carries the install ID, and each contributed summary is sent with a contributor token made on the machine.';
+
+/** The text of a change log above its first `## ` heading. */
+function aboveFirstRelease(changelog) {
+  const lines = changelog.split('\n');
+  const first = lines.findIndex((l) => l.startsWith('## '));
+  return lines.slice(0, first === -1 ? undefined : first).join('\n');
+}
+
+test('the retired opena2a-cli change log corrects its 0.9.0 and 0.9.1 entries above its history', () => {
+  const retired = readFileSync(path.join(REPO_ROOT, CLI_CHANGELOG), 'utf8');
+  assert.ok(
+    aboveFirstRelease(retired).includes(RETIRED_CLI_CORRECTION),
+    'correction missing above the first release heading of packages/cli/CHANGELOG.md',
+  );
+});
+
+test('the retired change log check fails when the correction sits under a release only', () => {
+  const planted = ['# Changelog', '', '## 0.10.11', '', '## 0.9.0', '', RETIRED_CLI_CORRECTION, ''].join('\n');
+  assert.equal(aboveFirstRelease(planted).includes(RETIRED_CLI_CORRECTION), false);
+});
