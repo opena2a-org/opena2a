@@ -1,6 +1,6 @@
 /**
- * Audit of every packages/cli test file that spawns child processes
- * (QGF-40.AC5): each file under __tests__ with a static
+ * Audit of every packages/cli test file that spawns child processes:
+ * each file under __tests__ with a static
  * `import ... from 'node:child_process'`, its spawn shape and the maximum
  * number of children it holds live at once. The test beside this file
  * enumerates those imports from the tree and fails when a file that imports
@@ -23,8 +23,8 @@
  * comment, and child-process-audit-merge.test.ts pins the difference in
  * merge behaviour that is the reason for keeping it out (QGF-146).
  *
- * Root `package.json` keeps `turbo run test --concurrency=1` (QGF-40.AC4
- * retention record): every vitest instance carries the fixed
+ * Root `package.json` keeps `turbo run test --concurrency=1` on purpose:
+ * every vitest instance carries the fixed
  * BASE_TASKS = 172 cost (main process plus a 16-process esbuild service
  * pool — see ../vitest.workers.ts) and derives its worker cap assuming it
  * owns the whole cgroup budget. Two package suites at once would hold
@@ -112,7 +112,7 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     spawns:
       'spawnSync(node --input-type=module --eval <import the audit script>) with an empty ' +
       'PATH, to measure that importing scripts/audit-consumer-resolution.mjs installs, ' +
-      'audits and spawns nothing (QGF-112.AC3); then spawnSync(node ' +
+      'audits and spawns nothing; then spawnSync(node ' +
       'scripts/audit-consumer-resolution.mjs --target) to measure that it still runs when ' +
       'it IS the program',
   },
@@ -148,7 +148,7 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns:
       'execFileSync(git init | add | commit | checkout | merge-tree) over throwaway ' +
-      'repositories built from this file (QGF-146.AC4)',
+      'repositories built from this file',
   },
   'release/release-artifact-review.test.ts': {
     shape: 'sync',

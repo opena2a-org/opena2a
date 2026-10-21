@@ -1,18 +1,19 @@
 /**
- * Keeps child-process-audit.ts complete (QGF-40.AC5): enumerates every test
+ * Keeps child-process-audit.ts complete: enumerates every test
  * file under __tests__ whose source statically imports node:child_process
  * and fails when the audit and the tree disagree in either direction. Files
  * that only `vi.mock('node:child_process', ...)` (or `await import(...)` the
  * mocked module) spawn nothing real and are correctly not enumerated: the
  * discriminator is a static `import ... from 'node:child_process'`.
  *
- * And keeps that file's docstring out of the counting business (QGF-146.AC2):
+ * And keeps that file's docstring out of the counting business:
  * it is read as TEXT here, and a cardinal in the same sentence as the set the
  * table enumerates fails. A count in prose is checked by nobody — the one that
  * used to sit there was wrong on main while every assertion below stayed green
  * — and it has to be rewritten by every delivery that changes the set, which
  * is what made two of them collide. The symmetric assertion is the half that
- * works, so QGF-146.AC3 re-derives it and pins the pieces it is made of.
+ * works, so the last test in this file re-derives it and pins the pieces it
+ * is made of.
  */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
@@ -25,7 +26,7 @@ const STATIC_IMPORT = /^import\s[^;]*?from\s+['"]node:child_process['"]/m;
 
 /** The audited file itself, read as text — never a fixture copy of it. */
 const AUDIT_SOURCE = path.join(TESTS_ROOT, 'child-process-audit.ts');
-/** This file, read as text, so QGF-146.AC3 can pin what it still asserts. */
+/** This file, read as text, so its last test can pin what it still asserts. */
 const THIS_SOURCE = path.join(TESTS_ROOT, 'child-process-audit.test.ts');
 
 /** An ASCII numeral, or an English number word one through twenty. */

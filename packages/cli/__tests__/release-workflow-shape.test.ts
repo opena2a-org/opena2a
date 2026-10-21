@@ -1,6 +1,6 @@
 /**
  * The release workflow must pack and publish every workspace a package depends
- * on BEFORE it publishes that package (QGF-114.AC1-AC5).
+ * on BEFORE it publishes that package.
  *
  * `release.yml` packs all eleven workspaces in one job and then publishes them
  * in roster order, in a loop whose every iteration is irreversible: `npm
@@ -20,10 +20,10 @@
  *
  * Read as TEXT rather than parsed as YAML on purpose. The roster is a
  * JavaScript literal inside a shell script inside a YAML block scalar, so
- * reaching it is a textual step whatever parses the outer document — and
- * QGF-114.AC4 feeds this same derivation a copy of the file with one entry
- * moved, which has to be the file's own bytes rather than a re-serialisation
- * that could normalise the difference away.
+ * reaching it is a textual step whatever parses the outer document — and the
+ * case that packs packages/cli first feeds this same derivation a copy of the
+ * file with one entry moved, which has to be the file's own bytes rather than
+ * a re-serialisation that could normalise the difference away.
  */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
@@ -180,8 +180,9 @@ function orderViolations(entries: RosterEntry[]): string[] {
 }
 
 /**
- * The dependency-before-dependent assertion (QGF-114.AC2). Shared, because
- * QGF-114.AC4 exists to watch THIS assertion fail on the base ordering.
+ * The dependency-before-dependent assertion. Shared, because the case that
+ * packs packages/cli first exists to watch THIS assertion fail on the base
+ * ordering.
  */
 function assertDependencyBeforeDependent(entries: RosterEntry[]): void {
   const violations = orderViolations(entries);

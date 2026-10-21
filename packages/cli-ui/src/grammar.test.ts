@@ -1,7 +1,9 @@
 /**
- * OPA-03.AC1 — the seven grammar exports, pinned by golden snapshots.
- * Every `it` in this file carries OPA-03.AC1 as its first token; the
- * negative/rule pins live in grammar-rules.test.ts (OPA-03.AC2/AC4).
+ * The seven grammar exports, pinned by golden snapshots; the negative/rule
+ * pins live in grammar-rules.test.ts. The titles the stored snapshot keys are
+ * built from still carry an old ticket id: renaming one re-keys
+ * __snapshots__/grammar.test.ts.snap, so the titles and the keys change
+ * together.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
@@ -130,7 +132,7 @@ describe("golden snapshots, plain form (OPA-03.AC1)", () => {
   });
 });
 
-describe("colored form strips back to the plain golden (OPA-03.AC1)", () => {
+describe("colored form strips back to the plain golden", () => {
   beforeEach(() => {
     vi.stubEnv("NO_COLOR", "");
   });

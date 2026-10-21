@@ -1,7 +1,6 @@
 /**
- * OPA-03.AC2 — the ruled shape of the grammar, negatively pinned.
- * OPA-03.AC4 — the additive-only / versioning invariants.
- * The golden snapshots live in grammar.test.ts (OPA-03.AC1).
+ * The ruled shape of the grammar, negatively pinned, and the additive-only /
+ * versioning invariants. The golden snapshots live in grammar.test.ts.
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -53,7 +52,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("renderScore rules (OPA-03.AC2)", () => {
+describe("renderScore rules", () => {
   const SCORE_FIXTURES = [
     { score: 0 },
     { score: 100 },
@@ -81,7 +80,7 @@ describe("renderScore rules (OPA-03.AC2)", () => {
   });
 });
 
-describe("renderVerdict rules (OPA-03.AC2)", () => {
+describe("renderVerdict rules", () => {
   it("renderVerdict is a single line with no leading blank line", () => {
     const outputs = [
       renderVerdict({ verdict: "safe" }),
@@ -97,7 +96,7 @@ describe("renderVerdict rules (OPA-03.AC2)", () => {
   });
 });
 
-describe("renderFinding rules (OPA-03.AC2)", () => {
+describe("renderFinding rules", () => {
   it("renderFinding carries severity, title, file:line, why, Verify:, Fix: in order", () => {
     const out = renderFinding(FINDING, { color: false });
     const positions = [
@@ -120,7 +119,7 @@ describe("renderFinding rules (OPA-03.AC2)", () => {
   });
 });
 
-describe("renderProgress rules (OPA-03.AC2)", () => {
+describe("renderProgress rules", () => {
   it("renderProgress writes only to the passed sink, never stdout or stderr", () => {
     const stdoutWrite = vi.spyOn(process.stdout, "write");
     const stderrWrite = vi.spyOn(process.stderr, "write");
@@ -148,7 +147,7 @@ describe("renderProgress rules (OPA-03.AC2)", () => {
   });
 });
 
-describe("renderError rules (OPA-03.AC2)", () => {
+describe("renderError rules", () => {
   it("renderError carries what happened, what was not changed, and one next command", () => {
     const out = renderError(
       {
@@ -165,7 +164,7 @@ describe("renderError rules (OPA-03.AC2)", () => {
   });
 });
 
-describe("color kill-switches (OPA-03.AC2)", () => {
+describe("color kill-switches", () => {
   it("NO_COLOR=1 yields zero ESC bytes across every renderer", () => {
     vi.stubEnv("NO_COLOR", "1");
     // even with color and TTY forced on, NO_COLOR wins
@@ -180,7 +179,7 @@ describe("color kill-switches (OPA-03.AC2)", () => {
   });
 });
 
-describe("additive versioned surface (OPA-03.AC4)", () => {
+describe("additive versioned surface", () => {
   it("version reads 0.6.0 and chalk stays the only runtime dependency", () => {
     const pkg = JSON.parse(readFileSync(path.join(PKG_DIR, "package.json"), "utf8")) as {
       version: string;
@@ -259,7 +258,7 @@ describe("additive versioned surface (OPA-03.AC4)", () => {
   });
 });
 
-describe("envelope validation (OPA-03.AC2)", () => {
+describe("envelope validation", () => {
   it("envelope rejects an empty or oversized nextSteps list", () => {
     const base = {
       tool: "t",

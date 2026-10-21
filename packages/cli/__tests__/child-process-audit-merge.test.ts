@@ -1,5 +1,5 @@
 /**
- * Why the audited set is the table and never a sentence (QGF-146.AC4).
+ * Why the audited set is the table and never a sentence.
  *
  * The property is textual locality, and `git merge-tree --write-tree` is the
  * instrument that decides it. Adding a row to CHILD_PROCESS_AUDIT is a local

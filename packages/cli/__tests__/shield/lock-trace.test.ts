@@ -1,7 +1,7 @@
 /**
- * OPA-01.AC1, the off-switch clause: with the trace variable unset the lock
- * code path writes no trace file and the event chain it guards is the same
- * chain the traced path writes.
+ * The lock trace's off-switch: with the trace variable unset the lock code
+ * path writes no trace file and the event chain it guards is the same chain
+ * the traced path writes.
  *
  * Two writes can never be byte-identical: every event carries a uuidv7 id and
  * an ISO timestamp, and the hash chain is computed over them. So the chains
@@ -74,7 +74,7 @@ function normalisedChain(home: string): string {
     .join('\n');
 }
 
-describe('lock trace off-switch (OPA-01.AC1)', () => {
+describe('lock trace off-switch', () => {
   it('writes no trace file with the variable unset, and the same chain either way', () => {
     // Traced write: the variable names a file inside the temp home.
     const traced = makeHome();

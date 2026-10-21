@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Violating front-door fixture for src/conformance.test.ts (OPA-03.AC3).
+// Violating front-door fixture for src/conformance.test.ts.
 // Plain Node script, no build step. Breaks every grammar property in turn:
 //   1. a banner precedes the verdict line;
 //   2. the JSON envelope disagrees with the human view (verdict, score,

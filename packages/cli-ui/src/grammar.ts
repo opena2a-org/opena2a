@@ -21,7 +21,7 @@
  * same rules against a built binary.
  *
  * This module's runtime exports are exactly the seven names pinned by
- * OPA-03.AC1; everything else here is a type or module-private.
+ * grammar.test.ts; everything else here is a type or module-private.
  */
 
 import os from "node:os";

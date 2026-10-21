@@ -1,9 +1,9 @@
 /**
- * OPA-01.AC4: run the concurrent-write suite repeatedly with the lock trace on,
+ * Run the concurrent-write suite repeatedly with the lock trace on,
  * and stop on the first round that reports a forked chain.
  *
  * This loop is an INSTRUMENT, not a fix. On a fork it preserves that round's
- * trace file and the children's stderr (the AC3 harness keeps stderr on every
+ * trace file and the children's stderr (the suite's harness keeps stderr on every
  * exit code, and the round assertion's message carries it) and prints their
  * paths. On N clean rounds it prints the round count, the host and the phrase
  * `not recurred` -- it never claims the fork is fixed, bounded or gone.

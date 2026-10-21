@@ -1,6 +1,5 @@
 /**
- * Structural tests over .github/workflows/release.yml and ci.yml (QGF OPA-04,
- * AC1 + AC4).
+ * Structural tests over .github/workflows/release.yml and ci.yml.
  *
  * The release path is workflow TEXT: nothing executes it before a tag is
  * pushed, and a tag push is the publish event — there is no second chance. So
@@ -54,14 +53,14 @@ const needsOf = (job: Job | undefined): string[] =>
 const runsNpmCi = (s: Step): boolean => /(^|\s)npm ci(\s|$)/m.test(s.run ?? '');
 
 /**
- * The exact guard command from the OPA-04 contract (AC4). Asserted as a
- * literal substring, not a paraphrase: the criterion pins the command text,
- * and a "similar" grep with a narrower class list would pass a looser test
- * while guarding less.
+ * The exact guard command that every job running npm ci in release.yml and
+ * ci.yml must carry before its install step. Asserted as a literal substring,
+ * not a paraphrase: the test below pins the command text, and a "similar" grep
+ * with a narrower class list would pass a looser test while guarding less.
  */
 const GUARD_CMD = String.raw`git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'`;
 
-describe('release.yml job graph (OPA-04.AC1)', () => {
+describe('release.yml job graph', () => {
   it('review sits between build and publish in the needs chain', () => {
     const names = Object.keys(release.jobs);
     expect(names).toContain('build');
@@ -142,7 +141,7 @@ describe('release.yml job graph (OPA-04.AC1)', () => {
   });
 });
 
-describe('package-manager-config guard (OPA-04.AC4)', () => {
+describe('package-manager-config guard', () => {
   const files: Array<[string, Workflow]> = [
     ['release.yml', release],
     ['ci.yml', ci],
