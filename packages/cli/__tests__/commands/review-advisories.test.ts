@@ -42,6 +42,17 @@ vi.mock('../../src/util/report-submission.js', () => ({
 import { review } from '../../src/commands/review.js';
 import { init } from '../../src/commands/init.js';
 import { assembleReviewClientScript } from '../../src/report/review-assets.js';
+import { validateRegistryUrl } from '../../src/util/validate-registry-url.js';
+
+/** The error getRegistryUrl() throws for a configured URL the validator refuses. */
+function refusalOf(url: string): Error {
+  try {
+    validateRegistryUrl(url);
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error(`${url} was not refused`);
+}
 
 const ADVISORY = {
   id: 'OA2A-2026-0001',
@@ -348,7 +359,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
   });
 
   it('a refused registry.url is named in --verbose output and on the Hygiene tab', async () => {
-    registry.answer = new Error('Registry URL must use HTTPS: http://registry.internal.example\nPlain HTTP is only allowed for localhost development.');
+    registry.answer = refusalOf('http://registry.internal.example');
 
     const { report, stderr } = await runReview(true);
 
@@ -358,13 +369,32 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(hygieneText(report)).toContain('Reason: Registry URL must use HTTPS: http://registry.internal.example.');
   });
 
+  // The reason is built from the URL's parsed origin and path, never from
+  // the configured text, so no form of a password in registry.url reaches
+  // the terminal, the JSON or the report.
+  it('a refused registry.url holding a user name and password shows neither, whatever the password holds', async () => {
+    for (const password of ['FAKE pw', 'FAKE\npw', 'FAKE/pw']) {
+      registry.answer = refusalOf(`http://FAKE-user:${password}@registry.internal.example`);
+
+      const { report, stderr } = await runReview(true);
+
+      expect(report.initData.advisoryRead.notCheckedReason, JSON.stringify(password)).toBe(password.includes('/')
+        ? 'the configured registry.url is not a valid URL'
+        : 'Registry URL must use HTTPS: http://registry.internal.example');
+      const shown = stderr + JSON.stringify(report.initData.advisoryRead) + hygieneText(report);
+      expect(shown, JSON.stringify(password)).not.toContain('FAKE');
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('the Hygiene tab shows markup in the reason as text', async () => {
-    registry.answer = new Error('Invalid registry URL: https://registry.example.test/<img src=x onerror=alert(1)>');
+    // A request error's message reaches the reason; a refusal's does not.
+    mockFetch.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('<img src=x onerror=alert(1)>') }));
 
     const { report } = await runReview();
 
     // Rendered as markup, the tag would be stripped from the visible text.
-    expect(hygieneText(report)).toContain('Reason: Invalid registry URL: https://registry.example.test/&lt;img src=x onerror=alert(1)&gt;.');
+    expect(hygieneText(report)).toContain('Reason: https://registry.example.test could not be read (fetch failed: &lt;img src=x onerror=alert(1)&gt;).');
   });
 
   it('OPENA2A_ADVISORIES=off makes no request and says how to turn the check back on', async () => {
@@ -391,7 +421,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
   });
 
   it('init --verbose names why the advisories were not checked', async () => {
-    registry.answer = new Error('Registry URL must use HTTPS: http://registry.internal.example');
+    registry.answer = refusalOf('http://registry.internal.example');
 
     const { stdout } = await silenced(() => init({ targetDir: tempDir, format: 'text', verbose: true }));
 

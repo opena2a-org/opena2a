@@ -11,7 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { bold, red, yellow, dim, cyan, orange } from './colors.js';
 import { printable } from './printable.js';
-import { validateRegistryUrl } from './validate-registry-url.js';
+import { RegistryUrlRefusal, validateRegistryUrl } from './validate-registry-url.js';
 
 // --- Types ---
 
@@ -72,8 +72,12 @@ export const ADVISORY_WINDOW_DAYS = 30;
  *  this many; the Registry's total still counts the rest as not read. */
 export const ADVISORY_LIMIT = 100;
 const ADVISORY_TIMEOUT_MS = 5_000;
-/** A text field of an advisory is read up to this many characters. */
+/** A text field of an advisory, a version string included, is read up to this
+ *  many characters. */
 export const ADVISORY_TEXT_LIMIT = 1_024;
+/** A list inside an advisory (its severities, its affected packages, their
+ *  ranges and their events) is read up to this many entries. */
+export const ADVISORY_LIST_LIMIT = 100;
 
 /** Set to `off` to make `review` and `init` skip the advisory request. */
 export const ADVISORIES_ENV = 'OPENA2A_ADVISORIES';
@@ -94,13 +98,28 @@ function advisoriesTurnedOff(): boolean {
   return ['off', '0', 'false', 'no'].includes((process.env[ADVISORIES_ENV] ?? '').trim().toLowerCase());
 }
 
-/** The first line of an error's message, with any `user:password@` removed
- *  from a URL in it: everything from `//` to the last `@` before the path,
- *  whatever the password holds (a space or an `@` of its own included). The
- *  line is shown in the terminal and the report. */
-function firstLine(err: unknown): string {
+/** Why a configured Registry URL was refused, in one line. The line is built
+ *  from the refusal's kind and the URL's parsed origin and path, never from
+ *  the configured text, so a user name and password in that text, whatever
+ *  characters they hold, are not part of it. An error that is not the
+ *  validator's refusal is named without its message. The line is shown in
+ *  the terminal and the report. */
+function refusalReason(err: unknown): string {
+  if (err instanceof RegistryUrlRefusal && err.kind === 'plain-http') {
+    return `Registry URL must use HTTPS: ${shownUrl(err.url)}`;
+  }
+  if (err instanceof RegistryUrlRefusal) return 'the configured registry.url is not a valid URL';
+  return 'the configured registry.url was refused';
+}
+
+/** The first line of a request error's message, with the configured Registry
+ *  text replaced by its origin and path wherever it appears (fetch names the
+ *  URL, as given, when it refuses one that carries credentials), and any
+ *  `user:password@` left between `//` and the path on that line removed. */
+function firstLine(err: unknown, registryUrl: string): string {
   const message = err instanceof Error ? err.message : String(err);
-  return (message.split('\n')[0] ?? '').replace(/\/\/[^/]*@/g, '//').trim();
+  const named = registryUrl ? message.split(registryUrl).join(shownUrl(registryUrl)) : message;
+  return (named.split('\n')[0] ?? '').replace(/\/\/[^/]*@/g, '//').trim();
 }
 
 /** The Registry URL without a trailing `/`, so the request path is joined
@@ -143,31 +162,40 @@ function textIn(value: unknown): string {
   return value.length > ADVISORY_TEXT_LIMIT ? value.slice(0, ADVISORY_TEXT_LIMIT).replace(/[\uD800-\uDBFF]$/, '') : value;
 }
 
+/** The first ADVISORY_LIST_LIMIT objects of a list inside an advisory; none
+ *  when the value is not a list. */
+function listIn(value: unknown): Fields[] {
+  return objectsIn(value).slice(0, ADVISORY_LIST_LIMIT);
+}
+
 /**
  * The advisories of a list, holding the fields the CLI reads. An entry that
  * is not an object is left out, a list field that is not a list is read as
  * empty, and a text field that is not text as ''. Read as received, a `null`
  * entry or an `affected` object stopped `review` and `init` with a TypeError.
- * At most ADVISORY_LIMIT entries are read, the count the request asks for,
- * so an answer or a cache file of any size is read within that bound.
+ * What is read is bounded in each dimension: at most ADVISORY_LIMIT entries,
+ * the count the request asks for; at most ADVISORY_LIST_LIMIT entries of each
+ * list inside an entry; and at most ADVISORY_TEXT_LIMIT characters of each
+ * text field, the version strings of an event included. The rest of an answer
+ * or a cache file of any size is neither kept nor written to the cache.
  */
 function readableAdvisories(list: unknown[]): Advisory[] {
   return objectsIn(list).slice(0, ADVISORY_LIMIT).map(entry => ({
     id: textIn(entry.id),
     summary: textIn(entry.summary),
     published: textIn(entry.published),
-    severity: objectsIn(entry.severity)
+    severity: listIn(entry.severity)
       .filter(s => typeof s.score === 'string')
       .map(s => ({ type: textIn(s.type), score: textIn(s.score) })),
-    affected: objectsIn(entry.affected).map(a => {
+    affected: listIn(entry.affected).map(a => {
       const pkg: Fields = isFields(a.package) ? a.package : {};
       return {
         package: { name: textIn(pkg.name), ecosystem: textIn(pkg.ecosystem) },
-        ranges: objectsIn(a.ranges).map(r => ({
+        ranges: listIn(a.ranges).map(r => ({
           type: textIn(r.type),
-          events: objectsIn(r.events).map(e => ({
-            ...(typeof e.introduced === 'string' ? { introduced: e.introduced } : {}),
-            ...(typeof e.fixed === 'string' ? { fixed: e.fixed } : {}),
+          events: listIn(r.events).map(e => ({
+            ...(typeof e.introduced === 'string' ? { introduced: textIn(e.introduced) } : {}),
+            ...(typeof e.fixed === 'string' ? { fixed: textIn(e.fixed) } : {}),
           })),
         })),
       };
@@ -265,7 +293,7 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
   try {
     validateRegistryUrl(registryUrl);
   } catch (err) {
-    return { reason: firstLine(err) };
+    return { reason: refusalReason(err) };
   }
   const where = shownUrl(registryUrl);
   const since = new Date(Date.now() - ADVISORY_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -286,8 +314,8 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
     if (err instanceof Error && err.name === 'TimeoutError') {
       return { reason: `${where} did not answer within ${ADVISORY_TIMEOUT_MS / 1000} seconds` };
     }
-    const cause = err instanceof Error && err.cause instanceof Error ? `: ${firstLine(err.cause)}` : '';
-    return { reason: `${where} could not be read (${firstLine(err)}${cause})` };
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${firstLine(err.cause, registryUrl)}` : '';
+    return { reason: `${where} could not be read (${firstLine(err, registryUrl)}${cause})` };
   }
 }
 
@@ -433,7 +461,7 @@ export async function readAdvisories(
   try {
     registryUrl = await resolveRegistryUrl();
   } catch (err) {
-    return advisoriesNotChecked(firstLine(err));
+    return advisoriesNotChecked(refusalReason(err));
   }
   return checkAdvisories(dir, registryUrl);
 }

@@ -14,7 +14,18 @@ vi.mock('node:os', async (importOriginal) => {
   };
 });
 
-import { ADVISORY_LIMIT, ADVISORY_TEXT_LIMIT, checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
+import { ADVISORY_LIMIT, ADVISORY_LIST_LIMIT, ADVISORY_TEXT_LIMIT, checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
+import { validateRegistryUrl } from '../../src/util/validate-registry-url.js';
+
+/** The error getRegistryUrl() throws for a configured URL the validator refuses. */
+function refusalOf(url: string): Error {
+  try {
+    validateRegistryUrl(url);
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error(`${url} was not refused`);
+}
 
 const mockFetch = vi.fn();
 
@@ -306,6 +317,53 @@ describe('advisories', () => {
     expect(cached.data.total).toBe(ADVISORY_LIMIT + 50);
   });
 
+  // The lists inside an advisory and its version strings are outside data
+  // too. Each list is read up to ADVISORY_LIST_LIMIT entries and each version
+  // up to ADVISORY_TEXT_LIMIT characters, so what is kept and cached of an
+  // answer is bounded in every dimension, not only in its count of advisories:
+  // an answer with 20,001 affected entries and 5,000-character versions was
+  // kept and written to the cache whole.
+  it('reads at most the list limit of each list inside an advisory and cuts each version string', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project', dependencies: { 'vulnerable-package': '1.0.0' } }));
+    const over = ADVISORY_LIST_LIMIT + 50;
+    const long = (digit: string) => digit.repeat(ADVISORY_TEXT_LIMIT * 4);
+    const events = Array.from({ length: over }, (_, i) => (i === 0 ? { introduced: long('1'), fixed: long('2') } : { fixed: `1.${i}.0` }));
+    const ranges = Array.from({ length: over }, (_, i) => ({ type: 'SEMVER', events: i === 0 ? events : [{ fixed: '2.0.0' }] }));
+    const affected = Array.from({ length: over }, (_, i) => ({
+      package: { name: i === 0 ? 'vulnerable-package' : `package-${i}`, ecosystem: 'npm' },
+      ranges: i === 0 ? ranges : [{ type: 'SEMVER', events: [{ fixed: '2.0.0' }] }],
+    }));
+    const severity = Array.from({ length: over }, (_, i) => ({ type: 'ADVISORY', score: i === 0 ? 'HIGH' : 'LOW' }));
+    const answer = [{ id: 'OA2A-2026-0001', summary: 'x', published: '2026-10-01T00:00:00Z', severity, affected }];
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: answer, total: 1, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(result.matchedPackages).toEqual(['vulnerable-package']);
+    const read = result.advisories[0];
+    expect(read.severity).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(read.affected).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(read.affected[0].ranges).toHaveLength(ADVISORY_LIST_LIMIT);
+    const firstEvents = read.affected[0].ranges?.[0].events ?? [];
+    expect(firstEvents).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(firstEvents[0]).toEqual({ introduced: '1'.repeat(ADVISORY_TEXT_LIMIT), fixed: '2'.repeat(ADVISORY_TEXT_LIMIT) });
+    // A cut version is no version the form keeps; the versions within the
+    // limits are.
+    expect(fixedVersions(read, 'vulnerable-package')).toEqual([
+      ...Array.from({ length: ADVISORY_LIST_LIMIT - 1 }, (_, i) => `1.${i + 1}.0`),
+      '2.0.0',
+    ]);
+    // The cache holds what was read, within the same bounds.
+    const cached = JSON.parse(fs.readFileSync(path.join(tempHome, '.opena2a', 'cache', 'advisories.json'), 'utf-8'));
+    const cachedAdvisory = cached.data.advisories[0];
+    expect(cachedAdvisory.severity).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges[0].events).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges[0].events[0].introduced).toHaveLength(ADVISORY_TEXT_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges[0].events[0].fixed).toHaveLength(ADVISORY_TEXT_LIMIT);
+  });
+
   it('printAdvisoryWarnings outputs to stdout', () => {
     const chunks: string[] = [];
     const origWrite = process.stdout.write;
@@ -402,28 +460,59 @@ describe('advisories', () => {
 
     // A URL carrying a user and password; the reason names the host only.
     const withUserinfo = 'http://' + ['someone', 'not-a-real-pw'].join(':') + '@registry.internal.example';
-    const resolved = await readAdvisories(tempDir, async () => {
-      throw new Error(`Registry URL must use HTTPS: ${withUserinfo}\nPlain HTTP is only allowed for localhost development.`);
-    });
+    const resolved = await readAdvisories(tempDir, async () => { throw refusalOf(withUserinfo); });
     expect(resolved.checked).toBe(false);
     expect(resolved.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  // The password of a configured URL may hold a space or an `@` of its own;
-  // neither leaves part of it in the reason.
-  it('names a refused URL without its password whatever the password holds', async () => {
-    const spaced = 'http://someone:FAKE pw@registry.internal.example';
-    const withAt = 'http://someone:FAKE@pw@registry.internal.example';
-    for (const url of [spaced, withAt]) {
-      const direct = await checkAdvisories(tempDir, url);
-      expect(direct.checked, url).toBe(false);
-      expect(direct.reason, url).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+  // The reason is built from the refusal's kind and the URL's parsed origin
+  // and path, never from the configured text. The first line of the message
+  // was used, with `//...@` removed from it, so a password holding a line
+  // break left the user name and the part before the break in the reason,
+  // and one holding an unencoded slash left the message whole.
+  it('names a refused URL without its user name or password, whatever the password holds', async () => {
+    for (const password of ['FAKE pw', 'FAKE@pw', 'FAKE\npw', 'FAKE:pw', 'FAKE/pw']) {
+      const url = `http://FAKE-user:${password}@registry.internal.example/path`;
+      // An unencoded slash ends the authority, so that URL does not parse.
+      const expected = password.includes('/')
+        ? 'the configured registry.url is not a valid URL'
+        : 'Registry URL must use HTTPS: http://registry.internal.example/path';
 
-      const resolved = await readAdvisories(tempDir, async () => { throw new Error(`Invalid registry URL: ${url}`); });
-      expect(resolved.reason, url).toBe('Invalid registry URL: http://registry.internal.example');
+      const direct = await checkAdvisories(tempDir, url);
+      expect(direct.checked, JSON.stringify(password)).toBe(false);
+      expect(direct.reason, JSON.stringify(password)).toBe(expected);
+
+      const resolved = await readAdvisories(tempDir, async () => { throw refusalOf(url); });
+      expect(resolved.reason, JSON.stringify(password)).toBe(expected);
     }
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // An error that is not the validator's refusal is named without its
+  // message, which may hold the configured text.
+  it('names any other resolver error without its message', async () => {
+    const resolved = await readAdvisories(tempDir, async () => {
+      throw new Error('Registry URL must use HTTPS: http://FAKE-user:FAKE\npw@registry.internal.example');
+    });
+    expect(resolved.checked).toBe(false);
+    expect(resolved.reason).toBe('the configured registry.url was refused');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // fetch refuses a URL that carries credentials and names the URL, as given,
+  // in its message.
+  it('names a request error without the user name or password of the configured URL', async () => {
+    const url = 'https://FAKE-user:FAKE\npw@registry.test';
+    mockFetch.mockImplementation(async (input: string) => {
+      throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${input}`);
+    });
+
+    const result = await checkAdvisories(tempDir, url);
+
+    expect(result.checked).toBe(false);
+    expect(result.reason).toMatch(/^https:\/\/registry\.test could not be read \(Request cannot be constructed from a URL that includes credentials: https:\/\/registry\.test\/api\/v1\/trust\/advisories\?since=\d{4}-\d{2}-\d{2}&limit=100\)$/);
+    expect(result.reason).not.toContain('FAKE');
   });
 
   it('names why no list was read: an HTTP status, a timeout, an unreachable host', async () => {
