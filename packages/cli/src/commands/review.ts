@@ -655,15 +655,15 @@ export async function review(options: ReviewOptions): Promise<number> {
     detectData,
   };
 
-  // Severity counts. A matched advisory is a report finding, not an analyzer
-  // finding, so it is counted beside `findings` here: the terminal count and
-  // Verdict then agree with the report's Overview. The score does not use it.
+  // Severity counts. The terminal count and Verdict count a matched advisory
+  // beside `findings`, as the report's Overview does; the score and the counts
+  // sent to the Registry (`analyzerCounts`) do not, as it concerns a dependency.
   const advisoryFindings = reportFindings.filter(f => f.foundBy.some(b => b.source === 'advisories'));
-  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const f of [...findings, ...advisoryFindings]) {
-    const sev = f.severity as keyof typeof sevCounts;
-    if (sev in sevCounts) sevCounts[sev]++;
-  }
+  const countBySeverity = (list: { severity: string }[]) => list.reduce((counts, f) => {
+    if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
+    return counts;
+  }, { critical: 0, high: 0, medium: 0, low: 0 });
+  const [analyzerCounts, sevCounts] = [countBySeverity(findings), countBySeverity([...findings, ...advisoryFindings])];
   const totalFindings = findings.length + advisoryFindings.length;
 
   // Why the advisories were not checked (a refused registry.url, no answer,
@@ -906,10 +906,10 @@ export async function review(options: ReviewOptions): Promise<number> {
           scannerVersion: '0.6.3',
           overallScore: compositeScore,
           scanDurationMs: phases.reduce((sum, p) => sum + p.durationMs, 0),
-          criticalCount: sevCounts.critical,
-          highCount: sevCounts.high,
-          mediumCount: sevCounts.medium,
-          lowCount: sevCounts.low,
+          criticalCount: analyzerCounts.critical,
+          highCount: analyzerCounts.high,
+          mediumCount: analyzerCounts.medium,
+          lowCount: analyzerCounts.low,
           infoCount: 0,
           verdict: compositeScore >= 80 ? 'pass' : compositeScore >= 50 ? 'warnings' : 'fail',
           findings: findings.map((f, i) => ({

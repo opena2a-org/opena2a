@@ -46,10 +46,11 @@ import { review, contributionPackage } from '../../src/commands/review.js';
 import { detectProject } from '../../src/util/detect.js';
 
 // Text mode: the JSON branch returns before the contribution step runs.
-async function runReview(targetDir: string): Promise<number> {
+// `stdout`, when given, receives what the review prints there.
+async function runReview(targetDir: string, stdout?: string[]): Promise<number> {
   const origOut = process.stdout.write;
   const origErr = process.stderr.write;
-  process.stdout.write = (() => true) as typeof process.stdout.write;
+  process.stdout.write = ((chunk: unknown) => { stdout?.push(String(chunk)); return true; }) as typeof process.stdout.write;
   process.stderr.write = (() => true) as typeof process.stderr.write;
   try {
     return await review({
@@ -208,6 +209,49 @@ describe('review contribution', () => {
     expect(report.packageName).toBe('revfix');
     expect(report.packageType).toBe('npm');
     expect(report.scannerName).toBe('opena2a-review');
+  });
+
+  // Regression (#464): a matched advisory was added to the severity counts
+  // sent with the report, as a finding of the reviewed package, while the
+  // findings sent beside them left it out. The advisory concerns a
+  // dependency: the terminal counts it, the counts sent do not.
+  it('a matched advisory is counted in the terminal summary, not in the counts sent to the Registry', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+      name: 'revfix', version: '1.0.0', dependencies: { 'vulnerable-package': '1.0.0' },
+    }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+    fs.mkdirSync(path.join(tempDir, '.git'));
+    const advisory = {
+      id: 'OA2A-2026-0001',
+      summary: 'Advisory in vulnerable-package',
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' } }],
+      published: '2026-10-01T00:00:00Z',
+    };
+    const answering = (advisories: object[]) =>
+      vi.fn(async () => ({ ok: true, json: async () => ({ advisories, total: advisories.length, format: 'osv' }) }));
+    const reportPath = path.join(tempDir, 'review.html');
+
+    // The same review without the advisory, with the report it wrote and
+    // the list it cached removed, so the second run reads the same tree.
+    vi.stubGlobal('fetch', answering([]));
+    await runReview(tempDir);
+    fs.rmSync(reportPath);
+    fs.rmSync(path.join(tempHome, '.opena2a', 'cache'), { recursive: true, force: true });
+
+    vi.stubGlobal('fetch', answering([advisory]));
+    const stdout: string[] = [];
+    await runReview(tempDir, stdout);
+
+    expect(stdout.join('')).toContain('1 findings (0 critical, 1 high, 0 medium)');
+    const html = fs.readFileSync(reportPath, 'utf-8');
+    const data = JSON.parse((html.match(/<script id="report-data" type="application\/json">([\s\S]*?)<\/script>/)?.[1] ?? '{}').replace(/<\\\//g, '</'));
+    expect(data.initData.advisoryCount).toBe(1);
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(2);
+    const [[, without], [, withAdvisory]] = submission.submitScanReport.mock.calls as unknown as [string, Record<string, unknown>][];
+    const counts = (r: Record<string, unknown>) => [r.criticalCount, r.highCount, r.mediumCount, r.lowCount];
+    expect(counts(withAdvisory)).toEqual(counts(without));
+    expect(withAdvisory.findings).toEqual(without.findings);
   });
 
   it('a Go module is not sent: the Registry keeps no scan for that ecosystem', async () => {
