@@ -61,6 +61,22 @@ const CLEARED = [
     lastAffected: '4.1.10',
     advisories: ['GHSA-82fw-gwwq-j7x9'],
   },
+  {
+    // The first three are launch-editor advisories. vite bundles launch-editor
+    // into its own dist, so `npm audit` reports them against vite, and the
+    // lockfile has no launch-editor entry of its own.
+    name: 'vite',
+    introduced: '8.3.0',
+    lastAffected: '8.3.2',
+    advisories: [
+      'GHSA-698v-4r3x-3vcv',
+      'GHSA-r825-w8mm-5pxw',
+      'GHSA-587h-7wmj-h5pm',
+      'GHSA-9jrq-w75r-8gcw',
+      'GHSA-rq7h-c2jc-7f22',
+      'GHSA-vfpm-58rq-9qcg',
+    ],
+  },
 ];
 
 function parseVersion(version) {
