@@ -29,8 +29,9 @@ beforeAll(() => {
   bin = join(root, 'bin');
   azPidFile = join(root, 'az.pid');
   for (const dir of [bin, join(root, 'home'), join(root, 'project')]) mkdirSync(dir);
-  // detectClis finds each CLI with `which`, so the PATH below holds `which`
-  // and the two stand-ins and nothing else.
+  // detectClis looks each CLI up in PATH's absolute directories (it starts no
+  // `which`); `bin` below is absolute, so the two stand-ins are found there.
+  // The `which` link is kept only so the PATH matches a real operator's.
   const which = (process.env.PATH ?? '')
     .split(delimiter)
     .filter((dir) => isAbsolute(dir))

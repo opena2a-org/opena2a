@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { homedir, hostname, platform } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -22,15 +22,31 @@ import type {
 } from './types.js';
 
 import { detectProject } from '../util/detect.js';
+import { programOnPath, absolutePathDirs } from '../util/program-on-path.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Run a binary with args without shell interpretation (safe from injection); `timeout` ms stops it with SIGKILL. */
-function tryExecFile(binary: string, args: string[], timeout?: number): string | null {
+/**
+ * Run a binary with args without shell interpretation (safe from injection);
+ * `timeout` ms stops it with SIGKILL. `env` and `cwd`, when given, replace the
+ * child's environment and working directory — detectClis passes a PATH of only
+ * absolute directories and a working directory outside the scanned tree, so a
+ * probed program's own lookups cannot reach a relative PATH entry.
+ */
+function tryExecFile(
+  binary: string,
+  args: string[],
+  timeout?: number,
+  env?: NodeJS.ProcessEnv,
+  cwd?: string,
+): string | null {
   try {
-    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout, killSignal: 'SIGKILL' }).trim();
+    const options: ExecFileSyncOptions = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout, killSignal: 'SIGKILL' };
+    if (env) options.env = env;
+    if (cwd) options.cwd = cwd;
+    return execFileSync(binary, args, options).toString().trim();
   } catch {
     return null;
   }
@@ -130,13 +146,21 @@ const VERSION_PROBE_TIMEOUT_MS = 5_000;
 function detectClis(): DetectedCli[] {
   const results: DetectedCli[] = [];
 
+  // The version probe runs with PATH narrowed to its absolute directories and
+  // outside the directory `shield init` was started in, so a program reachable
+  // only through an empty or relative PATH entry (resolved against that
+  // directory) is never started, even as an interpreter a probed CLI looks up.
+  const probeEnv: NodeJS.ProcessEnv = Object.assign({}, process.env, { PATH: absolutePathDirs() });
+  const probeCwd = homedir();
+
   for (const spec of CLI_SPECS) {
-    const binaryPath = tryExecFile('which', [spec.binary]);
+    const binaryPath = programOnPath(spec.binary);
     if (!binaryPath) continue;
 
-    // Extract version string -- take only the first line to keep it concise
+    // Extract version string -- take only the first line to keep it concise.
+    // Start the probe by the absolute path, never by the bare `spec.binary`.
     let version: string | null = null;
-    const rawVersion = tryExecFile(spec.binary, spec.versionFlag.split(/\s+/), VERSION_PROBE_TIMEOUT_MS);
+    const rawVersion = tryExecFile(binaryPath, spec.versionFlag.split(/\s+/), VERSION_PROBE_TIMEOUT_MS, probeEnv, probeCwd);
     if (rawVersion) {
       version = rawVersion.split('\n')[0].trim();
     }
