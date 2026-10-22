@@ -37,8 +37,9 @@ interface LocalVerdictFinding {
 import { detectProject, type ProjectType } from '../util/detect.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
-import { advisoriesNotChecked, checkAdvisories, type AdvisoryCheck } from '../util/advisories.js';
+import { fixedVersions, readAdvisories, ADVISORY_LIMIT, ADVISORY_WINDOW_DAYS } from '../util/advisories.js';
 import { getRegistryUrl } from '../util/report-submission.js';
+import { printable } from '../util/printable.js';
 import { getShieldStatus } from '../shield/status.js';
 import { chainBreakEvent, readVerifiedEvents, type VerifiedEventsResult } from '../shield/events.js';
 import { FINDING_CATALOG, classifyEvents, filterEventsToTarget, type ClassifiedFinding } from '../shield/findings.js';
@@ -69,14 +70,6 @@ export interface ReviewOptions {
 /** Output formats review produces, as `review --help` names them (index.ts).
  *  Anything else, `sarif` included, is refused rather than run as text. */
 export const REVIEW_FORMATS = ['text', 'json'] as const;
-
-/** A user-supplied value made safe to echo on one terminal line: control
- *  characters (ESC, newline, the rest of C0 and C1, and DEL) are removed, so
- *  a crafted `--format` or `--report` value cannot inject an escape sequence
- *  or forge a line of its own. */
-function printable(value: string): string {
-  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
-}
 
 /** Terminal Verdict when nothing was found because the credential check
  *  opened no file. `opena2a review .` pastes and runs without editing. */
@@ -169,8 +162,27 @@ export interface InitPhaseData {
   advisoriesChecked: boolean;
   advisoryCount: number;
   matchedPackages: string[];
-  /** Published advisories that match this project's packages. */
-  advisories: { id: string; summary: string; severity: string | null; packages: string[] }[];
+  /** Published advisories that match this project's packages. `fixed` holds
+   *  the fixed versions each advisory names, per matched package and
+   *  ecosystem; empty when it names none. */
+  advisories: {
+    id: string;
+    summary: string;
+    severity: string | null;
+    packages: string[];
+    fixed: { package: string; ecosystem: string; versions: string[] }[];
+  }[];
+  /** What the advisory request covered, and why no list was read when none
+   *  was. `listed` below `total` means the Registry reported more advisories
+   *  than the request reads, and the rest were not compared. */
+  advisoryRead: {
+    windowDays: number;
+    limit: number;
+    listed: number;
+    total: number;
+    notCheckedReason: string | null;
+    turnedOff: boolean;
+  };
   /** Env files in the tree with their git state, value count and mode. */
   envFiles: EnvFileFact[];
 }
@@ -643,13 +655,22 @@ export async function review(options: ReviewOptions): Promise<number> {
     detectData,
   };
 
-  // Severity counts
+  // Severity counts. A matched advisory is a report finding, not an analyzer
+  // finding, so it is counted beside `findings` here: the terminal count and
+  // Verdict then agree with the report's Overview. The score does not use it.
+  const advisoryFindings = reportFindings.filter(f => f.foundBy.some(b => b.source === 'advisories'));
   const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const f of findings) {
+  for (const f of [...findings, ...advisoryFindings]) {
     const sev = f.severity as keyof typeof sevCounts;
     if (sev in sevCounts) sevCounts[sev]++;
   }
-  const totalFindings = findings.length;
+  const totalFindings = findings.length + advisoryFindings.length;
+
+  // Why the advisories were not checked (a refused registry.url, no answer,
+  // OPENA2A_ADVISORIES=off). On stderr, so `--format json` stays parseable.
+  if (options.verbose && !initData.advisoriesChecked && initData.advisoryRead.notCheckedReason) {
+    process.stderr.write(dim(`  Advisories not checked: ${printable(initData.advisoryRead.notCheckedReason)}\n\n`));
+  }
 
   // Degraded-mode notice (#175 / C1): the dominant-analyzer floor's deepest
   // target-malice signal is HMA `secure`. When HMA did not run, a malicious
@@ -770,6 +791,12 @@ export async function review(options: ReviewOptions): Promise<number> {
         name: f.title,
         checkId: f.id,
       }));
+      // Advisory titles carry Registry text, cut to one printable line.
+      for (const f of advisoryFindings) {
+        const name = printable(f.title);
+        categorizable.push({ checkId: 'DEP-ADVISORY', name, category: 'supply-chain', passed: false, severity: f.severity as LocalSeverity });
+        verdictFindings.push({ severity: f.severity as LocalSeverity, name, checkId: printable(f.foundBy[0]?.checkId ?? '') });
+      }
       // A credential check that opened no file found nothing because it read
       // nothing. The block must not list credentials as clear, close the
       // category list with "(all clear)" or call the directory safe to use.
@@ -910,13 +937,9 @@ async function runInitPhase(targetDir: string, credentialMatches: CredentialMatc
   const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
   const { score: trustScore, grade } = calculateTrustScore(checks);
 
-  let advisoryCheck: AdvisoryCheck = advisoriesNotChecked();
-  try {
-    advisoryCheck = await checkAdvisories(targetDir, await getRegistryUrl());
-  } catch {
-    // Best-effort: a configured Registry URL that fails validation leaves the
-    // advisories not checked.
-  }
+  // Best-effort: a configured Registry URL that fails validation leaves the
+  // advisories not checked, with the refusal as the reason.
+  const advisoryCheck = await readAdvisories(targetDir, getRegistryUrl);
 
   const shieldStatus = getShieldStatus(targetDir);
   const activeTools = shieldStatus.tools.filter(p => p.active).length;
@@ -953,10 +976,29 @@ async function runInitPhase(targetDir: string, credentialMatches: CredentialMatc
     advisoriesChecked: advisoryCheck.checked,
     advisoryCount: advisoryCheck.advisories.length,
     matchedPackages: advisoryCheck.matchedPackages,
-    advisories: advisoryCheck.advisories.map(a => ({
-      id: a.id, summary: a.summary, severity: a.severity?.[0]?.score ?? null,
-      packages: [...new Set((a.affected ?? []).map(x => x.package?.name).filter((n): n is string => !!n))],
-    })),
+    advisories: advisoryCheck.advisories.map(a => {
+      const packages = [...new Set((a.affected ?? []).map(x => x.package?.name).filter((n): n is string => !!n))];
+      return {
+        id: a.id, summary: a.summary, severity: a.severity?.[0]?.score ?? null,
+        packages,
+        fixed: packages
+          .filter(p => advisoryCheck.matchedPackages.includes(p))
+          .map(p => ({
+            package: p,
+            ecosystem: (a.affected ?? []).find(x => x.package?.name === p)?.package?.ecosystem ?? '',
+            versions: fixedVersions(a, p),
+          }))
+          .filter(f => f.versions.length > 0),
+      };
+    }),
+    advisoryRead: {
+      windowDays: ADVISORY_WINDOW_DAYS,
+      limit: ADVISORY_LIMIT,
+      listed: advisoryCheck.listed,
+      total: advisoryCheck.total,
+      notCheckedReason: advisoryCheck.reason,
+      turnedOff: advisoryCheck.turnedOff,
+    },
     envFiles: collectEnvFileFacts(targetDir),
   };
 }

@@ -23,7 +23,7 @@ const credentialMatches = (severity: string, count: number): CredentialMatch[] =
   value: MASK, filePath: '/tmp/x/src/config.ts', line: i + 1, findingId: 'CRED-010', envVar: `SERVICE_KEY_${i + 1}`, severity, title: 'Service key',
 }));
 
-function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; hmaFindings: HmaFinding[]; guard: 'unsigned' | 'valid'; detect?: Partial<DetectPhaseData>; credentials?: CredentialMatch[] }) {
+function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; hmaFindings: HmaFinding[]; guard: 'unsigned' | 'valid'; detect?: Partial<DetectPhaseData>; credentials?: CredentialMatch[]; advisories?: InitPhaseData['advisories']; matchedPackages?: string[] }) {
   const hygieneChecks = checks(o.warn);
   const guardData = { filesMonitored: 0, tamperedFiles: [], signatureStatus: o.guard, candidates: ['package.json'] };
   const matches = o.credentials ?? [];
@@ -34,7 +34,7 @@ function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; 
   const detectData = { mcpServers: [], aiConfigs: [], ...o.detect } as DetectPhaseData;
   return buildReviewFindings({
     targetDir: '/tmp/x',
-    initData: { projectType: 'Node.js', hygieneChecks, envFiles: o.envFiles ?? [], advisories: [], matchedPackages: [] } as never,
+    initData: { projectType: 'Node.js', hygieneChecks, envFiles: o.envFiles ?? [], advisories: o.advisories ?? [], matchedPackages: o.matchedPackages ?? [] } as never,
     credentialData, guardData, shieldData, detectData,
     findings: matches.map(m => ({ id: m.findingId, title: m.title, severity: m.severity, source: 'credential-scan', detail: `src/config.ts:${m.line}`, remediation: '' })),
     hmaData: { available: true, score: o.hmaScore, allFailedFindings: o.hmaFindings } as never,
@@ -121,6 +121,51 @@ describe('review findings on the envcase tree', () => {
     expect(new Set(fps).size).toBe(fps.length);
     expect(fps.every(fp => /^[0-9a-f]{8}$/.test(fp))).toBe(true);
     expect(envcase().reportFindings.map(f => f.fingerprint)).toEqual(fps);
+  });
+});
+
+describe('the install command of a matched advisory', () => {
+  // The findings builder takes the fixed versions as they reach it, so these
+  // reach it without passing through fixedVersions().
+  const advisoryFinding = (versions: string[]) => build({
+    warn: [], hmaScore: 100, hmaFindings: [], guard: 'valid',
+    matchedPackages: ['vulnerable-package'],
+    advisories: [{
+      id: 'OA2A-2026-0001', summary: 'Advisory in vulnerable-package', severity: 'HIGH', packages: ['vulnerable-package'],
+      fixed: [{ package: 'vulnerable-package', ecosystem: 'npm', versions }],
+    }],
+  }).reportFindings.find(f => f.foundBy.some(b => b.source === 'advisories'));
+
+  it('is built from a plain fixed version', () => {
+    const f = advisoryFinding(['1.3.0']);
+    expect(f?.fix?.command).toBe('npm install vulnerable-package@1.3.0');
+    expect(f?.verify?.command).toBe('npm ls vulnerable-package');
+  });
+
+  it('is not built from a version with shell characters, and the version is named nowhere', () => {
+    for (const version of ['1.3.0-$(touch pwned)', '1.3.0;id', '1.3.0 && id', '1.3.0|id', '`id`']) {
+      const f = advisoryFinding([version]);
+      expect(f?.fix, version).toBeNull();
+      expect(f?.verify, version).toBeNull();
+      expect(JSON.stringify(f), version).not.toContain(version);
+      expect(f?.advice, version).toBe('Upgrade vulnerable-package to a version OA2A-2026-0001 does not affect.');
+    }
+  });
+
+  it('is not built for a package name outside npm\'s form, so no such name reaches a command', () => {
+    for (const name of ['vulnerable-package;id', '$(id)', 'a b', 'pkg|id', '`id`', 'Vulnerable-Package', '../vulnerable-package']) {
+      const f = build({
+        warn: [], hmaScore: 100, hmaFindings: [], guard: 'valid',
+        matchedPackages: [name],
+        advisories: [{
+          id: 'OA2A-2026-0001', summary: 'Advisory', severity: 'HIGH', packages: [name],
+          fixed: [{ package: name, ecosystem: 'npm', versions: ['1.3.0'] }],
+        }],
+      }).reportFindings.find(x => x.foundBy.some(b => b.source === 'advisories'));
+      expect(f?.fix, name).toBeNull();
+      expect(f?.verify, name).toBeNull();
+      expect(f?.advice, name).toBe(`Upgrade to the version OA2A-2026-0001 names as fixed: ${name} 1.3.0, or later.`);
+    }
   });
 });
 

@@ -14,7 +14,18 @@ vi.mock('node:os', async (importOriginal) => {
   };
 });
 
-import { checkAdvisories, printAdvisoryWarnings } from '../../src/util/advisories.js';
+import { ADVISORY_LIMIT, ADVISORY_LIST_LIMIT, ADVISORY_TEXT_LIMIT, checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
+import { validateRegistryUrl } from '../../src/util/validate-registry-url.js';
+
+/** The error getRegistryUrl() throws for a configured URL the validator refuses. */
+function refusalOf(url: string): Error {
+  try {
+    validateRegistryUrl(url);
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error(`${url} was not refused`);
+}
 
 const mockFetch = vi.fn();
 
@@ -251,6 +262,108 @@ describe('advisories', () => {
     expect(other.fromCache).toBe(false);
   });
 
+  // The cache is written to a file of its own and renamed into place, so a
+  // run that reads it while another writes it never reads a partial list.
+  it('writes the cache whole: the cache directory holds only advisories.json after a write', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+    await checkAdvisories(tempDir, 'https://registry.test');
+
+    const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+    expect(fs.readdirSync(cacheDir)).toEqual(['advisories.json']);
+    expect(JSON.parse(fs.readFileSync(path.join(cacheDir, 'advisories.json'), 'utf-8')).registryUrl).toBe('https://registry.test');
+  });
+
+  it('reads a cache file holding a partial write as no cache, asks the Registry and replaces it', async () => {
+    const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const cachePath = path.join(cacheDir, 'advisories.json');
+    fs.writeFileSync(cachePath, `{"fetchedAt":${Date.now()},"registryUrl":"https://registry.test","data":{"advisories":[{"id":"OA2A-20`);
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.checked).toBe(true);
+    expect(result.fromCache).toBe(false);
+    expect(JSON.parse(fs.readFileSync(cachePath, 'utf-8')).data).toEqual({ advisories: [], total: 0, format: 'osv' });
+    expect(fs.readdirSync(cacheDir)).toEqual(['advisories.json']);
+  });
+
+  // The answer is outside data: what is read of it is bounded by the count
+  // the request asks for and by a length per text field.
+  it('reads at most the advisories the request asks for and cuts each text field to its limit', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project', dependencies: { 'vulnerable-package': '1.0.0' } }));
+    const advisory = (i: number) => ({
+      id: `OA2A-2026-${String(i).padStart(4, '0')}`,
+      summary: i === 0 ? 'x'.repeat(ADVISORY_TEXT_LIMIT * 4) : `Advisory ${i}`,
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      published: '2026-10-01T00:00:00Z',
+      affected: [{ package: { name: i === 0 ? 'vulnerable-package' : `package-${i}`, ecosystem: 'npm' } }],
+    });
+    const answer = Array.from({ length: ADVISORY_LIMIT + 50 }, (_, i) => advisory(i));
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: answer, total: answer.length, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(result.checked).toBe(true);
+    expect(result.listed).toBe(ADVISORY_LIMIT);
+    expect(result.total).toBe(ADVISORY_LIMIT + 50);
+    expect(result.matchedPackages).toEqual(['vulnerable-package']);
+    expect(result.advisories[0].summary).toBe('x'.repeat(ADVISORY_TEXT_LIMIT));
+    // The cache holds the list as read, within the same bounds.
+    const cached = JSON.parse(fs.readFileSync(path.join(tempHome, '.opena2a', 'cache', 'advisories.json'), 'utf-8'));
+    expect(cached.data.advisories).toHaveLength(ADVISORY_LIMIT);
+    expect(cached.data.total).toBe(ADVISORY_LIMIT + 50);
+  });
+
+  // The lists inside an advisory and its version strings are outside data
+  // too. Each list is read up to ADVISORY_LIST_LIMIT entries and each version
+  // up to ADVISORY_TEXT_LIMIT characters, so what is kept and cached of an
+  // answer is bounded in every dimension, not only in its count of advisories:
+  // an answer with 20,001 affected entries and 5,000-character versions was
+  // kept and written to the cache whole.
+  it('reads at most the list limit of each list inside an advisory and cuts each version string', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project', dependencies: { 'vulnerable-package': '1.0.0' } }));
+    const over = ADVISORY_LIST_LIMIT + 50;
+    const long = (digit: string) => digit.repeat(ADVISORY_TEXT_LIMIT * 4);
+    const events = Array.from({ length: over }, (_, i) => (i === 0 ? { introduced: long('1'), fixed: long('2') } : { fixed: `1.${i}.0` }));
+    const ranges = Array.from({ length: over }, (_, i) => ({ type: 'SEMVER', events: i === 0 ? events : [{ fixed: '2.0.0' }] }));
+    const affected = Array.from({ length: over }, (_, i) => ({
+      package: { name: i === 0 ? 'vulnerable-package' : `package-${i}`, ecosystem: 'npm' },
+      ranges: i === 0 ? ranges : [{ type: 'SEMVER', events: [{ fixed: '2.0.0' }] }],
+    }));
+    const severity = Array.from({ length: over }, (_, i) => ({ type: 'ADVISORY', score: i === 0 ? 'HIGH' : 'LOW' }));
+    const answer = [{ id: 'OA2A-2026-0001', summary: 'x', published: '2026-10-01T00:00:00Z', severity, affected }];
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: answer, total: 1, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(result.matchedPackages).toEqual(['vulnerable-package']);
+    const read = result.advisories[0];
+    expect(read.severity).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(read.affected).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(read.affected[0].ranges).toHaveLength(ADVISORY_LIST_LIMIT);
+    const firstEvents = read.affected[0].ranges?.[0].events ?? [];
+    expect(firstEvents).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(firstEvents[0]).toEqual({ introduced: '1'.repeat(ADVISORY_TEXT_LIMIT), fixed: '2'.repeat(ADVISORY_TEXT_LIMIT) });
+    // A cut version is no version the form keeps; the versions within the
+    // limits are.
+    expect(fixedVersions(read, 'vulnerable-package')).toEqual([
+      ...Array.from({ length: ADVISORY_LIST_LIMIT - 1 }, (_, i) => `1.${i + 1}.0`),
+      '2.0.0',
+    ]);
+    // The cache holds what was read, within the same bounds.
+    const cached = JSON.parse(fs.readFileSync(path.join(tempHome, '.opena2a', 'cache', 'advisories.json'), 'utf-8'));
+    const cachedAdvisory = cached.data.advisories[0];
+    expect(cachedAdvisory.severity).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges[0].events).toHaveLength(ADVISORY_LIST_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges[0].events[0].introduced).toHaveLength(ADVISORY_TEXT_LIMIT);
+    expect(cachedAdvisory.affected[0].ranges[0].events[0].fixed).toHaveLength(ADVISORY_TEXT_LIMIT);
+  });
+
   it('printAdvisoryWarnings outputs to stdout', () => {
     const chunks: string[] = [];
     const origWrite = process.stdout.write;
@@ -276,5 +389,277 @@ describe('advisories', () => {
     const output = chunks.join('');
     expect(output).toContain('CRITICAL');
     expect(output).toContain('Test advisory');
+  });
+
+  // Regression (#464): the advisory text is the Registry's, and init printed
+  // it as received, so an ESC sequence reached the terminal and the text
+  // after a newline printed as a line of its own.
+  it('printAdvisoryWarnings removes control characters from Registry text', () => {
+    const chunks: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: any) => { chunks.push(String(chunk)); return true; }) as any;
+    try {
+      printAdvisoryWarnings({
+        advisories: [{
+          id: 'OA2A-2026-0001\x1b]0;title\x07',
+          summary: 'Bad thing\x1b[31mRED\nFORGED LINE',
+          severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+          affected: [{ package: { name: 'test-pkg\r\nFORGED PKG', ecosystem: 'npm' } }],
+          published: '2026-10-01T00:00:00Z',
+        }],
+        matchedPackages: ['test-pkg\nFORGED MATCH'],
+        total: 1,
+        listed: 1,
+        fromCache: false,
+        checked: true,
+        reason: null,
+        turnedOff: false,
+      });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    const output = chunks.join('');
+    expect(output).not.toContain('\x1b');
+    expect(output).not.toContain('\x07');
+    expect(output).not.toContain('\r');
+    expect(output).toContain('Bad thing[31mREDFORGED LINE');
+    expect(output.split('\n').some(l => /^\s*FORGED/.test(l))).toBe(false);
+  });
+
+  // Regression (#464): a registry.url ending in "/" requested
+  // "//api/v1/trust/advisories".
+  it('joins a Registry URL that ends in "/" with one slash', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+    await checkAdvisories(tempDir, 'https://registry.test/');
+
+    expect(String(mockFetch.mock.calls[0][0])).toMatch(/^https:\/\/registry\.test\/api\/v1\/trust\/advisories\?/);
+  });
+
+  it('reads the window and limit it states, and reports a total above the list it read', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 250, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    const url = new URL(String(mockFetch.mock.calls[0][0]));
+    expect(url.searchParams.get('limit')).toBe('100');
+    const days = (Date.now() - Date.parse(url.searchParams.get('since') as string)) / 86_400_000;
+    expect(days).toBeGreaterThanOrEqual(29);
+    expect(days).toBeLessThanOrEqual(31);
+    expect(result.checked).toBe(true);
+    expect(result.listed).toBe(0);
+    expect(result.total).toBe(250);
+  });
+
+  // Regression (#464): a refused registry.url left the advisories "not
+  // checked" with nothing that named the URL or the refusal.
+  it('names the refusal of a configured Registry URL and sends nothing', async () => {
+    const direct = await checkAdvisories(tempDir, 'http://registry.internal.example');
+    expect(direct.checked).toBe(false);
+    expect(direct.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+
+    // A URL carrying a user and password; the reason names the host only.
+    const withUserinfo = 'http://' + ['someone', 'not-a-real-pw'].join(':') + '@registry.internal.example';
+    const resolved = await readAdvisories(tempDir, async () => { throw refusalOf(withUserinfo); });
+    expect(resolved.checked).toBe(false);
+    expect(resolved.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // The reason is built from the refusal's kind and the URL's parsed origin
+  // and path, never from the configured text. The first line of the message
+  // was used, with `//...@` removed from it, so a password holding a line
+  // break left the user name and the part before the break in the reason,
+  // and one holding an unencoded slash left the message whole.
+  it('names a refused URL without its user name or password, whatever the password holds', async () => {
+    for (const password of ['FAKE pw', 'FAKE@pw', 'FAKE\npw', 'FAKE:pw', 'FAKE/pw']) {
+      const url = `http://FAKE-user:${password}@registry.internal.example/path`;
+      // An unencoded slash ends the authority, so that URL does not parse.
+      const expected = password.includes('/')
+        ? 'the configured registry.url is not a valid URL'
+        : 'Registry URL must use HTTPS: http://registry.internal.example/path';
+
+      const direct = await checkAdvisories(tempDir, url);
+      expect(direct.checked, JSON.stringify(password)).toBe(false);
+      expect(direct.reason, JSON.stringify(password)).toBe(expected);
+
+      const resolved = await readAdvisories(tempDir, async () => { throw refusalOf(url); });
+      expect(resolved.reason, JSON.stringify(password)).toBe(expected);
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // An error that is not the validator's refusal is named without its
+  // message, which may hold the configured text.
+  it('names any other resolver error without its message', async () => {
+    const resolved = await readAdvisories(tempDir, async () => {
+      throw new Error('Registry URL must use HTTPS: http://FAKE-user:FAKE\npw@registry.internal.example');
+    });
+    expect(resolved.checked).toBe(false);
+    expect(resolved.reason).toBe('the configured registry.url was refused');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // fetch refuses a URL that carries credentials and names the URL, as given,
+  // in its message.
+  it('names a request error without the user name or password of the configured URL', async () => {
+    const url = 'https://FAKE-user:FAKE\npw@registry.test';
+    mockFetch.mockImplementation(async (input: string) => {
+      throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${input}`);
+    });
+
+    const result = await checkAdvisories(tempDir, url);
+
+    expect(result.checked).toBe(false);
+    expect(result.reason).toMatch(/^https:\/\/registry\.test could not be read \(Request cannot be constructed from a URL that includes credentials: https:\/\/registry\.test\/api\/v1\/trust\/advisories\?since=\d{4}-\d{2}-\d{2}&limit=100\)$/);
+    expect(result.reason).not.toContain('FAKE');
+  });
+
+  it('names why no list was read: an HTTP status, a timeout, an unreachable host', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 503 });
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test answered HTTP 503');
+
+    mockFetch.mockReset();
+    mockFetch.mockRejectedValue(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }));
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test did not answer within 5 seconds');
+
+    mockFetch.mockReset();
+    mockFetch.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND registry.test') }));
+    expect((await checkAdvisories(tempDir, 'https://registry.test')).reason).toBe('https://registry.test could not be read (fetch failed: getaddrinfo ENOTFOUND registry.test)');
+  });
+
+  // Regression (#464): the request could not be skipped.
+  describe('OPENA2A_ADVISORIES=off', () => {
+    const saved = process.env.OPENA2A_ADVISORIES;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.OPENA2A_ADVISORIES;
+      else process.env.OPENA2A_ADVISORIES = saved;
+    });
+
+    it('skips the request and reports the advisories as not checked', async () => {
+      process.env.OPENA2A_ADVISORIES = 'off';
+      const resolve = vi.fn(async () => 'https://registry.test');
+
+      const result = await readAdvisories(tempDir, resolve);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+      expect(result.checked).toBe(false);
+      expect(result.turnedOff).toBe(true);
+      expect(result.reason).toContain('OPENA2A_ADVISORIES=off');
+    });
+
+    it('any other value makes the request', async () => {
+      process.env.OPENA2A_ADVISORIES = 'on';
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+
+      const result = await readAdvisories(tempDir, async () => 'https://registry.test');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(result.checked).toBe(true);
+    });
+  });
+
+  it('fixedVersions reads plain fixed versions for the package and drops anything else', () => {
+    const advisory = {
+      id: 'OA2A-2026-0004',
+      summary: 'x',
+      severity: [],
+      published: '2026-10-01T00:00:00Z',
+      affected: [
+        { package: { name: 'pkg', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.3.0' }, { fixed: '2.0.1-rc.1' }, { fixed: '1.3.0' }, { fixed: '3.0.0; touch x' }] }] },
+        { package: { name: 'other', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ fixed: '9.9.9' }] }] },
+      ],
+    };
+    expect(fixedVersions(advisory, 'pkg')).toEqual(['1.3.0', '2.0.1-rc.1']);
+    expect(fixedVersions(advisory, 'missing')).toEqual([]);
+  });
+
+  // A fixed version has a bounded length in every part, so a value of any
+  // size is refused by the form, not matched against it at length.
+  it('fixedVersions drops a version longer than the form allows', () => {
+    const advisory = (fixed: string) => ({
+      id: 'OA2A-2026-0010', summary: 'x', severity: [], published: '2026-10-01T00:00:00Z',
+      affected: [{ package: { name: 'pkg', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed }] }] }],
+    });
+    expect(fixedVersions(advisory('1.3.0-' + 'a'.repeat(64)), 'pkg')).toEqual(['1.3.0-' + 'a'.repeat(64)]);
+    expect(fixedVersions(advisory('1.3.0-' + 'a'.repeat(65)), 'pkg')).toEqual([]);
+    expect(fixedVersions(advisory('1'.repeat(10) + '.0.0'), 'pkg')).toEqual(['1'.repeat(10) + '.0.0']);
+    expect(fixedVersions(advisory('1'.repeat(11) + '.0.0'), 'pkg')).toEqual([]);
+    expect(fixedVersions(advisory('1.0.0-' + 'a-.'.repeat(10_000)), 'pkg')).toEqual([]);
+  });
+
+  // Regression: the answer was read as received, so a `null` entry or an
+  // `affected` object stopped review and init with a TypeError.
+  describe('an advisory list of the wrong shape', () => {
+    const WELL_FORMED = {
+      id: 'OA2A-2026-0005',
+      summary: 'Advisory in vulnerable-package',
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      published: '2026-10-01T00:00:00Z',
+      affected: [{
+        package: { name: 'vulnerable-package', ecosystem: 'npm' },
+        ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.3.0' }] }],
+      }],
+    };
+    const MALFORMED = [
+      null,
+      'not an advisory',
+      { id: 'OA2A-2026-0006', summary: 'affected is an object', affected: { package: { name: 'vulnerable-package' } } },
+      { id: 'OA2A-2026-0007', summary: 'affected holds no object', affected: [null, 5] },
+      { id: 'OA2A-2026-0008', summary: 'ecosystem and ranges', affected: [{ package: { name: 'vulnerable-package', ecosystem: 7 }, ranges: { events: [] } }] },
+      { id: 'OA2A-2026-0009', summary: 'events is an object', affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: { fixed: '9.9.9' } }] }] },
+    ];
+
+    beforeEach(() => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+        name: 'test-project',
+        dependencies: { 'vulnerable-package': '1.0.0' },
+      }));
+    });
+
+    it('leaves out what is not an advisory, reads the rest, and matches as before', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ advisories: [...MALFORMED, WELL_FORMED], total: 7, format: 'osv' }),
+      });
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(result.checked).toBe(true);
+      expect(result.listed).toBe(5);
+      expect(result.total).toBe(7);
+      expect(result.matchedPackages).toEqual(['vulnerable-package']);
+      expect(result.advisories.map(a => a.id)).toEqual(['OA2A-2026-0008', 'OA2A-2026-0009', 'OA2A-2026-0005']);
+      expect(result.advisories[0].affected[0].package.ecosystem).toBe('');
+      expect(fixedVersions(result.advisories[1], 'vulnerable-package')).toEqual([]);
+      expect(result.advisories[2]).toEqual(WELL_FORMED);
+    });
+
+    it('counts the entries left out in the total when the answer gives none', async () => {
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [null, WELL_FORMED] }) });
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(result.listed).toBe(1);
+      expect(result.total).toBe(2);
+    });
+
+    it('reads a cached list the same way', async () => {
+      const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'advisories.json'), JSON.stringify({
+        fetchedAt: Date.now(),
+        registryUrl: 'https://registry.test',
+        data: { advisories: [...MALFORMED, WELL_FORMED], total: 7, format: 'osv' },
+      }));
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.fromCache).toBe(true);
+      expect(result.listed).toBe(5);
+      expect(result.advisories.map(a => a.id)).toEqual(['OA2A-2026-0008', 'OA2A-2026-0009', 'OA2A-2026-0005']);
+    });
   });
 });

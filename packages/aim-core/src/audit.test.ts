@@ -98,4 +98,37 @@ describe('audit', () => {
       expect(hasAuditLog(tmpDir)).toBe(true);
     });
   });
+
+  // Regression (#464): audit.jsonl was appended with the default mode and its
+  // directory created with the default mode, 644 and 755 under a umask of
+  // 022, so the log was private only while a parent directory was 700.
+  it('creates the log directory for the owner only and the log file 0o600', () => {
+    const dataDir = path.join(tmpDir, 'aim-core');
+    // Checked under the usual umask, whatever the runner's own is.
+    const umask = process.umask(0o022);
+    try {
+      logEvent(dataDir, { plugin: 'test', action: 'act', target: 't', result: 'allowed' });
+    } finally {
+      process.umask(umask);
+    }
+
+    const mode = (p: string) => fs.statSync(p).mode & 0o777;
+    expect(mode(dataDir)).toBe(0o700);
+    expect(mode(path.join(dataDir, 'audit.jsonl'))).toBe(0o600);
+  });
+
+  // Regression: the mode applied only when the log was created, so a log an
+  // earlier version created 0o644 stayed readable by others.
+  it('narrows an existing log readable by others to 0o600 when it writes the next event', () => {
+    const dataDir = path.join(tmpDir, 'aim-core');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const logPath = path.join(dataDir, 'audit.jsonl');
+    fs.writeFileSync(logPath, '');
+    fs.chmodSync(logPath, 0o644);
+
+    logEvent(dataDir, { plugin: 'test', action: 'act', target: 't', result: 'allowed' });
+
+    expect(fs.statSync(logPath).mode & 0o777).toBe(0o600);
+    expect(readAuditLog(dataDir)).toHaveLength(1);
+  });
 });

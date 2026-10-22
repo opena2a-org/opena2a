@@ -45,7 +45,8 @@ export function loadPolicy(dataDir: string): CapabilityPolicy {
 
 /** Save a capability policy to YAML file */
 export function savePolicy(dataDir: string, policy: CapabilityPolicy): void {
-  fs.mkdirSync(dataDir, { recursive: true });
+  // The same directory holds the audit log; whichever write creates it makes it owner-only.
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dataDir, POLICY_FILE);
   const tmpPath = filePath + '.tmp.' + process.pid;
   fs.writeFileSync(tmpPath, yaml.dump(policy), 'utf-8');

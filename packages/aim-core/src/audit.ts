@@ -26,7 +26,10 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
     serialized = JSON.stringify(fullEvent);
   }
 
-  fs.mkdirSync(dataDir, { recursive: true });
+  // The log records what agents did, so it is the owner's alone: the
+  // directory is created 0o700 and the file 0o600, by the calls that create
+  // them, whatever the mode of the directory above.
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dataDir, AUDIT_FILE);
 
   // Rotate if audit log exceeds 50MB, keep last 5 rotated logs
@@ -63,10 +66,25 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
       }
     }
   } catch {
-    // File doesn't exist yet — will be created by appendFileSync
+    // File doesn't exist yet — will be created by openSync below
   }
 
-  fs.appendFileSync(filePath, serialized + '\n', 'utf-8');
+  // The mode given to openSync applies only when it creates the log, so a log
+  // an earlier version created readable by others is narrowed to the owner
+  // before this event is written to it.
+  const fd = fs.openSync(filePath, 'a', 0o600);
+  try {
+    if ((fs.fstatSync(fd).mode & 0o077) !== 0) {
+      try {
+        fs.fchmodSync(fd, 0o600);
+      } catch {
+        // A log this user may not change the mode of keeps its owner's mode
+      }
+    }
+    fs.appendFileSync(fd, serialized + '\n', 'utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
 
   return fullEvent;
 }
