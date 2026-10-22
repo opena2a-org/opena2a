@@ -370,6 +370,54 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(stdout.split('\n').some(l => /^\s*FORGED LINE/.test(l))).toBe(false);
   });
 
+  // Regression (#464): the list was read as received, so an entry of the
+  // wrong shape stopped review and init with exit 1 and a TypeError, and an
+  // advisory ID that was not text left review's Verdict unprinted.
+  it('review and init complete on an advisory list holding entries of the wrong shape', async () => {
+    const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+    const reviewRun = () => silenced(() => review({
+      targetDir: tempDir,
+      format: 'text',
+      reportPath: path.join(tempHome, 'review.html'),
+      autoOpen: false,
+      skipHma: true,
+      ci: true,
+    }));
+    const initRun = () => silenced(() => init({ targetDir: tempDir, format: 'json' }));
+
+    // The exit codes of the same runs on a well-formed list.
+    mockFetch.mockResolvedValue(listResponse([ADVISORY]));
+    const expectedReview = await reviewRun();
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+    const expectedInit = await initRun();
+    expect(expectedReview.stdout).toContain('Verdict');
+
+    const answers = [
+      [null],
+      [{ ...ADVISORY, affected: { package: { name: 'vulnerable-package', ecosystem: 'npm' } } }],
+      [{ ...ADVISORY, affected: [null] }],
+      [{ ...ADVISORY, affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: {} }] }],
+      [{ ...ADVISORY, affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: {} }] }] }],
+      [{ ...ADVISORY, affected: [{ package: { name: 'vulnerable-package', ecosystem: 5 }, ranges: [{ type: 'SEMVER', events: [{ fixed: '1.3.0' }] }] }] }],
+      [{ ...ADVISORY, id: 7 }],
+    ];
+    for (const advisories of answers) {
+      const label = JSON.stringify(advisories);
+      mockFetch.mockResolvedValue(listResponse(advisories as object[]));
+
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+      const reviewed = await reviewRun();
+      expect(reviewed.result, label).toBe(expectedReview.result);
+      expect(reviewed.stdout, label).toContain('Verdict');
+      expect(reportData(path.join(tempHome, 'review.html')).initData.advisoriesChecked, label).toBe(true);
+
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+      const initialized = await initRun();
+      expect(initialized.result, label).toBe(expectedInit.result);
+      expect(JSON.parse(initialized.stdout).advisories.checked, label).toBe(true);
+    }
+  });
+
   it('init --verbose names why the advisories were not checked', async () => {
     registry.answer = refusalOf('http://registry.internal.example');
 
