@@ -34,6 +34,7 @@ const BARRED =
 
 const TEXTS = [
   'README.md',
+  'docs/commands.md',
   'packages/cli/README.md',
   'packages/cli/docs/testing/release-smoke.md',
   'packages/cli/src/index.ts',
