@@ -27,10 +27,10 @@ import { detectProject } from '../util/detect.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Run a binary with args without shell interpretation (safe from injection). */
-function tryExecFile(binary: string, args: string[]): string | null {
+/** Run a binary with args without shell interpretation (safe from injection); `timeout` ms stops it with SIGKILL. */
+function tryExecFile(binary: string, args: string[], timeout?: number): string | null {
   try {
-    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout, killSignal: 'SIGKILL' }).trim();
   } catch {
     return null;
   }
@@ -120,6 +120,13 @@ const CLI_SPECS: CliSpec[] = [
   },
 ];
 
+/**
+ * How long a CLI's version command may run. One that has not finished by then
+ * is stopped and the CLI is listed with no version, so a slow or hung CLI
+ * cannot hold `shield init` at its first step.
+ */
+const VERSION_PROBE_TIMEOUT_MS = 5_000;
+
 function detectClis(): DetectedCli[] {
   const results: DetectedCli[] = [];
 
@@ -129,7 +136,7 @@ function detectClis(): DetectedCli[] {
 
     // Extract version string -- take only the first line to keep it concise
     let version: string | null = null;
-    const rawVersion = tryExecFile(spec.binary, spec.versionFlag.split(/\s+/));
+    const rawVersion = tryExecFile(spec.binary, spec.versionFlag.split(/\s+/), VERSION_PROBE_TIMEOUT_MS);
     if (rawVersion) {
       version = rawVersion.split('\n')[0].trim();
     }
