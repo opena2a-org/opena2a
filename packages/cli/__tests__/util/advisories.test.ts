@@ -4,13 +4,18 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 // The advisory list is cached in the user's home, so each test gets its own.
-const mockHome = vi.hoisted(() => ({ dir: '' }));
+// `fail` makes the home directory one that cannot be found, as os.homedir()
+// reports it.
+const mockHome = vi.hoisted(() => ({ dir: '', fail: false }));
 
 vi.mock('node:os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:os')>();
   return {
     ...actual,
-    homedir: () => mockHome.dir || actual.homedir(),
+    homedir: () => {
+      if (mockHome.fail) throw new Error('ENOENT: no such file or directory, uv_os_homedir');
+      return mockHome.dir || actual.homedir();
+    },
   };
 });
 
@@ -40,6 +45,7 @@ describe('advisories', () => {
 
   afterEach(() => {
     mockHome.dir = '';
+    mockHome.fail = false;
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
@@ -250,6 +256,91 @@ describe('advisories', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(String(mockFetch.mock.calls[1][0])).toMatch(/^https:\/\/other-registry\.test\//);
     expect(other.fromCache).toBe(false);
+  });
+
+  describe('a list holding entries of the wrong shape (#464)', () => {
+    const GOOD = {
+      id: 'OA2A-2026-0001',
+      summary: 'Advisory in vulnerable-package',
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' } }],
+      published: '2026-10-01T00:00:00Z',
+    };
+    // Four entries that are not objects, two objects whose `affected` holds
+    // no object, and three that match: a `ranges` object, an `events` object
+    // with a numeric ecosystem, and a well-formed entry with a numeric ID.
+    const MIXED = [
+      null, 7, 'text', [],
+      { ...GOOD, affected: { package: { name: 'vulnerable-package' } } },
+      { ...GOOD, affected: [null, 5] },
+      { ...GOOD, affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: {} }] },
+      { ...GOOD, affected: [{ package: { name: 'vulnerable-package', ecosystem: 5 }, ranges: [{ type: 'SEMVER', events: {} }] }] },
+      { ...GOOD, id: 7 },
+    ];
+
+    beforeEach(() => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+        name: 'test-project', dependencies: { 'vulnerable-package': '1.0.0' },
+      }));
+    });
+
+    function expectMixedRead(result: Awaited<ReturnType<typeof checkAdvisories>>): void {
+      expect(result.checked).toBe(true);
+      expect(result.listed).toBe(5);
+      expect(result.total).toBe(9);
+      expect(result.matchedPackages).toEqual(['vulnerable-package']);
+      expect(result.advisories).toHaveLength(3);
+      for (const advisory of result.advisories) {
+        expect(typeof advisory.id).toBe('string');
+        expect(advisory.affected[0].package.ecosystem === 'npm' || advisory.affected[0].package.ecosystem === '').toBe(true);
+        expect(fixedVersions(advisory, 'vulnerable-package')).toEqual([]);
+      }
+    }
+
+    // Regression (#464): read as received, a null entry or an `affected`
+    // object stopped the check with a TypeError, and in review so did a
+    // `ranges` or `events` object, a numeric ecosystem or a numeric ID.
+    it('reads it from the Registry: the entries that are not objects are left out and the rest compared', async () => {
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: MIXED, format: 'osv' }) });
+
+      expectMixedRead(await checkAdvisories(tempDir, 'https://registry.test'));
+    });
+
+    it('reads it from the cache the same way, without a request', async () => {
+      const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(path.join(cacheDir, 'advisories.json'), JSON.stringify({
+        fetchedAt: Date.now(), registryUrl: 'https://registry.test', data: { advisories: MIXED, format: 'osv' },
+      }));
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.fromCache).toBe(true);
+      expectMixedRead(result);
+    });
+
+    it('caches the list as it was read, and reads that copy back alike', async () => {
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: MIXED, format: 'osv' }) });
+
+      await checkAdvisories(tempDir, 'https://registry.test');
+      const cached = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(cached.fromCache).toBe(true);
+      expectMixedRead(cached);
+    });
+  });
+
+  // The advisory check never stops review or init, whatever it meets.
+  it('leaves the advisories not checked when the read throws', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories: [], total: 0, format: 'osv' }) });
+    mockHome.fail = true;
+
+    const result = await readAdvisories(tempDir, async () => 'https://registry.test');
+
+    expect(result.checked).toBe(false);
+    expect(result.reason).toBe('the advisory list could not be read or compared');
   });
 
   it('printAdvisoryWarnings outputs to stdout', () => {

@@ -154,6 +154,69 @@ function parsedHref(registryUrl: string): string {
   }
 }
 
+// --- Shape ---
+
+// The Registry's answer and the cache file are outside data, so the list is
+// checked as it is read, and the code after it reads only what passed.
+
+type Fields = Record<string, unknown>;
+
+function isFields(value: unknown): value is Fields {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The objects in `value` when it is a list; none when it is not. */
+function objectsIn(value: unknown): Fields[] {
+  return Array.isArray(value) ? value.filter(isFields) : [];
+}
+
+function textIn(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * The advisories of a list, holding the fields the CLI reads. An entry that
+ * is not an object is left out, a list field that is not a list is read as
+ * empty, and a text field that is not text as ''. Read as received, a `null`
+ * entry, an `affected`, `ranges` or `events` field that was not a list, or an
+ * ecosystem or ID that was not text stopped `review` and `init`.
+ */
+function readableAdvisories(list: unknown[]): Advisory[] {
+  return objectsIn(list).map(entry => ({
+    id: textIn(entry.id),
+    summary: textIn(entry.summary),
+    published: textIn(entry.published),
+    severity: objectsIn(entry.severity)
+      .filter(s => typeof s.score === 'string')
+      .map(s => ({ type: textIn(s.type), score: textIn(s.score) })),
+    affected: objectsIn(entry.affected).map(a => {
+      const pkg: Fields = isFields(a.package) ? a.package : {};
+      return {
+        package: { name: textIn(pkg.name), ecosystem: textIn(pkg.ecosystem) },
+        ranges: objectsIn(a.ranges).map(r => ({
+          type: textIn(r.type),
+          events: objectsIn(r.events).map(e => ({
+            ...(typeof e.introduced === 'string' ? { introduced: e.introduced } : {}),
+            ...(typeof e.fixed === 'string' ? { fixed: e.fixed } : {}),
+          })),
+        })),
+      };
+    }),
+  }));
+}
+
+/** An answer, from the Registry or the cache, as the response the code reads;
+ *  null when it holds no advisory list. Without a numeric total, the total is
+ *  the number of entries the list holds, those left out included. */
+function advisoryResponse(body: unknown): AdvisoryResponse | null {
+  if (!isFields(body) || !Array.isArray(body.advisories)) return null;
+  return {
+    advisories: readableAdvisories(body.advisories),
+    total: typeof body.total === 'number' && Number.isFinite(body.total) ? body.total : body.advisories.length,
+    format: textIn(body.format),
+  };
+}
+
 // --- Cache ---
 
 // The advisory list is the Registry's, not the project's, so it is cached in
@@ -176,14 +239,12 @@ function readCache(registryUrl: string): CachedAdvisories | null {
 
   try {
     const raw = fs.readFileSync(cachePath, 'utf-8');
-    const cached = JSON.parse(raw) as CachedAdvisories;
+    const cached: unknown = JSON.parse(raw);
+    if (!isFields(cached)) return null;
     // A list read from another Registry is not this Registry's list.
-    if (
-      cached.registryUrl === registryUrl
-      && Array.isArray(cached.data?.advisories)
-      && Date.now() - cached.fetchedAt < CACHE_TTL_MS
-    ) {
-      return cached;
+    const data = cached.registryUrl === registryUrl ? advisoryResponse(cached.data) : null;
+    if (data && typeof cached.fetchedAt === 'number' && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+      return { fetchedAt: cached.fetchedAt, registryUrl, data };
     }
   } catch {
     // Corrupted cache
@@ -234,10 +295,10 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
     });
 
     if (!response.ok) return { reason: `${where} answered HTTP ${response.status}` };
-    const body = await response.json() as Partial<AdvisoryResponse> | null;
+    const data = advisoryResponse(await response.json());
     // A body without an advisory list is not a list that was read.
-    if (!body || !Array.isArray(body.advisories)) return { reason: `${where} answered without an advisory list` };
-    return { data: body as AdvisoryResponse };
+    if (!data) return { reason: `${where} answered without an advisory list` };
+    return { data };
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {
       return { reason: `${where} did not answer within ${ADVISORY_TIMEOUT_MS / 1000} seconds` };
@@ -395,7 +456,14 @@ export async function readAdvisories(
   } catch (err) {
     return advisoriesNotChecked(refusalReason(err));
   }
-  return checkAdvisories(dir, registryUrl);
+  // The advisory check never stops review or init: an error the read or the
+  // comparison throws leaves the advisories not checked. Its message is not
+  // shown, since it could repeat the configured URL.
+  try {
+    return await checkAdvisories(dir, registryUrl);
+  } catch {
+    return advisoriesNotChecked('the advisory list could not be read or compared');
+  }
 }
 
 /**
