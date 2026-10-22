@@ -11,7 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { bold, red, yellow, dim, cyan, orange } from './colors.js';
 import { printable } from './printable.js';
-import { validateRegistryUrl } from './validate-registry-url.js';
+import { RegistryUrlRefusal, validateRegistryUrl } from './validate-registry-url.js';
 
 // --- Types ---
 
@@ -84,27 +84,73 @@ function advisoriesTurnedOff(): boolean {
   return ['off', '0', 'false', 'no'].includes((process.env[ADVISORIES_ENV] ?? '').trim().toLowerCase());
 }
 
-/** The first line of an error's message, with any `user:password@` removed
- *  from a URL in it: the line is shown in the terminal and the report. */
-function firstLine(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  return (message.split('\n')[0] ?? '').replace(/\/\/[^/\s@]*@/g, '//').trim();
-}
-
 /** The Registry URL without a trailing `/`, so the request path is joined
  *  with one slash. */
 function normalizeRegistryUrl(registryUrl: string): string {
   return registryUrl.trim().replace(/\/+$/, '');
 }
 
+/** The parsed origin and path of a Registry URL, without a trailing `/`;
+ *  null when it does not parse or when an `@` follows its host. The parser
+ *  takes everything before the last `@` of the host part as the user name
+ *  and password, so neither is in the origin or path. An `@` after the host
+ *  means the parser read the text before it as a host, port or path, and
+ *  that text can be a user name and password (`http://user:12/pw@host` is
+ *  host `user`, port 12 and path `/pw@host`), so that URL is not named by
+ *  its parts. */
+function urlParts(registryUrl: string): string | null {
+  try {
+    const u = new URL(registryUrl);
+    if (`${u.pathname}${u.search}${u.hash}`.includes('@')) return null;
+    return `${u.origin}${u.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
 /** The Registry URL as it is named in a reason: origin and path only, no
  *  credentials. */
 function shownUrl(registryUrl: string): string {
+  return urlParts(registryUrl) ?? 'the configured Registry';
+}
+
+/** Why a configured Registry URL was refused, in one line. The line is built
+ *  from the refusal's kind and the URL's parsed origin and path, never from
+ *  the configured text or the refusal's message, which repeats that text
+ *  whole, so a user name and password in it are not shown, whatever
+ *  characters the password holds. An error that is not the validator's
+ *  refusal is named without its message. The line is shown in the terminal
+ *  and the report. */
+function refusalReason(err: unknown): string {
+  if (err instanceof RegistryUrlRefusal && err.kind === 'plain-http') {
+    const parts = urlParts(err.url);
+    return parts ? `Registry URL must use HTTPS: ${parts}` : 'the configured registry.url must use HTTPS';
+  }
+  if (err instanceof RegistryUrlRefusal) return 'the configured registry.url is not a valid URL';
+  return 'the configured registry.url was refused';
+}
+
+/** The first line of a request error's message. fetch repeats the URL as
+ *  given when it refuses one that carries a user name and password, so the
+ *  Registry URL, as configured and as the parser writes it, is replaced by
+ *  its `shownUrl` name wherever it appears, and anything still left between
+ *  `//` and an `@` on the line is removed. */
+function firstLine(err: unknown, registryUrl: string): string {
+  let message = err instanceof Error ? err.message : String(err);
+  const shown = shownUrl(registryUrl);
+  for (const form of [registryUrl, parsedHref(registryUrl)]) {
+    if (form) message = message.split(form).join(shown);
+  }
+  return (message.split('\n')[0] ?? '').replace(/\/\/[^/]*@/g, '//').trim();
+}
+
+/** The URL as the parser writes it, without a trailing `/`; '' when it does
+ *  not parse. */
+function parsedHref(registryUrl: string): string {
   try {
-    const u = new URL(registryUrl);
-    return `${u.origin}${u.pathname}`.replace(/\/+$/, '');
+    return new URL(registryUrl).href.replace(/\/$/, '');
   } catch {
-    return 'the configured Registry';
+    return '';
   }
 }
 
@@ -175,7 +221,7 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
   try {
     validateRegistryUrl(registryUrl);
   } catch (err) {
-    return { reason: firstLine(err) };
+    return { reason: refusalReason(err) };
   }
   const where = shownUrl(registryUrl);
   const since = new Date(Date.now() - ADVISORY_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -196,8 +242,11 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
     if (err instanceof Error && err.name === 'TimeoutError') {
       return { reason: `${where} did not answer within ${ADVISORY_TIMEOUT_MS / 1000} seconds` };
     }
-    const cause = err instanceof Error && err.cause instanceof Error ? `: ${firstLine(err.cause)}` : '';
-    return { reason: `${where} could not be read (${firstLine(err)}${cause})` };
+    // A URL that is not named by its parts can hold a user name and password
+    // the parser read as its host or port, which a request error names.
+    if (urlParts(registryUrl) === null) return { reason: `${where} could not be read` };
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${firstLine(err.cause, registryUrl)}` : '';
+    return { reason: `${where} could not be read (${firstLine(err, registryUrl)}${cause})` };
   }
 }
 
@@ -330,7 +379,8 @@ export async function checkAdvisories(
  * The advisory check `review` and `init` run: skipped when
  * OPENA2A_ADVISORIES=off, otherwise read from the Registry `resolveRegistryUrl`
  * names. A configured URL the resolver refuses leaves the advisories not
- * checked, with the refusal as the reason.
+ * checked, with the refusal, named without the URL's user name and
+ * password, as the reason.
  */
 export async function readAdvisories(
   dir: string,
@@ -343,7 +393,7 @@ export async function readAdvisories(
   try {
     registryUrl = await resolveRegistryUrl();
   } catch (err) {
-    return advisoriesNotChecked(firstLine(err));
+    return advisoriesNotChecked(refusalReason(err));
   }
   return checkAdvisories(dir, registryUrl);
 }

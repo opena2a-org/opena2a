@@ -15,6 +15,7 @@ vi.mock('node:os', async (importOriginal) => {
 });
 
 import { checkAdvisories, fixedVersions, printAdvisoryWarnings, readAdvisories } from '../../src/util/advisories.js';
+import { validateRegistryUrl } from '../../src/util/validate-registry-url.js';
 
 const mockFetch = vi.fn();
 
@@ -346,13 +347,97 @@ describe('advisories', () => {
     expect(direct.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
 
     // A URL carrying a user and password; the reason names the host only.
-    const withUserinfo = 'http://' + ['someone', 'not-a-real-pw'].join(':') + '@registry.internal.example';
+    // The resolver throws what getRegistryUrl() throws: the validator's own
+    // refusal.
+    const withUserinfo = 'http://FAKE-user:FAKE-pw@registry.internal.example';
     const resolved = await readAdvisories(tempDir, async () => {
-      throw new Error(`Registry URL must use HTTPS: ${withUserinfo}\nPlain HTTP is only allowed for localhost development.`);
+      validateRegistryUrl(withUserinfo);
+      return withUserinfo;
     });
     expect(resolved.checked).toBe(false);
     expect(resolved.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // Regression (#464): the reason was the first line of the refusal's
+  // message with `//user:password@` removed only up to a space, a `/` or an
+  // `@`, so a password holding one of them reached the terminal, the JSON
+  // and the report, whole or in part.
+  it('names a refused Registry URL without its user name or password, whatever the password holds', async () => {
+    const refused: Array<[string, string]> = [
+      ['http://FAKE-user:FAKE pw@registry.internal.example', 'Registry URL must use HTTPS: http://registry.internal.example'],
+      ['http://FAKE-user:FAKE\npw@registry.internal.example', 'Registry URL must use HTTPS: http://registry.internal.example'],
+      ['http://FAKE-user:FAKE@pw@registry.internal.example', 'Registry URL must use HTTPS: http://registry.internal.example'],
+      ['http://FAKE-user:FAKEpw@registry.internal.example/base', 'Registry URL must use HTTPS: http://registry.internal.example/base'],
+      // A `/` before the `@` ends the host part, so the URL does not parse...
+      ['http://FAKE-user:FAKE/pw@registry.internal.example', 'the configured registry.url is not a valid URL'],
+      // ...or parses with the user name as the host and the rest of the
+      // password as a port and a path, which are not shown either.
+      ['http://FAKE-user:12/FAKE@registry.internal.example', 'the configured registry.url must use HTTPS'],
+      ['http://FAKE-user:/FAKE@registry.internal.example', 'the configured registry.url must use HTTPS'],
+    ];
+    for (const [url, reason] of refused) {
+      const direct = await checkAdvisories(tempDir, url);
+      const resolved = await readAdvisories(tempDir, async () => {
+        validateRegistryUrl(url);
+        return url;
+      });
+      for (const result of [direct, resolved]) {
+        expect(result.checked, JSON.stringify(url)).toBe(false);
+        expect(result.reason, JSON.stringify(url)).toBe(reason);
+        expect(result.reason, JSON.stringify(url)).not.toMatch(/fake/i);
+      }
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('names an error from the Registry URL resolver that is not the validator refusal without its message', async () => {
+    const result = await readAdvisories(tempDir, async () => {
+      throw new Error('Invalid registry URL: http://FAKE-user:FAKE pw@registry.internal.example');
+    });
+
+    expect(result.checked).toBe(false);
+    expect(result.reason).toBe('the configured registry.url was refused');
+  });
+
+  // fetch refuses a URL that carries a user name and password, and its
+  // message repeats the URL as it was given.
+  it('names the Registry by its origin in a request error that repeats the configured URL', async () => {
+    mockFetch.mockImplementation(async (input: string) => new Request(input));
+    for (const url of [
+      'https://FAKE-user:FAKE pw@registry.internal.example',
+      'https://FAKE-user:FAKE\npw@registry.internal.example',
+      'https://FAKE-user:FAKE@pw@registry.internal.example',
+      'https://FAKE-user:FAKEpw@registry.internal.example',
+    ]) {
+      const result = await checkAdvisories(tempDir, url);
+
+      expect(result.checked, JSON.stringify(url)).toBe(false);
+      expect(result.reason, JSON.stringify(url)).toMatch(/^https:\/\/registry\.internal\.example could not be read \(.*https:\/\/registry\.internal\.example\/api\/v1\/trust\/advisories\?/);
+      expect(result.reason, JSON.stringify(url)).not.toMatch(/fake/i);
+    }
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it('removes a user name and password from a request error that writes the URL as the parser does', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed', {
+      cause: new Error('no route to https://FAKE-user:FAKE%20pw@registry.internal.example/api/v1/trust/advisories'),
+    }));
+
+    const result = await checkAdvisories(tempDir, 'https://FAKE-user:FAKE pw@registry.internal.example');
+
+    expect(result.reason).toBe('https://registry.internal.example could not be read (fetch failed: no route to https://registry.internal.example/api/v1/trust/advisories)');
+  });
+
+  // The request goes to host `fake-user` on port 12; a request error names
+  // that host and port, which hold the user name and part of the password.
+  it('names a request error without its message when an @ follows the host of the Registry URL', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND fake-user') }));
+
+    const result = await checkAdvisories(tempDir, 'https://FAKE-user:12/FAKE@registry.internal.example');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.reason).toBe('the configured Registry could not be read');
   });
 
   it('names why no list was read: an HTTP status, a timeout, an unreachable host', async () => {

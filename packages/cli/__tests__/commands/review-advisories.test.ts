@@ -42,6 +42,17 @@ vi.mock('../../src/util/report-submission.js', () => ({
 import { review } from '../../src/commands/review.js';
 import { init } from '../../src/commands/init.js';
 import { assembleReviewClientScript } from '../../src/report/review-assets.js';
+import { validateRegistryUrl } from '../../src/util/validate-registry-url.js';
+
+/** The error getRegistryUrl() throws for a configured URL the validator refuses. */
+function refusalOf(url: string): Error {
+  try {
+    validateRegistryUrl(url);
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error(`${url} was not refused`);
+}
 
 const ADVISORY = {
   id: 'OA2A-2026-0001',
@@ -303,7 +314,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
   });
 
   it('a refused registry.url is named in --verbose output and on the Hygiene tab', async () => {
-    registry.answer = new Error('Registry URL must use HTTPS: http://registry.internal.example\nPlain HTTP is only allowed for localhost development.');
+    registry.answer = refusalOf('http://registry.internal.example');
 
     const { report, stderr } = await runReview(true);
 
@@ -311,6 +322,29 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(stderr).toContain('Advisories not checked: Registry URL must use HTTPS: http://registry.internal.example');
     expect(report.initData.advisoryRead.notCheckedReason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
     expect(hygieneText(report)).toContain('Reason: Registry URL must use HTTPS: http://registry.internal.example.');
+  });
+
+  // Regression (#464): the reason repeated a password holding a space or a
+  // `/`, and the part after an `@`, in --verbose output, the JSON and the
+  // Hygiene tab.
+  it('a refused registry.url holding a user name and password shows neither, whatever the password holds', async () => {
+    for (const url of [
+      'http://FAKE-user:FAKE pw@registry.internal.example',
+      'http://FAKE-user:FAKE\npw@registry.internal.example',
+      'http://FAKE-user:FAKE/pw@registry.internal.example',
+      'http://FAKE-user:FAKE@pw@registry.internal.example',
+      'http://FAKE-user:12/FAKE@registry.internal.example',
+    ]) {
+      registry.answer = refusalOf(url);
+
+      const { report, stderr } = await runReview(true);
+
+      expect(report.initData.advisoriesChecked, url).toBe(false);
+      expect(stderr, url).toContain('Advisories not checked: ');
+      const shown = stderr + JSON.stringify(report.initData.advisoryRead) + hygieneText(report);
+      expect(shown, url).not.toMatch(/fake/i);
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('OPENA2A_ADVISORIES=off makes no request and says how to turn the check back on', async () => {
@@ -337,7 +371,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
   });
 
   it('init --verbose names why the advisories were not checked', async () => {
-    registry.answer = new Error('Registry URL must use HTTPS: http://registry.internal.example');
+    registry.answer = refusalOf('http://registry.internal.example');
 
     const { stdout } = await silenced(() => init({ targetDir: tempDir, format: 'text', verbose: true }));
 
