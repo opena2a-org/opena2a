@@ -175,20 +175,34 @@ function textIn(value: unknown): string {
 }
 
 /**
+ * An advisory's severity entries, up to the first that is not an object with
+ * a text score. Only the first entry rates an advisory, so one whose first
+ * entry is malformed gives no severity (a medium finding) and is not rated by
+ * a later entry.
+ */
+function severityIn(value: unknown): OSVSeverity[] {
+  const severity: OSVSeverity[] = [];
+  for (const s of Array.isArray(value) ? value : []) {
+    if (!isFields(s) || typeof s.score !== 'string') break;
+    severity.push({ type: textIn(s.type), score: s.score });
+  }
+  return severity;
+}
+
+/**
  * The advisories of a list, holding the fields the CLI reads. An entry that
  * is not an object is left out, a list field that is not a list is read as
- * empty, and a text field that is not text as ''. Read as received, a `null`
- * entry, an `affected`, `ranges` or `events` field that was not a list, or an
- * ecosystem or ID that was not text stopped `review` and `init`.
+ * empty, and a text field that is not text as ''; the severity list is read
+ * as `severityIn` reads it. Read as received, a `null` entry, an `affected`,
+ * `ranges` or `events` field that was not a list, or an ecosystem or ID that
+ * was not text stopped `review` and `init`.
  */
 function readableAdvisories(list: unknown[]): Advisory[] {
   return objectsIn(list).map(entry => ({
     id: textIn(entry.id),
     summary: textIn(entry.summary),
     published: textIn(entry.published),
-    severity: objectsIn(entry.severity)
-      .filter(s => typeof s.score === 'string')
-      .map(s => ({ type: textIn(s.type), score: textIn(s.score) })),
+    severity: severityIn(entry.severity),
     affected: objectsIn(entry.affected).map(a => {
       const pkg: Fields = isFields(a.package) ? a.package : {};
       return {

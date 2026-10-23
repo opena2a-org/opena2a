@@ -330,6 +330,33 @@ describe('advisories', () => {
       expect(cached.fromCache).toBe(true);
       expectMixedRead(cached);
     });
+
+    // Regression (#464): each severity entry that was not an object, or whose
+    // score was not text, was left out, so the entry after it rated the
+    // advisory. Only the first entry rates an advisory: when it is malformed,
+    // the advisory gives no severity.
+    it('reads an advisory whose first severity entry is malformed as giving no severity, not by a later entry', async () => {
+      const CRITICAL = { type: 'ADVISORY', score: 'CRITICAL' };
+      const FIRSTS = [null, 7, 'HIGH', [], { type: 'ADVISORY' }, { type: 'ADVISORY', score: 9 }];
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          advisories: [
+            ...FIRSTS.map((first, i) => ({ ...GOOD, id: `OA2A-2026-010${i}`, severity: [first, CRITICAL] })),
+            { ...GOOD, id: 'OA2A-2026-0199', severity: [{ type: 'ADVISORY', score: 'HIGH' }, CRITICAL] },
+          ],
+          format: 'osv',
+        }),
+      });
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(result.advisories).toHaveLength(FIRSTS.length + 1);
+      for (const advisory of result.advisories.slice(0, FIRSTS.length)) {
+        expect(advisory.severity, advisory.id).toEqual([]);
+      }
+      expect(result.advisories[FIRSTS.length].severity).toEqual([{ type: 'ADVISORY', score: 'HIGH' }, CRITICAL]);
+    });
   });
 
   // The advisory check never stops review or init, whatever it meets.
