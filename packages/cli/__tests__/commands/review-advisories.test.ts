@@ -418,6 +418,28 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     }
   });
 
+  // Regression (#464): a severity entry that was not an object, or whose
+  // score was not text, was left out, so the CRITICAL entry after it made
+  // the advisory a critical finding.
+  it('review and init rate an advisory whose first severity entry is malformed as giving no severity', async () => {
+    const cacheDir = path.join(tempHome, '.opena2a', 'cache');
+    for (const first of [null, { type: 'ADVISORY', score: 9 }]) {
+      const label = JSON.stringify(first);
+      mockFetch.mockResolvedValue(listResponse([{ ...ADVISORY, severity: [first, { type: 'ADVISORY', score: 'CRITICAL' }] }]));
+
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+      const { report, stdout } = await runReview();
+      expect(advisoryFinding(report).severity, label).toBe('medium');
+      expect(report.initData.advisories[0].severity, label).toBeNull();
+      expect(stdout, label).toContain('1 findings (0 critical, 0 high, 1 medium)');
+
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+      const initialized = await silenced(() => init({ targetDir: tempDir, format: 'text' }));
+      expect(initialized.stdout, label).toContain('[UNKNOWN]');
+      expect(initialized.stdout, label).not.toContain('[CRITICAL]');
+    }
+  });
+
   it('init --verbose names why the advisories were not checked', async () => {
     registry.answer = refusalOf('http://registry.internal.example');
 
