@@ -9,8 +9,19 @@ export interface DetectedCli {
   name: string;
   path: string;
   version: string | null;
+  /** Why no version command was started, when none was; absent otherwise. */
+  versionNotRead?: string;
   configDir: string | null;
   hasCredentials: boolean;
+}
+
+/** A CLI in the detection table, recorded whether or not it was found on PATH. */
+export interface KnownCli {
+  name: string;
+  /** Where the CLI keeps its configuration and credentials. */
+  configDir: string;
+  /** Whether `configDir` is an absolute path to an existing directory. */
+  configDirExists: boolean;
 }
 
 export interface DetectedAssistant {
@@ -44,6 +55,8 @@ export interface EnvironmentScan {
   platform: string;
   shell: string;
   clis: DetectedCli[];
+  /** Every CLI in the detection table, found or not, with its config directory's presence. */
+  knownClis: KnownCli[];
   assistants: DetectedAssistant[];
   mcpServers: DetectedMcpServer[];
   oauthSessions: DetectedOAuthSession[];

@@ -10,7 +10,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { execFileSync, type ExecFileSyncOptions } from 'node:child_process';
 import { homedir, hostname, platform } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import type {
   DetectedAssistant,
@@ -18,11 +18,12 @@ import type {
   DetectedMcpServer,
   DetectedOAuthSession,
   EnvironmentScan,
+  KnownCli,
   ProjectType,
 } from './types.js';
 
 import { detectProject } from '../util/detect.js';
-import { programOnPath, absolutePathDirs } from '../util/program-on-path.js';
+import { programOnPath, withAbsolutePathDirs, withEmptyWorkDir } from '../util/program-on-path.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,22 +31,28 @@ import { programOnPath, absolutePathDirs } from '../util/program-on-path.js';
 
 /**
  * Run a binary with args without shell interpretation (safe from injection);
- * `timeout` ms stops it with SIGKILL. `env` and `cwd`, when given, replace the
- * child's environment and working directory — detectClis passes a PATH of only
- * absolute directories and a working directory outside the scanned tree, so a
- * probed program's own lookups cannot reach a relative PATH entry.
+ * `timeout` ms stops it with SIGKILL. `env` and `cwd` replace the child's
+ * environment and working directory — detectClis passes a PATH of only
+ * absolute directories and an empty directory made for the run, so a probed
+ * program's own lookups cannot reach a relative PATH entry or the scanned
+ * tree. A `cwd` that is not an existing absolute directory (empty, relative,
+ * or missing) is never dropped or resolved against this process's working
+ * directory: it throws before anything is started, so the caller sees it.
+ *
+ * @internal Exported for its tests; detection reaches it through detectClis.
  */
-function tryExecFile(
+export function tryExecFile(
   binary: string,
   args: string[],
-  timeout?: number,
-  env?: NodeJS.ProcessEnv,
-  cwd?: string,
+  timeout: number,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
 ): string | null {
+  if (!isAbsolute(cwd) || statSync(cwd, { throwIfNoEntry: false })?.isDirectory() !== true) {
+    throw new Error(`the working directory "${cwd}" is not an existing absolute directory, so the program was not started`);
+  }
   try {
-    const options: ExecFileSyncOptions = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout, killSignal: 'SIGKILL' };
-    if (env) options.env = env;
-    if (cwd) options.cwd = cwd;
+    const options: ExecFileSyncOptions = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout, killSignal: 'SIGKILL', env, cwd };
     return execFileSync(binary, args, options).toString().trim();
   } catch {
     return null;
@@ -143,43 +150,80 @@ const CLI_SPECS: CliSpec[] = [
  */
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
 
+/**
+ * The CLI's config directory when it exists, else null. Only an absolute path
+ * counts: with HOME empty or relative, the path would name a directory in the
+ * tree the command was started in, not the CLI's own.
+ */
+function existingConfigDir(spec: CliSpec): string | null {
+  return isAbsolute(spec.configDir) && existsSync(spec.configDir) ? spec.configDir : null;
+}
+
 function detectClis(): DetectedCli[] {
-  const results: DetectedCli[] = [];
-
   // The version probe runs with PATH narrowed to its absolute directories and
-  // outside the directory `shield init` was started in, so a program reachable
-  // only through an empty or relative PATH entry (resolved against that
-  // directory) is never started, even as an interpreter a probed CLI looks up.
-  const probeEnv: NodeJS.ProcessEnv = Object.assign({}, process.env, { PATH: absolutePathDirs() });
-  const probeCwd = homedir();
+  // in a new, empty directory made for the run under the system temporary
+  // directory, never HOME and never the directory `shield init` was started
+  // in, whatever HOME holds. So a program reachable only through an empty or
+  // relative PATH entry (resolved against the working directory) is never
+  // started, even as an interpreter a probed CLI looks up. When that directory
+  // cannot be made, no version command is started and each CLI found is
+  // listed with no version and the reason.
+  const probeEnv = withAbsolutePathDirs();
 
-  for (const spec of CLI_SPECS) {
-    const binaryPath = programOnPath(spec.binary);
-    if (!binaryPath) continue;
+  return withEmptyWorkDir('opena2a-shield-probe-', (workDir) => {
+    const results: DetectedCli[] = [];
 
-    // Extract version string -- take only the first line to keep it concise.
-    // Start the probe by the absolute path, never by the bare `spec.binary`.
-    let version: string | null = null;
-    const rawVersion = tryExecFile(binaryPath, spec.versionFlag.split(/\s+/), VERSION_PROBE_TIMEOUT_MS, probeEnv, probeCwd);
-    if (rawVersion) {
-      version = rawVersion.split('\n')[0].trim();
+    for (const spec of CLI_SPECS) {
+      const binaryPath = programOnPath(spec.binary);
+      if (!binaryPath) continue;
+
+      // Extract version string -- take only the first line to keep it concise.
+      // Start the probe by the absolute path, never by the bare `spec.binary`.
+      let version: string | null = null;
+      let versionNotRead: string | null = workDir.reason;
+      if (workDir.path !== null) {
+        try {
+          const rawVersion = tryExecFile(binaryPath, spec.versionFlag.split(/\s+/), VERSION_PROBE_TIMEOUT_MS, probeEnv, workDir.path);
+          if (rawVersion) {
+            version = rawVersion.split('\n')[0].trim();
+          }
+        } catch (err) {
+          versionNotRead = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      const configDir = existingConfigDir(spec);
+      const hasCredentials = configDir !== null && spec.credentialFiles.some(f =>
+        existsSync(join(configDir, f)),
+      );
+
+      results.push({
+        name: spec.name,
+        path: binaryPath,
+        version,
+        ...(versionNotRead !== null ? { versionNotRead } : {}),
+        configDir,
+        hasCredentials,
+      });
     }
 
-    const configDirExists = existsSync(spec.configDir);
-    const hasCredentials = configDirExists && spec.credentialFiles.some(f =>
-      existsSync(join(spec.configDir, f)),
-    );
+    return results;
+  });
+}
 
-    results.push({
-      name: spec.name,
-      path: binaryPath,
-      version,
-      configDir: configDirExists ? spec.configDir : null,
-      hasCredentials,
-    });
-  }
-
-  return results;
+/**
+ * Every CLI in the detection table, found on PATH or not, with whether its
+ * config directory exists. generatePolicyFromScan denies each existing
+ * directory and every name: a CLI that is not found in an absolute PATH
+ * directory (one reached through `npx`, or only through a relative entry)
+ * keeps its credentials in the same place. Nothing is started here.
+ */
+function detectKnownClis(): KnownCli[] {
+  return CLI_SPECS.map((spec) => ({
+    name: spec.name,
+    configDir: spec.configDir,
+    configDirExists: existingConfigDir(spec) !== null,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +520,7 @@ export function detectEnvironment(targetDir?: string): EnvironmentScan {
 
   // CLI detection
   const clis = detectClis();
+  const knownClis = detectKnownClis();
 
   // Assistant detection
   const assistants = detectAssistants(dir);
@@ -495,6 +540,7 @@ export function detectEnvironment(targetDir?: string): EnvironmentScan {
     platform: platform(),
     shell: process.env['SHELL'] ?? 'unknown',
     clis,
+    knownClis,
     assistants,
     mcpServers,
     oauthSessions,
