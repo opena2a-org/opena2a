@@ -148,24 +148,32 @@ const PROJECT_TYPE_TOOLS: Record<string, string[]> = {
 
 /**
  * Generate a policy tailored to the scanned environment.
- * Detected CLIs are added to the process deny list. Detected MCP servers
- * are added to the mcpServers allow list. Project-type-appropriate tools
- * are added to the process allow list. Mode is set to 'adaptive'.
+ * Every known cloud CLI is added to the process deny list, and every known
+ * CLI config directory that exists to the filesystem deny list, whether or
+ * not the CLI was found on PATH. Detected MCP servers are added to the
+ * mcpServers allow list. Project-type-appropriate tools are added to the
+ * process allow list. Mode is set to 'adaptive'.
  */
 export function generatePolicyFromScan(scan: EnvironmentScan): ShieldPolicy {
   const policy = createDefaultPolicy('adaptive');
 
-  // Add detected cloud CLIs to processes.deny
-  for (const cli of scan.clis) {
+  // Add every known cloud CLI to processes.deny, found or not: one an agent
+  // reaches through npx or a relative PATH entry is not detected.
+  for (const cli of [...scan.knownClis, ...scan.clis]) {
     if (!policy.default.processes.deny.includes(cli.name)) {
       policy.default.processes.deny.push(cli.name);
     }
   }
 
-  // Add detected CLI config dirs to filesystem.deny
-  for (const cli of scan.clis) {
-    if (cli.configDir && !policy.default.filesystem.deny.includes(cli.configDir)) {
-      policy.default.filesystem.deny.push(cli.configDir);
+  // Add every existing known CLI config dir to filesystem.deny, found or not:
+  // the credentials are there whether or not the CLI is.
+  const configDirs = [
+    ...scan.knownClis.filter((cli) => cli.configDirExists).map((cli) => cli.configDir),
+    ...scan.clis.flatMap((cli) => (cli.configDir ? [cli.configDir] : [])),
+  ];
+  for (const configDir of configDirs) {
+    if (!policy.default.filesystem.deny.includes(configDir)) {
+      policy.default.filesystem.deny.push(configDir);
     }
   }
 

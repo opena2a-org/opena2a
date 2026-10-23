@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process';
 
 import { CHILD_ENV_CONTRACTS } from '../../src/adapters/registry.js';
 import { looksLikeCredentialName } from '../../src/util/child-env.js';
+import { absolutePathDirs } from '../../src/util/program-on-path.js';
 import { callClaudeCode, isClaudeCodeAvailable } from '../../src/shield/llm-backend.js';
 
 const REQUIRED_EXACT = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'AWS_BEARER_TOKEN_BEDROCK'];
@@ -92,8 +93,9 @@ describe('claude on PATH receives the contract (#246)', () => {
     if (!posix) return;
     stubDir = executableScratchDir();
     // `claude` prints its own environment as the `result` field of the JSON
-    // callClaudeCode parses; `which` records its environment to a file and
-    // prints a path, so both children the backend starts are observed.
+    // callClaudeCode parses. `which` would record its environment to a file
+    // and print a path; it sits beside `claude` so that a lookup that started
+    // it would be observed, and finding `claude` starts no program.
     const claudeJs = path.join(stubDir, 'claude-stub.js');
     fs.writeFileSync(claudeJs,
       'process.stdout.write(JSON.stringify({ result: JSON.stringify(process.env) }));\n');
@@ -150,17 +152,17 @@ describe('claude on PATH receives the contract (#246)', () => {
     // under a prefix out unless declared exactly.
     expect(seen.CLAUDE_CODE_USE_BEDROCK).toBe('1');
     expect(seen.AWS_SECRET_ACCESS_KEY).toBeUndefined();
-    expect(seen.PATH).toBe(process.env.PATH);
+    // The contract is unchanged except PATH, narrowed to its absolute
+    // directories for a model CLI started by its absolute path.
+    expect(seen.PATH).toBe(absolutePathDirs());
+    expect(seen.PATH.split(path.delimiter).every(dir => path.isAbsolute(dir)), seen.PATH).toBe(true);
     expect(seen.HOME).toBe(process.env.HOME);
   });
 
-  it.skipIf(!posix)('the which-claude probe sees neither ANTHROPIC_API_KEY nor GITHUB_TOKEN', () => {
+  it.skipIf(!posix)('finding the model CLI starts no program, so no discovery step sees the model credential or GITHUB_TOKEN', () => {
     const record = path.join(stubDir, 'which-env.json');
     fs.rmSync(record, { force: true });
     expect(isClaudeCodeAvailable()).toBe(true);
-    const seen = JSON.parse(fs.readFileSync(record, 'utf-8')) as Record<string, string>;
-    expect(seen.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(seen.GITHUB_TOKEN).toBeUndefined();
-    expect(seen.PATH).toBe(process.env.PATH);
+    expect(fs.existsSync(record), 'the which stub first on PATH was never started').toBe(false);
   });
 });

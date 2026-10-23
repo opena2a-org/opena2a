@@ -70,9 +70,7 @@ const IMPLICIT_INHERIT: readonly string[] = [
   'commands/protect.ts:1453',
   'commands/review.ts:1376',
   'commands/review.ts:2163',
-  'shield/detect.ts:49',
-  'shield/status.ts:15',
-  'shield/status.ts:24',
+  'shield/detect.ts:56',
   'util/keychain.ts:96',
   'util/keychain.ts:107',
   'util/keychain.ts:115',
@@ -354,7 +352,7 @@ describe('child-env-sites — every child start under src/ (#246)', () => {
     expect(result.spreads).toEqual([]);
   });
 
-  it('the three sites the ruling moved out of implicit inheritance carry a resolver', () => {
+  it('the sites moved out of implicit inheritance carry a resolver, and no shield site starts which', () => {
     const review = findStart(result, 'commands/review.ts', /'secure'/);
     expect(review.verdict).toEqual({ kind: 'resolver', via: 'childEnv' });
     expect(review.envValue).toMatch(/^childEnv\(\s*'hackmyagent'/);
@@ -362,10 +360,18 @@ describe('child-env-sites — every child start under src/ (#246)', () => {
     const version = findStart(result, 'util/hma-version.ts', /'--version'/);
     expect(version.verdict).toEqual({ kind: 'resolver', via: 'probeEnv' });
 
-    const which = findStart(result, 'shield/llm-backend.ts', /'which'/);
-    expect(which.verdict).toEqual({ kind: 'resolver', via: 'probeEnv' });
+    // shield status starts each helper's version probe by the absolute path
+    // programOnPath found, under the probe environment.
+    const helper = findStart(result, 'shield/status.ts', /'--version'/);
+    expect(helper.verdict).toEqual({ kind: 'resolver', via: 'probeEnv' });
 
-    for (const moved of [review.site, version.site, which.site]) {
+    // The backend's `which` probe (#246 gave it probeEnv) is gone, with the
+    // `which` starts of shield status: a program is found with programOnPath,
+    // which starts nothing.
+    const whichStarts = result.starts.filter(s => s.site.startsWith('shield/') && /'which'/.test(s.text));
+    expect(whichStarts.map(s => s.site)).toEqual([]);
+
+    for (const moved of [review.site, version.site, helper.site]) {
       expect(IMPLICIT_INHERIT, `${moved} must not be on the roster`).not.toContain(moved);
     }
   });
@@ -384,8 +390,11 @@ describe('child-env-sites — every child start under src/ (#246)', () => {
     for (const site of direct) {
       expect(site.envValue, site.site).toMatch(/^childEnv\(\s*'hackmyagent'\s*,\s*\{\s*set:/);
     }
-    const claude = findStart(result, 'shield/llm-backend.ts', /^\s*'claude'\s*,\s*\[/);
-    expect(claude.envValue).toMatch(/^childEnv\(\s*'claude'\s*\)/);
+    // The model CLI is started by the absolute path programOnPath found, with
+    // the `claude` contract unchanged except PATH, narrowed to its absolute
+    // directories.
+    const claude = findStart(result, 'shield/llm-backend.ts', /^\s*claudePath\s*,\s*\[/);
+    expect(claude.envValue).toMatch(/^childEnv\(\s*'claude'\s*,\s*\{\s*set:\s*\{\s*PATH:\s*absolutePathDirs\(\)\s*\}\s*\}\s*\)/);
   });
 });
 
@@ -471,6 +480,7 @@ describe('child-env-sites — the shipped-spread census (#246)', () => {
     const decl = /export function callClaudeCode\s*\(/.exec(backend)!;
     const bodyOpen = backend.indexOf('{', decl.index + decl[0].length);
     const body = backendSource.slice(bodyOpen + 1, bodyOpen + 1 + balancedArgs(backend, bodyOpen).length);
-    expect(body).toMatch(/env:\s*childEnv\(\s*'claude'\s*\)/);
+    // The contract env, with PATH alone replaced by its absolute directories.
+    expect(body).toMatch(/env:\s*childEnv\(\s*'claude'\s*,\s*\{\s*set:\s*\{\s*PATH:\s*absolutePathDirs\(\)\s*\}\s*\}\s*\)/);
   });
 });

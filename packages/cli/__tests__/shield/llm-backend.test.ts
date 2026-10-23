@@ -25,26 +25,35 @@ vi.mock('@opena2a/shared', () => ({
   setLlmEnabled: (v: boolean) => { _llmEnabled = v; },
 }));
 
-// Mock node:child_process for Claude Code CLI detection
-let _whichResult: string | null = '/usr/local/bin/claude';
+// Mock the PATH lookup for Claude Code CLI detection: the backend finds
+// `claude` with programOnPath, which starts nothing, so whether the model CLI
+// is "installed" is this value and never the test machine's PATH.
+let _claudePath: string | null = '/usr/local/bin/claude';
 let _execFileResult: string | null = null;
 
+vi.mock('../../src/util/program-on-path.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/program-on-path.js')>();
+  return {
+    ...actual,
+    programOnPath: (name: string, env?: NodeJS.ProcessEnv) =>
+      name === 'claude' ? _claudePath : actual.programOnPath(name, env),
+  };
+});
+
+// Mock node:child_process for the Claude Code CLI call. No program is ever
+// started from this file: a model CLI start, by bare name or by any path, is
+// answered here, and any other start fails the test.
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {
     ...actual,
-    execFileSync: (cmd: string, args?: string[], _opts?: unknown) => {
-      // Handle 'which' calls (used by isClaudeCodeAvailable)
-      if (cmd === 'which') {
-        if (_whichResult === null) throw new Error('not found');
-        return _whichResult;
-      }
+    execFileSync: (cmd: string, _args?: string[], _opts?: unknown) => {
       // Handle 'claude' CLI calls (used by callClaudeCode)
-      if (cmd === 'claude') {
+      if (cmd === 'claude' || cmd.endsWith('/claude')) {
         if (_execFileResult === null) throw new Error('command failed');
         return _execFileResult;
       }
-      return actual.execFileSync(cmd, args, _opts as Parameters<typeof actual.execFileSync>[2]);
+      throw new Error(`unexpected program start in llm-backend.test.ts: ${cmd}`);
     },
   };
 });
@@ -68,7 +77,7 @@ beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(tmpdir(), 'shield-backend-test-'));
   _mockHomeDir = tempDir;
   _llmEnabled = true;
-  _whichResult = '/usr/local/bin/claude';
+  _claudePath = '/usr/local/bin/claude';
   _execFileResult = null;
   savedEnv = {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
@@ -92,18 +101,18 @@ afterEach(() => {
 
 describe('isClaudeCodeAvailable', () => {
   it('returns true when claude is available and not nested', () => {
-    _whichResult = '/usr/local/bin/claude';
+    _claudePath = '/usr/local/bin/claude';
     delete process.env.CLAUDECODE;
     expect(isClaudeCodeAvailable()).toBe(true);
   });
 
   it('returns false when claude binary is not found', () => {
-    _whichResult = null;
+    _claudePath = null;
     expect(isClaudeCodeAvailable()).toBe(false);
   });
 
   it('returns false when CLAUDECODE is set (nesting prevention)', () => {
-    _whichResult = '/usr/local/bin/claude';
+    _claudePath = '/usr/local/bin/claude';
     process.env.CLAUDECODE = '1';
     expect(isClaudeCodeAvailable()).toBe(false);
   });
@@ -115,7 +124,7 @@ describe('isClaudeCodeAvailable', () => {
 
 describe('detectBackend', () => {
   it('prefers claude-code when available', async () => {
-    _whichResult = '/usr/local/bin/claude';
+    _claudePath = '/usr/local/bin/claude';
     delete process.env.CLAUDECODE;
 
     const result = await detectBackend();
@@ -124,7 +133,7 @@ describe('detectBackend', () => {
   });
 
   it('falls back to api when claude-code unavailable', async () => {
-    _whichResult = null;
+    _claudePath = null;
     process.env.ANTHROPIC_API_KEY = 'sk-test';
     _llmEnabled = true;
 
@@ -134,7 +143,7 @@ describe('detectBackend', () => {
   });
 
   it('falls back to api when nested in Claude Code', async () => {
-    _whichResult = '/usr/local/bin/claude';
+    _claudePath = '/usr/local/bin/claude';
     process.env.CLAUDECODE = '1';
     process.env.ANTHROPIC_API_KEY = 'sk-test';
     _llmEnabled = true;
@@ -145,7 +154,7 @@ describe('detectBackend', () => {
   });
 
   it('returns none when no backend available', async () => {
-    _whichResult = null;
+    _claudePath = null;
     delete process.env.ANTHROPIC_API_KEY;
 
     const result = await detectBackend();
@@ -153,7 +162,7 @@ describe('detectBackend', () => {
   });
 
   it('returns none when API key exists but LLM disabled', async () => {
-    _whichResult = null;
+    _claudePath = null;
     process.env.ANTHROPIC_API_KEY = 'sk-test';
     _llmEnabled = false;
 
@@ -216,7 +225,7 @@ describe('callClaudeCode', () => {
 
 describe('callLlm', () => {
   it('returns null when no backend available', async () => {
-    _whichResult = null;
+    _claudePath = null;
     delete process.env.ANTHROPIC_API_KEY;
 
     const result = await callLlm('system', 'user', 200);
@@ -224,7 +233,7 @@ describe('callLlm', () => {
   });
 
   it('routes to claude-code when available', async () => {
-    _whichResult = '/usr/local/bin/claude';
+    _claudePath = '/usr/local/bin/claude';
     delete process.env.CLAUDECODE;
     _execFileResult = JSON.stringify({ result: '{"answer": "test"}' });
 
@@ -235,7 +244,7 @@ describe('callLlm', () => {
   });
 
   it('routes to api when claude-code unavailable', async () => {
-    _whichResult = null;
+    _claudePath = null;
     process.env.ANTHROPIC_API_KEY = 'sk-test';
     _llmEnabled = true;
 

@@ -27,8 +27,20 @@ vi.mock('@opena2a/shared', () => ({
   setLlmEnabled: (v: boolean) => { _llmEnabled = v; },
 }));
 
-// Mock node:child_process so isClaudeCodeAvailable() returns false in tests.
-// This ensures the API backend path is used (matching existing test expectations).
+// isClaudeCodeAvailable() returns false in tests: the backend finds `claude`
+// with programOnPath, so the lookup answers "not found" whatever the test
+// machine's PATH holds. This ensures the API backend path is used (matching
+// existing test expectations).
+vi.mock('../../src/util/program-on-path.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/program-on-path.js')>();
+  return {
+    ...actual,
+    programOnPath: (name: string, env?: NodeJS.ProcessEnv) =>
+      name === 'claude' ? null : actual.programOnPath(name, env),
+  };
+});
+
+// Mock node:child_process so no model CLI can be started from this file.
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return {

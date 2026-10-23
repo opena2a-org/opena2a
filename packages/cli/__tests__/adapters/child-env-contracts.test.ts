@@ -31,11 +31,26 @@ vi.mock('node:child_process', () => ({
   }),
   execFileSync: vi.fn((bin: string, args: string[], opts: Record<string, unknown>) => {
     execFileSyncCalls.push({ bin, args, opts: opts ?? {} });
-    if (bin === 'claude') return JSON.stringify({ result: 'stubbed' });
-    if (bin === 'which') return '/stub/bin/claude\n';
+    if (bin === STUB_CLAUDE) return JSON.stringify({ result: 'stubbed' });
     throw new Error(`${bin}: not found`);
   }),
 }));
+
+/**
+ * Where the mocked PATH lookup finds `claude`. The backend starts the model CLI
+ * by the absolute path programOnPath returns; no program is started to find
+ * it, and the test machine's own PATH is never searched for it.
+ */
+const STUB_CLAUDE = '/stub/bin/claude';
+
+vi.mock('../../src/util/program-on-path.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/program-on-path.js')>();
+  return {
+    ...actual,
+    programOnPath: (name: string, env?: NodeJS.ProcessEnv) =>
+      name === 'claude' ? STUB_CLAUDE : actual.programOnPath(name, env),
+  };
+});
 
 const { CHILD_ENV_CONTRACTS, childEnv, inheritEnv, ADAPTER_REGISTRY } =
   await import('../../src/adapters/registry.js');
@@ -313,7 +328,7 @@ describe('the seven fixed sites (#246)', () => {
       declared: 'ANTHROPIC_API_KEY', declaredValue: 'PLANTED-anthropic',
       capture: async () => {
         expect(callClaudeCode('system', 'user', 100)?.text).toBe('stubbed');
-        const call = execFileSyncCalls.find(c => c.bin === 'claude')!;
+        const call = execFileSyncCalls.find(c => c.bin === STUB_CLAUDE)!;
         return call.opts.env as NodeJS.ProcessEnv;
       },
     },
@@ -363,13 +378,10 @@ describe('the seven fixed sites (#246)', () => {
     expect(lastSpawn(c => c.args[0] === '-m').ANTHROPIC_API_KEY).toBeUndefined();
   });
 
-  it('the which-claude probe sees neither the model credential nor GITHUB_TOKEN', () => {
+  it('finding the model CLI starts no program, so no discovery step sees the model credential or GITHUB_TOKEN', () => {
     expect(isClaudeCodeAvailable()).toBe(true);
-    const probe = execFileSyncCalls.find(c => c.bin === 'which')!.opts.env as NodeJS.ProcessEnv;
-    expect(probe).toBeDefined();
-    expect(probe.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(probe.GITHUB_TOKEN).toBeUndefined();
-    expect(probe.PATH).toBe(process.env.PATH);
+    expect(execFileSyncCalls, 'no which (or any other program) is started to find claude').toEqual([]);
+    expect(spawnCalls).toEqual([]);
   });
 
   it('with OPENA2A_CHILD_ENV_ALLOW=GITHUB_TOKEN a childEnv route forwards it, reports it, and still drops the hatch', async () => {
@@ -383,7 +395,7 @@ describe('the seven fixed sites (#246)', () => {
 
     // The model CLI route widens the same way.
     callClaudeCode('system', 'user', 100);
-    const claude = execFileSyncCalls.find(c => c.bin === 'claude')!.opts.env as NodeJS.ProcessEnv;
+    const claude = execFileSyncCalls.find(c => c.bin === STUB_CLAUDE)!.opts.env as NodeJS.ProcessEnv;
     expect(claude.GITHUB_TOKEN).toBe('PLANTED-gh');
     expect(claude).not.toHaveProperty('OPENA2A_CHILD_ENV_ALLOW');
   });

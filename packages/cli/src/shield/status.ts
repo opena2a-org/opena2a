@@ -4,33 +4,44 @@ import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { type ShieldStatus, type ToolStatus, type PolicyMode, type ShieldIntegrityStatus, SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 import { runIntegrityChecks } from './integrity.js';
+import { CHILD_ENV_CONTRACTS } from '../adapters/registry.js';
+import { probeEnv } from '../util/child-env.js';
+import { programOnPath, withAbsolutePathDirs, withEmptyWorkDir, type EmptyWorkDir } from '../util/program-on-path.js';
 
 function getShieldDir(): string {
   return join(homedir(), '.opena2a', 'shield');
 }
 
-/** Run a binary with args without shell interpretation (safe from injection). */
-function tryExecFile(binary: string, args: string[]): string | null {
+/**
+ * A helper tool's `--version` output, or null. The helper is looked up only
+ * in PATH's absolute directories and started by that absolute path (no
+ * `which`, no bare name), without shell interpretation, with the probe
+ * environment (credential-named variables dropped, PATH narrowed to its
+ * absolute directories) in the run's empty working directory. Nothing is
+ * started when the helper is not found there or the run has no working
+ * directory, so a program reachable only through an empty or relative PATH
+ * entry, resolved against the directory the command was started in, never
+ * runs.
+ */
+function helperVersion(name: 'secretless-ai' | 'hackmyagent', workDir: EmptyWorkDir): string | null {
+  const binaryPath = programOnPath(name);
+  if (binaryPath === null || workDir.path === null) return null;
   try {
-    return execFileSync(binary, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync(binaryPath, ['--version'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: workDir.path,
+      env: probeEnv(CHILD_ENV_CONTRACTS[name].envAllowPrefixes, withAbsolutePathDirs()),
+    }).trim();
   } catch {
     return null;
   }
 }
 
-/** Resolve a binary via which, returning the path or null. */
-function whichBinary(name: string): string | null {
-  try {
-    return execFileSync('which', [name], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function detectTool(name: string): ToolStatus {
+function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
   switch (name) {
     case 'Secretless': {
-      const version = whichBinary('secretless-ai') ? tryExecFile('secretless-ai', ['--version']) : null;
+      const version = helperVersion('secretless-ai', workDir);
       const configExists = existsSync(join(process.cwd(), '.secretless.json')) ||
         existsSync(join(homedir(), '.secretless', 'config.json'));
       return {
@@ -104,7 +115,7 @@ function detectTool(name: string): ToolStatus {
         }
       } catch {
         // Fall back to global binary
-        version = whichBinary('hackmyagent') ? tryExecFile('hackmyagent', ['--version']) : null;
+        version = helperVersion('hackmyagent', workDir);
       }
       return {
         name: 'HackMyAgent',
@@ -116,8 +127,9 @@ function detectTool(name: string): ToolStatus {
     }
 
     case 'Registry': {
-      // Registry is typically a remote service; check if CLI supports it
-      const hasRegistry = whichBinary('opena2a') !== null;
+      // Registry is typically a remote service; check if CLI supports it.
+      // A lookup in PATH's absolute directories; nothing is started.
+      const hasRegistry = programOnPath('opena2a') !== null;
       return {
         name: 'Registry',
         installed: hasRegistry !== null,
@@ -152,15 +164,17 @@ function detectTool(name: string): ToolStatus {
 
 export function getShieldStatus(targetDir?: string): ShieldStatus {
   const shieldDir = getShieldDir();
-  const tools: ToolStatus[] = [
-    detectTool('Secretless'),
-    detectTool('AIM Core'),
-    detectTool('ARP'),
-    detectTool('Browser Guard'),
-    detectTool('HMA'),
-    detectTool('Registry'),
-    detectTool('ConfigGuard'),
-  ];
+  // One empty working directory for this run's helper probes, removed when
+  // they finish; without one, no helper is started.
+  const tools: ToolStatus[] = withEmptyWorkDir('opena2a-shield-status-', (workDir) => [
+    detectTool('Secretless', workDir),
+    detectTool('AIM Core', workDir),
+    detectTool('ARP', workDir),
+    detectTool('Browser Guard', workDir),
+    detectTool('HMA', workDir),
+    detectTool('Registry', workDir),
+    detectTool('ConfigGuard', workDir),
+  ]);
 
   // Policy status
   const policyPath = join(shieldDir, SHIELD_POLICY_FILE);

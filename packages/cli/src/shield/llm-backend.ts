@@ -7,11 +7,17 @@
 //
 // Nesting prevention: if $CLAUDECODE is set, we're already inside a Claude
 // Code session and spawning `claude --print` would nest. Fall back to API.
+//
+// The `claude` binary is looked up only in PATH's absolute directories and
+// started by that absolute path, in an empty working directory made for the
+// call: a program reachable only through an empty or relative PATH entry,
+// resolved against the directory the command was started in, is never chosen
+// as the backend and never started.
 
 import { execFileSync } from 'node:child_process';
 import type { LlmBackend, LlmResponse } from './types.js';
-import { CHILD_ENV_CONTRACTS, childEnv } from '../adapters/registry.js';
-import { probeEnv } from '../util/child-env.js';
+import { childEnv } from '../adapters/registry.js';
+import { absolutePathDirs, programOnPath, withEmptyWorkDir } from '../util/program-on-path.js';
 
 const CLAUDE_CODE_TIMEOUT_MS = 30_000;
 
@@ -25,8 +31,12 @@ function estimateTokens(text: string): number {
  * Check if the Claude Code CLI binary is available and safe to call.
  *
  * Returns false if:
- *   - `which claude` fails (not installed)
+ *   - no absolute PATH directory holds an executable `claude` (an empty or
+ *     relative PATH entry is not searched)
  *   - $CLAUDECODE is set (nesting prevention)
+ *
+ * A lookup only: no program is started to find `claude`, so no discovery
+ * step sees ANTHROPIC_API_KEY (#246).
  */
 export function isClaudeCodeAvailable(): boolean {
   // Nesting prevention: if CLAUDECODE env var is set, we're already
@@ -35,20 +45,7 @@ export function isClaudeCodeAvailable(): boolean {
     return false;
   }
 
-  try {
-    const result = execFileSync('which', ['claude'], {
-      encoding: 'utf-8',
-      timeout: 5_000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      // Discovery only: the probe environment carries the contract's
-      // prefixes under the credential-name guard and none of its exact
-      // entries, so `which` never sees ANTHROPIC_API_KEY (#246).
-      env: probeEnv(CHILD_ENV_CONTRACTS.claude.envAllowPrefixes),
-    });
-    return result.trim().length > 0;
-  } catch {
-    return false;
-  }
+  return programOnPath('claude') !== null;
 }
 
 /**
@@ -88,51 +85,64 @@ export async function detectBackend(): Promise<{ backend: LlmBackend; apiKey?: s
  * Call the Claude Code CLI as an LLM backend.
  *
  * Uses `claude --print` with JSON output format and Haiku model
- * for cost-efficient, fast completions.
+ * for cost-efficient, fast completions. `claude` is started by the absolute
+ * path found in PATH's absolute directories, with PATH narrowed to those
+ * directories, in an empty working directory made for the call (the prompt is
+ * an argument; the call reads no project directory). Returns null, starting
+ * nothing, when no absolute PATH directory holds `claude` or no working
+ * directory can be made.
  */
 export function callClaudeCode(
   systemPrompt: string,
   userPrompt: string,
   _maxTokens: number,
 ): LlmResponse | null {
-  try {
-    const result = execFileSync('claude', [
-      '--print',
-      '--output-format', 'json',
-      '--model', 'haiku',
-      '--max-turns', '1',
-      '--no-session-persistence',
-      '--system-prompt', systemPrompt,
-      userPrompt,
-    ], {
-      encoding: 'utf-8',
-      timeout: CLAUDE_CODE_TIMEOUT_MS,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      // The `claude` contract (CHILD_ENV_CONTRACTS.claude): model credentials
-      // and endpoint selection, not the operator's whole environment (#246).
-      env: childEnv('claude'),
-    });
+  const claudePath = programOnPath('claude');
+  if (claudePath === null) return null;
 
-    // Parse JSON output from claude --print --output-format json
-    const parsed = JSON.parse(result) as {
-      result?: string;
-      cost_usd?: number;
-      duration_ms?: number;
-      num_turns?: number;
-    };
+  return withEmptyWorkDir('opena2a-shield-llm-', (workDir) => {
+    if (workDir.path === null) return null;
+    try {
+      const result = execFileSync(claudePath, [
+        '--print',
+        '--output-format', 'json',
+        '--model', 'haiku',
+        '--max-turns', '1',
+        '--no-session-persistence',
+        '--system-prompt', systemPrompt,
+        userPrompt,
+      ], {
+        encoding: 'utf-8',
+        timeout: CLAUDE_CODE_TIMEOUT_MS,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: workDir.path,
+        // The `claude` contract (CHILD_ENV_CONTRACTS.claude): model credentials
+        // and endpoint selection, not the operator's whole environment (#246).
+        // PATH alone is replaced, by its absolute directories.
+        env: childEnv('claude', { set: { PATH: absolutePathDirs() } }),
+      });
 
-    const text = parsed.result ?? '';
-    if (!text) return null;
+      // Parse JSON output from claude --print --output-format json
+      const parsed = JSON.parse(result) as {
+        result?: string;
+        cost_usd?: number;
+        duration_ms?: number;
+        num_turns?: number;
+      };
 
-    return {
-      text,
-      inputTokens: estimateTokens(systemPrompt + userPrompt),
-      outputTokens: estimateTokens(text),
-      backend: 'claude-code',
-    };
-  } catch {
-    return null;
-  }
+      const text = parsed.result ?? '';
+      if (!text) return null;
+
+      return {
+        text,
+        inputTokens: estimateTokens(systemPrompt + userPrompt),
+        outputTokens: estimateTokens(text),
+        backend: 'claude-code',
+      };
+    } catch {
+      return null;
+    }
+  });
 }
 
 /**
