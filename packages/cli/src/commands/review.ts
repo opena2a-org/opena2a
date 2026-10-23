@@ -889,8 +889,8 @@ export async function review(options: ReviewOptions): Promise<number> {
 
   // Community contribution
   try {
-    const { recordScanAndMaybePrompt, isContributeEnabled, submitScanReport } =
-      await import('../util/report-submission.js');
+    const { recordScanAndMaybePrompt, isContributeEnabled, submitScanReport } = await import('../util/report-submission.js');
+    const { getVersion } = await import('../util/version.js');
     // The contribute prompt is guidance, so --quiet suppresses it the same way
     // machine-readable mode does; the scan is still counted.
     await recordScanAndMaybePrompt({ machineReadable: quiet });
@@ -903,7 +903,7 @@ export async function review(options: ReviewOptions): Promise<number> {
           packageName: contribution.name,
           packageType: contribution.type,
           scannerName: 'opena2a-review',
-          scannerVersion: '0.6.3',
+          scannerVersion: getVersion(),
           overallScore: compositeScore,
           scanDurationMs: phases.reduce((sum, p) => sum + p.durationMs, 0),
           criticalCount: analyzerCounts.critical,

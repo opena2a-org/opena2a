@@ -211,6 +211,20 @@ describe('review contribution', () => {
     expect(report.scannerName).toBe('opena2a-review');
   });
 
+  // Regression: the report named scanner version 0.6.3, the CLI's version
+  // when the value was written, whatever version of the CLI ran the review;
+  // the Registry publishes it as the scan's tool version.
+  it('the scan is sent with the version of the CLI that ran it', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'revfix', version: '1.0.0' }));
+    const cliVersion = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8')).version;
+
+    await runReview(tempDir);
+
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
+    const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(report.scannerVersion).toBe(cliVersion);
+  });
+
   // Regression (#464): a matched advisory was added to the severity counts
   // sent with the report, as a finding of the reviewed package, while the
   // findings sent beside them left it out. The advisory concerns a
