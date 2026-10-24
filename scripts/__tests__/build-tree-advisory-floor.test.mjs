@@ -77,6 +77,12 @@ const CLEARED = [
       'GHSA-vfpm-58rq-9qcg',
     ],
   },
+  {
+    name: 'body-parser',
+    introduced: '2.0.0',
+    lastAffected: '2.3.0',
+    advisories: ['GHSA-27r3-jxmh-p828'],
+  },
 ];
 
 function parseVersion(version) {
