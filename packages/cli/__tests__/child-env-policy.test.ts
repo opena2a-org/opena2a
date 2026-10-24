@@ -13,16 +13,16 @@ function read(rel: string): string {
   return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 }
 
-/** Bullet entries of the `### Security` subsection under `## [Unreleased]`. */
-function unreleasedSecurityEntries(changelog: string): string[] {
+/** `### Security` bullets of the section directly above `## [<prior>]`. For #246, prior is 0.10.13, the last release
+ * cut before db035b8c: the section is [Unreleased] before the release cut and that release's own section after it. */
+function securityEntriesAbove(changelog: string, prior: string): string[] {
   const lines = changelog.split('\n');
-  const start = lines.findIndex(l => /^## \[Unreleased\]/.test(l));
-  expect(start, 'CHANGELOG has an [Unreleased] section').toBeGreaterThanOrEqual(0);
-  let end = lines.findIndex((l, i) => i > start && /^## \[/.test(l));
-  if (end === -1) end = lines.length;
+  const end = lines.findIndex(l => l.startsWith(`## [${prior}]`));
+  const start = lines.slice(0, Math.max(end, 0)).map(l => /^## /.test(l)).lastIndexOf(true);
+  expect(start, `CHANGELOG has a [${prior}] section and a section above it`).toBeGreaterThanOrEqual(0);
   const section = lines.slice(start + 1, end);
   const secStart = section.findIndex(l => /^### Security/.test(l));
-  expect(secStart, '[Unreleased] has a ### Security subsection').toBeGreaterThanOrEqual(0);
+  expect(secStart, `the section above [${prior}] has a ### Security subsection`).toBeGreaterThanOrEqual(0);
   let secEnd = section.findIndex((l, i) => i > secStart && /^### /.test(l));
   if (secEnd === -1) secEnd = section.length;
   const entries: string[] = [];
@@ -34,11 +34,11 @@ function unreleasedSecurityEntries(changelog: string): string[] {
 }
 
 describe('CHANGELOG Security entry (#246)', () => {
-  const entries = unreleasedSecurityEntries(read('CHANGELOG.md'));
-  const closing = entries.filter(e => e.includes('Closes #246'));
+  const changelog = read('CHANGELOG.md');
+  const closing = securityEntriesAbove(changelog, '0.10.13').filter(e => e.includes('Closes #246'));
 
-  it('one Unreleased Security entry closes #246', () => {
-    expect(closing).toHaveLength(1);
+  it('one Security entry of the first release after 0.10.13 closes #246, and no other line does', () => {
+    expect([closing.length, changelog.split('\n').filter(l => l.includes('Closes #246')).length]).toEqual([1, 1]);
   });
 
   it('the entry names the sites by path and the children as objects', () => {
