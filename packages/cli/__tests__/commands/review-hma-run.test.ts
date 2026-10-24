@@ -33,6 +33,8 @@ posix('runHmaPhase records why HMA produced no result', () => {
   });
 
   afterEach(() => {
+    // A test that timed out on the fake clock leaves it installed.
+    vi.useRealTimers();
     process.env.PATH = origPath;
     fs.rmSync(bin, { recursive: true, force: true });
   });
@@ -135,27 +137,51 @@ posix('runHmaPhase records why HMA produced no result', () => {
     expect(JSON.stringify(hma)).not.toContain(token);
   });
 
+  // The deadline runs on a fake clock that moves only when the test moves it.
+  // On a real clock a loaded machine let 500 ms pass before the version probe
+  // finished, and the run timed out there instead. The child processes and
+  // the test's own waits stay real.
   it('timedOut when the scan outlives the deadline, returns at the deadline and stops the scan', async () => {
     const pidFile = path.join(bin, 'scan.pid');
-    stubNpx(`${VERSION_OK}\necho $$ > '${pidFile}'\nexec sleep 20`);
-    const hma = await runHmaPhase('.', { timeoutMs: 500 });
-    expect(hma.run.status).toBe('timedOut');
-    expect(hma.run.reason).toBe('HMA stopped after 0.5 s on this tree');
-    expect(hma.run.durationMs).toBeLessThan(10_000);
-
-    const pid = Number(fs.readFileSync(pidFile, 'utf-8').trim());
+    stubNpx(`${VERSION_OK}\necho $$ > '${pidFile}'\nexec sleep 300`);
+    const scanStarted = (): boolean => fs.existsSync(pidFile) && /^\d+\n$/.test(fs.readFileSync(pidFile, 'utf-8'));
+    const realSetTimeout = globalThis.setTimeout;
+    const pause = (ms: number): Promise<void> => new Promise((r) => realSetTimeout(r, ms));
+    let pid = 0;
     const alive = (): boolean => {
+      if (pid <= 0) return false;
       try { process.kill(pid, 0); return true; } catch { return false; }
     };
     try {
-      for (let waited = 0; alive() && waited < 3_000; waited += 50) {
-        await new Promise((r) => setTimeout(r, 50));
+      const settled: { hma?: Awaited<ReturnType<typeof runHmaPhase>> } = {};
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      try {
+        const pending = runHmaPhase('.', { timeoutMs: 500 }).then((hma) => { settled.hma = hma; });
+        while (!settled.hma && !scanStarted()) await pause(10);
+        // A version probe that failed settles before the scan starts.
+        expect(settled.hma?.run).toBeUndefined();
+        pid = Number(fs.readFileSync(pidFile, 'utf-8').trim());
+
+        await vi.advanceTimersByTimeAsync(499);
+        expect(settled.hma?.run).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(settled.hma?.run).toMatchObject({
+          status: 'timedOut',
+          reason: 'HMA stopped after 0.5 s on this tree',
+          durationMs: 500,
+        });
+        await pending;
+      } finally {
+        vi.useRealTimers();
       }
+
+      // The scan sleeps 300 s, so one still running here was not stopped.
+      for (let waited = 0; alive() && waited < 20_000; waited += 50) await pause(50);
       expect(alive()).toBe(false);
     } finally {
       if (alive()) process.kill(pid, 'SIGKILL');
     }
-  });
+  }, 60_000);
 
   it('the terminal names a failed scan as failed, not as skipped or not installed', async () => {
     stubNpx(`${VERSION_OK}\necho "scanner crashed: out of memory" >&2\nexit 3`);
