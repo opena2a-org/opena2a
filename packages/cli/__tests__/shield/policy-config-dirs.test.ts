@@ -67,8 +67,8 @@ describe('the generated shield policy covers every known CLI, found or not', () 
     const { scan, policy } = await scanAndPolicy(project);
 
     expect(scan.clis.map((c) => c.name), 'neither CLI is detected').toEqual([]);
-    expect(policy.default.filesystem.deny).toContain(ghDir);
-    expect(policy.default.filesystem.deny).toContain(vercelDir);
+    expect(policy.default.filesystem.deny).toContain(`${ghDir}/`);
+    expect(policy.default.filesystem.deny).toContain(`${vercelDir}/`);
     expect(policy.default.processes.deny).toContain('gh');
     expect(policy.default.processes.deny).toContain('vercel');
   });
@@ -87,9 +87,11 @@ describe('the generated shield policy covers every known CLI, found or not', () 
     expect(present).toEqual(['kubectl']);
     // Every known name is denied; only a directory that exists is listed.
     for (const name of KNOWN_CLIS) expect(policy.default.processes.deny, name).toContain(name);
-    expect(policy.default.filesystem.deny).toContain(join(home, '.kube'));
-    expect(policy.default.filesystem.deny).not.toContain(join(home, '.terraform.d'));
-    expect(policy.default.filesystem.deny).not.toContain(join(home, '.vercel'));
+    expect(policy.default.filesystem.deny).toContain(`${join(home, '.kube')}/`);
+    for (const absent of [join(home, '.terraform.d'), join(home, '.vercel')]) {
+      expect(policy.default.filesystem.deny).not.toContain(absent);
+      expect(policy.default.filesystem.deny).not.toContain(`${absent}/`);
+    }
   });
 
   // A CLI reachable only through a relative PATH entry is not started and not
@@ -110,7 +112,7 @@ describe('the generated shield policy covers every known CLI, found or not', () 
 
     expect(existsSync(marker), 'the planted gh must not run').toBe(false);
     expect(scan.clis.map((c) => c.name)).not.toContain('gh');
-    expect(policy.default.filesystem.deny).toContain(ghDir);
+    expect(policy.default.filesystem.deny).toContain(`${ghDir}/`);
     expect(policy.default.processes.deny).toContain('gh');
   });
 
@@ -129,7 +131,7 @@ describe('the generated shield policy covers every known CLI, found or not', () 
     const { scan, policy } = await scanAndPolicy(project);
 
     expect(scan.clis.map((c) => c.name)).toEqual(['gh']);
-    expect(policy.default.filesystem.deny.filter((d) => d === ghDir)).toHaveLength(1);
+    expect(policy.default.filesystem.deny.filter((d) => d === ghDir || d === `${ghDir}/`)).toEqual([`${ghDir}/`]);
     expect(policy.default.processes.deny.filter((n) => n === 'gh')).toHaveLength(1);
   });
 

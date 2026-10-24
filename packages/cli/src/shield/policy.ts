@@ -166,14 +166,17 @@ export function generatePolicyFromScan(scan: EnvironmentScan): ShieldPolicy {
   }
 
   // Add every existing known CLI config dir to filesystem.deny, found or not:
-  // the credentials are there whether or not the CLI is.
+  // the credentials are there whether or not the CLI is. Each entry ends in
+  // '/', the form the defaults use, so it covers the files inside the
+  // directory as well as the directory itself.
   const configDirs = [
     ...scan.knownClis.filter((cli) => cli.configDirExists).map((cli) => cli.configDir),
     ...scan.clis.flatMap((cli) => (cli.configDir ? [cli.configDir] : [])),
   ];
   for (const configDir of configDirs) {
-    if (!policy.default.filesystem.deny.includes(configDir)) {
-      policy.default.filesystem.deny.push(configDir);
+    const entry = configDir.endsWith('/') ? configDir : `${configDir}/`;
+    if (!policy.default.filesystem.deny.includes(entry)) {
+      policy.default.filesystem.deny.push(entry);
     }
   }
 
