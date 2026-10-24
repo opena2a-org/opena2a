@@ -280,7 +280,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
           '@opena2a/contribute': '0.1.0',
           '@opena2a/credential-patterns': '0.1.3',
           '@opena2a/registry-client': '0.2.0',
-          '@opena2a/shared': '0.1.2',
+          '@opena2a/shared': '0.1.3',
           '@opena2a/telemetry': '0.3.0',
           'ai-trust': '^0.2.23',
           commander: '^13.1.0',
@@ -311,7 +311,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
       },
       shared: {
         // js-yaml parses the YAML forms of the project config (#455).
-        dependencies: { 'js-yaml': '^4.1.0', zod: '^3.24.0' },
+        dependencies: { 'js-yaml': '^4.1.0', zod: '^4.6.6' },
         devDependencies: { '@types/js-yaml': '^4.0.9', typescript: '^5.7.0', vitest: '^4.1.8' },
       },
       telemetry: {

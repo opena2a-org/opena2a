@@ -112,6 +112,53 @@ describe('loadProjectConfig', () => {
     expect(loadProjectConfig(dir)).toBeNull();
   });
 
+  it('fills every default when each section is present but empty', () => {
+    writeFileSync(join(dir, '.opena2a.json'), JSON.stringify({ version: 1, project: {}, scan: {}, protect: {}, registry: {} }));
+
+    expect(loadProjectConfig(dir)).toEqual({
+      version: 1,
+      project: { type: 'unknown' },
+      scan: { include: ['./'], exclude: ['node_modules', '.git', 'dist', 'build'] },
+      protect: { backend: 'local', autoFix: false },
+      registry: { url: '', contribute: false },
+    });
+  });
+
+  it('drops keys the schema does not name, at the top level and inside a section', () => {
+    writeFileSync(
+      join(dir, '.opena2a.json'),
+      JSON.stringify({ version: 1, extra: true, project: { name: 'demo', owner: 'someone' } }),
+    );
+
+    expect(loadProjectConfig(dir)).toEqual({ version: 1, project: { name: 'demo', type: 'unknown' } });
+  });
+
+  it('gives each load its own default lists', () => {
+    writeFileSync(join(dir, '.opena2a.json'), JSON.stringify({ version: 1, scan: {} }));
+
+    loadProjectConfig(dir)?.scan?.include.push('changed');
+
+    expect(loadProjectConfig(dir)?.scan?.include).toEqual(['./']);
+  });
+
+  const invalidValues: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
+    ['a project type outside the list', { project: { type: 'robot' } }, { project: { type: 'agent' } }],
+    ['a protect backend outside the list', { protect: { backend: 'vault' } }, { protect: { backend: 'keychain' } }],
+    ['a string where scan.include takes a list', { scan: { include: 'src' } }, { scan: { include: ['src'] } }],
+    ['a number inside scan.checks', { scan: { checks: [1] } }, { scan: { checks: ['1'] } }],
+    ['a string where protect.autoFix takes a boolean', { protect: { autoFix: 'true' } }, { protect: { autoFix: true } }],
+    ['null for a section', { registry: null }, { registry: {} }],
+    ['the version as a string', { version: '1' }, { version: 1 }],
+  ];
+
+  it.each(invalidValues)('returns null for %s, and loads the file once that value is corrected', (_label, invalid, corrected) => {
+    writeFileSync(join(dir, '.opena2a.json'), JSON.stringify({ version: 1, ...invalid }));
+    expect(loadProjectConfig(dir)).toBeNull();
+
+    writeFileSync(join(dir, '.opena2a.json'), JSON.stringify({ version: 1, ...corrected }));
+    expect(loadProjectConfig(dir)).not.toBeNull();
+  });
+
   it('returns null when no config file exists', () => {
     expect(loadProjectConfig(dir)).toBeNull();
   });
