@@ -255,7 +255,7 @@ describe('shell hook enforcement integration', () => {
 // ===========================================================================
 
 describe('enforcement full flow integration', () => {
-  it('enforce mode with denied binary records the deny verdict as a monitored event with stopped false', () => {
+  it('enforce mode with denied binary records the deny verdict as a monitored event', () => {
     const policy = setupPolicy('enforce');
 
     // Simulate the evaluate flow: parse command -> evaluate -> write event
@@ -276,7 +276,7 @@ describe('enforcement full flow integration', () => {
       action: 'command.monitored',
       target: commandString,
       outcome: 'monitored',
-      detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny', stopped: false },
+      detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny' },
       orgId: null,
       managed: false,
       agentId: null,
@@ -292,7 +292,6 @@ describe('enforcement full flow integration', () => {
       rule: 'processes.deny:terraform',
       mode: 'enforce',
       verdict: 'deny',
-      stopped: false,
     });
   });
 

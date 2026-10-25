@@ -333,7 +333,7 @@ async function handlePolicy(options: ShieldOptions): Promise<number> {
   process.stdout.write(gray('-'.repeat(40)) + '\n');
   process.stdout.write(`  Mode: ${cyan(policy.mode)}\n`);
   if (policy.mode === 'enforce') {
-    process.stdout.write(dim('    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands.\n'));
+    process.stdout.write(dim('    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands in zsh, or in bash unless extdebug is set.\n'));
   }
   process.stdout.write(`  Process deny:  ${policy.default.processes.deny.length} rules\n`);
   process.stdout.write(`  Process allow: ${policy.default.processes.allow.length} rules\n`);
@@ -411,8 +411,12 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
 
   // Record deny matches. This process does not stop the command, and the
   // installed hook runs it in a child before the shell acts, so it cannot see
-  // what the shell does next: the record is the verdict. Under enforce a deny
-  // is recorded as monitored, with `verdict: 'deny'` and `stopped: false`.
+  // what the shell does next: the record is the verdict and carries no field
+  // about whether the command ran. Under enforce a deny is recorded as
+  // monitored with `verdict: 'deny'`. The hook does not stop commands in zsh,
+  // or in bash unless extdebug is set: with `shopt -s extdebug`, bash skips a
+  // command when the DEBUG trap returns non-zero, which the hook does when
+  // this process exits 1.
   // A check with an explicit --action/--target attempts nothing and writes no
   // event; its verdict and exit code below are the same either way.
   if (!hasExplicitSubject) {
@@ -426,7 +430,7 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
         action: 'command.monitored',
         target: commandString ?? target,
         outcome: 'monitored',
-        detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny', stopped: false },
+        detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny' },
         orgId: null,
         managed: false,
         agentId: null,
@@ -458,7 +462,7 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
     if (decision.outcome === 'monitored') {
       process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}\n`);
     } else if (decision.outcome === 'blocked') {
-      process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}  mode=enforce  ${dim('Recorded; shell hooks do not stop commands.')}\n`);
+      process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}  mode=enforce  ${dim('Recorded; the hook does not stop commands in zsh, or in bash unless extdebug is set.')}\n`);
     }
   } else {
     // Direct invocation: the user typed `shield evaluate` to be told the
