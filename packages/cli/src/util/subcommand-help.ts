@@ -279,8 +279,13 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     examples: ['opena2a shield selfcheck'],
   },
   policy: {
-    summary: 'Show a summary of the loaded Shield policy: its mode and the rule counts per category.',
-    examples: ['opena2a shield policy', 'opena2a shield policy --format json'],
+    summary:
+      'Show a summary of the loaded Shield policy: its mode and the rule counts per category. ' +
+      'diff shows how ~/.opena2a/shield/policy.yaml differs from the policy as last recorded, and changes no file. ' +
+      'accept <hash> prints that difference, then records the policy as it is now when <hash> is the hash diff ' +
+      'printed for it: the recorded hash, a copy of the policy and its signature. Neither takes --dir.',
+    usage: '[diff | accept <hash>]',
+    examples: ['opena2a shield policy', 'opena2a shield policy --format json', 'opena2a shield policy diff'],
   },
   evaluate: {
     summary: 'Check an action against the Shield policy and print the verdict. Exits 1 when the policy blocks it.',

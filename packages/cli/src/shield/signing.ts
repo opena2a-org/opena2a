@@ -116,6 +116,29 @@ export function signAllArtifacts(): void {
 }
 
 /**
+ * Re-sign one artifact over `content`, the bytes the caller read and showed,
+ * rather than over a second read of the file. Every other entry of
+ * signatures.json is carried over as it is.
+ */
+export function resignArtifact(relPath: string, content: Buffer): ShieldSignature {
+  const signature: ShieldSignature = {
+    filePath: relPath,
+    hash: 'sha256:' + createHash('sha256').update(content).digest('hex'),
+    signedAt: new Date().toISOString(),
+    signedBy: signedByLabel(),
+    fileSize: content.length,
+  };
+
+  const previous = loadSignatures()?.signatures ?? [];
+  const at = previous.findIndex(s => s.filePath === relPath);
+  const signatures = previous.filter(s => s.filePath !== relPath);
+  signatures.splice(at === -1 ? signatures.length : at, 0, signature);
+
+  saveSignatures({ version: 1, signatures, updatedAt: signature.signedAt });
+  return signature;
+}
+
+/**
  * Load the signatures store from disk.
  * Returns null if the file does not exist or is malformed.
  */

@@ -3,15 +3,16 @@
  *
  * A policy edit printed "FAIL policy" and "FAIL artifact-signatures" with
  * hashes and nothing to run, and lockdown printed "System is in lockdown:
- * <reason>" and "Overall: LOCKDOWN" with exit 1: dead ends. The one command
- * that turns those rows green, `shield init`, re-records the policy hash and
- * re-signs the artifacts, so it erases the evidence instead of explaining it.
+ * <reason>" and "Overall: LOCKDOWN" with exit 1: dead ends. A changed policy
+ * now names `shield policy diff`, which shows the change and changes no file;
+ * the `shield policy accept <hash>` it prints records the policy once shown.
  *
  * This walks every failing state the checks can produce and requires, for
  * each FAIL: a next step at the end of the detail; a command that runs as
- * printed (shell steps are run here, `opena2a` steps are parsed against the
- * registered subcommands and flags); and no change to any file under the
- * Shield home while it runs. `shield init` and `--ci` are never the step.
+ * printed (shell steps and `shield policy diff` are run here, other `opena2a`
+ * steps are parsed against the registered subcommands, policy actions and
+ * flags); and no change to any file under the Shield home while it runs.
+ * `shield init`, `shield policy accept` and `--ci` are never the step.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -30,7 +31,8 @@ vi.mock('node:os', async (importOriginal) => {
 });
 
 const { runIntegrityChecks } = await import('../../src/shield/integrity.js');
-const { shield } = await import('../../src/commands/shield.js');
+const { shield, SHIELD_POLICY_VERBS } = await import('../../src/commands/shield.js');
+const { createDefaultPolicy } = await import('../../src/shield/policy.js');
 
 const INTEGRITY_SRC = path.resolve(__dirname, '../../src/shield/integrity.ts');
 const SHIELD_CMD_SRC = path.resolve(__dirname, '../../src/commands/shield.ts');
@@ -62,9 +64,9 @@ function sha256(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
 }
 
-/** Record the policy and sign it, as init does, then edit it. */
+/** Record the policy and sign it, as init does, then edit it: its mode moves from monitor to enforce. */
 function editRecordedPolicy(): void {
-  const policy = 'mode: monitor\nrules: []\n';
+  const policy = JSON.stringify(createDefaultPolicy('monitor'), null, 2) + '\n';
   fs.writeFileSync(path.join(shieldDir, 'policy.yaml'), policy);
   fs.writeFileSync(
     path.join(shieldDir, 'policy-hash.json'),
@@ -84,7 +86,9 @@ function editRecordedPolicy(): void {
       }],
     }),
   );
-  fs.writeFileSync(path.join(shieldDir, 'policy.yaml'), `${policy}# edited\n`);
+  const edited = policy.replace('"mode": "monitor"', '"mode": "enforce"');
+  expect(edited).not.toBe(policy);
+  fs.writeFileSync(path.join(shieldDir, 'policy.yaml'), edited);
 }
 
 function enterLockdown(reason: string): void {
@@ -206,12 +210,15 @@ function snapshot(dir: string, out: Record<string, string> = {}): Record<string,
 /** `shield` subcommands the dispatcher handles, and the flags `shield` registers. */
 function shieldSurface(): { subcommands: Set<string>; flags: Set<string> } {
   const dispatch = fs.readFileSync(SHIELD_CMD_SRC, 'utf-8');
+  // The dispatcher's own switch: a case label elsewhere in the file is not a subcommand.
+  const start = dispatch.indexOf('export async function shield(');
+  const body = dispatch.slice(start, dispatch.indexOf('default:', start));
   const subcommands = new Set(
-    [...dispatch.matchAll(/^\s*case '([a-z-]+)':/gm)].map((m) => m[1]),
+    [...body.matchAll(/^\s*case '([a-z-]+)':/gm)].map((m) => m[1]),
   );
   const index = fs.readFileSync(INDEX_SRC, 'utf-8');
-  const start = index.indexOf(".command('shield ");
-  const block = index.slice(start, index.indexOf('.action(', start));
+  const at = index.indexOf(".command('shield ");
+  const block = index.slice(at, index.indexOf('.action(', at));
   const flags = new Set([...block.matchAll(/\.option\('(--[a-z-]+)/g)].map((m) => m[1]));
   return { subcommands, flags };
 }
@@ -222,6 +229,13 @@ function expectOpena2aStepParses(step: string): void {
   expect(bin).toBe('opena2a');
   expect(command).toBe('shield');
   expect(subcommands.has(subcommand), `unregistered subcommand in "${step}"`).toBe(true);
+  // `shield policy` takes one action word, the only positional a step may carry.
+  const args = subcommand === 'policy' && rest[0] !== undefined && !rest[0].startsWith('--')
+    ? [rest.shift()!]
+    : [];
+  for (const action of args) {
+    expect(SHIELD_POLICY_VERBS.includes(action), `unrouted policy action in "${step}"`).toBe(true);
+  }
   for (const token of rest) {
     expect(token.startsWith('--'), `unexpected argument in "${step}"`).toBe(true);
     expect(flags.has(token), `unregistered flag in "${step}"`).toBe(true);
@@ -230,6 +244,17 @@ function expectOpena2aStepParses(step: string): void {
 
 function failsOf(checks: IntegrityCheck[]): IntegrityCheck[] {
   return checks.filter((c) => c.status === 'fail');
+}
+
+/** Run a command with its output discarded; returns its exit code. */
+async function quietly(fn: () => Promise<number>): Promise<number> {
+  vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+  vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  try {
+    return await fn();
+  } finally {
+    vi.restoreAllMocks();
+  }
 }
 
 async function captureSelfcheck(): Promise<{ rc: number; out: string }> {
@@ -251,7 +276,7 @@ async function captureSelfcheck(): Promise<{ rc: number; out: string }> {
 
 describe('every selfcheck FAIL detail names one next command', () => {
   for (const scenario of SCENARIOS) {
-    it(`${scenario.state}: each FAIL carries a step that runs and keeps the evidence`, () => {
+    it(`${scenario.state}: each FAIL carries a step that runs and keeps the evidence`, async () => {
       const fails = withScenario(scenario, () =>
         failsOf(runIntegrityChecks({ shell: 'zsh' }).checks),
       );
@@ -263,14 +288,22 @@ describe('every selfcheck FAIL detail names one next command', () => {
         expect(step, `${check.name} FAIL has no next step: ${check.detail}`).toBeTruthy();
         expect(check.detail.endsWith(`: ${step}`)).toBe(true);
         expect(step).not.toMatch(/\bshield\s+init\b/);
+        expect(step).not.toMatch(/\bpolicy\s+accept\b/);
         expect(step).not.toMatch(/--ci\b/);
 
+        const before = snapshot(tempHome);
+        if (step === 'opena2a shield policy diff') {
+          expectOpena2aStepParses(step);
+          const rc = await quietly(() => shield({ subcommand: 'policy', args: ['diff'] }));
+          expect(rc, `"${step}" exited ${rc}`).toBe(0);
+          expect(snapshot(tempHome)).toEqual(before);
+          continue;
+        }
         if (step!.startsWith('opena2a ')) {
           expectOpena2aStepParses(step!);
           continue;
         }
 
-        const before = snapshot(tempHome);
         const run = spawnSync('/bin/sh', ['-c', step!], { encoding: 'utf-8' });
         expect(run.status, `"${step}" exited ${run.status}: ${run.stderr}`).toBe(0);
         expect(snapshot(tempHome)).toEqual(before);
@@ -314,8 +347,9 @@ describe('every selfcheck FAIL detail names one next command', () => {
     const fails = failsOf(runIntegrityChecks({ shell: 'zsh' }).checks);
     const policy = fails.find((c) => c.name === 'policy');
     const artifacts = fails.find((c) => c.name === 'artifact-signatures');
-    expect(policy?.nextStep).toBe(`cat '${path.join(shieldDir, 'policy.yaml')}'`);
-    expect(artifacts?.nextStep).toBe(`ls -l '${shieldDir}'`);
+    // The failing artifact is policy.yaml, so both rows name the same read.
+    expect(policy?.nextStep).toBe('opena2a shield policy diff');
+    expect(artifacts?.nextStep).toBe('opena2a shield policy diff');
   });
 
   it('lockdown names opena2a shield recover --verify', () => {
@@ -343,9 +377,7 @@ describe('every selfcheck FAIL detail names one next command', () => {
     expect(rc).toBe(1);
     expect(snapshot(tempHome)).toEqual(before);
     // The failures it lists carry their own steps.
-    expect(err.replace(STRIP_ANSI, '')).toContain(
-      `Review the policy as it is now: cat '${path.join(shieldDir, 'policy.yaml')}'`,
-    );
+    expect(err.replace(STRIP_ANSI, '')).toContain('See what changed: opena2a shield policy diff');
   });
 
   it('a path with a quote in it is still one argument when run as printed', () => {

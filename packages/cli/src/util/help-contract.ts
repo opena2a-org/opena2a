@@ -202,10 +202,10 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   shield: {
     exit: [
       ['0', 'the subcommand succeeded'],
-      ['1', 'init found hardcoded credentials, selfcheck found Shield compromised or in lockdown, evaluate blocked the action, no policy is loaded, recover --verify failed, suggest, explain or triage have no LLM backend, or an unknown subcommand'],
+      ['1', "init found hardcoded credentials, selfcheck found Shield compromised or in lockdown, evaluate blocked the action, no policy is loaded, policy diff or accept found a policy that does not parse or was given --dir, policy accept was not given the policy's hash or ran in lockdown, recover --verify failed, suggest, explain or triage have no LLM backend, or an unknown subcommand"],
     ],
     json: 'prints JSON',
-    ci: 'init prints JSON, rewrites an existing policy, and skips --shell-hook and --ai-tools; other subcommands are unchanged',
+    ci: 'init prints JSON, rewrites an existing policy unless it changed since it was recorded, and skips --shell-hook and --ai-tools; other subcommands are unchanged',
   },
   review: {
     exit: [
