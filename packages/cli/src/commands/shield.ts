@@ -6,7 +6,7 @@
  * - status:    Tool availability, policy mode, integrity state
  * - log:       Query the Shield event log
  * - selfcheck: Check Shield's own files, hook and event log (alias: check)
- * - policy:    Show loaded policy summary
+ * - policy:    Show loaded policy summary; diff and accept its changes
  * - evaluate:  Evaluate an action against the policy
  * - recover:   Exit lockdown mode
  * - report:    Generate a security posture report
@@ -94,7 +94,7 @@ export async function shield(options: ShieldOptions): Promise<number> {
       process.stderr.write('  status     Tool availability, policy mode, integrity state\n');
       process.stderr.write('  log        Query the Shield event log\n');
       process.stderr.write("  selfcheck  Check Shield's own files, hook and event log\n");
-      process.stderr.write('  policy     Show loaded policy summary\n');
+      process.stderr.write('  policy     Show loaded policy summary; diff and accept its changes\n');
       process.stderr.write('  evaluate   Evaluate an action against the policy\n');
       process.stderr.write('  recover    Exit lockdown mode\n');
       process.stderr.write('  report     Generate a security posture report\n');
@@ -268,7 +268,48 @@ async function handleSelfcheck(options: ShieldOptions): Promise<number> {
   return (state.status === 'compromised' || state.status === 'lockdown') ? 1 : 0;
 }
 
+/** The actions `shield policy` takes; with none it prints the policy summary. */
+export const SHIELD_POLICY_VERBS: readonly string[] = ['diff', 'accept'];
+
+/**
+ * `shield policy diff` and `shield policy accept <hash>` (shield/policy-diff.ts).
+ * Both act on ~/.opena2a/shield/policy.yaml, the policy selfcheck verifies, so
+ * neither takes --dir. A word that is not an action is refused rather than
+ * answered with the summary, so a mistyped accept cannot read as done.
+ */
+async function handlePolicyVerb(verb: string, options: ShieldOptions): Promise<number> {
+  const isJson = options.format === 'json';
+  if (!SHIELD_POLICY_VERBS.includes(verb)) {
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ error: `Unknown policy action: ${verb}` }, null, 2) + '\n');
+    } else {
+      process.stderr.write(red(`Unknown policy action: ${printableText(verb)}\n`));
+      process.stderr.write('Usage: opena2a shield policy [diff | accept <hash>]\n');
+    }
+    return 1;
+  }
+
+  const { POLICY_DIR_REFUSAL, policyAccept, policyDiff } = await import('../shield/policy-diff.js');
+  if (options.dir !== undefined) {
+    if (isJson) {
+      const refusal = verb === 'accept'
+        ? { recorded: false, reason: POLICY_DIR_REFUSAL }
+        : { error: POLICY_DIR_REFUSAL };
+      process.stdout.write(JSON.stringify(refusal, null, 2) + '\n');
+    } else {
+      process.stderr.write(red(POLICY_DIR_REFUSAL) + '\n');
+    }
+    return 1;
+  }
+  return verb === 'diff'
+    ? policyDiff({ json: isJson })
+    : policyAccept(options.args?.[1], { json: isJson });
+}
+
 async function handlePolicy(options: ShieldOptions): Promise<number> {
+  const verb = options.args?.[0];
+  if (verb !== undefined && !verb.startsWith('-')) return handlePolicyVerb(verb, options);
+
   const { loadPolicy } = await import('../shield/policy.js');
   const isJson = options.format === 'json';
 

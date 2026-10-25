@@ -9,12 +9,12 @@ import type {
   DetectedMcpServer,
   DetectedOAuthSession,
 } from './types.js';
-import { SHIELD_DIR, SHIELD_SCAN_FILE, SHIELD_POLICY_FILE } from './types.js';
+import { SHIELD_DIR, SHIELD_SCAN_FILE, SHIELD_POLICY_FILE, SHIELD_LLM_CACHE_FILE } from './types.js';
 import { detectEnvironment } from './detect.js';
 import { generatePolicyFromScan, savePolicy } from './policy.js';
 import { writeEvent, getShieldDir } from './events.js';
-import { recordPolicyHash, getExpectedHookContent } from './integrity.js';
-import { signAllArtifacts } from './signing.js';
+import { recordPolicyHash, getExpectedHookContent, policyChangedSinceRecorded } from './integrity.js';
+import { signAllArtifacts, signArtifact, loadSignatures, saveSignatures } from './signing.js';
 import { configureAiTools } from './ai-tool-config.js';
 import type { AiToolConfigResult } from './ai-tool-config.js';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
@@ -274,14 +274,30 @@ export async function shieldInit(options: {
   const policy = generatePolicyFromScan(scan);
   const shieldDir = getShieldDir();
   const policyPath = join(shieldDir, SHIELD_POLICY_FILE);
+  // A policy edited after it was recorded is kept as it is, under --ci too,
+  // and is neither recorded nor signed here: that would turn its selfcheck
+  // rows green on a change nobody was shown. `shield policy diff` shows the
+  // change and `shield policy accept` records it.
+  const policyChanged = existsSync(policyPath) && policyChangedSinceRecorded(policyPath);
 
-  if (existsSync(policyPath) && !ci) {
+  if (policyChanged) {
+    const kept = '  Existing policy kept. It has changed since it was recorded.\n' +
+      '  See what changed: opena2a shield policy diff\n';
+    if (isText) {
+      process.stdout.write(yellow(kept));
+      process.stdout.write(dim('  To regenerate: delete ~/.opena2a/shield/policy.yaml and re-run init\n'));
+    } else {
+      // stdout carries the JSON result.
+      process.stderr.write(kept);
+    }
+  } else if (existsSync(policyPath) && !ci) {
     if (isText) {
       process.stdout.write(yellow('  Existing policy found. Preserving current policy.\n'));
       process.stdout.write(dim('  To regenerate: delete ~/.opena2a/shield/policy.yaml and re-run init\n'));
     }
   } else {
     savePolicy(policy, policyPath);
+    // Records the hash and keeps a copy of the bytes for `shield policy diff`.
     recordPolicyHash(policyPath);
     if (isText) {
       process.stdout.write(green('  Policy generated (adaptive mode)\n'));
@@ -410,8 +426,14 @@ export async function shieldInit(options: {
   const scanPath = join(shieldDir, SHIELD_SCAN_FILE);
   writeFileSync(scanPath, JSON.stringify(scan, null, 2) + '\n', { mode: 0o600 });
 
-  // Sign all Shield artifacts (policy.yaml, scan.json, llm-cache.json)
-  signAllArtifacts();
+  // Sign all Shield artifacts (policy.yaml, scan.json, llm-cache.json). A
+  // policy kept because it changed since it was recorded keeps the signature
+  // entry it has.
+  if (policyChanged) {
+    signArtifactsKeepingPolicyEntry(shieldDir);
+  } else {
+    signAllArtifacts();
+  }
 
   // Write init event
   writeEvent({
@@ -482,4 +504,20 @@ export async function shieldInit(options: {
 
   const hasFailure = credentialFindings > 0;
   return { exitCode: hasFailure ? 1 : 0, result };
+}
+
+/**
+ * Sign the artifacts signAllArtifacts signs other than policy.yaml (scan.json
+ * and llm-cache.json, where they exist), and carry the policy.yaml entry
+ * signatures.json holds over as it is, or leave it absent when there is none.
+ * Signing the policy here would record a change nobody was shown.
+ */
+function signArtifactsKeepingPolicyEntry(shieldDir: string): void {
+  const kept = loadSignatures()?.signatures.find((s) => s.filePath === SHIELD_POLICY_FILE);
+  const signatures = kept ? [kept] : [];
+  for (const file of [SHIELD_SCAN_FILE, SHIELD_LLM_CACHE_FILE]) {
+    const fullPath = join(shieldDir, file);
+    if (existsSync(fullPath)) signatures.push(signArtifact(fullPath));
+  }
+  saveSignatures({ version: 1, signatures, updatedAt: new Date().toISOString() });
 }
