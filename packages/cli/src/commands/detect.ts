@@ -774,7 +774,7 @@ function formatMcpTrustLabel(server: DetectedMcpServer): string {
     const score = Math.round(server.registryData.trustScore * 100);
     const parts = [`Trust: ${score}/100`];
     if (server.registryData.communityScans > 0) {
-      parts.push(`${server.registryData.communityScans} community scan${server.registryData.communityScans !== 1 ? 's' : ''}`);
+      parts.push(`${server.registryData.communityScans} shared scan${server.registryData.communityScans !== 1 ? 's' : ''} (unverified)`);
     }
     return cyan(` ${parts.join(' | ')}`);
   }

@@ -92,8 +92,23 @@ describe("renderCheckRichBlock — skill", () => {
     );
     expect(out.header.metaLines[3].text).toBe("License: MIT");
     expect(out.header.metaLines[4].text).toContain("607 downloads/wk (rising)");
-    expect(out.header.metaLines[4].text).toContain("4 community scans");
+    expect(out.header.metaLines[4].text).toContain("4 shared scans (unverified)");
     expect(out.header.metaLines[4].text).toContain("1 finding");
+  });
+
+  it("labels the count of shared scans unverified for 0, 1 and 2 scans", () => {
+    const meta = (n: number) =>
+      renderCheckRichBlock(
+        skillFixture({ header: { ...skillFixture().header, communityScans: n } }),
+      )
+        .header.metaLines.map((l) => l.text)
+        .join("\n");
+    expect(meta(0)).toContain("0 shared scans (unverified)");
+    expect(meta(1)).toContain("1 shared scan (unverified)");
+    expect(meta(2)).toContain("2 shared scans (unverified)");
+    for (const n of [0, 1, 2]) {
+      expect(meta(n)).not.toContain("community scan");
+    }
   });
 
   it("includes Hardcoded secrets section in clean state", () => {

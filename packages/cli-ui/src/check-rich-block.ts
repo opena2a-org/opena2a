@@ -262,7 +262,7 @@ function buildHeaderMetaLines(input: CheckRichBlockInput): RichBlockMetaLine[] {
   }
   if (typeof header.communityScans === "number") {
     parts5.push(
-      `${header.communityScans} community scan${header.communityScans === 1 ? "" : "s"}`,
+      `${header.communityScans} shared scan${header.communityScans === 1 ? "" : "s"} (unverified)`,
     );
   }
   if (typeof header.findingsCount === "number") {

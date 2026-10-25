@@ -34,7 +34,7 @@ export interface AgentManifest {
   registry: {
     /** Opt-in: share scan summaries with OpenA2A Registry (POST /v1/telemetry/scan) */
     contribute: boolean;
-    /** Opt-in: join Global Threat Intelligence Network for ARP runtime telemetry (POST /v1/telemetry/runtime) */
+    /** Opt-in: send ARP runtime anomaly events to the Registry (POST /v1/telemetry/runtime) */
     gtin: boolean;
     /** Hashed sensor token for GTIN (SHA256, generated locally, never reversible) */
     sensorToken: string | null;

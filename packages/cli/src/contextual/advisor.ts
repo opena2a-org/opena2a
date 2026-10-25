@@ -60,7 +60,7 @@ export function getContextualSuggestions(targetDir?: string): Suggestion[] {
   if (!config.contribute.enabled && lastScan) {
     suggestions.push({
       command: 'opena2a config contribute on',
-      reason: 'Help the community -- share scan summaries',
+      reason: 'Share scans with the OpenA2A Registry: summaries are counted in its public statistics, and `detect` also sends its findings',
       priority: 30,
     });
   }

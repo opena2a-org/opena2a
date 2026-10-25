@@ -104,7 +104,7 @@ async function main(): Promise<void> {
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, or sarif where a command produces it', 'text')
     .option('--json', 'Shorthand for --format json')
-    .option('--contribute', 'Share scan summaries with OpenA2A community')
+    .option('--contribute', "Share this scan's summary with the OpenA2A Registry")
     .option('--no-contribute', 'Skip community contribution for this invocation only')
     .option('--deep', 'Enable semantic analysis (ML-enhanced)')
     .option('--analm', 'AI-powered threat analysis using AnaLM')
