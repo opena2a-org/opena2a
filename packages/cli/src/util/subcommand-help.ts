@@ -246,7 +246,7 @@ export const SHIELD_HELP: SubcommandHelpRegistry = {
     usage: '[directory]',
     options: [
       { flag: '--dir <path>', description: 'Project directory (same as the positional)' },
-      { flag: '--shell-hook', description: 'Install the shell preexec hook' },
+      { flag: '--shell-hook', description: 'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands' },
       { flag: '--ai-tools', description: 'Configure AI tool settings' },
     ],
     examples: [
