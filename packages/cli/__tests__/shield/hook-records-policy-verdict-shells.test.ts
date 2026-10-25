@@ -1,26 +1,29 @@
 /**
  * (f) The installed hook in real interactive shells.
  *
- * For zsh, bash, and bash with `shopt -s extdebug` in turn: a scratch HOME
- * under `env -i` with telemetry off; the rc file holds the hook text
- * `shield init --shell-hook` writes; the policy is the default under
- * `mode: enforce`, which denies `aws`; PATH holds only a stub `aws` that
- * appends a line to a marker file and an `opena2a` that runs this build
- * (dist/index.js). Typing `aws s3 ls`:
+ * For zsh and bash with default options, bash with `shopt -s extdebug`, zsh
+ * with `setopt ERR_EXIT` and bash with `set -e` in turn: a scratch HOME under
+ * `env -i` with telemetry off; the rc file holds the case's option line, if
+ * any, then the hook text `shield init --shell-hook` writes; the policy is
+ * the default under `mode: enforce`, which denies `aws`; PATH holds only a
+ * stub `aws` that appends a line to a marker file and an `opena2a` that runs
+ * this build (dist/index.js). Typing `aws s3 ls`:
  *   - prints the MONITORED line that states the verdict, and
  *   - leaves, as the last event, the monitored record of the deny with no
  *     field about whether the command ran, the same record cell (a) asserts
  *     in-process.
- * In zsh and in bash without extdebug the stub runs: the hook does not stop
- * the command. In bash with extdebug set the stub does not run: bash skips a
- * command when the DEBUG trap returns non-zero, which the hook does when
- * `evaluate` exits 1. The record and the line are the same in both cases,
- * which is why neither claims the command ran.
+ * With default options zsh and bash run the stub. The hook returns non-zero
+ * when `evaluate` exits 1, and the other cases act on that: in bash with
+ * extdebug set the stub does not run, because bash skips a command when the
+ * DEBUG trap returns non-zero; with errexit the shell exits with a non-zero
+ * status before the stub runs and before `echo AFTER`. The record and the
+ * line are the same in each case, which is why neither claims the command
+ * ran.
  *
  * Before the cell types the command, a guard run in the same shell form
- * checks that `aws` resolves to the stub and, in bash, that `shopt extdebug`
- * reports the state the cell expects. PATH holds nothing else, so `aws` can
- * resolve to the stub or to nothing.
+ * checks that `aws` resolves to the stub and that errexit and, in bash,
+ * extdebug are in the state the cell expects. PATH holds nothing else, so
+ * `aws` can resolve to the stub or to nothing.
  *
  * A shell not installed where the suite runs is reported as a skipped case,
  * never as a pass. dist/index.js must exist (`npm run build`).
@@ -38,7 +41,7 @@ const CLI_PATH = path.resolve(__dirname, '../../dist/index.js');
 const ENV_BIN = '/usr/bin/env';
 
 const ENFORCE_HOOK_LINE =
-  'MONITORED  rule=processes.deny:aws  mode=enforce  Recorded; the hook does not stop commands in zsh, or in bash unless extdebug is set.';
+  'MONITORED  rule=processes.deny:aws  mode=enforce  Recorded; by default zsh and bash still run the command.';
 
 const ANSI = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g');
 const plain = (text: string): string => text.replace(ANSI, '');
@@ -61,17 +64,29 @@ interface ShellCase {
   name: 'zsh' | 'bash';
   path: string | null;
   rc: string;
-  /** bash only: `shopt -s extdebug` precedes the hook text in the rc file. */
-  extdebug: boolean;
-  /** Whether the shell runs the denied command after the hook returns 1. */
-  commandRuns: boolean;
+  /** The shell option line that precedes the hook text in the rc file; null for the default options. */
+  option: 'shopt -s extdebug' | 'setopt ERR_EXIT' | 'set -e' | null;
+  /**
+   * What the shell does with the denied command after the hook returns 1:
+   * runs it, skips it (bash with extdebug), or exits before running it
+   * (errexit).
+   */
+  then: 'runs' | 'skips' | 'exits';
 }
 
 const CASES: ShellCase[] = [
-  { name: 'zsh', path: findShell('zsh'), rc: '.zshrc', extdebug: false, commandRuns: true },
-  { name: 'bash', path: findShell('bash'), rc: '.bashrc', extdebug: false, commandRuns: true },
-  { name: 'bash', path: findShell('bash'), rc: '.bashrc', extdebug: true, commandRuns: false },
+  { name: 'zsh', path: findShell('zsh'), rc: '.zshrc', option: null, then: 'runs' },
+  { name: 'bash', path: findShell('bash'), rc: '.bashrc', option: null, then: 'runs' },
+  { name: 'bash', path: findShell('bash'), rc: '.bashrc', option: 'shopt -s extdebug', then: 'skips' },
+  { name: 'zsh', path: findShell('zsh'), rc: '.zshrc', option: 'setopt ERR_EXIT', then: 'exits' },
+  { name: 'bash', path: findShell('bash'), rc: '.bashrc', option: 'set -e', then: 'exits' },
 ];
+
+const OUTCOME: Record<ShellCase['then'], string> = {
+  runs: 'the command runs',
+  skips: 'bash skips the command',
+  exits: 'the shell exits before the command',
+};
 
 interface LoggedEvent {
   action: string;
@@ -83,10 +98,9 @@ interface LoggedEvent {
 
 describe('(f) the installed hook in a real interactive shell, mode: enforce', () => {
   for (const shell of CASES) {
-    const label = shell.extdebug ? `${shell.name} -i with shopt -s extdebug` : `${shell.name} -i`;
-    const outcome = shell.commandRuns ? 'the command runs' : 'bash skips the command';
+    const label = shell.option ? `${shell.name} -i with ${shell.option}` : `${shell.name} -i`;
     it.skipIf(shell.path === null)(
-      `${label}: typing aws s3 ls prints the MONITORED line, ${outcome}, and the deny is recorded as monitored with no field about whether the command ran`,
+      `${label}: typing aws s3 ls prints the MONITORED line, ${OUTCOME[shell.then]}, and the deny is recorded as monitored with no field about whether the command ran`,
       () => {
         expect(fs.existsSync(CLI_PATH), `${CLI_PATH} is missing: run npm run build`).toBe(true);
         const shellPath = shell.path as string;
@@ -113,7 +127,7 @@ describe('(f) the installed hook in a real interactive shell, mode: enforce', ()
           savePolicy(policy, path.join(home, SHIELD_DIR, SHIELD_POLICY_FILE));
           // What `shield init --shell-hook` appends to the rc file, after the
           // shell option the case sets.
-          const rcPrefix = shell.extdebug ? 'shopt -s extdebug\n' : '';
+          const rcPrefix = shell.option ? `${shell.option}\n` : '';
           fs.writeFileSync(path.join(home, shell.rc), '\n' + rcPrefix + getExpectedHookContent(shell.name) + '\n', {
             mode: 0o600,
           });
@@ -135,28 +149,42 @@ describe('(f) the installed hook in a real interactive shell, mode: enforce', ()
               { cwd: home, input, encoding: 'utf-8', timeout: 30_000 },
             );
 
-          // Guard: in this shell form, `aws` is the stub, and in bash the
-          // extdebug option is in the state the case expects.
-          const guardInput = shell.name === 'bash' ? 'command -v aws\nshopt extdebug\nexit\n' : 'command -v aws\nexit\n';
-          const guard = typeInto(guardInput);
-          expect(guard.error).toBeUndefined();
-          expect(guard.stdout.split('\n')).toContain(path.join(bin, 'aws'));
+          // Guard: in this shell form, `aws` is the stub, and errexit and, in
+          // bash, extdebug are in the state the case expects. Each state is
+          // printed from an `if`, so a false test does not end an errexit
+          // shell before the next line.
+          const guardLines = ['command -v aws', "if [[ -o errexit ]]; then echo 'errexit on'; else echo 'errexit off'; fi"];
           if (shell.name === 'bash') {
-            expect(guard.stdout).toMatch(new RegExp(`^extdebug\\s+${shell.extdebug ? 'on' : 'off'}$`, 'm'));
+            guardLines.push("if shopt -q extdebug; then echo 'extdebug on'; else echo 'extdebug off'; fi");
+          }
+          const guard = typeInto([...guardLines, 'exit', ''].join('\n'));
+          expect(guard.error).toBeUndefined();
+          const guardOut = guard.stdout.split('\n');
+          expect(guardOut).toContain(path.join(bin, 'aws'));
+          expect(guardOut).toContain(`errexit ${shell.then === 'exits' ? 'on' : 'off'}`);
+          if (shell.name === 'bash') {
+            expect(guardOut).toContain(`extdebug ${shell.option === 'shopt -s extdebug' ? 'on' : 'off'}`);
           }
           expect(fs.existsSync(marker)).toBe(false);
 
           const result = typeInto('aws s3 ls\necho AFTER\nexit\n');
           expect(result.error).toBeUndefined();
-          expect(result.status).toBe(0);
+          if (shell.then === 'exits') {
+            // errexit: the shell exits on the hook's non-zero return.
+            // toBeGreaterThan fails on a null status, so a shell ended by a
+            // signal does not pass.
+            expect(result.status).toBeGreaterThan(0);
+          } else {
+            expect(result.status).toBe(0);
+          }
           expect(result.stdout + result.stderr).not.toContain('refused: HARNESS_NO_LIVE_TRANSPORT');
 
-          if (shell.commandRuns) {
-            // The command ran: the hook does not stop commands in zsh, or in
-            // bash unless extdebug is set.
+          if (shell.then === 'runs') {
+            // With default options the shell still runs the command.
             expect(fs.readFileSync(marker, 'utf-8')).toBe('ran s3 ls\n');
           } else {
-            // bash with extdebug skips the command after the trap returns 1.
+            // bash with extdebug skips the command after the trap returns 1;
+            // with errexit the shell exits before running it.
             expect(fs.existsSync(marker)).toBe(false);
           }
 
@@ -184,7 +212,12 @@ describe('(f) the installed hook in a real interactive shell, mode: enforce', ()
 
           const lines = plain(result.stdout).split('\n');
           expect(lines).toContain(ENFORCE_HOOK_LINE);
-          expect(lines.indexOf(ENFORCE_HOOK_LINE)).toBeLessThan(lines.indexOf('AFTER'));
+          if (shell.then === 'exits') {
+            // The shell exited before reading `echo AFTER`.
+            expect(lines).not.toContain('AFTER');
+          } else {
+            expect(lines.indexOf(ENFORCE_HOOK_LINE)).toBeLessThan(lines.indexOf('AFTER'));
+          }
           expect(plain(result.stdout)).not.toMatch(/blocked/i);
         } finally {
           fs.rmSync(home, { recursive: true, force: true });
