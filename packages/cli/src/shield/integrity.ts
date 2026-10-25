@@ -3,6 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   readFileSync,
   writeFileSync,
@@ -14,7 +15,7 @@ import { homedir } from 'node:os';
 
 import type { IntegrityCheck, IntegrityState, IntegrityStatus } from './types.js';
 import { SHIELD_POLICY_FILE } from './types.js';
-import { verifyAllArtifacts } from './signing.js';
+import { verifyAllArtifacts, verifyArtifact } from './signing.js';
 import { verifyEventLog, type EventLogVerification } from './events.js';
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ function getShieldDir(): string {
 }
 
 /** Quote a value for a POSIX shell, so a cited command runs as printed. */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -42,8 +43,9 @@ export interface NextStep {
  *
  * The step must leave the evidence of the failure in place: it reads, or (in
  * lockdown) verifies before it unlocks. It is never `shield init`, which
- * re-records the policy hash and re-signs the artifacts, so the failing rows
- * turn green without anyone having looked at what changed.
+ * keeps a changed policy as it is, and never `shield policy accept`, which
+ * records it: a step that turned the failing rows green would do so without
+ * anyone having looked at what changed.
  */
 function failCheck(
   name: string,
@@ -81,28 +83,85 @@ export function computeFileHash(filePath: string): string {
 // Policy hash recording & verification
 // ---------------------------------------------------------------------------
 
+const POLICY_HASH_FILE = 'policy-hash.json';
+
 /**
- * Compute the hash of a policy file and persist it to
- * `~/.opena2a/shield/policy-hash.json` with restricted permissions.
+ * The policy's bytes as last recorded, kept beside the recorded hash so
+ * `shield policy diff` can show a later change line by line. It is used only
+ * while its sha256 equals the recorded hash.
+ */
+export const POLICY_RECORDED_FILE = 'policy.recorded.yaml';
+
+/** What policy-hash.json holds: the policy's sha256 and when it was recorded. */
+export interface PolicyRecord {
+  hash: string;
+  recordedAt: string;
+}
+
+/**
+ * Record the policy file as it is now, from one read of it: see
+ * recordPolicyContent.
  */
 export function recordPolicyHash(policyPath: string): void {
-  const hash = computeFileHash(policyPath);
+  recordPolicyContent(readFileSync(policyPath));
+}
+
+/**
+ * Record `content` as the policy: its sha256 in
+ * `~/.opena2a/shield/policy-hash.json`, the record selfcheck compares the
+ * policy with, and the bytes themselves in policy.recorded.yaml. Both are
+ * written with restricted permissions.
+ */
+export function recordPolicyContent(content: Buffer): PolicyRecord {
   const shieldDir = getShieldDir();
 
   if (!existsSync(shieldDir)) {
     mkdirSync(shieldDir, { recursive: true, mode: 0o700 });
   }
 
-  const record = {
-    hash,
+  const record: PolicyRecord = {
+    hash: createHash('sha256').update(content).digest('hex'),
     recordedAt: new Date().toISOString(),
   };
 
-  const hashFile = join(shieldDir, 'policy-hash.json');
+  const hashFile = join(shieldDir, POLICY_HASH_FILE);
   writeFileSync(hashFile, JSON.stringify(record, null, 2), {
     encoding: 'utf-8',
     mode: 0o600,
   });
+
+  const copyFile = join(shieldDir, POLICY_RECORDED_FILE);
+  writeFileSync(copyFile, content, { mode: 0o600 });
+  chmodSync(copyFile, 0o600);
+
+  return record;
+}
+
+/**
+ * The policy's record: null when no hash has been recorded, and 'unreadable'
+ * when policy-hash.json holds no hash and time that can be read.
+ */
+export function readPolicyRecord(): PolicyRecord | 'unreadable' | null {
+  const hashFile = join(getShieldDir(), POLICY_HASH_FILE);
+  if (!existsSync(hashFile)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(hashFile, 'utf-8')) as Partial<PolicyRecord> | null;
+    if (typeof parsed?.hash !== 'string' || typeof parsed.recordedAt !== 'string') return 'unreadable';
+    return { hash: parsed.hash, recordedAt: parsed.recordedAt };
+  } catch {
+    return 'unreadable';
+  }
+}
+
+/**
+ * Whether the policy at `policyPath` differs from the hash recorded for it:
+ * it was edited after it was recorded. False when no hash can be read, as
+ * nothing then says what the policy was.
+ */
+export function policyChangedSinceRecorded(policyPath: string): boolean {
+  const record = readPolicyRecord();
+  if (record === null || record === 'unreadable') return false;
+  return computeFileHash(policyPath) !== record.hash;
 }
 
 /**
@@ -127,7 +186,7 @@ export function verifyPolicyIntegrity(
     return { valid: true, detail: 'No policy file found; nothing to verify.' };
   }
 
-  const hashFile = join(getShieldDir(), 'policy-hash.json');
+  const hashFile = join(getShieldDir(), POLICY_HASH_FILE);
 
   if (!existsSync(hashFile)) {
     return {
@@ -155,13 +214,20 @@ export function verifyPolicyIntegrity(
 
   return {
     valid: false,
-    detail: `Policy file has been modified since ${recorded.recordedAt}. Expected hash ${recorded.hash}, got ${currentHash}.`,
-    nextStep: {
-      label: 'Review the policy as it is now',
-      command: `cat ${shellQuote(resolvedPath)}`,
-    },
+    detail: `Policy file has changed since it was recorded at ${recorded.recordedAt}. Expected hash ${recorded.hash}, got ${currentHash}.`,
+    nextStep: POLICY_DIFF_STEP,
   };
 }
+
+/**
+ * The step of a policy that changed since it was recorded or signed: diff
+ * reads and changes no file. The `shield policy accept <hash>` line it prints
+ * records the policy once the change has been shown.
+ */
+const POLICY_DIFF_STEP: NextStep = {
+  label: 'See what changed',
+  command: 'opena2a shield policy diff',
+};
 
 // ---------------------------------------------------------------------------
 // Shell hook content & verification
@@ -515,17 +581,22 @@ export function runIntegrityChecks(options: {
   // 4. Process integrity
   const processCheck = verifyProcessIntegrity();
 
-  // 5. Artifact signatures
+  // 5. Artifact signatures. A changed policy.yaml gets the policy row's step;
+  // a changed scan.json or llm-cache.json, or a missing policy.yaml, gets the
+  // listing of the directory.
   const artifactResult = verifyAllArtifacts();
+  const policyFile = join(getShieldDir(), SHIELD_POLICY_FILE);
   const artifactCheck: IntegrityCheck = artifactResult.valid
     ? { name: 'artifact-signatures', status: 'pass', detail: artifactResult.detail, checkedAt: now }
     : failCheck(
       'artifact-signatures',
       artifactResult.detail,
-      {
-        label: 'See when each signed file last changed',
-        command: `ls -l ${shellQuote(getShieldDir())}`,
-      },
+      existsSync(policyFile) && !verifyArtifact(policyFile).valid
+        ? POLICY_DIFF_STEP
+        : {
+          label: 'See when each signed file last changed',
+          command: `ls -l ${shellQuote(getShieldDir())}`,
+        },
       now,
     );
 

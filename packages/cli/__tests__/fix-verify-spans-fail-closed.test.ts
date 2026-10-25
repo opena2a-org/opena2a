@@ -30,10 +30,11 @@ const PARAMETER = /"\$\{([A-Za-z_][A-Za-z0-9_]*):\?([^"}]*)\}"/g;
 const ANSI = /\x1b\[[0-9;]*m/g;
 /**
  * `<...>` tokens in the subcommand help's usage, flag and example strings,
- * counted on the tree this conversion started from. Usage syntax keeps its
+ * counted on the tree this conversion started from, plus the `<hash>` of
+ * `shield policy`'s usage `[diff | accept <hash>]`. Usage syntax keeps its
  * angle brackets, so the count does not move with it.
  */
-const USAGE_PLACEHOLDER_TOKENS = 63;
+const USAGE_PLACEHOLDER_TOKENS = 64;
 
 // Every command below runs in-process. HOME is an empty directory so none of
 // them reads or writes the real one, auth stays in a file there, and the
