@@ -1,15 +1,18 @@
 /**
  * `opena2a shield evaluate`, as the shell hook runs it, records the policy
- * verdict. The hook does not stop the command.
+ * verdict. The hook does not stop commands in zsh, or in bash unless
+ * extdebug is set.
  *
  * `shield init --shell-hook` installs a zsh `preexec` function or a bash
  * `DEBUG` trap that runs `opena2a shield evaluate "<command line>"` before
  * the shell runs each interactive command, with stderr discarded. `evaluate`
  * runs as a child of the shell: it does not stop the command and cannot see
  * what the shell does next. So under `mode: enforce` a deny is recorded as
- * `command.monitored` with `verdict: "deny"` and `stopped: false`, and the
- * one line the hook keeps (stdout) states the verdict and that shell hooks
- * do not stop commands.
+ * `command.monitored` with `verdict: "deny"` and no field about whether the
+ * command ran, and the one line the hook keeps (stdout) states the verdict
+ * and that the hook does not stop commands in zsh, or in bash unless
+ * extdebug is set. With `shopt -s extdebug`, bash skips a command when the
+ * DEBUG trap returns non-zero, which the hook does when `evaluate` exits 1.
  *
  * A check with an explicit `--action`/`--target` attempts nothing, so it
  * writes no event. It prints its verdict and exits 1 on a deny under
@@ -50,7 +53,7 @@ type Mode = 'adaptive' | 'monitor' | 'enforce';
 
 /** The line a hook-mode deny under enforce prints, colours removed. */
 const ENFORCE_HOOK_LINE =
-  'MONITORED  rule=processes.deny:aws  mode=enforce  Recorded; shell hooks do not stop commands.\n';
+  'MONITORED  rule=processes.deny:aws  mode=enforce  Recorded; the hook does not stop commands in zsh, or in bash unless extdebug is set.\n';
 
 const ANSI = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g');
 const plain = (text: string): string => text.replace(ANSI, '');
@@ -148,7 +151,7 @@ function expectLogUnchanged(before: Buffer): void {
 // ===========================================================================
 
 describe('(a) hook-mode deny under mode: enforce', () => {
-  it('records command.monitored with verdict deny and stopped false, prints the MONITORED line on stdout, and exits 1', async () => {
+  it('records command.monitored with verdict deny and no field about whether the command ran, prints the MONITORED line on stdout, and exits 1', async () => {
     writePolicy('enforce');
 
     // The installed hook's form: one positional argument, no --dir.
@@ -167,12 +170,14 @@ describe('(a) hook-mode deny under mode: enforce', () => {
       severity: 'medium',
       target: 'aws s3 ls',
     });
+    // toEqual is exact on keys: the record carries no `stopped` field, since
+    // this process cannot see whether the shell ran the command.
     expect(last.detail).toEqual({
       rule: 'processes.deny:aws',
       mode: 'enforce',
       verdict: 'deny',
-      stopped: false,
     });
+    expect(Object.keys(last.detail)).not.toContain('stopped');
 
     expect(plain(stdout)).toBe(ENFORCE_HOOK_LINE);
     expect(plain(stderr)).not.toMatch(/blocked/i);
@@ -477,10 +482,10 @@ describe('(e) no shield help entry, shield option or Step 7 line says a hook sto
 
   it('negative control: the wording that states the control does not fire', () => {
     for (const text of [
-      'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands',
-      '  The hook records the policy verdict for each interactive command; it does not stop commands.\\n',
-      '    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands.\\n',
-      'Recorded; shell hooks do not stop commands.',
+      'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set',
+      '  The hook records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set.\\n',
+      '    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands in zsh, or in bash unless extdebug is set.\\n',
+      'Recorded; the hook does not stop commands in zsh, or in bash unless extdebug is set.',
       'Check an action against the Shield policy and print the verdict. Exits 1 when the policy blocks it.',
     ]) {
       expect(claimsAHookStopsACommand(text), text).toBe(false);
@@ -492,12 +497,13 @@ describe('(e) no shield help entry, shield option or Step 7 line says a hook sto
 // Help and setup text name what the hook does
 // ===========================================================================
 
-describe('help, init and shield policy text state that the hook records the verdict and does not stop commands', () => {
+describe('help, init and shield policy text state that the hook records the verdict and does not stop commands in zsh, or in bash unless extdebug is set', () => {
   const HOOK_HELP =
-    'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands';
-  const INIT_LINE = '  The hook records the policy verdict for each interactive command; it does not stop commands.\\n';
+    'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set';
+  const INIT_LINE =
+    '  The hook records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set.\\n';
   const POLICY_LINE =
-    '    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands.';
+    '    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands in zsh, or in bash unless extdebug is set.';
 
   it('shield init help describes --shell-hook', () => {
     const option = SHIELD_HELP.init?.options?.find(o => o.flag === '--shell-hook');

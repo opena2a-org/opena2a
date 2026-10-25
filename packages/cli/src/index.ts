@@ -719,7 +719,7 @@ analysis runs and results can be shared with the community.
     .option('--archive-log', 'Archive a broken event log and start a fresh chain (recover)')
     .option('--analyze', 'Enable LLM analysis')
     .option('--report <path>', 'Write HTML posture report to file')
-    .option('--shell-hook', 'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands (shield init only)')
+    .option('--shell-hook', 'Install a zsh or bash hook that records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set (shield init only)')
     .option('--ai-tools', 'Configure AI tool settings (shield init only)')
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
       // --help prints help and never runs the subcommand (#132)

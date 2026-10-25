@@ -234,7 +234,8 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     maxSimultaneousChildren: 1,
     spawns:
       'spawnSync(env -i zsh -i | bash -i) with the installed hook text in a scratch HOME and a PATH ' +
-      'that holds only a stub aws and an opena2a wrapper to dist/index.js, one shell run at a time',
+      'that holds only a stub aws and an opena2a wrapper to dist/index.js, one shell run at a time; ' +
+      'bash runs once more with shopt -s extdebug ahead of the hook text in the rc file',
   },
   'commands/printed-path-commands.test.ts': {
     shape: 'sync',

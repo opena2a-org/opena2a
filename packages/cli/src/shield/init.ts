@@ -321,13 +321,13 @@ export async function shieldInit(options: {
     if (rcContent.includes('opena2a_shield_preexec') || rcContent.includes('opena2a_shield_debug')) {
       shellHookInstalled = true;
       if (isText) process.stdout.write(green('  Shell hooks already installed\n'));
-      if (isText) process.stdout.write(dim('  The hook records the policy verdict for each interactive command; it does not stop commands.\n'));
+      if (isText) process.stdout.write(dim('  The hook records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set.\n'));
     } else {
       const hookContent = getExpectedHookContent(shell);
       appendFileSync(rcFile, '\n' + hookContent + '\n', { mode: 0o600 });
       shellHookInstalled = true;
       if (isText) process.stdout.write(green(`  Shell hooks installed in ~/.${shell}rc\n`));
-      if (isText) process.stdout.write(dim('  The hook records the policy verdict for each interactive command; it does not stop commands.\n'));
+      if (isText) process.stdout.write(dim('  The hook records the policy verdict for each interactive command; it does not stop commands in zsh, or in bash unless extdebug is set.\n'));
     }
   } else if (!options.shellHook) {
     if (isText) process.stdout.write(dim('  Skipped (opt-in: use --shell-hook to install)\n'));
