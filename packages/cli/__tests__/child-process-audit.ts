@@ -229,6 +229,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(/bin/sh -c <the next step a failing selfcheck check prints>), one ' +
       'at a time, to run each step as printed against a scratch HOME',
   },
+  'shield/hook-records-policy-verdict-shells.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(env -i zsh -i | bash -i) with the installed hook text in a scratch HOME and a PATH ' +
+      'that holds only a stub aws and an opena2a wrapper to dist/index.js, one shell run at a time',
+  },
   'commands/printed-path-commands.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,

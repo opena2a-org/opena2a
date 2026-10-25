@@ -255,7 +255,7 @@ describe('shell hook enforcement integration', () => {
 // ===========================================================================
 
 describe('enforcement full flow integration', () => {
-  it('enforce mode with denied binary produces blocked outcome and event', () => {
+  it('enforce mode with denied binary records the deny verdict as a monitored event with stopped false', () => {
     const policy = setupPolicy('enforce');
 
     // Simulate the evaluate flow: parse command -> evaluate -> write event
@@ -263,19 +263,20 @@ describe('enforcement full flow integration', () => {
     const firstWord = commandString.trim().split(/[\s|;&]/)[0] ?? commandString;
     const decision = evaluatePolicy(policy, null, 'processes', firstWord);
 
+    // The policy's decision under enforce; the record below is the verdict.
     expect(decision.outcome).toBe('blocked');
 
     // Write the event as handleEvaluate would
     writeEvent({
       source: 'shield',
       category: 'enforcement',
-      severity: 'high',
+      severity: 'medium',
       agent: null,
       sessionId: null,
-      action: 'command.blocked',
+      action: 'command.monitored',
       target: commandString,
-      outcome: 'blocked',
-      detail: { rule: decision.rule, mode: policy.mode },
+      outcome: 'monitored',
+      detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny', stopped: false },
       orgId: null,
       managed: false,
       agentId: null,
@@ -284,7 +285,15 @@ describe('enforcement full flow integration', () => {
     const events = readEvents({ category: 'enforcement' });
     expect(events.length).toBe(1);
     expect(events[0].target).toBe('terraform apply');
-    expect(events[0].severity).toBe('high');
+    expect(events[0].severity).toBe('medium');
+    expect(events[0].action).toBe('command.monitored');
+    expect(events[0].outcome).toBe('monitored');
+    expect(events[0].detail).toEqual({
+      rule: 'processes.deny:terraform',
+      mode: 'enforce',
+      verdict: 'deny',
+      stopped: false,
+    });
   });
 
   it('monitor mode with denied binary produces monitored outcome and medium event', () => {

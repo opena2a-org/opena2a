@@ -332,6 +332,9 @@ async function handlePolicy(options: ShieldOptions): Promise<number> {
   process.stdout.write(bold('Shield Policy\n'));
   process.stdout.write(gray('-'.repeat(40)) + '\n');
   process.stdout.write(`  Mode: ${cyan(policy.mode)}\n`);
+  if (policy.mode === 'enforce') {
+    process.stdout.write(dim('    shield evaluate exits 1 on a deny; shell hooks record the verdict and do not stop commands.\n'));
+  }
   process.stdout.write(`  Process deny:  ${policy.default.processes.deny.length} rules\n`);
   process.stdout.write(`  Process allow: ${policy.default.processes.allow.length} rules\n`);
   process.stdout.write(`  Cred deny:     ${policy.default.credentials.deny.length} rules\n`);
@@ -406,47 +409,56 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
 
   const decision = evaluatePolicy(policy, agent, category, target);
 
-  // Write enforcement events for non-allowed decisions
-  if (decision.outcome === 'blocked') {
-    writeEvent({
-      source: 'shield',
-      category: 'enforcement',
-      severity: 'high',
-      agent,
-      sessionId: null,
-      action: 'command.blocked',
-      target: commandString ?? target,
-      outcome: 'blocked',
-      detail: { rule: decision.rule, mode: policy.mode },
-      orgId: null,
-      managed: false,
-      agentId: null,
-    });
-    process.stderr.write(`[shield] blocked: ${commandString ?? target} (rule: ${decision.rule})\n`);
-  } else if (decision.outcome === 'monitored') {
-    writeEvent({
-      source: 'shield',
-      category: 'enforcement',
-      severity: 'medium',
-      agent,
-      sessionId: null,
-      action: 'command.monitored',
-      target: commandString ?? target,
-      outcome: 'monitored',
-      detail: { rule: decision.rule, mode: policy.mode },
-      orgId: null,
-      managed: false,
-      agentId: null,
-    });
+  // Record deny matches. This process does not stop the command, and the
+  // installed hook runs it in a child before the shell acts, so it cannot see
+  // what the shell does next: the record is the verdict. Under enforce a deny
+  // is recorded as monitored, with `verdict: 'deny'` and `stopped: false`.
+  // A check with an explicit --action/--target attempts nothing and writes no
+  // event; its verdict and exit code below are the same either way.
+  if (!hasExplicitSubject) {
+    if (decision.outcome === 'blocked') {
+      writeEvent({
+        source: 'shield',
+        category: 'enforcement',
+        severity: 'medium',
+        agent,
+        sessionId: null,
+        action: 'command.monitored',
+        target: commandString ?? target,
+        outcome: 'monitored',
+        detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny', stopped: false },
+        orgId: null,
+        managed: false,
+        agentId: null,
+      });
+    } else if (decision.outcome === 'monitored') {
+      writeEvent({
+        source: 'shield',
+        category: 'enforcement',
+        severity: 'medium',
+        agent,
+        sessionId: null,
+        action: 'command.monitored',
+        target: commandString ?? target,
+        outcome: 'monitored',
+        detail: { rule: decision.rule, mode: policy.mode },
+        orgId: null,
+        managed: false,
+        agentId: null,
+      });
+    }
   }
 
   if (isJson) {
     process.stdout.write(JSON.stringify(decision, null, 2) + '\n');
   } else if (isHookInvocation) {
     // Hook mode: `evaluate` runs on EVERY interactive command, so an allowed
-    // verdict must stay silent. Only the exception is worth a line.
+    // verdict must stay silent. Only the exception is worth a line, and it
+    // goes to stdout: the installed hook discards stderr.
     if (decision.outcome === 'monitored') {
       process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}\n`);
+    } else if (decision.outcome === 'blocked') {
+      process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}  mode=enforce  ${dim('Recorded; shell hooks do not stop commands.')}\n`);
     }
   } else {
     // Direct invocation: the user typed `shield evaluate` to be told the
