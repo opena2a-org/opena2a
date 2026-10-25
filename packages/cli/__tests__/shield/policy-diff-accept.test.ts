@@ -684,7 +684,7 @@ describe('policy diff', () => {
     recordPolicy();
     const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8'));
     // An entry that would erase the line above it, and one with a zero-width space.
-    policy.default.processes.allow.push('ok\x1b[1A\x1b[2Kgit', 'aws​');
+    policy.default.processes.allow.push('ok\x1b[1A\x1b[2Kgit', 'aws\u200b');
     fs.writeFileSync(policyPath, JSON.stringify(policy, null, 2) + '\n');
 
     let raw = '';
@@ -697,7 +697,7 @@ describe('policy diff', () => {
     vi.restoreAllMocks();
 
     expect(rc).toBe(0);
-    expect(raw.replace(STRIP_ANSI, '')).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f​]/);
+    expect(raw.replace(STRIP_ANSI, '')).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u200b]/);
     expect(raw).toContain('+ "ok\\u001b[1A\\u001b[2Kgit"');
     expect(raw).toContain('+ "aws\\u{200b}"');
   });
