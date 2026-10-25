@@ -1,8 +1,14 @@
-# opena2a-cli
+# OpenA2A CLI
 
-![npm version](https://img.shields.io/npm/v/opena2a-cli.svg)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Status: stable](https://img.shields.io/badge/status-stable-green)](STATUS.md)
+[![npm version](https://img.shields.io/npm/v/opena2a-cli.svg)](https://www.npmjs.com/package/opena2a-cli)
+[![CI](https://github.com/opena2a-org/opena2a/actions/workflows/ci.yml/badge.svg)](https://github.com/opena2a-org/opena2a/actions/workflows/ci.yml)
+[![Security](https://github.com/opena2a-org/opena2a/actions/workflows/security.yml/badge.svg)](https://github.com/opena2a-org/opena2a/actions/workflows/security.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+> **[OpenA2A](https://github.com/opena2a-org)**: **CLI** · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/ai-browserguard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+
+[Website](https://opena2a.org/cli) · [Docs](https://opena2a.org/docs) · [Demos](https://opena2a.org/demos) · [Discord](https://discord.gg/uRZa3KXgEn)
 
 `opena2a` is the command-line front door to the OpenA2A security tools. It assesses an AI agent project for hardcoded credentials and unsafe configuration, applies the fixes, and hands scanning, credential storage and package trust lookups to HackMyAgent, Secretless and ai-trust.
 
