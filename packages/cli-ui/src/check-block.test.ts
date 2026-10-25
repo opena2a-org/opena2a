@@ -185,13 +185,20 @@ describe("renderCheckBlock — optional fields", () => {
     ).toBeUndefined();
   });
 
-  it("pluralizes community scans correctly", () => {
-    expect(
-      renderCheckBlock(base({ communityScans: 1 })).lines.find((l) => l.label === "Scans")!.value,
-    ).toBe("1 community scan");
-    expect(
-      renderCheckBlock(base({ communityScans: 7 })).lines.find((l) => l.label === "Scans")!.value,
-    ).toBe("7 community scans");
+  it("labels the count of shared scans unverified and pluralizes it", () => {
+    const scans = (n: number) =>
+      renderCheckBlock(base({ communityScans: n })).lines.find((l) => l.label === "Scans")!.value;
+    expect(scans(1)).toBe("1 shared scan (unverified)");
+    expect(scans(2)).toBe("2 shared scans (unverified)");
+    expect(scans(7)).toBe("7 shared scans (unverified)");
+  });
+
+  it("does not call the count community scans for 0, 1 or 2 scans", () => {
+    for (const n of [0, 1, 2]) {
+      expect(JSON.stringify(renderCheckBlock(base({ communityScans: n })))).not.toContain(
+        "community scan",
+      );
+    }
   });
 
   it("renders Last scan as warning when stale (>90 days)", () => {

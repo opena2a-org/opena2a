@@ -2,8 +2,8 @@
  * Advisory check utility -- fetches security advisories from the OpenA2A Registry
  * and warns users about flagged tools in their project.
  *
- * Called during `opena2a init` and `opena2a review` to surface intelligence from
- * community scan reports.
+ * Called during `opena2a init` and `opena2a review` to show the advisories the
+ * Registry has published for packages in the project.
  */
 
 import * as fs from 'node:fs';

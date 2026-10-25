@@ -48,7 +48,7 @@ export interface CheckBlockInput {
    * undefined) hide the meter and emit a "not scanned" line instead.
    */
   scanStatus?: string;
-  /** Count of independent community scans backing the score. */
+  /** Count of scans shared for the package's latest version. The Registry does not verify who sent them. */
   communityScans?: number;
   /** ISO timestamp of the most recent scan. Rendered via `formatScanAge`. */
   lastScannedAt?: string;
@@ -224,7 +224,7 @@ export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
   if (typeof communityScans === "number" && communityScans > 0) {
     lines.push({
       label: "Scans",
-      value: `${communityScans} community scan${communityScans === 1 ? "" : "s"}`,
+      value: `${communityScans} shared scan${communityScans === 1 ? "" : "s"} (unverified)`,
       tone: "default",
     });
   }
