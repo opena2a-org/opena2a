@@ -323,22 +323,6 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
 
 ## GitHub Actions from OpenA2A
 
-Two pre-built GitHub Actions simplify integration:
-
-### trust-gate-action
-
-Blocks merges when the trust score drops below a threshold:
-
-```yaml
-- name: Trust gate
-  uses: opena2a-org/trust-gate-action@v1
-  with:
-    threshold: 0.70
-    fail-on-unsigned: true
-```
-
-Repository: [opena2a-org/trust-gate-action](https://github.com/opena2a-org/trust-gate-action)
-
 ### trust-badge-action
 
 Generates a trust score badge for your README:

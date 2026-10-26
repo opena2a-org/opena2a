@@ -218,7 +218,7 @@ const WALKED_SET = [
   'docs/verifying-npm-packages.md',
 ] as const;
 
-/** Fence delimiter lines per walked file. Every count is even; total 198. */
+/** Fence delimiter lines per walked file. Every count is even; total 196. */
 const FENCE_LINES_PER_FILE: Readonly<Record<string, number>> = {
   'README.md': 10,
   'packages/cli/README.md': 8,
@@ -227,7 +227,7 @@ const FENCE_LINES_PER_FILE: Readonly<Record<string, number>> = {
   'docs/post-incident-review.md': 2,
   'docs/readme-header.md': 12,
   'docs/testing/release-smoke.md': 18,
-  'docs/use-cases/ci-cd.md': 34,
+  'docs/use-cases/ci-cd.md': 32,
   'docs/use-cases/developer.md': 30,
   'docs/use-cases/mcp-server-author.md': 26,
   'docs/use-cases/security-team.md': 34,
@@ -267,7 +267,7 @@ const CODE_SPAN_NPX_NOTE = {
 /** Two of the five code-span occurrences: the npx-hangs troubleshooting row. */
 const CODE_SPAN_ROW = {
   file: 'docs/use-cases/ci-cd.md',
-  line: 529,
+  line: 513,
   text: '| `npx opena2a-cli` hangs | npm prompting for install confirmation | Use `npx -y opena2a-cli` |',
 } as const;
 
@@ -369,9 +369,15 @@ const DISCRIMINATION: ReadonlyArray<{
  * Recomputed again when the README gained the ecosystem header block (title, badge row,
  * ecosystem line, link row): every README occurrence moved down six lines with its text
  * unchanged, and no other file changed.
+ *
+ * Recomputed again when the CI guide dropped its trust-gate-action section, which named an
+ * action repository that does not exist: the sentence counting two pre-built actions and the
+ * trust-gate-action block, with its one fence pair, went. The 13 ci-cd.md occurrences after it
+ * moved up sixteen lines with their text unchanged, the troubleshooting row from line 529 to
+ * 513, ci-cd.md's fence lines from 34 to 32, and no other file changed.
  */
 const OCCURRENCE_LINES_SHA256 =
-  '90c0199bac41548d56630f6ffc67f952ac13bbcffdaaab235ca4393e66f4bf75';
+  '6cf46b71dfa7afc3e0dede13698f5f7cadd46a62bb480239817b17a1d7080de2';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];
@@ -508,7 +514,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(perFile).toEqual(OCCURRENCES_PER_FILE);
   });
 
-  it('the code-span occurrences are the README capture label and npx note, the ci-cd.md:529 npx-hangs row (twice) and the developer.md:245 sign step', () => {
+  it('the code-span occurrences are the README capture label and npx note, the ci-cd.md:513 npx-hangs row (twice) and the developer.md:245 sign step', () => {
     const { codeSpan } = classify(readWalkedSet());
     expect(codeSpan).toEqual([
       { file: CODE_SPAN_CAPTURE_LABEL.file, line: CODE_SPAN_CAPTURE_LABEL.line, text: CODE_SPAN_CAPTURE_LABEL.text },
@@ -519,7 +525,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     ]);
   });
 
-  it('fence tracking closes in every walked file: an even count, 198 in total', () => {
+  it('fence tracking closes in every walked file: an even count, 196 in total', () => {
     const { fenceLines } = classify(readWalkedSet());
 
     expect(Object.fromEntries(fenceLines)).toEqual(FENCE_LINES_PER_FILE);
@@ -528,7 +534,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
         0,
       );
     }
-    expect([...fenceLines.values()].reduce((a, b) => a + b, 0)).toBe(198);
+    expect([...fenceLines.values()].reduce((a, b) => a + b, 0)).toBe(196);
   });
 
   it('no tilde fence and no indented fence line in the walked set', () => {
@@ -543,7 +549,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     const fences = lineKeys(sources, (l) => FENCE_LINE.test(l));
 
     expect(doubles).toEqual(fences);
-    expect(doubles).toHaveLength(198);
+    expect(doubles).toHaveLength(196);
   });
 
   it('the admit rule discriminates on backtick parity before the match', () => {
