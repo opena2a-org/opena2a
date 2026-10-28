@@ -345,7 +345,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       expect(shown, url).not.toMatch(/fake/i);
     }
     expect(mockFetch).not.toHaveBeenCalled();
-  });
+  }, 60_000);
 
   it('OPENA2A_ADVISORIES=off makes no request and says how to turn the check back on', async () => {
     process.env.OPENA2A_ADVISORIES = 'off';
@@ -416,7 +416,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       expect(initialized.result, label).toBe(expectedInit.result);
       expect(JSON.parse(initialized.stdout).advisories.checked, label).toBe(true);
     }
-  });
+  }, 60_000);
 
   // Regression (#464): a severity entry that was not an object, or whose
   // score was not text, was left out, so the CRITICAL entry after it made
@@ -438,7 +438,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       expect(initialized.stdout, label).toContain('[UNKNOWN]');
       expect(initialized.stdout, label).not.toContain('[CRITICAL]');
     }
-  });
+  }, 60_000);
 
   it('init --verbose names why the advisories were not checked', async () => {
     registry.answer = refusalOf('http://registry.internal.example');

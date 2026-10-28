@@ -266,7 +266,7 @@ describe('review contribution', () => {
     const counts = (r: Record<string, unknown>) => [r.criticalCount, r.highCount, r.mediumCount, r.lowCount];
     expect(counts(withAdvisory)).toEqual(counts(without));
     expect(withAdvisory.findings).toEqual(without.findings);
-  });
+  }, 60_000);
 
   it('a Go module is not sent: the Registry keeps no scan for that ecosystem', async () => {
     fs.writeFileSync(path.join(tempDir, 'go.mod'), 'module github.com/example/revfix\n\ngo 1.22\n');

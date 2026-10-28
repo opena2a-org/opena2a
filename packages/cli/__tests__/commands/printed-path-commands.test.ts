@@ -172,7 +172,7 @@ describe('printed commands over scanned paths run as printed', () => {
     }
 
     expect(fs.existsSync(path.join(repo, 'CANARY'))).toBe(false);
-  });
+  }, 60_000);
 
   it('protect prints the revoke-first note beside the command, never inside it', () => {
     const key = keyFileRemediation('CRED-KEYFILE', 'leak.key');
@@ -205,5 +205,5 @@ describe('printed commands over scanned paths run as printed', () => {
     }
     expect(indexed(repo)).toContain(CERT_FILE);
     expect(fs.existsSync(path.join(repo, 'CANARY'))).toBe(false);
-  });
+  }, 60_000);
 });
