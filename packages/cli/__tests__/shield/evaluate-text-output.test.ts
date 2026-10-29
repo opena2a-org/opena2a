@@ -147,10 +147,10 @@ describe('shield evaluate: the preexec hook stays silent (#255 guard)', () => {
   });
 
   it('stays silent when the hook passes an absolute-path command', async () => {
-    // The positional filter drops args starting with '/', so this reaches the
-    // same internal state as a bare invocation. Gating the verdict on the
-    // FILTERED command string (rather than on whether any arg was supplied)
-    // would make `/usr/bin/ls` print on every hook run.
+    // A command run by its path is evaluated like any other (`ls`, then
+    // `/usr/bin/ls`), and any argument makes this hook mode: the allowed
+    // verdict prints nothing. Gating the verdict on anything but whether an
+    // argument was supplied could make `/usr/bin/ls` print on every hook run.
     writePolicy(tempDir);
 
     await shield({ subcommand: 'evaluate', dir: tempDir, args: ['/usr/bin/ls -la'] });
