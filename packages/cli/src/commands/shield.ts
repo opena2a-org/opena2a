@@ -354,6 +354,7 @@ async function handlePolicy(options: ShieldOptions): Promise<number> {
 async function handleEvaluate(options: ShieldOptions): Promise<number> {
   const { loadPolicy, evaluatePolicy } = await import('../shield/policy.js');
   const { writeEvent } = await import('../shield/events.js');
+  const { programsOnLine } = await import('../shield/command-line.js');
   const isJson = options.format === 'json';
 
   const policy = loadPolicy(options.dir);
@@ -367,23 +368,21 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
     return 1;
   }
 
-  // Determine the command string from positional args.
-  // Filter out what looks like a directory path (starts with / or ./ or contains path separators).
+  // The positional args are the command line. The installed hooks pass it as
+  // one argument (`opena2a shield evaluate "$1"` in zsh, `"$BASH_COMMAND"`
+  // in bash), and every argument is part of it, a word written as a path
+  // included. The policy directory is given with --dir, never positionally.
   const rawArgs = options.args ?? [];
-  const commandArgs = rawArgs.filter(a => !a.startsWith('/') && !a.startsWith('./') && !a.startsWith('../'));
-  const commandString = commandArgs.length > 0 ? commandArgs.join(' ') : null;
 
   // An explicit --action/--target is unambiguously a human (or a script)
   // asking for a verdict: the preexec hook never passes them. This is the
   // form src/shield/findings.ts prints as remediation, so it must report.
   const hasExplicitSubject = Boolean(options.action || options.target);
 
-  // Otherwise hook mode is "a command was handed to us", keyed off the RAW
-  // args: the installed preexec hook is `opena2a shield evaluate "$1"` and
-  // always passes one. Keying off `commandString` instead would misread an
-  // absolute-path command (`/usr/bin/ls`, dropped by the filter above) as a
-  // direct invocation and print a verdict on every such hook run.
+  // Otherwise hook mode is "a command was handed to us": the installed
+  // preexec hook always passes one.
   const isHookInvocation = rawArgs.length > 0 && !hasExplicitSubject;
+  const commandLine = isHookInvocation ? rawArgs.join(' ') : null;
 
   const agent = options.agent ?? null;
   let category: string;
@@ -394,20 +393,30 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
     // bare category ('processes') and maps it internally.
     category = options.action ?? options.category ?? 'processes';
     target = options.target ?? '';
-  } else if (commandString) {
-    // Shell hook mode: parse the command to extract the binary name (first word).
-    // Handle pipes, subshells, and quoted strings by taking the first token.
-    const trimmed = commandString.trim();
-    const firstWord = trimmed.split(/[\s|;&]/)[0] ?? trimmed;
-    category = 'processes';
-    target = firstWord;
   } else {
-    // Explicit category mode (used by direct API calls)
+    // Explicit category mode (used by direct API calls), and a hook line
+    // that names no program.
     category = options.category ?? 'processes';
     target = '';
   }
 
-  const decision = evaluatePolicy(policy, agent, category, target);
+  // Shell hook mode: every program the line names is evaluated as a process,
+  // not only its first word. See shield/command-line.ts for how the line is
+  // read.
+  const programs = commandLine === null ? [] : programsOnLine(commandLine);
+  const decisions =
+    programs.length > 0
+      ? programs.map(program => evaluatePolicy(policy, agent, 'processes', program))
+      : [evaluatePolicy(policy, agent, category, target)];
+
+  // Each deny once per rule: a rule that denies two programs on the line, or
+  // a program by its basename and by its path, is one record.
+  const denies = decisions.filter(
+    (candidate, index) =>
+      (candidate.outcome === 'blocked' || candidate.outcome === 'monitored') &&
+      decisions.findIndex(other => other.rule === candidate.rule) === index,
+  );
+  const decision = denies.find(d => d.outcome === 'blocked') ?? denies[0] ?? decisions[0];
 
   // Record deny matches. This process does not stop the command, and the
   // installed hook runs it in a child before the shell acts, so it cannot see
@@ -420,37 +429,40 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
   // running it.
   // A check with an explicit --action/--target attempts nothing and writes no
   // event; its verdict and exit code below are the same either way.
+  // Each deny on the line is one record, and its target is the whole line.
   if (!hasExplicitSubject) {
-    if (decision.outcome === 'blocked') {
-      writeEvent({
-        source: 'shield',
-        category: 'enforcement',
-        severity: 'medium',
-        agent,
-        sessionId: null,
-        action: 'command.monitored',
-        target: commandString ?? target,
-        outcome: 'monitored',
-        detail: { rule: decision.rule, mode: 'enforce', verdict: 'deny' },
-        orgId: null,
-        managed: false,
-        agentId: null,
-      });
-    } else if (decision.outcome === 'monitored') {
-      writeEvent({
-        source: 'shield',
-        category: 'enforcement',
-        severity: 'medium',
-        agent,
-        sessionId: null,
-        action: 'command.monitored',
-        target: commandString ?? target,
-        outcome: 'monitored',
-        detail: { rule: decision.rule, mode: policy.mode },
-        orgId: null,
-        managed: false,
-        agentId: null,
-      });
+    for (const deny of denies) {
+      if (deny.outcome === 'blocked') {
+        writeEvent({
+          source: 'shield',
+          category: 'enforcement',
+          severity: 'medium',
+          agent,
+          sessionId: null,
+          action: 'command.monitored',
+          target: commandLine ?? target,
+          outcome: 'monitored',
+          detail: { rule: deny.rule, mode: 'enforce', verdict: 'deny' },
+          orgId: null,
+          managed: false,
+          agentId: null,
+        });
+      } else if (deny.outcome === 'monitored') {
+        writeEvent({
+          source: 'shield',
+          category: 'enforcement',
+          severity: 'medium',
+          agent,
+          sessionId: null,
+          action: 'command.monitored',
+          target: commandLine ?? target,
+          outcome: 'monitored',
+          detail: { rule: deny.rule, mode: policy.mode },
+          orgId: null,
+          managed: false,
+          agentId: null,
+        });
+      }
     }
   }
 
@@ -458,12 +470,14 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
     process.stdout.write(JSON.stringify(decision, null, 2) + '\n');
   } else if (isHookInvocation) {
     // Hook mode: `evaluate` runs on EVERY interactive command, so an allowed
-    // verdict must stay silent. Only the exception is worth a line, and it
-    // goes to stdout: the installed hook discards stderr.
-    if (decision.outcome === 'monitored') {
-      process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}\n`);
-    } else if (decision.outcome === 'blocked') {
-      process.stdout.write(`${yellow('MONITORED')}  rule=${decision.rule}  mode=enforce  ${dim('Recorded; by default zsh and bash still run the command.')}\n`);
+    // verdict must stay silent. Only the exception is worth a line, one per
+    // deny, and it goes to stdout: the installed hook discards stderr.
+    for (const deny of denies) {
+      if (deny.outcome === 'monitored') {
+        process.stdout.write(`${yellow('MONITORED')}  rule=${deny.rule}\n`);
+      } else if (deny.outcome === 'blocked') {
+        process.stdout.write(`${yellow('MONITORED')}  rule=${deny.rule}  mode=enforce  ${dim('Recorded; by default zsh and bash still run the command.')}\n`);
+      }
     }
   } else {
     // Direct invocation: the user typed `shield evaluate` to be told the
