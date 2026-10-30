@@ -4,6 +4,21 @@ All notable changes to `@opena2a/credential-patterns` will be documented in this
 
 ## Unreleased
 
+### `isKnownExample` reads only the matched value
+
+A full-format token on a line whose comment says "example" is reported: the
+placeholder decision reads only the matched value. Before, a match was hidden
+when its line held `example` anywhere, in any case, and also either held one
+of `//`, `#`, `/*`, `<!--`, `-->`, `'''` or `"""` anywhere (a URL's `//`
+included) or began with a doc-comment `*`, so `findRealMatch` skipped it and a
+scanner built on it reported the line clean. A consumer's scan now reports a
+token it hid before.
+The value rules are unchanged and still hide documentation values:
+`KNOWN_EXAMPLE_KEYS`, a `PLACEHOLDER_INDICATORS` word inside the value, a value
+of at least 20 characters with at most 6 distinct characters, and a localhost
+connection string with a demo password. `isKnownExample` keeps its `line`
+parameter, so no caller changes.
+
 ### Patterns match the token formats vendors issue today (opena2a-org/secretless-ai#135)
 
 Four patterns had a fixed length or shape that tokens issued today do not

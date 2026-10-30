@@ -53,11 +53,12 @@ The order of `CREDENTIAL_PATTERNS` is load-bearing: more specific prefixes (e.g.
 
 ## Allowlist semantics
 
-`isKnownExample(line, match, pattern?)` returns true if the matched value should be excluded from results. Three rules in order:
+`isKnownExample(line, match, pattern?)` returns true if the matched value should be excluded from results. Every rule reads the matched value; the rest of the line, a comment included, is not read, so a full-format token beside `// example` is reported. Four rules in order:
 
 1. The matched value is in `KNOWN_EXAMPLE_KEYS` (e.g. `AKIAIOSFODNN7EXAMPLE`).
 2. The matched value contains any `PLACEHOLDER_INDICATORS` substring (case-insensitive). With `pattern` given, a placeholder word that directly follows a value which is a complete match of the pattern on its own (`xoxb-…-<24 characters>sample`) does not count: the part in front of the word is the credential, and it is kept unless a rule of its own suppresses it. For `slack`, `github-pat`, `github-oauth`, `github-app` and `github-user-to-server`, whose body is a fixed length followed by an open run, a word that begins inside the fixed length and runs past it does not count either (`xoxb-…-<23 characters>x` then `xx`, `ghp_<34 characters>sa` then `mple`): the shortest prefix of the value that is a complete match on its own is the credential, kept on the same terms, unless that prefix holds a complete placeholder word.
-3. The line carries a comment marker (`//` or `#`) AND mentions `example`, `placeholder`, or `fake`.
+3. The matched value is at least 20 characters long and has at most 6 distinct characters (`0000…`, `DEADBEEF…`).
+4. The matched value is a connection string to `localhost`, `127.0.0.1` or `[::1]` whose password is a demo password such as `password123` or `changeme`.
 
 `findRealMatch(line, pattern)` walks every match on the line (promoting non-`/g` regexes to `/g`) and returns the first one that passes `isKnownExample`, which it calls with the pattern. Returns null if every match is allowlisted.
 

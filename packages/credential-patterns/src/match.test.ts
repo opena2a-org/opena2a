@@ -19,11 +19,12 @@ describe('isKnownExample (issue #50 — comment-marker precedence)', () => {
     expect(isKnownExample(line, match)).toBe(false);
   });
 
-  it('DOES treat a line with "example //" as a known example', () => {
-    const line = 'const key = "AKIASOMEOTHERKEY12345"; // example placeholder';
+  it('does NOT treat a line with "example //" as a known example: the comment is not read', () => {
+    const key = ['AKIA', 'SOMEOTHERKEY12345'].join('');
+    const line = `const key = "${key}"; // example placeholder`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(match).not.toBeNull();
-    expect(isKnownExample(line, match)).toBe(true);
+    expect(isKnownExample(line, match)).toBe(false);
   });
 
   it('treats the AKIAIOSFODNN7EXAMPLE public example as a known example', () => {
@@ -45,7 +46,9 @@ describe('isKnownExample (issue #50 — comment-marker precedence)', () => {
 describe('isKnownExample (0.1.1 — block-comment markers)', () => {
   // The 4 false-positive cases from hackmyagent dogfooding (2026-04-29) all
   // came back to the comment-marker branch only recognizing `//` and `#`. The
-  // rules expanded to JSDoc/HTML/Python doc-comment markers below.
+  // rules expanded to JSDoc/HTML/Python doc-comment markers below. A comment
+  // on the line is no longer read; each allowlisted value below carries
+  // `EXAMPLE` itself, so the value rule hides it.
 
   it('JSDoc continuation `* example AKIA...` is allowlisted', () => {
     const line = ' * example: AKIAEXAMPLEKEY1234567 in this docstring';
@@ -239,8 +242,7 @@ describe('findRealMatch (issue #51 — known-example shadowing)', () => {
   it('mixed-pattern line: AWS example + real GitHub PAT returns the PAT', () => {
     // Intentionally NO `//` or `#` markers — we're testing that the KNOWN_EXAMPLE_KEYS
     // match for AKIAIOSFODNN7EXAMPLE does not shadow the real GitHub PAT later on
-    // the same line. (Lines with comment+example context are an orthogonal case
-    // handled by isKnownExample directly.)
+    // the same line. (isKnownExample does not read a comment on the line.)
     const line = 'const old = "AKIAIOSFODNN7EXAMPLE"; const new_ = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";';
     const awsPattern = patternByName('AWS Access Key');
     const ghPattern = patternByName('GitHub Token');
@@ -513,10 +515,12 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
     expect(findRealMatch(line, pattern)).toBeNull();
   });
 
-  it('still suppresses a glued token on a line that marks it as an example in a comment', () => {
+  it('keeps a glued token on a line whose comment says example: the comment is not read', () => {
     const pattern = CREDENTIAL_PATTERNS.find(p => p.id === 'slack')!;
     const line = `const token = "${SLACK_GLUED}"; // example`;
-    expect(findRealMatch(line, pattern)).toBeNull();
+    const m = findRealMatch(line, pattern);
+    expect(m, 'slack glued token dropped by the comment').not.toBeNull();
+    expect(m![0]).toBe(SLACK_GLUED);
   });
 
   it('still suppresses a glued value whose token part has low entropy', () => {
@@ -531,4 +535,85 @@ describe('isKnownExample — a placeholder word glued to a complete token', () =
     const line = 'aws_secret_access_key = "abcdefghijklmnopqrstuvwxyz01234567sample"'; // FAKE
     expect(findRealMatch(line, pattern)).toBeNull();
   });
+});
+
+describe('isKnownExample — a comment on the line is not a placeholder marker', () => {
+  // The placeholder decision reads only the matched value: a full-format token
+  // on a line whose comment says "example" is reported, and the value rules
+  // still hide documentation values. The token is assembled at run time and is
+  // not a real token: its body is the alphabet, with no placeholder word in it.
+  const githubPat = CREDENTIAL_PATTERNS.find(p => p.id === 'github-pat')!;
+  const TOKEN = ['ghp', '_', 'abcdefghijklmnopqrstuvwxyz1234567890'].join('');
+
+  const COMMENTED: Array<[string, string]> = [
+    ['// example', `const token = "${TOKEN}"; // example`],
+    ['// example only', `const token = "${TOKEN}"; // example only`],
+    ['// for example, the CI token', `const token = "${TOKEN}"; // for example, the CI token`],
+    ['# example (python)', `token = "${TOKEN}"  # example`],
+    ['# example (yaml)', `token: ${TOKEN}  # example`],
+    ['/* example */', `const token = "${TOKEN}"; /* example */`],
+    ['<!-- example --> (markdown)', `Token: ${TOKEN} <!-- example -->`],
+    [' * Example: (JSDoc)', ` * Example: ${TOKEN}`],
+    ['// not an example: real', `const token = "${TOKEN}"; // not an example: real`],
+    ['// counterexample', `const token = "${TOKEN}"; // counterexample`],
+  ];
+
+  for (const [label, line] of COMMENTED) {
+    it(`reports a full-format token on a line whose comment is ${label}`, () => {
+      const m = line.match(githubPat.regex)!;
+      expect(m).not.toBeNull();
+      expect(m[0]).toBe(TOKEN);
+      expect(isKnownExample(line, m)).toBe(false);
+      expect(findRealMatch(line, githubPat)?.[0]).toBe(TOKEN);
+    });
+  }
+
+  it('reports a full-format token beside an https://api.example.com URL on a line with no comment', () => {
+    const line = `fetch("https://api.example.com/v1/user", { headers: { authorization: "token ${TOKEN}" } });`;
+    const m = line.match(githubPat.regex)!;
+    expect(m[0]).toBe(TOKEN);
+    expect(isKnownExample(line, m)).toBe(false);
+    expect(findRealMatch(line, githubPat)?.[0]).toBe(TOKEN);
+  });
+
+  it('reports a full-format token whose name, not its comment, says example', () => {
+    const line = `example_token = "${TOKEN}"  # rotate before release`;
+    const m = line.match(githubPat.regex)!;
+    expect(m[0]).toBe(TOKEN);
+    expect(isKnownExample(line, m)).toBe(false);
+    expect(findRealMatch(line, githubPat)?.[0]).toBe(TOKEN);
+  });
+
+  it('control: the same token on a line with no comment is reported (no value rule hides it)', () => {
+    const line = `const token = "${TOKEN}";`;
+    const m = line.match(githubPat.regex)!;
+    expect(isKnownExample(line, m)).toBe(false);
+    expect(isKnownExample(line, m, githubPat)).toBe(false);
+    expect(findRealMatch(line, githubPat)?.[0]).toBe(TOKEN);
+  });
+
+  // Value-rule controls: the value itself marks each one, so it stays hidden on
+  // a plain line and on a line whose comment says example.
+  const VALUE_RULES: Array<[string, string, string]> = [
+    ['a documented example key (KNOWN_EXAMPLE_KEYS)', 'aws-access', ['AKIA', 'IOSFODNN7', 'EXAMPLE'].join('')],
+    ['a value holding your_', 'gitlab', ['glpat-', 'your_', 'gitlab_token_here'].join('')],
+    ['a value holding example', 'github-pat', ['ghp', '_', 'example', 'abcdefghijklmnopqrstuvwxyz123'].join('')],
+    ['a value of at most 6 distinct characters', 'github-pat', ['ghp', '_', 'ab'.repeat(18)].join('')],
+    ['a localhost connection string with a demo password', 'postgres', ['postgres://', 'admin:password123', '@localhost:5432/mydb'].join('')],
+  ];
+
+  for (const [label, id, value] of VALUE_RULES) {
+    it(`control: ${label} stays hidden, with and without a comment saying example`, () => {
+      const pattern = CREDENTIAL_PATTERNS.find(p => p.id === id)!;
+      const plain = `const value = "${value}";`;
+      const commented = `${plain} // example`;
+      const m = plain.match(pattern.regex)!;
+      expect(m).not.toBeNull();
+      expect(m[0]).toBe(value);
+      expect(isKnownExample(plain, m)).toBe(true);
+      expect(isKnownExample(commented, commented.match(pattern.regex)!)).toBe(true);
+      expect(findRealMatch(plain, pattern)).toBeNull();
+      expect(findRealMatch(commented, pattern)).toBeNull();
+    });
+  }
 });
