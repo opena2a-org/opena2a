@@ -3,8 +3,8 @@
  *
  * In hook mode `shield evaluate` is handed one command line: the zsh preexec
  * hook passes the line as typed, the bash DEBUG trap passes $BASH_COMMAND.
- * programsOnLine() lists every program the line names, so that each one can
- * be evaluated against the policy:
+ * programsOnLine() lists the programs the line names in the places below, so
+ * that each one can be evaluated against the policy:
  *
  *  - The line is split at unquoted `;`, `&&`, `||`, `|`, `&`, newlines and
  *    subshell parentheses, and a case statement into its items. Quotes and
@@ -25,8 +25,14 @@
  *    string bash, sh, zsh or dash is given with -c, and the string env is
  *    given with -S are read the same way, wherever they sit on the line.
  *
- * A program reached through an alias, a function or a variable is not seen:
- * the line names it only by another word.
+ * Not every program a line can start is listed. A program reached through an
+ * alias, a function or a variable is not seen: the line names it only by
+ * another word. A program started by eval, by zsh's noglob, nocorrect or `-`
+ * precommand modifiers, by a wrapper other than the nine above (find -exec,
+ * watch, su -c), by a shell other than those four, by a shell that reads its
+ * commands from standard input (a here-document, a here-string, a pipe), or
+ * by bash's named coproc (`coproc NAME { ...; }`) is not seen either: only the
+ * word in the program's place is listed (eval, noglob, find, ksh, bash, NAME).
  */
 
 import * as path from 'node:path';
@@ -157,8 +163,9 @@ const ANSI_C_ESCAPES = new Map([
 ]);
 
 /**
- * Every program `line` names, in the order the line names them, each once.
- * A program written as a path is listed by its basename, then by the path.
+ * The programs `line` names in the places the comment at the top of this
+ * file lists, in the order the line names them, each once. A program written
+ * as a path is listed by its basename, then by the path.
  */
 export function programsOnLine(line: string): string[] {
   const programs: string[] = [];
