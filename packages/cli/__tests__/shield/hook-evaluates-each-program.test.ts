@@ -1,6 +1,6 @@
 /**
- * In hook mode, `opena2a shield evaluate "<line>"` evaluates each program the
- * command line names against the policy, and records each deny the way a
+ * In hook mode, `opena2a shield evaluate "<line>"` evaluates the program in
+ * each place listed below against the policy, and records each deny the way a
  * deny of a bare program name is recorded: one `command.monitored` event
  * whose target is the line, carrying the rule (and, under mode: enforce,
  * `verdict: "deny"`), and one MONITORED line on stdout.
