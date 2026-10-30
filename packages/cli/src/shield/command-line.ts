@@ -25,14 +25,18 @@
  *    string bash, sh, zsh or dash is given with -c, and the string env is
  *    given with -S are read the same way, wherever they sit on the line.
  *
- * Not every program a line can start is listed. A program reached through an
- * alias, a function or a variable is not seen: the line names it only by
- * another word. A program started by eval, by zsh's noglob, nocorrect or `-`
- * precommand modifiers, by a wrapper other than the nine above (find -exec,
- * watch, su -c), by a shell other than those four, by a shell that reads its
- * commands from standard input (a here-document, a here-string, a pipe), or
- * by bash's named coproc (`coproc NAME { ...; }`) is not seen either: only the
- * word in the program's place is listed (eval, noglob, find, ksh, bash, NAME).
+ * Not every program a line can start is listed; those not seen include the
+ * following. A program reached through an alias or a function: the line
+ * names it only by another word. A program whose name the shell builds from
+ * a variable, a glob or brace pattern, or a command substitution's output:
+ * the word is listed after quote removal, not expanded (`$X`, `aw?`,
+ * `{aws,}`, `$(echo aws)`). A program started by eval, by zsh's noglob,
+ * nocorrect or `-` precommand modifiers, by a wrapper other than the nine
+ * above (find -exec, watch, su -c), by a shell other than those four, by a
+ * shell that reads its commands from standard input (a here-document, a
+ * here-string, a pipe), or by bash's named coproc (`coproc NAME { ...; }`):
+ * only the word in the program's place is listed (eval, noglob, find, ksh,
+ * bash, NAME).
  */
 
 import * as path from 'node:path';
