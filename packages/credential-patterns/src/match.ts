@@ -42,22 +42,6 @@ function isLocalhostDemoConnectionString(value: string): boolean {
   return DEMO_PASSWORDS.has(password);
 }
 
-function isExampleInComment(line: string): boolean {
-  const lineLC = line.toLowerCase();
-  if (!lineLC.includes('example')) return false;
-  if (lineLC.includes('//')) return true;
-  if (lineLC.includes('#')) return true;
-  if (lineLC.includes('/*')) return true;
-  if (lineLC.includes('<!--')) return true;
-  if (lineLC.includes('-->')) return true;
-  if (lineLC.includes("'''")) return true;
-  if (lineLC.includes('"""')) return true;
-  // JSDoc continuation: line starts with optional whitespace then `*`.
-  // Anchored so `x * y` (multiplication) does NOT match.
-  if (/^\s*\*/.test(line)) return true;
-  return false;
-}
-
 /** Position of the earliest PLACEHOLDER_INDICATORS entry in `lower`, or -1. */
 function placeholderIndex(lower: string): number {
   let at = -1;
@@ -87,7 +71,7 @@ function anchored(regex: RegExp): RegExp {
  * match, and a whole-value placeholder test would then drop the token in
  * front of it, which is the token a `.replace('sample', '')` at runtime
  * turns back into the live one. The part before the word must pass every
- * other allowlist rule (known example, low entropy, comment marker) itself.
+ * other allowlist rule (known example, low entropy, localhost demo) itself.
  *
  * For a pattern whose body is a fixed length followed by an open run
  * (`[a-zA-Z0-9]{24}[a-zA-Z0-9]*`: slack and the GitHub `ghp_`, `gho_`, `ghs_`
@@ -135,6 +119,11 @@ function isPlaceholderGluedToValue(
  * from blocking docs that legitimately reference public example keys like
  * AKIAIOSFODNN7EXAMPLE.
  *
+ * Every rule reads the matched value. The rest of `line` is not read: a
+ * comment beside the value (`// example`, `# example`, `<!-- example -->`)
+ * is text the author of the line controls, so it never marks a full-format
+ * token as an example.
+ *
  * `pattern` is optional. When given, a placeholder word that directly follows
  * a value which is a complete match of the pattern on its own does not mark
  * that value as a placeholder (see {@link isPlaceholderGluedToValue}).
@@ -161,7 +150,6 @@ export function isKnownExample(
   // by shape.
   if (value.length >= 20 && new Set(value).size <= 6) return true;
   if (isLocalhostDemoConnectionString(value)) return true;
-  if (isExampleInComment(line)) return true;
   return false;
 }
 
