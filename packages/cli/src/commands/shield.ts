@@ -402,7 +402,8 @@ async function handleEvaluate(options: ShieldOptions): Promise<number> {
 
   // Shell hook mode: the program in each place shield/command-line.ts reads
   // is evaluated as a process, not only the line's first word. That file
-  // lists those places and the programs a line can start that it does not see.
+  // lists those places, and examples of programs a line can start that it
+  // does not see.
   const programs = commandLine === null ? [] : programsOnLine(commandLine);
   const decisions =
     programs.length > 0
