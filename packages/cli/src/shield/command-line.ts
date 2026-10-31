@@ -31,22 +31,31 @@
  * names it only by another word. A program whose name the shell builds from
  * a variable, a glob or brace pattern, or a command substitution's output:
  * the word is listed after quote removal, not expanded (`$X`, `aw?`,
- * `{aws,}`, `$(echo aws)`). A program started by eval, by zsh's noglob,
- * nocorrect or `-` precommand modifiers, by a wrapper other than the nine
- * above (find -exec, watch, su -c), by a shell other than those four, by a
- * shell that reads its commands from standard input (a here-document, a
- * here-string, a pipe), or by bash's named coproc (`coproc NAME { ...; }`):
- * only the word in the program's place is listed (eval, noglob, find, ksh,
- * bash, NAME).
+ * `{aws,}`, `$(echo aws)`). A program right after the `)` of a case pattern
+ * written without its opening parenthesis, in a case statement inside
+ * `$(...)`, `<(...)`, `>(...)` or zsh's `=(...)`: that `)` is read as the
+ * end of the substitution, and the program as a word of the command around
+ * it (`echo $(case $x in a) aws ;; esac)` lists echo and a). A program
+ * started by eval, by zsh's noglob, nocorrect or `-` precommand modifiers,
+ * by a wrapper other than the nine above (find -exec, watch, su -c), by a
+ * shell other than those four, by a shell that reads its commands from
+ * standard input (a here-document, a here-string, a pipe), or by bash's
+ * named coproc (`coproc NAME { ...; }`): only the word in the program's
+ * place is listed (eval, noglob, find, ksh, bash, NAME).
  */
 
 import * as path from 'node:path';
 
 /**
  * Nesting depth (command substitutions, -c strings) read word by word.
- * Deeper text is listed whole: every word in it is listed as a program.
+ * Deeper text is listed whole: its quotes and backslashes are removed as the
+ * shell removes them, which joins a word written in quoted or escaped
+ * pieces, and every word left is listed as a program.
  */
 const MAX_DEPTH = 8;
+
+/** What splits text nested deeper than MAX_DEPTH into words, quoted or not. */
+const DEEP_WORD_SEPARATORS = /[\s;&|()<>`${}]+/;
 
 /** A word of the line. */
 interface Word {
@@ -191,7 +200,7 @@ export function programsOnLine(line: string): string[] {
  */
 function read(line: string, depth: number, withPrograms: boolean, list: (name: string) => void): void {
   if (depth > MAX_DEPTH) {
-    for (const token of line.split(/[\s;&|()<>`$"'\\{}]+/)) {
+    for (const token of withoutQuotes(line).split(DEEP_WORD_SEPARATORS)) {
       if (token !== '') listProgram(token, list);
     }
     return;
@@ -221,6 +230,39 @@ function listProgram(text: string, list: (name: string) => void): void {
   const base = path.posix.basename(program);
   if (base !== '') list(base);
   if (program.includes('/') && program !== base) list(program);
+}
+
+/**
+ * `text` with its quotes and backslashes removed in one pass, as the shell
+ * removes them: `a""ws`, `'a'ws`, `a\ws`, `$'a\x77s'` and `a$"w"s` each
+ * become `aws`, and a backslash before a newline joins the two lines. Blanks
+ * and operators inside quotes are kept, so they still split words.
+ */
+function withoutQuotes(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '\\') {
+      if (i + 1 < text.length && text[i + 1] !== '\n') out += text[i + 1];
+      i += 2;
+      continue;
+    }
+    if (c === '$' && text[i + 1] === "'") {
+      const ansi = readAnsiC(text, i + 2);
+      out += ansi.text;
+      i = ansi.end;
+      continue;
+    }
+    if (c === '$' && text[i + 1] === '"') {
+      // $"..." is read as "...".
+      i += 1;
+      continue;
+    }
+    if (c !== "'" && c !== '"') out += c;
+    i += 1;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

@@ -295,6 +295,23 @@ describe('a parenthesis or a ${ that nothing closes', () => {
   ]);
 });
 
+describe('a case statement inside a substitution', () => {
+  expectCases([
+    // The `)` of a case pattern written without its opening parenthesis is
+    // read as the end of a `$(...)`, `<(...)`, `>(...)` or `=(...)` around it:
+    // the command right after it is read as words of the command around the
+    // substitution, and the pattern as a program. command-line.ts names this
+    // among the programs a line can start that it does not see.
+    ['echo $(case x in x) aws s3 ls ;; esac)', ['echo', 'x']],
+    ['cat <(case x in x) aws s3 ls ;; esac)', ['cat', 'x']],
+    // With its opening parenthesis, in backticks or in a subshell, the
+    // pattern ends no substitution and the item's command is a program.
+    ['echo $(case x in (x) aws s3 ls ;; esac)', ['echo', 'aws']],
+    ['echo `case x in x) aws s3 ls ;; esac`', ['echo', 'aws']],
+    ['(case x in x) aws s3 ls ;; esac)', ['aws']],
+  ]);
+});
+
 describe('parentheses inside a command', () => {
   expectCases([
     // A zsh glob or bash extglob group is a pattern, not a subshell.
@@ -331,6 +348,30 @@ describe('depth and size', () => {
     const programs = programsOnLine(line);
     expect(programs[0]).toBe('echo');
     expect(programs).toContain('aws');
+  });
+
+  it('reads text eight substitutions deep word by word', () => {
+    const line = 'echo ' + '$(echo '.repeat(7) + '$(a""ws s3 ls' + ')'.repeat(8);
+    expect(programsOnLine(line)).toEqual(['echo', 'aws']);
+  });
+
+  it.each<[string, string[]]>([
+    // A word written in quoted or escaped pieces is listed joined, as the
+    // shell joins it.
+    ['a""ws s3 ls', ['aws', 's3', 'ls']],
+    ["'a'ws s3 ls", ['aws', 's3', 'ls']],
+    ['a\\ws s3 ls', ['aws', 's3', 'ls']],
+    ["$'a\\x77s' s3 ls", ['aws', 's3', 'ls']],
+    ['a$"w"s s3 ls', ['aws', 's3', 'ls']],
+    ['a\\\nws s3 ls', ['aws', 's3', 'ls']],
+    ['env a""ws s3 ls', ['env', 'aws', 's3', 'ls']],
+    ['cat "$(a""ws s3 ls)"', ['cat', 'aws', 's3', 'ls']],
+    ['cat `a""ws s3 ls`', ['cat', 'aws', 's3', 'ls']],
+    // The words of a quoted -c string are listed too.
+    ['sh -c "true; a""ws s3 ls"', ['sh', '-c', 'true', 'aws', 's3', 'ls']],
+  ])('nine substitutions deep, %j lists every word: %j', (inner, words) => {
+    const line = 'echo ' + '$(echo '.repeat(8) + '$(' + inner + ')'.repeat(9);
+    expect(programsOnLine(line)).toEqual(['echo', ...words]);
   });
 
   it('reads 5,000 nested substitutions without exhausting the stack', () => {
