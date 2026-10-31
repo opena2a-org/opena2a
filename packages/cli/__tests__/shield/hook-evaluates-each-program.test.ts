@@ -182,6 +182,8 @@ describe('(b) a program after a separator is evaluated', () => {
     'true || aws s3 ls',
     'echo x | aws s3 ls',
     'sleep 1 & aws s3 ls',
+    // A parameter expansion holding a parenthesis before the separator.
+    'x=a; echo ${x:-(}; aws s3 ls',
   ])('%s records one deny of aws', async (line) => {
     await expectOneDenyOfAws(line);
   });

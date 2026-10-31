@@ -8,9 +8,10 @@
  *
  *  - The line is split at unquoted `;`, `&&`, `||`, `|`, `&`, newlines and
  *    subshell parentheses, and a case statement into its items. Quotes and
- *    backslashes are removed from each word as the shell removes them. A
- *    redirection and its file are not words of the command; a here-document
- *    body, a case pattern and a glob group are data.
+ *    backslashes are removed from each word as the shell removes them, and a
+ *    parameter expansion `${...}` is one piece of its word, whatever
+ *    parentheses it holds. A redirection and its file are not words of the
+ *    command; a here-document body, a case pattern and a glob group are data.
  *  - In each part, the reserved words that open or close a compound command
  *    (`!`, `{`, `if`, `then`, `do`, `fi`, ...) and leading NAME=value
  *    assignments are set aside, and the first word left is a program. When
@@ -395,6 +396,16 @@ function newWord(): Word {
   return { raw: '', text: '', commands: [], expressions: [], inert: false };
 }
 
+/**
+ * Set once a parenthesis in a word, or a `${`, has nothing to close it in the
+ * text parse() reads. Every later one in the same text is then read as text
+ * too, so the line is not scanned to its end again for each.
+ */
+interface Unclosed {
+  parenthesis: boolean;
+  brace: boolean;
+}
+
 /** An open subshell, or a case statement and the part of it being read. */
 type Frame = { kind: 'group' } | CaseFrame;
 interface CaseFrame {
@@ -409,6 +420,7 @@ function parse(src: string): Word[][] {
   let words: Word[] = [];
   let hereDocuments: HereDocument[] = [];
   const frames: Frame[] = [];
+  const unclosed: Unclosed = { parenthesis: false, brace: false };
   // True while the part holds only reserved words: the next word is where a
   // command starts.
   let commandStart = true;
@@ -468,7 +480,7 @@ function parse(src: string): Word[][] {
         i += 1;
         continue;
       }
-      const read = readWord(src, i, false);
+      const read = readWord(src, i, false, unclosed);
       i = read.end;
       if (words.length === 0 && read.word.raw === 'esac') {
         frames.pop();
@@ -501,7 +513,7 @@ function parse(src: string): Word[][] {
       if (!atCommandStart()) {
         // Inside a command a parenthesis is part of a word: a zsh glob, a
         // bash extglob, the () of a function definition.
-        const read = readWord(src, i, true);
+        const read = readWord(src, i, true, unclosed);
         push(read.word);
         i = read.end;
         continue;
@@ -528,7 +540,7 @@ function parse(src: string): Word[][] {
       continue;
     }
     if ((c === '<' || c === '>') && src[i + 1] === '(') {
-      const read = readWord(src, i, false);
+      const read = readWord(src, i, false, unclosed);
       push(read.word);
       i = read.end;
       continue;
@@ -549,7 +561,7 @@ function parse(src: string): Word[][] {
       }
       const processSubstitution = (src[i] === '<' || src[i] === '>') && src[i + 1] === '(';
       if (i < src.length && (!WORD_END.has(src[i]) || processSubstitution)) {
-        const read = readWord(src, i, false);
+        const read = readWord(src, i, false, unclosed);
         i = read.end;
         read.word.inert = true;
         push(read.word);
@@ -564,7 +576,7 @@ function parse(src: string): Word[][] {
       continue;
     }
 
-    const read = readWord(src, i, false);
+    const read = readWord(src, i, false, unclosed);
     i = read.end;
     const word = read.word;
     if (inCase?.at === 'subject') {
@@ -593,7 +605,12 @@ function parse(src: string): Word[][] {
  * Read the word that starts at `start`. With `leadingParenthesis` the word
  * may start with a parenthesis that belongs to it (a glob group).
  */
-function readWord(src: string, start: number, leadingParenthesis: boolean): { word: Word; end: number } {
+function readWord(
+  src: string,
+  start: number,
+  leadingParenthesis: boolean,
+  unclosed: Unclosed,
+): { word: Word; end: number } {
   const word = newWord();
   let i = start;
   while (i < src.length) {
@@ -611,10 +628,19 @@ function readWord(src: string, start: number, leadingParenthesis: boolean): { wo
       // zsh's =(...) runs a command, as <(...) does. Elsewhere a parenthesis
       // in a word holds an array's elements (NAME=(...)), a glob or extglob
       // group, or the () of a function definition: words, not a command.
-      const close = closingParenthesis(src, i + 1);
+      const runs = src.slice(start, i) === '=';
+      const close = unclosed.parenthesis && !runs ? -1 : closingParenthesis(src, i + 1);
+      if (close === -1 && !runs) {
+        // Nothing closes it: the parenthesis is text, and the rest of the
+        // line is read as usual.
+        unclosed.parenthesis = true;
+        word.text += c;
+        i += 1;
+        continue;
+      }
       const end = close === -1 ? src.length : close + 1;
       const inside = src.slice(i + 1, close === -1 ? src.length : close);
-      if (src.slice(start, i) === '=') word.commands.push(inside);
+      if (runs) word.commands.push(inside);
       else word.expressions.push(inside);
       word.text += src.slice(i, end);
       i = end;
@@ -634,7 +660,7 @@ function readWord(src: string, start: number, leadingParenthesis: boolean): { wo
       continue;
     }
     if (c === '"') {
-      i = readExpanding(src, i + 1, word, '"');
+      i = readExpanding(src, i + 1, word, '"', unclosed);
       continue;
     }
     if (c === '$' && src[i + 1] === "'") {
@@ -652,6 +678,10 @@ function readWord(src: string, start: number, leadingParenthesis: boolean): { wo
       i = readDollarParenthesis(src, i, word);
       continue;
     }
+    if (c === '$' && src[i + 1] === '{') {
+      i = readDollarBrace(src, i, word, false, unclosed);
+      continue;
+    }
     if (c === '`') {
       i = readBackticks(src, i, word);
       continue;
@@ -667,9 +697,16 @@ function readWord(src: string, start: number, leadingParenthesis: boolean): { wo
  * Read the inside of a double-quoted string (`closing` is `"`) or a whole
  * here-document body (`closing` is null), where only substitutions and a
  * backslash before `$`, a backtick, `\` or the closing quote are special.
+ * Given `unclosed`, a double-quoted string reads a `${...}` as one piece.
  * Returns the index after the closing quote.
  */
-function readExpanding(src: string, start: number, word: Word, closing: '"' | null): number {
+function readExpanding(
+  src: string,
+  start: number,
+  word: Word,
+  closing: '"' | null,
+  unclosed?: Unclosed,
+): number {
   let i = start;
   while (i < src.length) {
     const c = src[i];
@@ -691,6 +728,10 @@ function readExpanding(src: string, start: number, word: Word, closing: '"' | nu
     }
     if (c === '$' && src[i + 1] === '(') {
       i = readDollarParenthesis(src, i, word);
+      continue;
+    }
+    if (c === '$' && src[i + 1] === '{' && closing === '"' && unclosed !== undefined) {
+      i = readDollarBrace(src, i, word, true, unclosed);
       continue;
     }
     if (c === '`') {
@@ -717,6 +758,73 @@ function readDollarParenthesis(src: string, at: number, word: Word): number {
   return end;
 }
 
+/**
+ * Read `${...}`, a parameter expansion, starting at the `$`. Up to the brace
+ * that closes it the expansion is one piece of the word, whatever
+ * parentheses it holds (`${x:-(}`, `${x//[(]/y}`, zsh's `${(U)x}`), and the
+ * command substitutions it holds are commands of the word. With `quoted` the
+ * `${` sits in a double-quoted string, where a single quote is text. When
+ * nothing closes the `${`, the `${` is text. Returns the index after what
+ * was read.
+ */
+function readDollarBrace(src: string, at: number, word: Word, quoted: boolean, unclosed: Unclosed): number {
+  const close = unclosed.brace ? -1 : closingBrace(src, at + 2, quoted);
+  if (close === -1) {
+    unclosed.brace = true;
+    word.text += '${';
+    return at + 2;
+  }
+  readSubstitutions(src.slice(at + 2, close), word, quoted);
+  word.text += src.slice(at, close + 1);
+  return close + 1;
+}
+
+/**
+ * Add to `word` the command substitutions and arithmetic that `text`, the
+ * inside of a `${...}`, holds: `$(...)`, `$((...))` and backticks, but not
+ * those in single quotes outside double quotes. With `quoted` the expansion
+ * sits in a double-quoted string, where a single quote is text.
+ */
+function readSubstitutions(text: string, word: Word, quoted: boolean): void {
+  // readDollarParenthesis() and readBackticks() add what they read to the
+  // word's text as well; the expansion's text is added whole instead.
+  const holder = newWord();
+  let inDoubleQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '\\') {
+      i += 2;
+      continue;
+    }
+    if (!quoted && !inDoubleQuotes && c === "'") {
+      const close = text.indexOf("'", i + 1);
+      i = close === -1 ? text.length : close + 1;
+      continue;
+    }
+    if (!quoted && !inDoubleQuotes && c === '$' && text[i + 1] === "'") {
+      i = readAnsiC(text, i + 2).end;
+      continue;
+    }
+    if (c === '"') {
+      inDoubleQuotes = !inDoubleQuotes;
+      i += 1;
+      continue;
+    }
+    if (c === '$' && text[i + 1] === '(') {
+      i = readDollarParenthesis(text, i, holder);
+      continue;
+    }
+    if (c === '`') {
+      i = readBackticks(text, i, holder);
+      continue;
+    }
+    i += 1;
+  }
+  for (const command of holder.commands) word.commands.push(command);
+  for (const expression of holder.expressions) word.expressions.push(expression);
+}
+
 /** Read a backtick substitution starting at the opening backtick. */
 function readBackticks(src: string, at: number, word: Word): number {
   let i = at + 1;
@@ -740,11 +848,34 @@ function readBackticks(src: string, at: number, word: Word): number {
 }
 
 /**
+ * What closingOf() has open: a command (in `(...)` or `$(...)`), a
+ * double-quoted string, backticks, or a `${...}` outside double quotes (`{`)
+ * or inside them (`"{`, where a single quote is text).
+ */
+type Open = '(' | '"' | '`' | '{' | '"{';
+
+/**
  * The index of the `)` that closes the parenthesis opened just before
- * `start`, or -1. Quotes, backticks and nested parentheses are skipped.
+ * `start`, or -1. Quotes, backticks, nested parentheses and parameter
+ * expansions are skipped.
  */
 function closingParenthesis(src: string, start: number): number {
-  const open: Array<'(' | '"' | '`'> = ['('];
+  return closingOf(src, start, '(');
+}
+
+/**
+ * The index of the `}` that closes the `${` just before `start`, or -1: the
+ * first `}` that is not quoted, escaped, or inside a substitution or a nested
+ * `${...}`. A parenthesis in the expansion is text. With `quoted` the `${`
+ * sits in a double-quoted string, where a single quote is text.
+ */
+function closingBrace(src: string, start: number, quoted: boolean): number {
+  return closingOf(src, start, quoted ? '"{' : '{');
+}
+
+/** One pass over `src` from `start`: the index of what closes `first`, or -1. */
+function closingOf(src: string, start: number, first: Open): number {
+  const open: Open[] = [first];
   let i = start;
   while (i < src.length) {
     const c = src[i];
@@ -758,29 +889,29 @@ function closingParenthesis(src: string, start: number): number {
       i += 1;
       continue;
     }
-    if (inside === '"') {
-      if (c === '"') open.pop();
-      else if (c === '`') open.push('`');
-      else if (c === '$' && src[i + 1] === '(') {
-        open.push('(');
-        i += 1;
-      }
-      i += 1;
+    const next = src[i + 1];
+    if (c === '$' && (next === '(' || next === '{')) {
+      open.push(next === '(' ? '(' : inside === '"' || inside === '"{' ? '"{' : '{');
+      i += 2;
       continue;
     }
-    if (c === "'") {
+    if (c === '`') {
+      open.push('`');
+    } else if (inside === '"') {
+      if (c === '"') open.pop();
+    } else if (c === '"') {
+      open.push('"');
+    } else if (c === "'" && inside !== '"{') {
       const close = src.indexOf("'", i + 1);
       if (close === -1) return -1;
       i = close + 1;
       continue;
-    }
-    if (c === '$' && src[i + 1] === "'") {
+    } else if (c === '$' && next === "'" && inside !== '"{') {
       i = readAnsiC(src, i + 2).end;
       continue;
-    }
-    if (c === '"' || c === '`' || c === '(') {
-      open.push(c);
-    } else if (c === ')') {
+    } else if (inside === '(' && c === '(') {
+      open.push('(');
+    } else if (inside === '(' ? c === ')' : c === '}') {
       open.pop();
       if (open.length === 0) return i;
     }

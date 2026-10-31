@@ -239,6 +239,62 @@ describe('case statements', () => {
   ]);
 });
 
+describe('parameter expansions', () => {
+  expectCases([
+    // A ${...} is one piece of its word, whatever parentheses it holds, and
+    // the line goes on after it.
+    ['x=a; echo ${x:-(}; aws s3 ls', ['echo', 'aws']],
+    ['x=a; echo ${x//[(]/y}; aws s3 ls', ['echo', 'aws']],
+    ["x='a(b'; echo ${x//[(]/}; aws s3 ls", ['echo', 'aws']],
+    ['x=a; echo ${x:-(}; aws s3 ls; ls /dev/null; env gcloud auth list', ['echo', 'aws', 'ls', 'env', 'gcloud']],
+    ['x=a; echo ${x:-(}; case a in a) aws s3 ls;; esac', ['echo', 'aws']],
+    ['x=a; echo ${x:-(}a; aws s3 ls', ['echo', 'aws']],
+    ['echo ${(U)x}; aws s3 ls', ['echo', 'aws']],
+    ['echo ${a:-${b}}; aws s3 ls', ['echo', 'aws']],
+    ['echo ${a:-${b:-(}}; aws s3 ls', ['echo', 'aws']],
+    ['echo ${x:-"("}; aws s3 ls', ['echo', 'aws']],
+    ["echo ${x:-'}'}; aws s3 ls", ['echo', 'aws']],
+    ['echo ${x:-\\}}; aws s3 ls', ['echo', 'aws']],
+    // Inside double quotes too, where it can hold a quoted string of its own.
+    ['echo "${x:-"("}"; aws s3 ls', ['echo', 'aws']],
+    ['echo "${x:-"("}"; aws s3 ls; case a in a) true;; esac', ['echo', 'aws', 'true']],
+    ["echo \"${x:-'('}\"; aws s3 ls", ['echo', 'aws']],
+    // A parenthesis inside it neither opens nor closes the parentheses around it.
+    ['x=(a ${b:-(} c); aws s3 ls', ['aws']],
+    ['echo $(echo ${x:-(}); aws s3 ls', ['echo', 'aws']],
+    ['echo $(echo ${x:-)}); aws s3 ls', ['echo', 'aws']],
+    ['echo $(echo ${x:-(}; aws s3 ls)', ['echo', 'aws']],
+    // The command substitutions it holds run; a single-quoted one does not,
+    // except inside double quotes, where a single quote is text.
+    ['echo ${x:-$(aws s3 ls)}', ['echo', 'aws']],
+    ['echo ${x:-`aws s3 ls`}', ['echo', 'aws']],
+    ['echo ${x:-"$(aws s3 ls)"}', ['echo', 'aws']],
+    ['echo ${a:-${b:-$(aws s3 ls)}}', ['echo', 'aws']],
+    ["echo ${x:-'$(aws s3 ls)'}", ['echo']],
+    ["echo \"${x:-'$(aws s3 ls)'}\"", ['echo', 'aws']],
+    ['echo ${x:-$((1 + 2))}; aws s3 ls', ['echo', 'aws']],
+    // As the program's word it is listed as written, not expanded.
+    ['${X} s3 ls', ['${X}']],
+    ['${X:-aws} s3 ls', ['${X:-aws}']],
+  ]);
+});
+
+describe('a parenthesis or a ${ that nothing closes', () => {
+  expectCases([
+    // A parenthesis in a word, or a `${`, that nothing closes is text, and
+    // the rest of the line is read as usual. On these lines neither bash nor
+    // zsh starts the last program, except zsh on `ls *(; ...`.
+    ['echo a(b; aws s3 ls', ['echo', 'aws']],
+    ['ls *(; aws s3 ls', ['ls', 'aws']],
+    ['echo ${x:-(; aws s3 ls', ['echo', 'aws']],
+    ['echo a( b( c(; aws s3 ls', ['echo', 'aws']],
+    // An unclosed substitution holds the rest of the line, which is a command.
+    ['echo $(aws s3 ls', ['echo', 'aws']],
+    ['cat <(aws s3 ls', ['cat', 'aws']],
+    ['diff =(aws s3 ls', ['diff', 'aws']],
+  ]);
+});
+
 describe('parentheses inside a command', () => {
   expectCases([
     // A zsh glob or bash extglob group is a pattern, not a subshell.
@@ -284,6 +340,15 @@ describe('depth and size', () => {
 
   it('reads a 220,000-character line', () => {
     expect(programsOnLine('aws s3 ls; '.repeat(20000))).toEqual(['aws']);
+  });
+
+  it.each([
+    ['a parenthesis that nothing closes in each word', 'echo ' + 'a( '.repeat(70000) + '; aws s3 ls'],
+    ['a ${ that nothing closes in each word', 'echo ' + '${ '.repeat(70000) + '; aws s3 ls'],
+    ['a ${...} holding a parenthesis in each part', 'echo ${x:-(}; '.repeat(15000) + 'aws s3 ls'],
+  ])('reads a line of over 200,000 characters with %s', (_shape, line) => {
+    expect(line.length).toBeGreaterThan(200000);
+    expect(programsOnLine(line)).toEqual(['echo', 'aws']);
   });
 
   it('returns a list of names for any line', () => {
