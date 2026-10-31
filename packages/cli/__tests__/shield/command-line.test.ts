@@ -273,6 +273,17 @@ describe('parameter expansions', () => {
     ["echo ${x:-'$(aws s3 ls)'}", ['echo']],
     ["echo \"${x:-'$(aws s3 ls)'}\"", ['echo', 'aws']],
     ['echo ${x:-$((1 + 2))}; aws s3 ls', ['echo', 'aws']],
+    // A process substitution it holds outside double quotes runs too: bash
+    // runs these lines (zsh rejects them). Inside double quotes bash performs
+    // no process substitution, so there it is text.
+    ['cat ${x:-<(aws s3 ls)}', ['cat', 'aws']],
+    ['echo ${x:->(aws s3 ls)}', ['echo', 'aws']],
+    ['x=a; cat ${x:+<(aws s3 ls)}', ['cat', 'aws']],
+    ['cat ${x:-${y:-<(aws s3 ls)}}', ['cat', 'aws']],
+    ['diff ${x:-<(aws s3 ls)} /dev/null', ['diff', 'aws']],
+    ['cat "${x:-<(aws s3 ls)}"', ['cat']],
+    ['cat ${x:-"<(aws s3 ls)"}', ['cat']],
+    ["cat ${x:-'<(aws s3 ls)'}", ['cat']],
     // As the program's word it is listed as written, not expanded.
     ['${X} s3 ls', ['${X}']],
     ['${X:-aws} s3 ls', ['${X:-aws}']],
