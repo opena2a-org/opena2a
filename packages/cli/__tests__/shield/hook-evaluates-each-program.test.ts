@@ -214,12 +214,14 @@ describe('(c) a program behind an assignment or a wrapper is evaluated', () => {
 // ===========================================================================
 
 describe('(d) a program inside a bash -c string or a command substitution is evaluated', () => {
-  it.each(['bash -c "aws s3 ls"', 'echo $(aws s3 ls)'])(
-    '%s records one deny of aws',
-    async (line) => {
-      await expectOneDenyOfAws(line);
-    },
-  );
+  it.each([
+    'bash -c "aws s3 ls"',
+    'echo $(aws s3 ls)',
+    // A process substitution inside a parameter expansion, which bash runs.
+    'cat ${x:-<(aws s3 ls)}',
+  ])('%s records one deny of aws', async (line) => {
+    await expectOneDenyOfAws(line);
+  });
 });
 
 // ===========================================================================

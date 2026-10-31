@@ -804,8 +804,9 @@ function readDollarParenthesis(src: string, at: number, word: Word): number {
  * Read `${...}`, a parameter expansion, starting at the `$`. Up to the brace
  * that closes it the expansion is one piece of the word, whatever
  * parentheses it holds (`${x:-(}`, `${x//[(]/y}`, zsh's `${(U)x}`), and the
- * command substitutions it holds are commands of the word. With `quoted` the
- * `${` sits in a double-quoted string, where a single quote is text. When
+ * command substitutions it holds, and outside double quotes the process
+ * substitutions, are commands of the word. With `quoted` the `${` sits in a
+ * double-quoted string, where a single quote is text. When
  * nothing closes the `${`, the `${` is text. Returns the index after what
  * was read.
  */
@@ -824,8 +825,10 @@ function readDollarBrace(src: string, at: number, word: Word, quoted: boolean, u
 /**
  * Add to `word` the command substitutions and arithmetic that `text`, the
  * inside of a `${...}`, holds: `$(...)`, `$((...))` and backticks, but not
- * those in single quotes outside double quotes. With `quoted` the expansion
- * sits in a double-quoted string, where a single quote is text.
+ * those in single quotes outside double quotes; and, outside double quotes,
+ * the process substitutions `<(...)` and `>(...)`, which bash runs there and
+ * not inside quotes. With `quoted` the expansion sits in a double-quoted
+ * string, where a single quote is text.
  */
 function readSubstitutions(text: string, word: Word, quoted: boolean): void {
   // readDollarParenthesis() and readBackticks() add what they read to the
@@ -851,6 +854,15 @@ function readSubstitutions(text: string, word: Word, quoted: boolean): void {
     if (c === '"') {
       inDoubleQuotes = !inDoubleQuotes;
       i += 1;
+      continue;
+    }
+    if (!quoted && !inDoubleQuotes && (c === '<' || c === '>') && text[i + 1] === '(') {
+      // <(...) and >(...): bash runs the command inside an unquoted
+      // expansion too; inside double quotes it performs no process
+      // substitution.
+      const close = closingParenthesis(text, i + 2);
+      holder.commands.push(text.slice(i + 2, close === -1 ? text.length : close));
+      i = close === -1 ? text.length : close + 1;
       continue;
     }
     if (c === '$' && text[i + 1] === '(') {
