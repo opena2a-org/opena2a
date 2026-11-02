@@ -46,6 +46,11 @@
 - The `telemetry` help line reads "Inspect or toggle the persisted
   usage-telemetry opt-out for <tool>." It called the telemetry anonymous,
   and each event carries an install ID that identifies the machine.
+- `renderCheckBlock`'s `revocation` input takes a `state` of `listed`,
+  `not-listed` or `not-checked`. `not-listed` and `not-checked` draw no row
+  in default text, and a `listed` row requires a source and a date. Before
+  this, `listed: false` drew a green "not on blocklist" row, which read as a
+  revocation source having been checked.
 
 ## 0.6.0
 

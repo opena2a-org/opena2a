@@ -17,8 +17,15 @@ import { scoreMeter } from "./meters.js";
 import { trustLevelLabel, trustLevelLegend } from "./trust-level.js";
 import { formatScanAge } from "./scan-age.js";
 import { normalizeVerdict } from "./verdict.js";
+import { sanitizeForTerminal } from "./terminal-safe.js";
 
 export type CheckTone = "default" | "good" | "warning" | "critical" | "dim";
+
+/** Revocation input for `renderCheckBlock`. `listedAt` is the source's listing time, ISO 8601. */
+export type CheckRevocation =
+  | { state: "listed"; source: string; listedAt: string }
+  | { state: "not-listed"; source: string }
+  | { state: "not-checked"; reason?: string };
 
 /**
  * Input shape for `renderCheckBlock`.
@@ -65,11 +72,14 @@ export interface CheckBlockInput {
    */
   permissions?: string[];
   /**
-   * Revocation signal. `listed: true` means "on the blocklist" (critical).
-   * `listed: false` is rendered as a positive "not on blocklist" signal.
-   * When `undefined`, the row is hidden (unknown state, don't fake it).
+   * Revocation, from a named source only.
+   * - `listed`: the source lists the artifact. One critical row, and a less
+   *   severe verdict line is lifted to critical.
+   * - `not-listed`: the source does not list it. No row.
+   * - `not-checked`: no source was read. No row.
+   * When `undefined`, no row. No state renders a positive signal.
    */
-  revocation?: { listed: boolean };
+  revocation?: CheckRevocation;
 }
 
 /** One rendered line in the check block. */
@@ -128,6 +138,18 @@ function buildVerdict(verdict: string): { text: string; tone: CheckTone } {
   }
 }
 
+// A malformed date or an empty source never hides a listing: hiding it would
+// fail open on the one signal that says "do not install", and throwing would
+// replace the warning with an error.
+function revocationSource(raw: string): string {
+  const s = sanitizeForTerminal(raw).replace(/\s+/g, " ").trim();
+  return s === "" ? "an unnamed source" : s;
+}
+function revocationDay(raw: string): string {
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? "an unrecorded date" : new Date(t).toISOString().slice(0, 10);
+}
+
 export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
   const {
     name,
@@ -150,7 +172,11 @@ export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
   if (packageType) meta.push(packageType.replace(/_/g, " "));
 
   // --- Verdict ---------------------------------------------------------------
-  const verdictLine = buildVerdict(verdict);
+  const registryVerdict = buildVerdict(verdict);
+  const verdictLine: { text: string; tone: CheckTone } =
+    revocation?.state === "listed" && registryVerdict.tone !== "critical"
+      ? { text: "Revoked — do not install", tone: "critical" }
+      : registryVerdict;
 
   // --- Lines -----------------------------------------------------------------
   const lines: CheckBlockLine[] = [];
@@ -203,21 +229,13 @@ export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
     });
   }
 
-  // Revocation — shown when we have a definitive answer.
-  if (revocation) {
-    if (revocation.listed) {
-      lines.push({
-        label: "Revocation",
-        value: "on blocklist — do not install",
-        tone: "critical",
-      });
-    } else {
-      lines.push({
-        label: "Revocation",
-        value: "not on blocklist",
-        tone: "good",
-      });
-    }
+  // Revocation: one row, only for `listed` from a named source.
+  if (revocation && revocation.state === "listed") {
+    lines.push({
+      label: "Revoked",
+      value: `by ${revocationSource(revocation.source)} on ${revocationDay(revocation.listedAt)} — do not install`,
+      tone: "critical",
+    });
   }
 
   // Community scans — shown when > 0.
