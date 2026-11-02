@@ -128,6 +128,18 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(jq --version) once, then spawnSync(jq -r <expr>) for each gate expression ' +
       'the CI guide reads from detect --format json, one at a time (#448)',
   },
+  'recipe/extract-recipe.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node scripts/ci/extract-recipe.mjs <guide> [<out-dir>]) three times, one at a time',
+  },
+  'recipe/recipe-fixtures.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js detect|review <fixture> --format json --ci, review with --skip-hma) ' +
+      'once per case, one at a time; detect runs a stand-in ps that lists no process',
+  },
   'shield/claude-env-contract.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,

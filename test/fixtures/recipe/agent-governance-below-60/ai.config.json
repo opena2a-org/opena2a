@@ -1,0 +1,5 @@
+{
+  "model": "local",
+  "tools": ["read_docs", "write_files"],
+  "permissions": "unrestricted"
+}
