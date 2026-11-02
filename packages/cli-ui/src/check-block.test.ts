@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderCheckBlock, type CheckBlockInput } from "./check-block.js";
+import { renderCheckBlock, type CheckBlockInput, type CheckRevocation } from "./check-block.js";
 
 function base(over: Partial<CheckBlockInput> = {}): CheckBlockInput {
   return {
@@ -44,6 +44,22 @@ describe("renderCheckBlock — verdict", () => {
     const out = renderCheckBlock(base({ verdict: "gibberish" }));
     expect(out.verdict.tone).toBe("dim");
     expect(out.verdict.text).toBe("Unknown verdict");
+  });
+
+  it("a listed revocation lifts a passed verdict to critical", () => {
+    const revocation: CheckRevocation = {
+      state: "listed",
+      source: "Example list",
+      listedAt: "2026-10-01T12:00:00Z",
+    };
+    expect(renderCheckBlock(base({ verdict: "passed", revocation })).verdict).toEqual({
+      text: "Revoked — do not install",
+      tone: "critical",
+    });
+    expect(renderCheckBlock(base({ verdict: "blocked", revocation })).verdict).toEqual({
+      text: "Blocked by registry",
+      tone: "critical",
+    });
   });
 });
 
@@ -159,23 +175,76 @@ describe("renderCheckBlock — optional fields", () => {
     expect(perms.value).toBe("fs-write, net-egress");
   });
 
-  it("renders Revocation listed as critical", () => {
-    const out = renderCheckBlock(base({ revocation: { listed: true } }));
-    const rev = out.lines.find((l) => l.label === "Revocation")!;
-    expect(rev.value).toBe("on blocklist — do not install");
+  it("renders a listed revocation as one critical row naming its source and date", () => {
+    const out = renderCheckBlock(
+      base({
+        revocation: { state: "listed", source: "Example list", listedAt: "2026-10-01T12:00:00Z" },
+      }),
+    );
+    const rows = out.lines.filter((l) => l.label === "Revoked");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].value).toBe("by Example list on 2026-10-01 — do not install");
+    expect(rows[0].tone).toBe("critical");
+  });
+
+  it("draws no row for not-listed or not-checked", () => {
+    const plain = renderCheckBlock(base());
+    const states: CheckRevocation[] = [
+      { state: "not-listed", source: "Example list" },
+      { state: "not-checked", reason: "no revocation source" },
+    ];
+    for (const revocation of states) {
+      const out = renderCheckBlock(base({ revocation }));
+      expect(out.lines).toEqual(plain.lines);
+      const labels = out.lines.map((l) => l.label);
+      expect(labels).not.toContain("Revoked");
+      expect(labels).not.toContain("Revocation");
+      expect(out.lines.some((l) => l.value.includes("blocklist"))).toBe(false);
+      expect(out.verdict).toEqual(plain.verdict);
+    }
+  });
+
+  it("hides Revoked when revocation is undefined", () => {
+    const out = renderCheckBlock(base());
+    expect(out.lines.find((l) => l.label === "Revoked")).toBeUndefined();
+  });
+
+  it("a listed revocation with an unparseable date or an empty source still draws its row", () => {
+    const out = renderCheckBlock(
+      base({ revocation: { state: "listed", source: " \n ", listedAt: "not a date" } }),
+    );
+    const rev = out.lines.find((l) => l.label === "Revoked")!;
+    expect(rev.value).toBe("by an unnamed source on an unrecorded date — do not install");
     expect(rev.tone).toBe("critical");
   });
 
-  it("renders Revocation not-listed as good", () => {
-    const out = renderCheckBlock(base({ revocation: { listed: false } }));
-    const rev = out.lines.find((l) => l.label === "Revocation")!;
-    expect(rev.value).toBe("not on blocklist");
-    expect(rev.tone).toBe("good");
+  it("a source is printed on one line without terminal escapes", () => {
+    const out = renderCheckBlock(
+      base({
+        revocation: {
+          state: "listed",
+          source: "Example\x1b[31m\nlist",
+          listedAt: "2026-10-01T12:00:00Z",
+        },
+      }),
+    );
+    const rev = out.lines.find((l) => l.label === "Revoked")!;
+    expect(rev.value).toContain("by Example list on");
+    expect(rev.value).not.toContain("\x1b");
+    expect(rev.value).not.toContain("\n");
   });
 
-  it("hides Revocation when undefined", () => {
-    const out = renderCheckBlock(base());
-    expect(out.lines.find((l) => l.label === "Revocation")).toBeUndefined();
+  it("the revocation label leaves two spaces in a 10-column field", () => {
+    const plainLabels = new Set(renderCheckBlock(base()).lines.map((l) => l.label));
+    const out = renderCheckBlock(
+      base({
+        revocation: { state: "listed", source: "Example list", listedAt: "2026-10-01T12:00:00Z" },
+      }),
+    );
+    // The listed row is the one row the revocation adds to the block.
+    const added = out.lines.filter((l) => !plainLabels.has(l.label));
+    expect(added).toHaveLength(1);
+    expect(added[0].label.length).toBeLessThanOrEqual(8);
   });
 
   it("hides Scans when 0 or undefined", () => {
@@ -229,7 +298,7 @@ describe("renderCheckBlock — line ordering (canonical schema)", () => {
       base({
         publisher: { name: "Anthropic", verified: true },
         permissions: ["fs"],
-        revocation: { listed: false },
+        revocation: { state: "listed", source: "Example list", listedAt: "2026-10-01T00:00:00Z" },
         communityScans: 3,
         lastScannedAt: new Date().toISOString(),
       }),
@@ -240,7 +309,7 @@ describe("renderCheckBlock — line ordering (canonical schema)", () => {
       "Level",
       "Publisher",
       "Permissions",
-      "Revocation",
+      "Revoked",
       "Scans",
       "Last scan",
     ]);

@@ -54,6 +54,7 @@ export {
   type CheckBlockLine,
   type RenderedCheck,
   type CheckTone,
+  type CheckRevocation,
 } from "./check-block.js";
 export {
   renderNotFoundBlock,
