@@ -335,16 +335,20 @@ export const FORBIDDEN_PACKAGES = [
       '`npm install opena2a-cli`, describing defects in a version the user never asked for.',
     waiver: {
       reason:
-        'Not fixable from this repository today. The nested copy is pulled by an intermediate ' +
-        'dependency that pins hackmyagent itself; the edge, the versions, and whether bumping ' +
-        'that intermediate would fix it are all printed under `derived` below, asked fresh on ' +
-        'every run rather than claimed here. While it stays unfixable the real remedies are ' +
-        'upstream dropping the dependency or this CLI dropping the intermediate, neither of ' +
-        'which a CI gate should force. Dated rather than deleted so the decision is re-taken ' +
-        'rather than inherited. Note the user-visible cost while it stands: `npm install ' +
-        'opena2a-cli` prints the nested copy deprecation notice, which describes defects in a ' +
-        'version nobody asked for.',
-      reviewBy: '2026-11-01',
+        'Not fixable from this repository. The nested copy is pulled by an intermediate ' +
+        'dependency that pins hackmyagent itself, and npm honours `overrides` only in the root ' +
+        'package.json of the project doing the install, so nothing published from here reaches ' +
+        'that resolution. The edge, its versions, and whether raising the intermediate range ' +
+        'would collapse the two copies are printed under `derived` below, asked fresh on every ' +
+        'run rather than claimed here; once raising it would, the derivation fails this waiver ' +
+        'and the fix is to bump the range and delete the entry. Until then the remedies are an ' +
+        'intermediate release that drops hackmyagent or admits the version this CLI ships, or ' +
+        'this CLI dropping the intermediate, and a CI gate should force none of them. Dated ' +
+        'rather than deleted so the decision is re-taken rather than inherited. While it ' +
+        'stands a consumer installs a second scanner at the version the intermediate pinned, ' +
+        "and npm prints that copy's deprecation notice during the install whenever that " +
+        'version is deprecated.',
+      reviewBy: '2026-12-01',
       derive: deriveNestedHackmyagent,
     },
   },

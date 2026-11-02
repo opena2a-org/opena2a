@@ -227,7 +227,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     ]);
 
     expect(forbidden[0].waiver).toBeUndefined();
-    expect(forbidden[1].waiver.reviewBy).toBe('2026-11-01');
+    expect(forbidden[1].waiver.reviewBy).toBe('2026-12-01');
     // A waiver may not state an environment-dependent fact; it derives it.
     expect(typeof forbidden[1].waiver.derive).toBe('function');
     expect(forbidden[1].waiver.derive.name).toBe('deriveNestedHackmyagent');
