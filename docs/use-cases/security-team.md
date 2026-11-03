@@ -147,7 +147,7 @@ The report is the same one Step 1 prints. What `--registry` changes is the `MCP 
 
 | What is known about the server | Label appended to its row |
 |---|---|
-| The registry has a record of it | `Trust: 92/100 \| 45 community scans` (the count is dropped when it is zero) |
+| The registry has a record of it | `Trust: 92/100 \| 45 shared scans (unverified)` (the count is dropped when it is zero) |
 | No record, but a local scan ran | `Scanned: 95/100 \| 0 critical` |
 | Neither | `No trust data \| scan: opena2a detect --registry --auto-scan` |
 

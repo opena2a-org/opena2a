@@ -60,8 +60,11 @@ const LEAD_HEAD = 'opena2a looks things up in the OpenA2A Registry on `init`, `r
 const CONTRIBUTION_PREMISE = 'This is **separate** from the community-contribution data the Registry already collects via `--publish` flags; ';
 /** The rest of the contribution sentence, and the usage telemetry sentence. */
 const FLOW_REST = ", and its totals are on the Registry's public statistics. Usage telemetry answers one question: which commands are run, and how often.";
+/** The label `detect --registry` appends to the row of a server the Registry has a record of, as the docblock and the guide show it. */
+const TRUST_LABEL_EXAMPLE = 'Trust: 92/100 | 45 shared scans (unverified)';
 
 const README = 'packages/cli/README.md';
+const GUIDE = 'docs/use-cases/security-team.md';
 const README_LEAD = `${LEAD_HEAD}${COUNT_CLAUSE}.`;
 const README_CONTRIBUTION = `${CONTRIBUTION_PREMISE}${CONTRIBUTION_FLOW}${FLOW_REST}`;
 
@@ -73,6 +76,7 @@ const REPLACED = {
   runtimeComment: 'Opt-in: join Global Threat Intelligence Network for ARP runtime telemetry (POST /v1/telemetry/runtime)',
   contributeHelp: 'Share scan summaries with OpenA2A community',
   readmeContribution: 'that flow continues to populate the public community page (scan submissions, findings, contributors). Telemetry just answers "is anyone running these commands at all?"',
+  trustLabelExample: 'Trust: 92/100 | 45 community scans',
 } as const;
 
 /** The paragraphs of a `/** ... *\/` block, each one's lines joined by single spaces. */
@@ -151,6 +155,20 @@ describe('the texts on what the CLI sends to the Registry and what it counts', (
       ),
     ).toBe(1);
     expect(occurrences(source, 'community scan${')).toBe(0);
+  });
+
+  it('the detect docblock and the security-team guide show the label detect prints for a server the Registry knows', () => {
+    const source = read('packages/cli/src/commands/detect.ts');
+    expect(occurrences(source, ` *  1. Registry data exists -> "${TRUST_LABEL_EXAMPLE}"`)).toBe(1);
+    expect(occurrences(source, REPLACED.trustLabelExample)).toBe(0);
+
+    // The guide's table escapes the pipe between the label's parts.
+    const cell = `\`${TRUST_LABEL_EXAMPLE.replace(' | ', ' \\| ')}\``;
+    const guide = read(GUIDE);
+    expect(
+      occurrences(guide, `| The registry has a record of it | ${cell} (the count is dropped when it is zero) |`),
+    ).toBe(1);
+    expect(occurrences(guide, REPLACED.trustLabelExample.replace(' | ', ' \\| '))).toBe(0);
   });
 });
 
