@@ -157,7 +157,7 @@ describe('the texts on what the CLI sends to the Registry and what it counts', (
 // --- the claim gate -----------------------------------------------------------
 
 /**
- * The gate's PCRE, copied byte for byte from its specification (line 625).
+ * The gate's PCRE.
  * JavaScript has no inline `(?i)`, so that prefix becomes the `i` flag; the
  * rest, lookbehinds included, reads the same in both.
  */
