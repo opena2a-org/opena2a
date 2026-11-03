@@ -95,11 +95,11 @@ Full command reference, Shield subcommands, scope drift detection, behavioral go
 
 ## Telemetry
 
-opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify` and `detect`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, and a count of the scans shared for it, which the Registry does not verify.
+opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify` and `detect`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, and the number of shared scans counted for it in the last 90 days, which the Registry does not verify.
 
 `opena2a` sends tier-1 usage data to the OpenA2A Registry: tool name, version, command name (`check`, `scan`, `protect`, etc.), success, duration, platform, Node major version, and a persistent `install_id`. Each event carries an install ID that identifies the machine, so the data is personal data; https://opena2a.org/privacy explains how the ID is made. **No content is collected** — no scanned packages, no findings, no file paths, no env-var values, no IPs.
 
-This is **separate** from the community-contribution data the Registry already collects via `--publish` flags; that flow is stored by the Registry and can add to the count of shared scans a `check` shows for a package, and its totals are on the Registry's public statistics. Usage telemetry answers one question: which commands are run, and how often.
+This is **separate** from the community-contribution data the Registry already collects via `--publish` flags; that flow is stored by the Registry, and its totals are on the Registry's public statistics. Usage telemetry answers one question: which commands are run, and how often.
 
 - **Policy:** [opena2a.org/telemetry](https://opena2a.org/telemetry).
 - **Status:** `opena2a telemetry status`.

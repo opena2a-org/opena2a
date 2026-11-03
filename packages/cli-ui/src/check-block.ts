@@ -48,7 +48,7 @@ export interface CheckBlockInput {
    * undefined) hide the meter and emit a "not scanned" line instead.
    */
   scanStatus?: string;
-  /** Count of scans shared for the package's latest version. The Registry does not verify who sent them. */
+  /** Number of shared scans the Registry counts for the package in the last 90 days; absent when they carry fewer than three distinct contributor tokens. The Registry does not verify them. */
   communityScans?: number;
   /** ISO timestamp of the most recent scan. Rendered via `formatScanAge`. */
   lastScannedAt?: string;
