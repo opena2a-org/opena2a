@@ -758,7 +758,7 @@ function riskLabel(level: RiskLevel): string {
 }
 
 /** Format a compact trust label for an MCP server row. Handles three states:
- *  1. Registry data exists -> "Trust: 92/100 | 45 community scans"
+ *  1. Registry data exists -> "Trust: 92/100 | 45 shared scans (unverified)"
  *  2. Scan result exists   -> "Scanned: 95/100 | 0 critical"
  *  3. Neither              -> "No trust data | scan: opena2a detect --registry --auto-scan"
  *

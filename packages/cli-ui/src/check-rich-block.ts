@@ -254,7 +254,7 @@ function buildHeaderMetaLines(input: CheckRichBlockInput): RichBlockMetaLine[] {
     out.push({ text: parts4.join("  ·  "), tone: "default" });
   }
 
-  // Downloads + community scans + findings count.
+  // Downloads + shared scans + findings count.
   const parts5: string[] = [];
   if (header.downloads) {
     const trend = header.downloads.trend ? ` (${header.downloads.trend})` : "";
