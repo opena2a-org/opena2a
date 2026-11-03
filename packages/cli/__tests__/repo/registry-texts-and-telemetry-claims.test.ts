@@ -35,19 +35,19 @@ const ADVISORIES_HEADER = 'Called during `opena2a init` and `opena2a review` to 
 /** The reason given for `opena2a config contribute on`. */
 const CONTRIBUTE_REASON = 'Share scans with the OpenA2A Registry: summaries are counted in its public statistics, and `detect` also sends its findings';
 /** The doc comment on the check block's count of shared scans. */
-const SHARED_SCANS_DOC = "Count of scans shared for the package's latest version. The Registry does not verify who sent them.";
+const SHARED_SCANS_DOC = 'Number of shared scans the Registry counts for the package in the last 90 days; absent when they carry fewer than three distinct contributor tokens. The Registry does not verify them.';
 /** The README clause on what the contribution flow becomes. */
-const CONTRIBUTION_FLOW = 'that flow is stored by the Registry and can add to the count of shared scans a `check` shows for a package';
+const CONTRIBUTION_FLOW = 'that flow is stored by the Registry';
 /** The count clause of the README's exchange lead. */
-const COUNT_CLAUSE = 'and a count of the scans shared for it, which the Registry does not verify';
+const COUNT_CLAUSE = 'and the number of shared scans counted for it in the last 90 days, which the Registry does not verify';
 
 /** Byte length and the first 8 hex digits of the SHA-256 of each text, as ruled. */
 const RULED: ReadonlyArray<readonly [text: string, bytes: number, sha256Prefix: string]> = [
   [ADVISORIES_HEADER, 128, '7ca42a73'],
   [CONTRIBUTE_REASON, 123, '5b2005d7'],
-  [SHARED_SCANS_DOC, 99, '50e76305'],
-  [CONTRIBUTION_FLOW, 106, 'bcb70556'],
-  [COUNT_CLAUSE, 74, 'fd2c3e40'],
+  [SHARED_SCANS_DOC, 183, '299be7bd'],
+  [CONTRIBUTION_FLOW, 35, 'ba174d05'],
+  [COUNT_CLAUSE, 101, 'e2768677'],
 ];
 
 /** The runtime channel's config comment. */
