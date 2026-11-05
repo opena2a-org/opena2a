@@ -34,7 +34,7 @@ What `npx opena2a-cli init my-agent` prints, trimmed ([full output](docs/capture
   Security Score: 65 / 100  (project posture: credentials, config, environment)
 ```
 
-`my-agent` is the path to your project; run the command from the directory that contains it. `init` reads the project and changes nothing. It needs Node.js 20.19 or later and no account, and it exits 1 while a critical finding is open, 0 otherwise.
+`my-agent` is the path to your project; run the command from the directory that contains it. `init` reads the project and changes nothing. It needs Node.js 20.19 or later, and it exits 1 while a critical finding is open, 0 otherwise.
 
 Then apply the fixes and build the full report:
 
