@@ -11,8 +11,9 @@ import * as path from 'node:path';
  * the telemetry disclosure and a list of the reference pages. Everything
  * else lives under docs/ or in CONTRIBUTING.md. This file pins that shape:
  * the word and section budgets, the absence of release numbers and dates
- * (they go stale on every release), the capture's tie to its sidecar, and
- * the presence of each moved passage at its new path.
+ * (they go stale on every release), the absence of sentences about what a
+ * command does not need, the capture's tie to its sidecar, and the presence
+ * of each moved passage at its new path.
  *
  * It reads files only. Nothing here starts a process or reaches the network.
  */
@@ -34,6 +35,14 @@ const ELISION_LINE = '  ...';
 
 /** A release number (`1.2.3`, `v1.2.3`) or an ISO date. */
 const VERSION_OR_DATE = /v?[0-9]+\.[0-9]+\.[0-9]+|20[0-9]{2}-[0-9]{2}-[0-9]{2}/;
+
+/**
+ * A sentence about what a command does not need. The README states what a
+ * command needs (a Node.js release, a token for one flag); an install from
+ * npm needs no account anyway, so saying so adds nothing.
+ */
+const NOT_NEEDED =
+  /no account|no sign-?\s?up|without an? account|no registration|no credit card|account (required|needed)/i;
 
 /** The sentence every description of the usage events carries, word for word. */
 const INSTALL_ID_SENTENCE =
@@ -108,6 +117,15 @@ export function versionOrDateLines(markdown: string): string[] {
   const hits: string[] = [];
   markdown.split('\n').forEach((line, i) => {
     if (VERSION_OR_DATE.test(line)) hits.push(`${i + 1}: ${line}`);
+  });
+  return hits;
+}
+
+/** `line: text` for each line that says what a command does not need. */
+export function notNeededLines(markdown: string): string[] {
+  const hits: string[] = [];
+  markdown.split('\n').forEach((line, i) => {
+    if (NOT_NEEDED.test(line)) hits.push(`${i + 1}: ${line}`);
   });
   return hits;
 }
@@ -218,6 +236,10 @@ describe('the repository README is a short form', () => {
     expect(versionOrDateLines(readme)).toEqual([]);
   });
 
+  it('states what a command needs, never that it needs no account', () => {
+    expect(notNeededLines(readme)).toEqual([]);
+  });
+
   it('keeps every paragraph short', () => {
     const counts = blocks(readme).map(countWords);
     expect(Math.max(...counts)).toBeLessThanOrEqual(MAX_PARAGRAPH_WORDS);
@@ -244,6 +266,20 @@ describe('the measures catch the long form they replace', () => {
       'Requires Node.js 18 or later, licensed Apache-2.0.',
     ].join('\n');
     expect(versionOrDateLines(planted).map((h) => h.split(':')[0])).toEqual(['1', '2', '3']);
+  });
+
+  it('reports each spelling of the account sentence and leaves a stated requirement alone', () => {
+    const planted = [
+      'It needs Node.js 20.19 or later and no account, and it exits 1.',
+      'No signup.',
+      'No sign-up and no sign up either.',
+      'Works without an account.',
+      'No registration, no credit card.',
+      'An account required? An account needed?',
+      'It needs Node.js 20.19 or later, and it exits 1.',
+      'The `--publish` flag needs a GitHub token for the account that owns the repository.',
+    ].join('\n');
+    expect(notNeededLines(planted).map((h) => h.split(':')[0])).toEqual(['1', '2', '3', '4', '5', '6']);
   });
 
   it('treats a list and a fenced block as one block each, and counts a long paragraph', () => {
