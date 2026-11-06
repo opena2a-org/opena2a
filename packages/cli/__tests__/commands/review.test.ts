@@ -103,7 +103,9 @@ import {
   shieldRiskFloorScore,
   governanceCompositeScore,
   credentialFloorScore,
+  scoreReview,
   CRITICAL_BAND,
+  type ScoreState,
   type CredentialPhaseData,
   type ShieldPhaseData,
   type HmaPhaseData,
@@ -583,6 +585,17 @@ describe('review', () => {
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
     expect(credPhase.detail).toBe('No files scanned for credentials');
 
+    // A check that read no file is skipped, carries no weight, and the
+    // composite is the mean over the dimensions that were measured.
+    expect(credPhase.status).toBe('skip');
+    expect(credPhase.score).toBe(0);
+    const weightRow = (d: string) => report.scoreModel.weights.find((w: any) => w.dimension === d);
+    expect(weightRow('credentials')).toEqual({ dimension: 'credentials', weight: 0, score: null });
+    expect(weightRow('trust').weight).toBe(0.375);
+    expect(report.compositeScore).toBe(83);
+    const credentialHygiene = report.initData.hygieneChecks.find((c: any) => c.label === 'Credential scan');
+    expect(credentialHygiene.status).toBe('info');
+
     expect(credentialsTab).not.toContain('No hardcoded credentials found');
     expect(credentialsTab).not.toContain('Your project is clean');
     expect(credentialsTab).toContain('No files were scanned for credentials');
@@ -622,6 +635,14 @@ describe('review', () => {
     expect(report.credentialData.filesScanned).toBeGreaterThanOrEqual(1);
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
     expect(credPhase.detail).toBe('No hardcoded credentials');
+    // A check that read a file keeps its score and weight.
+    expect(report.compositeScore).toBe(86);
+    expect(credPhase.status).toBe('pass');
+    expect(credPhase.score).toBe(100);
+    expect(report.scoreModel.weights.find((w: any) => w.dimension === 'credentials'))
+      .toEqual({ dimension: 'credentials', weight: 0.2, score: 100 });
+    const credentialHygiene = report.initData.hygieneChecks.find((c: any) => c.label === 'Credential scan');
+    expect(credentialHygiene.status).toBe('pass');
     expect(credentialsTab).toContain('No hardcoded credentials found. Your project is clean.');
     expect(terminalLine('Checks')).toContain('0 skipped');
     expect(terminalLine('Categories')).toContain('credentials');
@@ -665,6 +686,9 @@ describe('review', () => {
     expect(report.credentialData.filesScanned).toBe(0);
     expect(report.hmaData.available).toBe(true);
     expect(report.findings.some((f: any) => f.id === 'CRED-001')).toBe(true);
+    // The unread local check carries no weight; HMA's own dimension keeps
+    // the finding.
+    expect(report.compositeScore).toBe(84);
 
     expect(terminalLine('Categories')).toContain('credentials (1 critical)');
     expect(terminalLine('Checks')).toContain('0 skipped');
@@ -1509,6 +1533,75 @@ describe('applyDominantAnalyzerFloor (#175 dominant-analyzer floor)', () => {
     expect(applyDominantAnalyzerFloor(70, [
       { name: 'HMA Scan', score: Infinity, ran: true },
     ])).toBe(70);
+  });
+});
+
+describe('scoreReview when the credential check read no file', () => {
+  // Every hygiene check warns: trust 70.
+  const hygieneChecks: ScoreState['hygieneChecks'] = [
+    { label: '.gitignore', status: 'warn', detail: 'missing' },
+    { label: '.env protection', status: 'warn', detail: 'missing' },
+    { label: 'Lock file', status: 'warn', detail: 'missing' },
+  ];
+  const state = (opts: {
+    filesScanned: number;
+    tamperedFiles: number;
+    mediumShieldFindings: number;
+    hmaScore: number;
+  }): ScoreState => ({
+    hygieneChecks,
+    credentials: {
+      matches: [],
+      totalFindings: 0,
+      filesScanned: opts.filesScanned,
+      bySeverity: {},
+      driftFindings: [],
+      envVarSuggestions: [],
+      coverage: { filesRead: opts.filesScanned, placeholdersSkipped: 0, skippedDirs: [] },
+    },
+    guard: {
+      filesMonitored: opts.tamperedFiles,
+      tamperedFiles: Array.from({ length: opts.tamperedFiles }, (_, i) => `config-${i}.json`),
+      signatureStatus: opts.tamperedFiles > 0 ? 'tampered' : 'unsigned',
+      candidates: [],
+    },
+    shield: {
+      classifiedFindings: Array.from(
+        { length: opts.mediumShieldFindings },
+        () => ({ finding: { severity: 'medium' } }),
+      ) as unknown as ScoreState['shield']['classifiedFindings'],
+    },
+    hma: { available: true, score: opts.hmaScore },
+    detect: { mcpServers: [], aiConfigs: [] },
+  });
+  const credentialsParticipant = (r: ReturnType<typeof scoreReview>) =>
+    r.participants.find(p => p.name === 'Credentials');
+
+  it('drops the unread dimension from the composite near the verdict band (83 read, 79 unread)', () => {
+    // trust 70, integrity 90 (unsigned), shield 72 (three medium), HMA 93, shadow AI 90.
+    const read = scoreReview(state({ filesScanned: 1, tamperedFiles: 0, mediumShieldFindings: 3, hmaScore: 93 }));
+    const unread = scoreReview(state({ filesScanned: 0, tamperedFiles: 0, mediumShieldFindings: 3, hmaScore: 93 }));
+
+    expect(read.composite).toBe(83);
+    expect(read.credentialsRead).toBe(true);
+    expect(read.weights.credentials).toBe(0.18);
+    expect(credentialsParticipant(read)?.ran).toBe(true);
+
+    expect(unread.composite).toBe(79);
+    expect(unread.credentialsRead).toBe(false);
+    expect(unread.weights.credentials).toBe(0);
+    expect(credentialsParticipant(unread)?.ran).toBe(false);
+  });
+
+  it('drops the unread dimension from the composite near the exit-code line (56 read, 47 unread)', () => {
+    // trust 70, integrity 40 (three tampered), shield 0 (fifteen medium), HMA 30, shadow AI 90.
+    const read = scoreReview(state({ filesScanned: 1, tamperedFiles: 3, mediumShieldFindings: 15, hmaScore: 30 }));
+    const unread = scoreReview(state({ filesScanned: 0, tamperedFiles: 3, mediumShieldFindings: 15, hmaScore: 30 }));
+
+    expect(read.composite).toBe(56);
+    expect(credentialsParticipant(read)?.ran).toBe(true);
+    expect(unread.composite).toBe(47);
+    expect(credentialsParticipant(unread)?.ran).toBe(false);
   });
 });
 

@@ -463,7 +463,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   // One credential walk per review: Phase 1 scores what it found and Phase 2
   // reports it, so the tree is read once, not once per phase.
   const credentialScan = await scanCredentialsWithCoverage(targetDir);
-  const initData = await runInitPhase(targetDir, credentialScan.matches);
+  const initData = await runInitPhase(targetDir, credentialScan.matches, credentialScan.filesScanned);
   const phase1Ms = Date.now() - phase1Start;
   const phase1Status = initData.trustScore >= 80 ? 'pass' : initData.trustScore >= 50 ? 'warn' : 'fail';
   phases.push({
@@ -481,12 +481,16 @@ export async function review(options: ReviewOptions): Promise<number> {
   const credentialData = runCredentialPhase(credentialScan);
   const phase2Ms = Date.now() - phase2Start;
   const credScore = computeCredentialScore(credentialData);
-  const phase2Status = credentialData.totalFindings === 0 ? 'pass'
+  // A check that read no file measured nothing: it is skipped, as the HMA row
+  // is when HMA did not run, and its 0 is the skip sentinel, not a score.
+  const credentialsRead = credentialData.filesScanned !== 0;
+  const phase2Status = !credentialsRead ? 'skip'
+    : credentialData.totalFindings === 0 ? 'pass'
     : credentialData.bySeverity['critical'] ? 'fail' : 'warn';
   phases.push({
     name: 'Credentials',
     status: phase2Status,
-    score: credScore,
+    score: credentialsRead ? credScore : 0,
     durationMs: phase2Ms,
     detail: credentialData.totalFindings > 0
       ? `${credentialData.totalFindings} finding(s)`
@@ -931,10 +935,14 @@ export async function review(options: ReviewOptions): Promise<number> {
 
 // --- Phase Implementations ---
 
-async function runInitPhase(targetDir: string, credentialMatches: CredentialMatch[]): Promise<InitPhaseData> {
+async function runInitPhase(
+  targetDir: string,
+  credentialMatches: CredentialMatch[],
+  credentialFilesScanned: number,
+): Promise<InitPhaseData> {
   const project = detectProject(targetDir);
 
-  const checks = runHygieneChecks(targetDir, project, credentialMatches.length);
+  const checks = runHygieneChecks(targetDir, project, credentialMatches.length, credentialFilesScanned);
   const { score: trustScore, grade } = calculateTrustScore(checks);
 
   // Best-effort: a configured Registry URL that fails validation leaves the
@@ -1755,16 +1763,50 @@ export const COMPOSITE_WEIGHTS: Readonly<Record<'withHma' | 'withoutHma', Readon
   withoutHma: { trust: 0.30, credentials: 0.20, integrity: 0.15, shield: 0.20, hma: 0, shadowAi: 0.15 },
 };
 
-function computeCompositeScore(inputs: Record<ScoreDimension, number>, hmaAvailable: boolean): number {
+/** The weight table with the credentials dimension removed and the remaining
+ *  weights scaled to sum to 1: the model the composite uses when the
+ *  credential check read no file. Rounded to four places for the report; the
+ *  composite itself divides by `1 - credentials` unrounded. */
+export function weightsWithoutCredentials(
+  weights: Readonly<Record<ScoreDimension, number>>,
+): Record<ScoreDimension, number> {
+  const scale = 1 / (1 - weights.credentials);
+  const round4 = (n: number) => Math.round(n * 10000) / 10000;
+  return {
+    trust: round4(weights.trust * scale),
+    credentials: 0,
+    integrity: round4(weights.integrity * scale),
+    shield: round4(weights.shield * scale),
+    hma: round4(weights.hma * scale),
+    shadowAi: round4(weights.shadowAi * scale),
+  };
+}
+
+function computeCompositeScore(
+  inputs: Record<ScoreDimension, number>,
+  hmaAvailable: boolean,
+  credentialsRead = true,
+): number {
   const w = hmaAvailable ? COMPOSITE_WEIGHTS.withHma : COMPOSITE_WEIGHTS.withoutHma;
-  return Math.round(
+  if (credentialsRead) {
+    return Math.round(
+      inputs.trust * w.trust +
+      inputs.credentials * w.credentials +
+      inputs.integrity * w.integrity +
+      inputs.shield * w.shield +
+      (hmaAvailable ? inputs.hma * w.hma : 0) +
+      inputs.shadowAi * w.shadowAi,
+    );
+  }
+  // The credential check read no file, so it measured nothing: the composite
+  // is the weighted mean over the dimensions that were measured.
+  const rest =
     inputs.trust * w.trust +
-    inputs.credentials * w.credentials +
     inputs.integrity * w.integrity +
     inputs.shield * w.shield +
     (hmaAvailable ? inputs.hma * w.hma : 0) +
-    inputs.shadowAi * w.shadowAi,
-  );
+    inputs.shadowAi * w.shadowAi;
+  return Math.round(rest / (1 - w.credentials));
 }
 
 /** The analyzer results the composite is computed from. Recovery is simulated
@@ -1783,7 +1825,12 @@ export interface ScoreResult {
   /** The weighted average before the dominant-analyzer floor. */
   weighted: number;
   weightSet: 'withHma' | 'withoutHma';
+  /** The weights the composite used: the table for `weightSet`, or, when the
+   *  credential check read no file, that table without credentials. */
   weights: Readonly<Record<ScoreDimension, number>>;
+  /** False when the credential check read no file; credentials then carry
+   *  no weight and do not take part in the floor. */
+  credentialsRead: boolean;
   /** Each dimension's input to the weighted average. */
   inputs: Record<ScoreDimension, number>;
   participants: FloorParticipant[];
@@ -1808,10 +1855,12 @@ export function scoreReview(state: ScoreState): ScoreResult {
     hma: hmaScore,
     shadowAi: governanceCompositeScore(projectGovernance),
   };
-  const weighted = computeCompositeScore(inputs, hmaAvailable);
+  const credentialsRead = state.credentials.filesScanned !== 0;
+  const weighted = computeCompositeScore(inputs, hmaAvailable, credentialsRead);
   const participants = buildFloorParticipants({
     trustScore,
     credScore: credentialFloorScore(credScore, state.credentials.bySeverity),
+    credentialsRead,
     guardScore,
     hmaScore,
     hmaAvailable,
@@ -1825,7 +1874,8 @@ export function scoreReview(state: ScoreState): ScoreResult {
     composite: applyDominantAnalyzerFloor(weighted, participants),
     weighted,
     weightSet,
-    weights: COMPOSITE_WEIGHTS[weightSet],
+    weights: credentialsRead ? COMPOSITE_WEIGHTS[weightSet] : weightsWithoutCredentials(COMPOSITE_WEIGHTS[weightSet]),
+    credentialsRead,
     inputs,
     participants,
   };
@@ -1848,6 +1898,9 @@ export interface FloorParticipant {
 export interface FloorParticipantInputs {
   trustScore: number;
   credScore: number;
+  /** False when the credential check read no file: excluded from the floor.
+   *  Absent means read. */
+  credentialsRead?: boolean;
   guardScore: number;
   hmaScore: number;
   hmaAvailable: boolean;
@@ -1936,7 +1989,7 @@ export function buildFloorParticipants(inputs: FloorParticipantInputs): FloorPar
   const hmaScore = Number.isFinite(inputs.hmaScore) ? inputs.hmaScore : 0;
   return [
     { name: 'Project Scan', score: inputs.trustScore, ran: true },
-    { name: 'Credentials', score: inputs.credScore, ran: true },
+    { name: 'Credentials', score: inputs.credScore, ran: inputs.credentialsRead ?? true },
     { name: 'Config Integrity', score: inputs.guardScore, ran: true },
     { name: 'HMA Scan', score: hmaScore, ran: inputs.hmaAvailable },
     { name: 'Project Governance', score: inputs.projectGovernanceScore, ran: inputs.projectGovernanceRan },
@@ -2265,11 +2318,14 @@ function runHygieneChecks(
   dir: string,
   project: ReturnType<typeof detectProject>,
   credCount: number,
+  credentialFilesScanned: number,
 ): HygieneCheck[] {
   const checks: HygieneCheck[] = [];
 
   if (credCount === 0) {
-    checks.push({ label: 'Credential scan', status: 'pass', detail: 'no findings' });
+    // No finding over no file read is not a pass.
+    const status = credentialFilesScanned === 0 ? 'info' : 'pass';
+    checks.push({ label: 'Credential scan', status, detail: 'no findings' });
   } else {
     checks.push({
       label: 'Credential scan',

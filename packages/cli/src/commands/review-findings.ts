@@ -618,7 +618,9 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       weights: (Object.keys(current.weights) as ScoreDimension[]).map(dimension => ({
         dimension,
         weight: current.weights[dimension],
-        score: dimension === 'hma' && current.weightSet === 'withoutHma' ? null : current.inputs[dimension],
+        score: (dimension === 'hma' && current.weightSet === 'withoutHma')
+          || (dimension === 'credentials' && current.credentialsRead === false)
+          ? null : current.inputs[dimension],
       })),
       weightedScore: current.weighted,
       floorBand: input.floorBand,
