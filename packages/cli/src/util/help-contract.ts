@@ -152,9 +152,9 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   guard: {
     exit: [
-      ['0', 'the files verify clean, or the subcommand succeeded'],
-      ['1', 'tampered, missing or policy-violating files, changes found by diff, no signature store, a declined resign, an unknown subcommand, or an error'],
-      ['3', 'verify --enforce found tampered, missing or unsigned files, or a failed pin or policy check (quarantine mode); a missing or unreadable signature store still exits 1'],
+      ['0', 'the files verify clean, or the subcommand succeeded; with --skills or --heartbeats, no signature store and none of the files guard signs by default present, verify checks only the hash pins and exits 0 when every pin passes'],
+      ['1', 'tampered, missing or policy-violating files, changes found by diff, a changed, unpinned or expired hash pin, no signature store (unless --skills or --heartbeats check only the pins), no SKILL.md or HEARTBEAT.md to check with no store, a declined resign, an unknown subcommand, or an error'],
+      ['3', 'verify --enforce found tampered, missing or unsigned files, or a failed pin or policy check (quarantine mode), with or without a signature store; an unreadable signature store still exits 1'],
     ],
     json: 'prints JSON for every subcommand except hook',
     ci: 'resign re-signs without asking for confirmation',

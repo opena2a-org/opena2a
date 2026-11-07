@@ -316,10 +316,13 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   const enforce = options.enforce ?? false;
   const store = loadStore(targetDir);
 
-  // Hash pins live in the files they cover, so `--skills` / `--heartbeats` need no store. Where
-  // there is no config file for `guard sign` to store (a fresh `skill create` directory), advising
-  // a sign was a loop that never checked the pin (#378): check the pins alone. Where config files
-  // exist a missing store still fails, so deleting the store cannot turn a verify green.
+  // Hash pins live in the files they cover, so `--skills` / `--heartbeats` need no store. Where none
+  // of the files `guard sign` signs by default (GUARD_FILES; a git-ignored one does not count) is
+  // present, a fresh `skill create` directory for one, advising a sign was a loop that never checked
+  // the pin (#378): check the pins alone. Where one of those files is present a missing store still
+  // fails. Only GUARD_FILES is consulted: a store that covered only files named with `--files` is
+  // not detected as missing, so once it is deleted these flags check the pins alone and can exit 0
+  // without reading those files.
   const pinsOnly = !store && !!(options.skills || options.heartbeats)
     && !fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))
     && resolveDefaultFiles(targetDir).files.length === 0;
@@ -421,7 +424,7 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
     process.stdout.write(JSON.stringify(output, null, 2) + '\n');
   } else {
     if (pinsOnly && report.results.length === 0) {
-      process.stdout.write('\n' + dim('  No config files here for a signature store to cover; checked the hash pins only.') + '\n\n');
+      process.stdout.write('\n' + dim('  None of the files guard signs by default is here for a signature store to cover; checked the hash pins only.') + '\n\n');
     } else {
       printVerifyReport(report, enforce);
     }

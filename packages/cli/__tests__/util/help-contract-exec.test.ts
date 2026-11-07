@@ -26,7 +26,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -647,6 +647,26 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
           expect((await cli(['guard', 'sign'])).status).toBe(0);
         },
       },
+      // No store and none of the default files: the pins alone decide (#378).
+      {
+        when: 'verify checks only the hash pins and exits 0 when every pin passes',
+        args: ['guard', 'verify', '--skills'],
+        setup: async (s, cli) => {
+          put(s, 'SKILL.md', '# Demo skill\n');
+          expect((await cli(['guard', 'sign', '--skills'])).status).toBe(0);
+          expect(existsSync(join(s.project, '.opena2a', 'guard', 'signatures.json'))).toBe(false);
+        },
+        output: /checked the hash pins only/,
+      },
+      {
+        when: 'verify checks only the hash pins and exits 0 when every pin passes',
+        args: ['guard', 'verify', '--heartbeats'],
+        setup: async (s, cli) => {
+          put(s, 'HEARTBEAT.md', '# Demo heartbeat\n');
+          expect((await cli(['guard', 'sign', '--heartbeats'])).status).toBe(0);
+        },
+        output: /checked the hash pins only/,
+      },
     ],
     '1': [
       {
@@ -667,19 +687,47 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
           put(s, 'package.json', '{"name":"changed"}\n');
         },
       },
+      {
+        when: 'a changed, unpinned or expired hash pin',
+        args: ['guard', 'verify', '--skills'],
+        setup: async (s, cli) => {
+          put(s, 'SKILL.md', '# Demo skill\n');
+          expect((await cli(['guard', 'sign', '--skills'])).status).toBe(0);
+          put(s, 'SKILL.md', readFileSync(join(s.project, 'SKILL.md'), 'utf-8').replace('# Demo skill', '# Edited skill'));
+        },
+      },
       { when: 'no signature store', args: ['guard', 'verify'], setup: (s) => { put(s, 'package.json', '{"name":"demo"}\n'); } },
       { when: 'no signature store', args: ['guard', 'verify', '--enforce'], setup: (s) => { put(s, 'package.json', '{"name":"demo"}\n'); } },
+      // A default file is present, so --skills does not check the pins alone.
+      {
+        when: 'no signature store',
+        args: ['guard', 'verify', '--skills'],
+        setup: (s) => { put(s, 'package.json', '{"name":"demo"}\n'); put(s, 'SKILL.md', '# Demo skill\n'); },
+        output: /No signature store found/,
+      },
+      { when: 'no SKILL.md or HEARTBEAT.md to check with no store', args: ['guard', 'verify', '--skills', '--heartbeats'], output: /Nothing to verify/ },
       { when: 'an unknown subcommand', args: ['guard', 'no-such-subcommand'] },
     ],
-    '3': [{
-      when: 'verify --enforce found tampered, missing or unsigned files',
-      args: ['guard', 'verify', '--enforce'],
-      setup: async (s, cli) => {
-        put(s, 'package.json', '{"name":"demo"}\n');
-        expect((await cli(['guard', 'sign'])).status).toBe(0);
-        put(s, 'package.json', '{"name":"changed"}\n');
+    '3': [
+      {
+        when: 'verify --enforce found tampered, missing or unsigned files',
+        args: ['guard', 'verify', '--enforce'],
+        setup: async (s, cli) => {
+          put(s, 'package.json', '{"name":"demo"}\n');
+          expect((await cli(['guard', 'sign'])).status).toBe(0);
+          put(s, 'package.json', '{"name":"changed"}\n');
+        },
       },
-    }],
+      {
+        when: 'a failed pin',
+        args: ['guard', 'verify', '--skills', '--enforce'],
+        setup: async (s, cli) => {
+          put(s, 'SKILL.md', '# Demo skill\n');
+          expect((await cli(['guard', 'sign', '--skills'])).status).toBe(0);
+          put(s, 'SKILL.md', readFileSync(join(s.project, 'SKILL.md'), 'utf-8').replace('# Demo skill', '# Edited skill'));
+        },
+      },
+    ],
   },
   runtime: {
     '0': [{ when: 'the subcommand succeeded', args: ['runtime', 'init'] }],
