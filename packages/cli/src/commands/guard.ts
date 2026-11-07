@@ -320,9 +320,9 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   // of the files `guard sign` signs by default (GUARD_FILES; a git-ignored one does not count) is
   // present, a fresh `skill create` directory for one, advising a sign was a loop that never checked
   // the pin (#378): check the pins alone. Where one of those files is present a missing store still
-  // fails. Only GUARD_FILES is consulted: a store that covered only files named with `--files` is
-  // not detected as missing, so once it is deleted these flags check the pins alone and can exit 0
-  // without reading those files.
+  // fails. Only GUARD_FILES is consulted, so where none is present these flags do not detect a
+  // deleted store as missing, even one that covered files named with `--files`: they check the
+  // pins alone and can exit 0 without reading the files that store covered.
   const pinsOnly = !store && !!(options.skills || options.heartbeats)
     && !fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))
     && resolveDefaultFiles(targetDir).files.length === 0;
