@@ -4,6 +4,15 @@ All notable changes to `@opena2a/credential-patterns` will be documented in this
 
 ## Unreleased
 
+### The PyPI rule matches only tokens that carry the pypi.org or test.pypi.org prefix
+
+The `pypi` pattern matches only a token that carries the pypi.org or
+test.pypi.org macaroon prefix after `pypi-`, where it matched any `pypi-`
+followed by fifty or more name characters, including unit and file names that
+hold `pypi-` and a long kebab-case run. Its id, name, `envPrefix` and category
+are unchanged, and `CREDENTIAL_PREFIX_QUICK_CHECK` still extracts `pypi-`.
+Consumers that pin the catalog take the change at their next pin.
+
 ### `isKnownExample` reads only the matched value
 
 A full-format token on a line whose comment says "example" is reported: the
