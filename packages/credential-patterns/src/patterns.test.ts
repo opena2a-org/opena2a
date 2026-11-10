@@ -20,6 +20,26 @@ const githubPatTestToken = ['ghp_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join
 const mongodbSrvTestUri = ['mongodb+srv://', 'user:pass', '@cluster.mongodb.net/db'].join('');
 const googleTestKey = ['AIza', 'SyB-abc_def123456789012345678901234'].join('');
 
+// PyPI API tokens are base64url macaroons. The first characters after `pypi-`
+// encode the macaroon's location field, so they are fixed per index: one
+// prefix for pypi.org, one for test.pypi.org. Prefixes and tokens are
+// assembled from parts so this file never carries a contiguous token shape.
+const PYPI_ANCHOR = ['AgEIc', 'Hlwa', 'S5vcmc'].join('');
+const PYPI_TEST_ANCHOR = ['AgENd', 'GVzdC5w', 'eXBpLm9yZw'].join('');
+// Deterministic body filler over the base64url alphabet. The step of 7 is
+// coprime with 64, so every character appears before any repeats and a
+// fixture is never one repeated character.
+const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const base64urlFill = (length: number, offset = 0): string =>
+  Array.from({ length }, (_, i) => BASE64URL_ALPHABET[(offset + i * 7) % BASE64URL_ALPHABET.length]).join('');
+const pypiTestToken = ['py', 'pi-', PYPI_ANCHOR, 'CJ', base64urlFill(170)].join('');
+const testPypiTestToken = ['py', 'pi-', PYPI_TEST_ANCHOR, base64urlFill(170, 3)].join('');
+// A file-name line, its name synthetic and assembled from parts: the run of 72
+// name characters after `pypi-` matched before the rule carried the prefix.
+const PYPI_FILE_NAME_LINE = 'roadmap unit ' + ['py','pi-'].join('') + ['alpha','bravo','charlie','delta','echo','foxtrot','golf','hotel','india','juliet','kilo','lima'].join('-') + '.md (the scanner image)';
+// A kebab-case run of 200 characters of [a-j-], longer than any length floor.
+const kebabRun = (length: number): string => 'abcdefghij-'.repeat(Math.ceil(length / 11)).slice(0, length);
+
 const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }> = {
   // AI/ML
   'anthropic': {
@@ -197,8 +217,16 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     invalid: ['npm_short', 'npm_'],
   },
   'pypi': {
-    valid: ['pypi-' + 'a'.repeat(50)],
-    invalid: ['pypi-short', 'pypi-' + 'a'.repeat(10)],
+    valid: [pypiTestToken, testPypiTestToken],
+    invalid: [
+      'pypi-short',
+      'pypi-' + 'a'.repeat(10),
+      // Fifty name characters with no macaroon prefix: the shape the rule
+      // matched before it was anchored.
+      'pypi-' + 'a'.repeat(50),
+      PYPI_FILE_NAME_LINE,
+      'pypi-' + kebabRun(200),
+    ],
   },
   'dockerhub': {
     valid: ['dckr_pat_' + 'a'.repeat(20)],
@@ -364,6 +392,27 @@ describe('CREDENTIAL_PATTERNS', () => {
       }
     });
   }
+
+  it('pypi: the macaroon prefix needs at least 50 body characters after it', () => {
+    const pypi = CREDENTIAL_PATTERNS.find(p => p.id === 'pypi');
+    expect(pypi, 'catalog pattern pypi').toBeDefined();
+    expect(pypi!.regex.test(['py', 'pi-', PYPI_ANCHOR, base64urlFill(49)].join(''))).toBe(false);
+    expect(pypi!.regex.test(['py', 'pi-', PYPI_ANCHOR, base64urlFill(50)].join(''))).toBe(true);
+  });
+
+  it('pypi: the quick-check pre-filter still extracts the literal prefix pypi-', () => {
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.source.split('|')).toContain('pypi-');
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test(pypiTestToken)).toBe(true);
+    expect(CREDENTIAL_PREFIX_QUICK_CHECK.test(testPypiTestToken)).toBe(true);
+  });
+
+  it('pypi: findRealMatch reports both token forms and not a file name that carries pypi-', () => {
+    const pypi = CREDENTIAL_PATTERNS.find(p => p.id === 'pypi');
+    expect(pypi, 'catalog pattern pypi').toBeDefined();
+    expect(findRealMatch(PYPI_FILE_NAME_LINE, pypi!)).toBeNull();
+    expect(findRealMatch(`PYPI_API_TOKEN=${pypiTestToken}`, pypi!)?.[0]).toBe(pypiTestToken);
+    expect(findRealMatch(`PYPI_API_TOKEN=${testPypiTestToken}`, pypi!)?.[0]).toBe(testPypiTestToken);
+  });
 
   it('has test cases for every pattern', () => {
     const missing = CREDENTIAL_PATTERNS.filter(p => !PATTERN_TEST_CASES[p.id]).map(p => p.id);

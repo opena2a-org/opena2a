@@ -98,7 +98,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'gitlab-pipeline', name: 'GitLab Pipeline Trigger', regex: /glptt-[a-f0-9]{40,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
   { id: 'gitlab-runner', name: 'GitLab Runner Token', regex: /GR1348941[a-zA-Z0-9_-]{20,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
   { id: 'npm', name: 'npm Access Token', regex: /npm_[a-zA-Z0-9]{36}/, envPrefix: 'NPM_TOKEN', category: 'developer' },
-  { id: 'pypi', name: 'PyPI API Token', regex: /pypi-[A-Za-z0-9_-]{50,}/, envPrefix: 'PYPI_API_TOKEN', category: 'developer' },
+  { id: 'pypi', name: 'PyPI API Token', regex: /pypi-(?:AgEIcHlwaS5vcmc|AgENdGVzdC5weXBpLm9yZw)[A-Za-z0-9_-]{50,}/, envPrefix: 'PYPI_API_TOKEN', category: 'developer' },
   { id: 'dockerhub', name: 'Docker Hub PAT', regex: /dckr_pat_[a-zA-Z0-9_-]{20,}/, envPrefix: 'DOCKER_TOKEN', category: 'developer' },
   { id: 'bitbucket', name: 'Bitbucket App Password', regex: /ATBB[a-zA-Z0-9]{32,}/, envPrefix: 'BITBUCKET_TOKEN', category: 'developer' },
 

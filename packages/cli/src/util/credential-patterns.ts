@@ -522,8 +522,10 @@ export function catalogSeverityForCategory(category?: string): string {
  *
  * The kept prefixes are either hyphenated (rare in identifiers: `sk-proj-`,
  * `sk-or-v1-`, `pplx-`, `glpat-`), long (`dckr_pat_`, `lin_api_`, `sntrys_`),
- * or carry a high length floor (`pypi-`{50,}, `nfp_`{40,}, `npm_`{36}), so a
- * benign identifier of that exact shape is implausible.
+ * carry a high length floor (`nfp_`{40,}, `npm_`{36}), or are anchored on the
+ * token's macaroon prefix (`pypi` matches `pypi-` only when the pypi.org or
+ * test.pypi.org prefix follows it), so a benign identifier of that exact shape
+ * is implausible.
  */
 export const BREADTH_DETECT_IDS = new Set([
   // ai-ml (anthropic/openai-legacy owned by local; groq/replicate/huggingface/
