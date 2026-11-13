@@ -1,0 +1,150 @@
+# Runs the CLI's published CI recipe, the Quick Start of
+# docs/use-cases/ci-cd.md, with the build of the commit under test in place of
+# the published package. scripts/ci/extract-recipe.mjs reads the recipe from
+# the guide on every run and makes that one edit, checked by reversing it, so
+# what runs here is what the guide prints.
+#
+# One job scans three agents under test/fixtures/recipe/. Two are controls:
+# each must be refused by one documented threshold with the recipe's refusal
+# code, 1, never "non-zero", and the score that caused it is then read from
+# the JSON the recipe wrote. Exit 1 alone is not enough: the CLI exits 1 when
+# a command throws, and the gate's `[ -ge ]` test exits 1 on an empty score.
+# The third must pass every step; it also shows the scans can pass here, so a
+# control that fails for an unrelated reason does not go unnoticed. As in the
+# guide's job, a refused step ends a run: the review control stops at step 2.
+#
+# No step can be made to pass a refused run: no continue-on-error, no if:,
+# no `||`, no pipe, and every script runs under `shell: bash` (errexit and
+# pipefail). packages/cli/__tests__/recipe/recipe-workflow-text.test.ts holds
+# this file to that.
+name: Published recipe
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # A check required on main must also report for merge-queue commits.
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+env:
+  OPENA2A_TELEMETRY: 'off'
+
+jobs:
+  recipe:
+    name: Published recipe (own build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js as the guide does
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Build the CLI
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Extract the Quick Start from the guide
+        shell: bash
+        run: node scripts/ci/extract-recipe.mjs docs/use-cases/ci-cd.md "$RUNNER_TEMP/recipe"
+
+      # The guide starts steps 1 and 2 in runner.temp. The edited command
+      # names the build by a path relative to that directory, so the build is
+      # linked there; nothing else names it.
+      - name: Link the build into the recipe's working directory
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          ln -s "$GITHUB_WORKSPACE/packages/cli" "$RUNNER_TEMP/packages/cli"
+          test -d "$RUNNER_TEMP/packages/cli/dist"
+
+      # Each run sets GITHUB_WORKSPACE to its agent for the recipe's steps only,
+      # runs steps 1 and 2 from runner.temp and step 3 from the agent's
+      # directory, and runs each script under `bash -e`, the shell the guide's
+      # steps get. The invocation lines are the same in all three runs.
+      - name: Recipe control (review below 50)
+        shell: bash
+        run: |
+          subject="$GITHUB_WORKSPACE/test/fixtures/recipe/agent-review-below-50"
+          cd "$RUNNER_TEMP"
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-1.sh"; then step1=0; else step1=$?; fi
+          echo "step 1 exit: $step1"
+          test "$step1" -eq 0
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-2.sh"; then step2=0; else step2=$?; fi
+          echo "step 2 exit: $step2"
+          jq -c '{compositeScore}' "$subject/review-results.json"
+          jq -c '.summary' "$subject/detect-results.json"
+          # Refused by the review threshold: exit 1. The CLI also exits 1 when
+          # a command throws, so the score is read from the report as well.
+          test "$step2" -eq 1
+          jq -e '.compositeScore >= 0 and .compositeScore < 50' "$subject/review-results.json"
+          jq -e '.summary.governanceScore >= 60 and .summary.governanceScore <= 100' "$subject/detect-results.json"
+
+      - name: Recipe control (governance below 60)
+        shell: bash
+        run: |
+          subject="$GITHUB_WORKSPACE/test/fixtures/recipe/agent-governance-below-60"
+          cd "$RUNNER_TEMP"
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-1.sh"; then step1=0; else step1=$?; fi
+          echo "step 1 exit: $step1"
+          test "$step1" -eq 0
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-2.sh"; then step2=0; else step2=$?; fi
+          echo "step 2 exit: $step2"
+          jq -c '{compositeScore}' "$subject/review-results.json"
+          test "$step2" -eq 0
+          cd "$subject"
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-3.sh" > "$RUNNER_TEMP/step-3.out"; then step3=0; else step3=$?; fi
+          cat "$RUNNER_TEMP/step-3.out"
+          echo "step 3 exit: $step3"
+          jq -c '.summary' "$subject/detect-results.json"
+          # Refused by the governance threshold through the guide's own exit 1.
+          test "$step3" -eq 1
+          jq -e '.summary.governanceScore >= 0 and .summary.governanceScore < 60' "$subject/detect-results.json"
+          jq -e '.compositeScore >= 50 and .compositeScore <= 100' "$subject/review-results.json"
+          # The gate's own line names the score it refused.
+          witness=$(grep -E -x 'Governance score: [0-9]+ / 100' "$RUNNER_TEMP/step-3.out")
+          score=${witness#Governance score: }
+          score=${score% / 100}
+          governance=$(jq -er '.summary.governanceScore' "$subject/detect-results.json")
+          test "$score" -eq "$governance"
+          test "$score" -lt 60
+
+      - name: Recipe (benign fixture)
+        shell: bash
+        run: |
+          subject="$GITHUB_WORKSPACE/test/fixtures/recipe/agent-benign"
+          cd "$RUNNER_TEMP"
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-1.sh"; then step1=0; else step1=$?; fi
+          echo "step 1 exit: $step1"
+          test "$step1" -eq 0
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-2.sh"; then step2=0; else step2=$?; fi
+          echo "step 2 exit: $step2"
+          jq -c '{compositeScore}' "$subject/review-results.json"
+          test "$step2" -eq 0
+          cd "$subject"
+          if GITHUB_WORKSPACE="$subject" bash -e "$RUNNER_TEMP/recipe/step-3.sh" > "$RUNNER_TEMP/step-3.out"; then step3=0; else step3=$?; fi
+          cat "$RUNNER_TEMP/step-3.out"
+          echo "step 3 exit: $step3"
+          jq -c '.summary' "$subject/detect-results.json"
+          test "$step3" -eq 0
+          jq -e '.summary.governanceScore >= 60 and .summary.governanceScore <= 100' "$subject/detect-results.json"
+          jq -e '.compositeScore >= 50 and .compositeScore <= 100' "$subject/review-results.json"
+          witness=$(grep -E -x 'Governance score: [0-9]+ / 100' "$RUNNER_TEMP/step-3.out")
+          score=${witness#Governance score: }
+          score=${score% / 100}
+          governance=$(jq -er '.summary.governanceScore' "$subject/detect-results.json")
+          test "$score" -eq "$governance"
+          test "$score" -ge 60
