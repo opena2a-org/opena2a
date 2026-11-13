@@ -27,6 +27,8 @@ const { loadPolicy, evaluatePolicy, savePolicy, createDefaultPolicy } =
 const { getExpectedHookContent } =
   await import('../../src/shield/integrity.js');
 
+const { programsOnLine } = await import('../../src/shield/command-line.js');
+
 // ---------------------------------------------------------------------------
 // Temp directory setup
 // ---------------------------------------------------------------------------
@@ -190,38 +192,38 @@ describe('enforcement event logging', () => {
 });
 
 // ===========================================================================
-// 4. Command string parsing extracts the first word as the binary
+// 4. Command line parsing names each binary on the line
 // ===========================================================================
 
 describe('command string parsing for binary extraction', () => {
   it('extracts binary from a simple command', () => {
     const policy = setupPolicy('enforce');
 
-    // Simulate what handleEvaluate does: extract first word from command
-    const commandString = 'aws s3 ls';
-    const firstWord = commandString.trim().split(/[\s|;&]/)[0] ?? commandString;
+    // What handleEvaluate does in hook mode: evaluate each program the line names.
+    const programs = programsOnLine('aws s3 ls');
+    expect(programs).toEqual(['aws']);
 
-    const decision = evaluatePolicy(policy, null, 'processes', firstWord);
+    const decision = evaluatePolicy(policy, null, 'processes', programs[0]);
     expect(decision.outcome).toBe('blocked');
   });
 
   it('extracts binary from a piped command', () => {
     const policy = setupPolicy('enforce');
 
-    const commandString = 'kubectl get pods | grep running';
-    const firstWord = commandString.trim().split(/[\s|;&]/)[0] ?? commandString;
+    const programs = programsOnLine('kubectl get pods | grep running');
+    expect(programs).toEqual(['kubectl', 'grep']);
 
-    const decision = evaluatePolicy(policy, null, 'processes', firstWord);
-    expect(decision.outcome).toBe('blocked');
+    const decisions = programs.map(program => evaluatePolicy(policy, null, 'processes', program));
+    expect(decisions.map(decision => decision.outcome)).toEqual(['blocked', 'allowed']);
   });
 
   it('handles an allowed command with arguments', () => {
     const policy = setupPolicy('enforce');
 
-    const commandString = 'git push origin main';
-    const firstWord = commandString.trim().split(/[\s|;&]/)[0] ?? commandString;
+    const programs = programsOnLine('git push origin main');
+    expect(programs).toEqual(['git']);
 
-    const decision = evaluatePolicy(policy, null, 'processes', firstWord);
+    const decision = evaluatePolicy(policy, null, 'processes', programs[0]);
     expect(decision.outcome).toBe('allowed');
   });
 });
