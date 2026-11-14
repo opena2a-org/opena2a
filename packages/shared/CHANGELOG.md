@@ -27,5 +27,5 @@ All notable changes to `@opena2a/shared` will be documented in this file.
 - The package ships its `LICENSE` (Apache-2.0), and the four compiled test
   files (`dist/user-config.test.*`) that 0.1.2 shipped are no longer in the
   tarball.
-- The README and the `isContributeEnabled()` docblock describe contributed
+- The README and the `shouldPromptContribute()` docblock describe contributed
   scan summaries without calling them anonymous.
