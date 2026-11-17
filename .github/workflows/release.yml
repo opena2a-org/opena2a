@@ -265,9 +265,10 @@ jobs:
   # value in dist/ would ship with provenance attached. This job runs
   # scripts/release-artifact-review.mjs over every tarball in the manifest and
   # blocks `publish` on any non-zero exit. It holds `contents: read` only —
-  # it runs dependency-resolved code (hackmyagent, via npm ci) and therefore
-  # must never see the OIDC publish identity; that stays in `publish`, which
-  # runs no dependency code at all.
+  # it runs dependency-resolved code (hackmyagent, installed from
+  # .github/release-scanner/'s lockfile) and therefore must never see the
+  # OIDC publish identity; that stays in `publish`, which runs no dependency
+  # code at all.
   review:
     needs: build
     runs-on: ubuntu-latest
@@ -288,9 +289,18 @@ jobs:
         run: |
           ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
 
-      # The review script resolves the credential scanner from the installed
-      # tree (node_modules/.bin/hackmyagent), so the install must precede it.
+      # The review script's own dependencies (semver for consumer-closure).
+      # Nothing is built here, so npm's links to the workspace packages point
+      # at directories with no dist/; no scanner is loaded from this tree.
       - run: npm ci --ignore-scripts
+
+      # The credential scanner installs apart from the workspace: from its own
+      # committed lockfile, into a directory outside the repository, with
+      # --ignore-scripts. Loaded from the tree above it stopped on a workspace
+      # link with no dist/ and every tarball's credential scan read
+      # `precondition`. The review refuses any scanner but this install.
+      - name: Install the pinned credential scanner outside the workspace
+        run: node scripts/install-release-scanner.mjs "$RUNNER_TEMP/release-scanner"
 
       - uses: actions/download-artifact@v4
         with:
@@ -325,7 +335,9 @@ jobs:
       # `--advisory-states published`: draft and triage advisories of other
       # repositories are not readable by this repository's token, so asking
       # for them would read as an empty feed rather than as more coverage.
-      # GH_TOKEN is for the consumer-closure advisories API (api.github.com).
+      # GH_TOKEN is for the consumer-closure advisories API (api.github.com);
+      # the scanner child never receives it, nor anything else of this
+      # environment but PATH.
       - name: Review every tarball in the manifest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -338,7 +350,7 @@ jobs:
             for (const e of m.entries) console.log(e.file);
           '); do
             echo "=== reviewing $file"
-            if ! node scripts/release-artifact-review.mjs --tarball "$RUNNER_TEMP/dist/$file" --advisory-states published; then
+            if ! node scripts/release-artifact-review.mjs --tarball "$RUNNER_TEMP/dist/$file" --scanner-root "$RUNNER_TEMP/release-scanner" --advisory-states published; then
               echo "::error::release-artifact-review failed for $file"
               rc=1
             fi

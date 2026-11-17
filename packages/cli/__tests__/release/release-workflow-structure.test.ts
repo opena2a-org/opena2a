@@ -11,8 +11,12 @@
  *  - `id-token: write` (the OIDC publish identity) exists in exactly one job,
  *    and that job checks out nothing and installs nothing — the review job
  *    runs dependency-resolved code (hackmyagent) and must never hold it;
- *  - every job that runs `npm ci`, in both files, first proves no tracked
- *    package-manager config file exists to redirect or poison the install.
+ *  - every job that installs (`npm ci`, or the release scanner's own install),
+ *    in both files, first proves no tracked package-manager config file
+ *    exists to redirect or poison the install;
+ *  - the review job loads its credential scanner only from the pinned install
+ *    outside the workspace, and ci.yml's `test` job runs the review in that
+ *    same install shape on every pull request, before anything is built.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -51,6 +55,14 @@ const steps = (job: Job | undefined): Step[] => job?.steps ?? [];
 const needsOf = (job: Job | undefined): string[] =>
   job?.needs == null ? [] : Array.isArray(job.needs) ? job.needs : [job.needs];
 const runsNpmCi = (s: Step): boolean => /(^|\s)npm ci(\s|$)/m.test(s.run ?? '');
+
+/** The pinned scanner's install, byte-for-byte as both release.yml's review job and ci.yml's test job run it. */
+const SCANNER_INSTALL_CMD = 'node scripts/install-release-scanner.mjs "$RUNNER_TEMP/release-scanner"';
+const installsScanner = (s: Step): boolean => (s.run ?? '').includes('scripts/install-release-scanner.mjs');
+/** An install of any kind: `npm ci`, or the scanner install, which runs its own `npm ci`. */
+const runsInstall = (s: Step): boolean => runsNpmCi(s) || installsScanner(s);
+const INSTALL_SHAPE_TEST_CMD = 'node --test scripts/__tests__/release-review-install-shape.test.mjs';
+const SCANNER_ROOT_EXPR = '${{ runner.temp }}/release-scanner';
 
 /**
  * The exact guard command that every job running npm ci in release.yml and
@@ -115,7 +127,7 @@ describe('release.yml job graph', () => {
     expect(reviewVerify?.run).toBe(publishVerify?.run);
   });
 
-  it('the review step runs the script per manifest tarball with GH_TOKEN, after npm ci --ignore-scripts', () => {
+  it('the review step runs the script per manifest tarball with GH_TOKEN, after npm ci --ignore-scripts and the scanner install', () => {
     const reviewSteps = steps(release.jobs.review);
     const scriptIdx = reviewSteps.findIndex((s) =>
       (s.run ?? '').includes('scripts/release-artifact-review.mjs --tarball')
@@ -132,12 +144,85 @@ describe('release.yml job graph', () => {
     expect(scriptStep.run).toMatch(/rc=1/);
     expect(scriptStep.run).toMatch(/exit "\$rc"/);
 
-    // The script resolves node_modules/.bin/hackmyagent, so the install must
-    // come first in the same job — and with --ignore-scripts, because this
-    // job runs before anything is signed but still inside the release path.
+    // The script needs the workspace install (semver) first in the same job —
+    // with --ignore-scripts, because this job runs before anything is signed
+    // but still inside the release path — and then the pinned scanner,
+    // installed outside the workspace and named by --scanner-root: loaded from
+    // the unbuilt workspace tree the scanner stops before it scans anything.
     const installIdx = reviewSteps.findIndex((s) => (s.run ?? '').trim() === 'npm ci --ignore-scripts');
     expect(installIdx, 'review must npm ci --ignore-scripts').toBeGreaterThanOrEqual(0);
     expect(installIdx).toBeLessThan(scriptIdx);
+    const scannerIdx = reviewSteps.findIndex(installsScanner);
+    expect(scannerIdx, 'review must install the pinned credential scanner').toBeGreaterThanOrEqual(0);
+    expect(reviewSteps[scannerIdx].run?.trim()).toBe(SCANNER_INSTALL_CMD);
+    expect(installIdx, 'npm ci --ignore-scripts precedes the scanner install').toBeLessThan(scannerIdx);
+    expect(scannerIdx, 'the scanner install precedes the review').toBeLessThan(scriptIdx);
+    expect(scriptStep.run).toContain(
+      'scripts/release-artifact-review.mjs --tarball "$RUNNER_TEMP/dist/$file" --scanner-root "$RUNNER_TEMP/release-scanner"'
+    );
+  });
+});
+
+describe('the release review runs in the release job\'s install shape on every pull request', () => {
+  const reviewSteps = steps(release.jobs.review);
+  const testSteps = steps(ci.jobs.test);
+  const setupNode = (s: Step) => /^actions\/setup-node@/.test(s.uses ?? '');
+  const runIs = (cmd: string) => (s: Step) => (s.run ?? '').trim() === cmd;
+
+  it('ci.yml test runs setup-node 24, npm ci --ignore-scripts, the scanner install and the install-shape test, all before npm run build', () => {
+    const node24 = testSteps.findIndex((s) => setupNode(s) && String(s.with?.['node-version']) === '24');
+    const install = testSteps.findIndex(runIs('npm ci --ignore-scripts'));
+    const scanner = testSteps.findIndex(installsScanner);
+    const shapeTest = testSteps.findIndex(runIs(INSTALL_SHAPE_TEST_CMD));
+    const build = testSteps.findIndex(runIs('npm run build'));
+    for (const [label, idx] of Object.entries({ node24, install, scanner, shapeTest, build })) {
+      expect(idx, `ci.yml test has no ${label} step`).toBeGreaterThanOrEqual(0);
+    }
+    expect(node24).toBeLessThan(install);
+    expect(install).toBeLessThan(scanner);
+    expect(scanner).toBeLessThan(shapeTest);
+    expect(shapeTest).toBeLessThan(build);
+    // Nothing between the first checkout and the install-shape test builds the workspace.
+    expect(testSteps.slice(0, shapeTest).some(runIs('npm run build'))).toBe(false);
+    expect(testSteps[shapeTest].env?.RELEASE_SCANNER_ROOT).toBe(SCANNER_ROOT_EXPR);
+    const npmTest = testSteps.find(runIs('npm run test'));
+    expect(npmTest?.env?.RELEASE_SCANNER_ROOT).toBe(SCANNER_ROOT_EXPR);
+    expect(npmTest?.env?.GH_TOKEN).toBe('${{ secrets.GITHUB_TOKEN }}');
+  });
+
+  it('the scanner install command is identical in both jobs', () => {
+    const inReview = reviewSteps.filter(installsScanner).map((s) => s.run?.trim());
+    const inTest = testSteps.filter(installsScanner).map((s) => s.run?.trim());
+    expect(inReview).toEqual([SCANNER_INSTALL_CMD]);
+    expect(inTest).toEqual([SCANNER_INSTALL_CMD]);
+  });
+
+  it('none of those steps carries if: or continue-on-error', () => {
+    const shaped = [
+      ...reviewSteps.filter(
+        (s) => runIs('npm ci --ignore-scripts')(s) || installsScanner(s) || (s.run ?? '').includes('scripts/release-artifact-review.mjs')
+      ),
+      ...testSteps.filter(
+        (s) =>
+          (setupNode(s) && String(s.with?.['node-version']) === '24') ||
+          runIs('npm ci --ignore-scripts')(s) ||
+          installsScanner(s) ||
+          runIs(INSTALL_SHAPE_TEST_CMD)(s)
+      ),
+    ];
+    expect(shaped).toHaveLength(7);
+    for (const s of shaped) {
+      const label = s.name ?? s.uses ?? s.run;
+      expect(s.if, `${label} must not carry an if:`).toBeUndefined();
+      expect(s['continue-on-error'], `${label} must not carry continue-on-error`).toBeUndefined();
+    }
+  });
+
+  it('both places run node 24', () => {
+    const reviewNode = reviewSteps.filter(setupNode).map((s) => String(s.with?.['node-version']));
+    expect(reviewNode).toEqual(['24']);
+    const firstTestNode = testSteps.find(setupNode);
+    expect(String(firstTestNode?.with?.['node-version'])).toBe('24');
   });
 });
 
@@ -147,17 +232,17 @@ describe('package-manager-config guard', () => {
     ['ci.yml', ci],
   ];
 
-  it('every job that runs npm ci carries the guard before its install step, unconditionally', () => {
+  it('every job that installs (npm ci or the scanner install) carries the guard before its first install step, unconditionally', () => {
     for (const [file, wf] of files) {
       for (const [jobName, job] of Object.entries(wf.jobs)) {
         const jobSteps = steps(job);
-        const firstInstall = jobSteps.findIndex(runsNpmCi);
+        const firstInstall = jobSteps.findIndex(runsInstall);
         if (firstInstall === -1) continue;
 
         const label = `${file} job ${jobName}`;
         const guardIdx = jobSteps.findIndex((s) => (s.run ?? '').includes(GUARD_CMD));
         expect(guardIdx, `${label}: no step carries the exact guard command`).toBeGreaterThanOrEqual(0);
-        expect(guardIdx, `${label}: the guard must run BEFORE npm ci`).toBeLessThan(firstInstall);
+        expect(guardIdx, `${label}: the guard must run BEFORE the first install`).toBeLessThan(firstInstall);
 
         const guard = jobSteps[guardIdx];
         // The guard fails the job when the grep prints anything: either an
@@ -183,7 +268,7 @@ describe('package-manager-config guard', () => {
   it('the guarded jobs are exactly the installing jobs in both files', () => {
     const installing = (wf: Workflow) =>
       Object.entries(wf.jobs)
-        .filter(([, job]) => steps(job).some(runsNpmCi))
+        .filter(([, job]) => steps(job).some(runsInstall))
         .map(([name]) => name)
         .sort();
     // Pinned lists, so a NEW job that starts installing shows up here and has
@@ -206,5 +291,9 @@ describe('package-manager-config guard', () => {
         );
       }
     }
+    // The scanner install runs its own npm ci, and it too runs no dependency's
+    // install script.
+    const installer = readFileSync(path.join(REPO_ROOT, 'scripts', 'install-release-scanner.mjs'), 'utf8');
+    expect(installer).toContain("spawnSync('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund']");
   });
 });

@@ -73,6 +73,24 @@ jobs:
       - name: No tree-local package-manager config may be tracked
         run: |
           ! git ls-files | grep -E '(^|/)(\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs|\.envrc)$'
+      # The release review in release.yml's `review` install shape: node 24,
+      # `npm ci --ignore-scripts`, nothing built, the pinned credential scanner
+      # installed outside the workspace. Until these steps a tag push was the
+      # first run of that shape. They run before anything below builds the
+      # workspace, and unconditionally: no `if:`, no `continue-on-error`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the pinned credential scanner outside the workspace
+        run: node scripts/install-release-scanner.mjs "$RUNNER_TEMP/release-scanner"
+      - name: Positive control (not for merge) - move the installed scanner out of the root the next step reads
+        run: mv "$RUNNER_TEMP/release-scanner" "$RUNNER_TEMP/release-scanner-moved"
+      - name: Review a tarball in the release job's install shape
+        run: node --test scripts/__tests__/release-review-install-shape.test.mjs
+        env:
+          RELEASE_SCANNER_ROOT: ${{ runner.temp }}/release-scanner
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -86,9 +104,16 @@ jobs:
       # reports a rate-limited feed as a PRECONDITION (not a pass) — which the
       # own-tarball test then fails loudly. The token turns that flake into a
       # 5000/hour budget.
+      # RELEASE_SCANNER_ROOT: the scanner installed above, outside the
+      # workspace, so the npm ci above leaves it in place; scripts/__tests__
+      # reads it. The opena2a-cli tests run under turbo's strict env mode,
+      # which forwards its built-in set and the names packages/cli/turbo.json
+      # declares, not this one, so they install their own copy from the same
+      # lockfile.
       - run: npm run test
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SCANNER_ROOT: ${{ runner.temp }}/release-scanner
 
   lint:
     runs-on: ubuntu-latest

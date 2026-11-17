@@ -35,16 +35,31 @@
  * same class masks one or the other. If the installed scanner does not flag
  * the control, the scan reports `precondition: control not flagged`, never a
  * pass.
+ *
+ * The scanner is not the workspace's copy. In the release job's install shape
+ * (`npm ci --ignore-scripts`, no build) npm links hackmyagent's first-party
+ * dependencies to unbuilt workspace packages, and a scanner loaded from there
+ * stops before it scans anything. `scripts/install-release-scanner.mjs`
+ * installs it from .github/release-scanner/'s lockfile into a directory
+ * outside the repository, and `--scanner-root <dir>` names that directory.
+ * Any other scanner is refused as a precondition: no flag, a relative,
+ * missing or in-repository path, a lockfile that is not the committed one, an
+ * installed version that is not the lockfile's, a package directory that is
+ * a link, or a link that leaves the root. The scanner runs with a declared
+ * environment and, where the host allows it, in a network namespace of its
+ * own; its report is never printed, since a report quotes what it scanned.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   statSync,
@@ -557,25 +572,197 @@ function checkGlobalInstallSmoke(tarball, manifest, siblings, scratchRoot) {
 // planted control decides whether the scanner's silence means anything.
 // ---------------------------------------------------------------------------
 
-function resolveHackmyagent() {
-  // Read the installed copy directly rather than through require.resolve: the
-  // package's `exports` map does not expose ./package.json, and the .bin shim
-  // below points into this same top-level install anyway.
-  const pkgPath = path.join(REPO_ROOT, 'node_modules', 'hackmyagent', 'package.json');
-  if (!existsSync(pkgPath)) {
-    throw new Precondition(
-      'hackmyagent is not installed at the repository root — run `npm ci --ignore-scripts` first; the release job does'
-    );
-  }
-  const version = JSON.parse(readFileSync(pkgPath, 'utf8')).version;
-  const bin = path.join(REPO_ROOT, 'node_modules', '.bin', 'hackmyagent');
-  if (!existsSync(bin)) {
-    throw new Precondition('node_modules/.bin/hackmyagent does not exist — run `npm ci --ignore-scripts` first');
-  }
-  return { bin: realpathSync(bin), version };
+/** The committed lockfile a scanner root must have been installed from. */
+const SCANNER_LOCKFILE = path.join(REPO_ROOT, '.github', 'release-scanner', 'package-lock.json');
+const SCANNER_INSTALL =
+  'install it with `node scripts/install-release-scanner.mjs <absolute directory outside the repository>` and pass that directory as --scanner-root';
+
+const isInside = (child, parent) => {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
+};
+
+const sha256Hex = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * Links under the scanner's node_modules, nested node_modules included. A
+ * package directory that is a link is the workspace-link shape this install
+ * exists to keep out, wherever it points; any other link must resolve inside
+ * the scanner root.
+ */
+function scannerLinks(nodeModules, realRoot) {
+  const packageLinks = [];
+  const outside = [];
+  const visit = (dir, rel, packagePosition) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, ent.name);
+      const r = `${rel}/${ent.name}`;
+      const atPackage = packagePosition && !ent.name.startsWith('.');
+      if (ent.isSymbolicLink()) {
+        if (atPackage) packageLinks.push(r);
+        let target;
+        try {
+          target = realpathSync(abs);
+        } catch {
+          target = path.resolve(dir, readlinkSync(abs));
+        }
+        if (!isInside(target, realRoot)) outside.push(`${r} -> ${target}`);
+      } else if (ent.isDirectory()) {
+        visit(abs, r, ent.name === 'node_modules' || (atPackage && ent.name.startsWith('@')));
+      }
+    }
+  };
+  visit(nodeModules, 'node_modules', true);
+  return { packageLinks: packageLinks.sort(), outside: outside.sort() };
 }
 
-function checkCredentialScan(extractedRoot, scratchRoot) {
+function resolveHackmyagent(scannerRoot) {
+  if (scannerRoot == null) {
+    throw new Precondition(`no --scanner-root given, and the review runs no other scanner: ${SCANNER_INSTALL}`);
+  }
+  if (!path.isAbsolute(scannerRoot)) {
+    throw new Precondition(`--scanner-root ${scannerRoot} is a relative path: ${SCANNER_INSTALL}`);
+  }
+  const root = path.resolve(scannerRoot);
+  if (!existsSync(root)) {
+    throw new Precondition(`--scanner-root ${root} does not exist: ${SCANNER_INSTALL}`);
+  }
+  const realRoot = realpathSync(root);
+  if (isInside(root, REPO_ROOT) || isInside(realRoot, realpathSync(REPO_ROOT))) {
+    throw new Precondition(
+      `--scanner-root ${root} lies inside the repository (${REPO_ROOT}), where npm links workspace packages: ${SCANNER_INSTALL}`
+    );
+  }
+
+  if (!existsSync(SCANNER_LOCKFILE)) {
+    throw new Precondition('.github/release-scanner/package-lock.json does not exist, so no scanner root can be checked against it');
+  }
+  const pinnedSha = sha256Hex(readFileSync(SCANNER_LOCKFILE));
+  const lockPath = path.join(root, 'package-lock.json');
+  if (!existsSync(lockPath)) {
+    throw new Precondition(`${lockPath} does not exist, so ${root} was not installed from the pinned lockfile: ${SCANNER_INSTALL}`);
+  }
+  const lockfileSha256 = sha256Hex(readFileSync(lockPath));
+  if (lockfileSha256 !== pinnedSha) {
+    throw new Precondition(
+      `${lockPath} has sha256 ${lockfileSha256}, which differs from .github/release-scanner/package-lock.json (${pinnedSha}): ${SCANNER_INSTALL}`
+    );
+  }
+
+  const nodeModules = path.join(root, 'node_modules');
+  let nodeModulesStat;
+  try {
+    nodeModulesStat = lstatSync(nodeModules);
+  } catch {
+    throw new Precondition(`${nodeModules} does not exist: ${SCANNER_INSTALL}`);
+  }
+  if (nodeModulesStat.isSymbolicLink() || !nodeModulesStat.isDirectory()) {
+    throw new Precondition(
+      `${nodeModules} is ${nodeModulesStat.isSymbolicLink() ? 'a symbolic link' : 'not a directory'}: ${SCANNER_INSTALL}`
+    );
+  }
+  const links = scannerLinks(nodeModules, realRoot);
+  if (links.packageLinks.length > 0 || links.outside.length > 0) {
+    const named = [
+      ...links.packageLinks.slice(0, 10).map((l) => `package directory is a symbolic link: ${l}`),
+      ...links.outside.slice(0, 10).map((l) => `symbolic link resolves outside the scanner root: ${l}`),
+    ];
+    throw new Precondition(`${root} is not an isolated install (${named.join('; ')}): ${SCANNER_INSTALL}`);
+  }
+
+  // Read the installed copy's manifest directly rather than through
+  // require.resolve: the package's `exports` map does not expose ./package.json.
+  const pinned = JSON.parse(readFileSync(SCANNER_LOCKFILE, 'utf8')).packages?.['node_modules/hackmyagent']?.version;
+  const pkgDir = path.join(nodeModules, 'hackmyagent');
+  const pkgPath = path.join(pkgDir, 'package.json');
+  if (!existsSync(pkgPath)) {
+    throw new Precondition(`hackmyagent is not installed under ${root}: ${SCANNER_INSTALL}`);
+  }
+  const manifest = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  if (!pinned || manifest.version !== pinned) {
+    throw new Precondition(
+      `installed hackmyagent is ${manifest.version}, which differs from the lockfile's ${pinned ?? '(none)'}: ${SCANNER_INSTALL}`
+    );
+  }
+  const binRel = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.hackmyagent;
+  const bin = binRel ? path.join(pkgDir, binRel) : null;
+  if (!bin || !existsSync(bin) || !isInside(realpathSync(bin), realpathSync(pkgDir))) {
+    throw new Precondition(`hackmyagent@${manifest.version} under ${root} carries no hackmyagent bin inside its own directory: ${SCANNER_INSTALL}`);
+  }
+  return { bin: realpathSync(bin), version: manifest.version, root, realRoot, lockfileSha256 };
+}
+
+/**
+ * How the scanner child is kept off the network: a network namespace of its
+ * own where `unshare -rn` works on this host, and in every case an
+ * environment whose proxies point at a closed local port. Probed once per
+ * run; neither arm is a precondition.
+ */
+let networkArm;
+function scannerNetworkArm() {
+  if (!networkArm) {
+    const probe = spawnSync('unshare', ['-rn', 'true'], { stdio: 'ignore', timeout: 30_000, env: { PATH: process.env.PATH ?? '' } });
+    networkArm =
+      !probe.error && probe.status === 0
+        ? { prefix: ['unshare', '-rn'], label: 'network cut via unshare -rn' }
+        : { prefix: [], label: 'no netns available; proxy-poisoned env only' };
+  }
+  return networkArm;
+}
+
+/**
+ * The scanner child's whole environment. Nothing is inherited but PATH: no
+ * token, no CI variable, no npm_config_*. HOME and TMPDIR are fresh scratch
+ * directories, and a closed local port stands in for every proxy.
+ */
+function scannerEnv(scratchRoot) {
+  const home = mkdtempSync(path.join(scratchRoot, 'credscan-home-'));
+  return {
+    PATH: process.env.PATH ?? '',
+    HOME: home,
+    USERPROFILE: home,
+    TMPDIR: mkdtempSync(path.join(scratchRoot, 'credscan-tmp-')),
+    NO_COLOR: '1',
+    OPENA2A_TELEMETRY: 'off',
+    HTTP_PROXY: 'http://127.0.0.1:9',
+    HTTPS_PROXY: 'http://127.0.0.1:9',
+    http_proxy: 'http://127.0.0.1:9',
+    https_proxy: 'http://127.0.0.1:9',
+    NO_PROXY: '',
+  };
+}
+
+/**
+ * The precondition for a scan whose report did not parse. The report is the
+ * scanner's stdout and it quotes what it scanned, so not one byte of it is
+ * printed: its size and digest only. From stderr only what names a cause: the
+ * path of a missing module under the scanner or repository root, and Node's
+ * ERR_* codes.
+ */
+function unparseableReport(res, label, scanner) {
+  const stdout = res.stdout ?? Buffer.alloc(0);
+  const stderr = res.stderr ?? Buffer.alloc(0);
+  const errText = stderr.toString('utf8');
+  const roots = [scanner.root, scanner.realRoot, REPO_ROOT, realpathSync(REPO_ROOT)];
+  const modules = [];
+  for (const [, p] of errText.matchAll(/Cannot find module '([^'\n]*)'/g)) {
+    const named =
+      path.isAbsolute(p) && roots.some((r) => isInside(path.resolve(p), r))
+        ? p
+        : `module path outside the scanner and repository roots (${Buffer.byteLength(p)} bytes)`;
+    if (!modules.includes(named)) modules.push(named);
+  }
+  const codes = [...new Set(errText.match(/ERR_[A-Z0-9_]+/g) ?? [])];
+  return [
+    `hackmyagent@${scanner.version} produced no parseable JSON report (exit ${res.status}, signal ${res.signal ?? 'none'}, ${label}); the tarball was not scanned`,
+    `scanner stdout: ${stdout.length} bytes, sha256 ${sha256Hex(stdout)}; never printed, a report quotes what it scanned`,
+    `scanner stderr: ${stderr.length} bytes, sha256 ${sha256Hex(stderr)}`,
+    ...modules.slice(0, 10).map((m) => `stderr: Cannot find module ${m}`),
+    ...(codes.length > 0 ? [`stderr error codes: ${codes.slice(0, 20).join(', ')}`] : []),
+  ];
+}
+
+function checkCredentialScan(extractedRoot, scratchRoot, scannerRoot) {
   const distRoot = path.join(extractedRoot, 'package', 'dist');
   if (!existsSync(distRoot)) {
     return { status: 'precondition', detail: ['the tarball has no package/dist/ entries; nothing was scanned, and nothing scanned is not a pass'] };
@@ -583,12 +770,24 @@ function checkCredentialScan(extractedRoot, scratchRoot) {
 
   let scanner;
   try {
-    scanner = resolveHackmyagent();
+    scanner = resolveHackmyagent(scannerRoot);
   } catch (e) {
     if (e instanceof Precondition) return { status: 'precondition', detail: [e.message] };
     throw e;
   }
+  const network = scannerNetworkArm();
+  const result = scanShippedFiles(distRoot, scratchRoot, scanner, network);
+  return {
+    status: result.status,
+    detail: [
+      `scanner: hackmyagent@${scanner.version} at ${scanner.root}, lockfile sha256 ${scanner.lockfileSha256}`,
+      `scanner network: ${network.label}`,
+      ...result.detail,
+    ],
+  };
+}
 
+function scanShippedFiles(distRoot, scratchRoot, scanner, network) {
   // FLAT extraction: each shipped file at its path relative to package/dist/,
   // never under a directory named `dist` (the scanner's AST walk skips those).
   //
@@ -644,13 +843,18 @@ function checkCredentialScan(extractedRoot, scratchRoot) {
   // scans per batch, never one: the shipped files alone, the control alone in
   // its own directory. The control scan still runs per batch so every batch's
   // scanner invocation is proven to flag the class it is silent about.
+  //
+  // The child gets a declared environment, never this process's: the review
+  // job holds a token, and the scanner reads files it does not need one for.
+  // stdout and stderr stay bytes, so the precondition below can count and
+  // digest exactly what the scanner wrote.
   const scanOnce = (dir, label) => {
-    const res = spawnSync(process.execPath, [scanner.bin, 'secure', '--ci', '--format', 'json'], {
+    const [cmd, ...cmdArgs] = [...network.prefix, process.execPath, scanner.bin, 'secure', '--ci', '--format', 'json'];
+    const res = spawnSync(cmd, cmdArgs, {
       cwd: dir,
-      encoding: 'utf8',
       timeout: 300_000,
       maxBuffer: 64 * 1024 * 1024,
-      env: { ...process.env },
+      env: scannerEnv(scratchRoot),
     });
     if (res.error) {
       return { precondition: [`hackmyagent@${scanner.version} did not run (${label}): ${res.error.message}`] };
@@ -658,14 +862,9 @@ function checkCredentialScan(extractedRoot, scratchRoot) {
     // `--ci` exits non-zero when findings exist — expected on the control scan,
     // the control IS a finding. Only an unparseable report means no scan happened.
     try {
-      return { findings: parseScanFindings(res.stdout) };
+      return { findings: parseScanFindings(res.stdout.toString('utf8')) };
     } catch {
-      return {
-        precondition: [
-          `hackmyagent@${scanner.version} produced no parseable JSON report (exit ${res.status}, ${label}); the tarball was not scanned`,
-          `scanner said: ${short(res.stdout || res.stderr, 300)}`,
-        ],
-      };
+      return { precondition: unparseableReport(res, label, scanner) };
     }
   };
 
@@ -1007,7 +1206,9 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates) {
 
 function usage(msg) {
   console.error(msg);
-  console.error('usage: node scripts/release-artifact-review.mjs --tarball <path> [--advisory-states published|all]');
+  console.error(
+    'usage: node scripts/release-artifact-review.mjs --tarball <path> --scanner-root <absolute dir> [--advisory-states published|all]'
+  );
   process.exit(2);
 }
 
@@ -1020,6 +1221,10 @@ async function main() {
   const advisoryStates = si === -1 ? 'all' : argv[si + 1];
   if (!['published', 'all'].includes(advisoryStates)) usage(`--advisory-states must be "published" or "all", got "${advisoryStates}".`);
   if (!existsSync(tarball)) usage(`no such tarball: ${tarball}`);
+  // Not a usage error when absent or wrong: credential-scan reports it as a
+  // precondition, in the census, like every other check that could not run.
+  const ri = argv.indexOf('--scanner-root');
+  const scannerRoot = ri === -1 ? undefined : argv[ri + 1];
 
   const scratchRoot = mkdtempSync(path.join(tmpdir(), 'release-artifact-review-'));
   const results = new Map();
@@ -1048,7 +1253,7 @@ async function main() {
       ? resolveWorkspaceSiblings(tarball, manifest)
       : { overrides: {}, log: [], refused: [], unreadable: [] };
     record('global-install-smoke', checkGlobalInstallSmoke(tarball, manifest, siblings, scratchRoot));
-    record('credential-scan', checkCredentialScan(extracted, scratchRoot));
+    record('credential-scan', checkCredentialScan(extracted, scratchRoot, scannerRoot));
 
     let closure;
     try {

@@ -77,7 +77,8 @@ const NETWORK_FREE_CHECKS = [
  * on a subject where that is never acceptable.
  */
 const PRECONDITION_REMEDY: Record<string, string> = {
-  'credential-scan': 'npm ci --ignore-scripts   (installs node_modules/.bin/hackmyagent at the repo root)',
+  'credential-scan':
+    'node scripts/install-release-scanner.mjs <absolute directory outside the repository>, then pass that directory as --scanner-root   (this file reads it from RELEASE_SCANNER_ROOT, and installs one when that is unset)',
   'npm-audit': 'no single command; the registry advisory feed must be reachable from this machine',
   'consumer-closure': 'no single command; registry.npmjs.org and api.github.com must be reachable from this machine',
   'global-install-smoke': 'npm run build   (the packed tarball must carry a working dist/)',
@@ -123,6 +124,34 @@ function advisoryRateLimitRefusals(out: string): string[] | null {
   return preconditions.every((l) => ADVISORY_RATE_LIMIT.test(l) || ADVISORY_EMPTY_FEED.test(l)) ? refusals : null;
 }
 
+/**
+ * The pinned credential scanner every review here runs (`--scanner-root`):
+ * RELEASE_SCANNER_ROOT when set, else one installed by
+ * scripts/install-release-scanner.mjs into a fresh temporary directory, as
+ * the release job installs it. A failed install is a failure, never a skip.
+ */
+let scannerRoot: string | undefined;
+function releaseScannerRoot(): string {
+  if (!scannerRoot) {
+    if (process.env.RELEASE_SCANNER_ROOT) {
+      scannerRoot = process.env.RELEASE_SCANNER_ROOT;
+    } else {
+      const dir = path.join(mkdtempSync(path.join(tmpdir(), 'opa04-release-scanner-')), 'scanner');
+      const res = spawnSync(process.execPath, [path.join(REPO_ROOT, 'scripts', 'install-release-scanner.mjs'), dir], {
+        encoding: 'utf8',
+        timeout: 600_000,
+      });
+      if (res.status !== 0) {
+        throw new Error(
+          `installing the pinned credential scanner failed (exit ${res.status}); command that satisfies it: ${PRECONDITION_REMEDY['credential-scan']}\n${res.stdout ?? ''}${res.stderr ?? ''}`
+        );
+      }
+      scannerRoot = dir;
+    }
+  }
+  return scannerRoot;
+}
+
 interface ReviewResult {
   status: number | null;
   out: string;
@@ -141,7 +170,7 @@ function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
     throw new Error(`runReview reads published advisories only; got --advisory-states ${extraArgs[si + 1]}`);
   }
   const args = si === -1 ? [...extraArgs, '--advisory-states', 'published'] : extraArgs;
-  const res = spawnSync(process.execPath, [SCRIPT, '--tarball', tarball, ...args], {
+  const res = spawnSync(process.execPath, [SCRIPT, '--tarball', tarball, '--scanner-root', releaseScannerRoot(), ...args], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     timeout: 840_000,
@@ -620,9 +649,11 @@ describe('release-artifact-review: clean subjects go green', () => {
     // The clean run above passed `--advisory-states published`.
     expect(getCleanResult().out).toContain('advisory-states read: published');
     // And an unknown value is refused rather than silently defaulted.
-    const bogus = spawnSync(process.execPath, [SCRIPT, '--tarball', 'x.tgz', '--advisory-states', 'draft'], {
-      encoding: 'utf8',
-    });
+    const bogus = spawnSync(
+      process.execPath,
+      [SCRIPT, '--tarball', 'x.tgz', '--scanner-root', releaseScannerRoot(), '--advisory-states', 'draft'],
+      { encoding: 'utf8' }
+    );
     expect(bogus.status).toBe(2);
   });
 
