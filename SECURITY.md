@@ -39,6 +39,6 @@ exists so a reporter can tell what we already know about from what is new. Last 
 ## Change control
 
 Changes to the automated review and release configuration (everything under
-`.github/`) require an approving review from a code owner. Automation can
-propose those changes; it cannot approve them. Ordinary pull requests are
-gated by status checks alone.
+`.github/`) need an approval on the pull request's current head commit, which
+a required status check enforces. Ordinary pull requests are gated by status
+checks alone.
