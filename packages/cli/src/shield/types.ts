@@ -239,6 +239,12 @@ export interface PolicyViolation {
   findingId?: string;
   remediationCommand?: string;
   compliance?: string[];
+  /**
+   * Set on a violation built from Shield `command.blocked` records (see
+   * isShieldDenyRecord in findings.ts). It gets no finding, and its
+   * recommendation says that Shield did not stop the command.
+   */
+  shieldDenyRecord?: true;
 }
 
 export interface PostureFactor {
