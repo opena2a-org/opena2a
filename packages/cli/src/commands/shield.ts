@@ -1100,6 +1100,7 @@ async function buildWeeklyReport(
   topActions: { name: string; count: number }[],
 ): Promise<import('../shield/types.js').WeeklyReport> {
   const { computeARPStats } = await import('../shield/arp-bridge.js');
+  const { isShieldDenyRecord, SHIELD_DENY_RECORD_RECOMMENDATION } = await import('../shield/findings.js');
   const { hostname } = await import('node:os');
 
   const now = new Date();
@@ -1168,7 +1169,9 @@ async function buildWeeklyReport(
   const violationMap: Record<string, { count: number; event: import('../shield/types.js').ShieldEvent }> = {};
   for (const event of events) {
     if (event.outcome === 'blocked' || event.severity === 'high' || event.severity === 'critical') {
-      const key = `${event.action}:${event.target}:${event.agent ?? 'unknown'}`;
+      // A Shield deny record never shares a row with another source's event.
+      const group = isShieldDenyRecord(event) ? 'shield-deny' : 'event';
+      const key = `${group}:${event.action}:${event.target}:${event.agent ?? 'unknown'}`;
       if (!violationMap[key]) {
         violationMap[key] = { count: 0, event };
       }
@@ -1176,14 +1179,19 @@ async function buildWeeklyReport(
     }
   }
   for (const [, { count, event }] of Object.entries(violationMap)) {
-    violations.push({
+    const shieldDenyRecord = isShieldDenyRecord(event);
+    const violation: import('../shield/types.js').PolicyViolation = {
       action: event.action,
       target: event.target,
       agent: event.agent ?? 'unknown',
       count,
       severity: event.severity,
-      recommendation: event.outcome === 'blocked' ? 'Already blocked by policy' : 'Review and consider blocking',
-    });
+      recommendation: shieldDenyRecord
+        ? SHIELD_DENY_RECORD_RECOMMENDATION
+        : event.outcome === 'blocked' ? 'Already blocked by policy' : 'Review and consider blocking',
+    };
+    if (shieldDenyRecord) violation.shieldDenyRecord = true;
+    violations.push(violation);
   }
   violations.sort((a, b) => b.count - a.count);
 

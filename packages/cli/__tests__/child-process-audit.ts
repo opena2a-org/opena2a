@@ -357,4 +357,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'once: a child that opens the pipe for writing after a delay and closes it, so a read that ' +
       'blocks on it reaches end of file, and is killed when the case ends (#412)',
   },
+  'shield/report-shield-command-blocked-record.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(env -i node -e <writeEvent from dist/shield/events.js>) to write the records into a ' +
+      'scratch HOME, then spawnSync(env -i node dist/index.js shield report [--format json | --report ' +
+      '<file>]) from an empty working directory, inside sandbox-exec on macOS, one at a time',
+  },
 };

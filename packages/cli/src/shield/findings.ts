@@ -465,11 +465,30 @@ export function classifyEvents(events: ShieldEvent[]): ClassifiedFinding[] {
   });
 }
 
+/** The recommendation the report gives a Shield `command.blocked` record. */
+export const SHIELD_DENY_RECORD_RECOMMENDATION =
+  'Shield did not stop this. An earlier version recorded the policy deny as blocked; check whether the command ran.';
+
+/**
+ * A `command.blocked` event whose source is Shield: the record 0.10.13 and
+ * earlier wrote for a policy deny. The report lists it as a violation with
+ * no finding and SHIELD_DENY_RECORD_RECOMMENDATION; the stored event, its
+ * action and its outcome are unchanged.
+ */
+export function isShieldDenyRecord(event: Pick<ShieldEvent, 'source' | 'action'>): boolean {
+  return event.source === 'shield' && event.action === 'command.blocked';
+}
+
 /**
  * Map a PolicyViolation to a finding definition.
  * Used to enrich violation data in reports.
+ *
+ * A violation built from Shield deny records gets none, as classifyEvent
+ * gives none to Shield's own events other than integrity failures.
  */
 export function classifyViolation(violation: PolicyViolation): FindingDefinition | null {
+  if (violation.shieldDenyRecord) return null;
+
   const action = (violation.action ?? '').toLowerCase();
   const target = (violation.target ?? '').toLowerCase();
 
