@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "shell-runner": {
+      "command": "bash",
+      "args": ["./scripts/task.sh"]
+    }
+  }
+}
