@@ -23,7 +23,13 @@ const credentialMatches = (severity: string, count: number): CredentialMatch[] =
   value: MASK, filePath: '/tmp/x/src/config.ts', line: i + 1, findingId: 'CRED-010', envVar: `SERVICE_KEY_${i + 1}`, severity, title: 'Service key',
 }));
 
-function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; hmaFindings: HmaFinding[]; guard: 'unsigned' | 'valid'; detect?: Partial<DetectPhaseData>; credentials?: CredentialMatch[] }) {
+/** A built-in credential scan match at `rel` (relative to /tmp/x). */
+const credentialAt = (rel: string, line: number, severity: string, findingId = 'CRED-001'): CredentialMatch => ({
+  value: MASK, filePath: `/tmp/x/${rel}`, line, findingId, envVar: `KEY_${line}`, severity, title: 'Anthropic API Key',
+});
+
+/** `hmaReported`: the matches aggregateFindings dropped because HMA reported them too. */
+function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; hmaFindings: HmaFinding[]; guard: 'unsigned' | 'valid'; detect?: Partial<DetectPhaseData>; credentials?: CredentialMatch[]; hmaReported?: CredentialMatch[] }) {
   const hygieneChecks = checks(o.warn);
   const guardData = { filesMonitored: 0, tamperedFiles: [], signatureStatus: o.guard, candidates: ['package.json'] };
   const matches = o.credentials ?? [];
@@ -36,7 +42,9 @@ function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; 
     targetDir: '/tmp/x',
     initData: { projectType: 'Node.js', hygieneChecks, envFiles: o.envFiles ?? [], advisories: [], matchedPackages: [] } as never,
     credentialData, guardData, shieldData, detectData,
-    findings: matches.map(m => ({ id: m.findingId, title: m.title, severity: m.severity, source: 'credential-scan', detail: `src/config.ts:${m.line}`, remediation: '' })),
+    findings: matches.filter(m => !o.hmaReported?.includes(m)).map(m => ({
+      id: m.findingId, title: m.title, severity: m.severity, source: 'credential-scan', detail: `${m.filePath.replace('/tmp/x/', '')}:${m.line}`, remediation: '',
+    })),
     hmaData: { available: true, score: o.hmaScore, allFailedFindings: o.hmaFindings } as never,
     state: { hygieneChecks, credentials: credentialData, guard: guardData, shield: shieldData, hma: { available: true, score: o.hmaScore }, detect: detectData },
     score: scoreReview,
@@ -234,15 +242,17 @@ describe('recovery while a floor holder pins the score', () => {
 
   it('marks a fix that moves its own dimension but not the composite as floorPinned, naming the holder', () => {
     const r = heldTree();
-    const credential = r.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!;
-    expect(credential.recovery).toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['Credentials'] });
     const lockFile = r.reportFindings.find(f => f.foundBy[0].checkId === 'Lock file')!;
     expect(lockFile.recovery).toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['Credentials', 'HMA Scan'] });
+    // One of five critical credentials: the credential score stays at 0, so no score input moves.
+    const credential = r.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!;
+    expect(credential.recovery).toEqual({ kind: 'none', points: 0, from: 0, to: 0 });
     const only = hmaOnly();
     expect(only.reportFindings.find(f => f.foundBy[0].checkId === 'Lock file')!.recovery)
       .toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['HMA Scan'] });
-    // A fix that may also move the one holder cannot be re-scored here.
-    expect(only.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!.recovery.kind).toBe('nextRun');
+    // HMA did not report the credential, so its fix does not move HMA, which holds the score.
+    expect(only.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!.recovery)
+      .toEqual({ kind: 'floorPinned', points: 0, from: 0, to: 0, holder: ['HMA Scan'] });
   });
 
   it('keeps none for a fix that changes no score input', () => {
@@ -338,5 +348,85 @@ describe('evidence from the scanner JSON', () => {
       hmaFindings: [hma('X-001', 'low', 'misc', 'x.js', { evidence: { kind: 'positive', lines } })],
     });
     expect(r.reportFindings[0].evidence.map(e => e.line)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('credential recovery', () => {
+  it('re-scores a credential HMA did not report exactly, as recoverySummary does', () => {
+    const r = build({ warn: [], hmaScore: 90, guard: 'valid', credentials: credentialMatches('medium', 1), hmaFindings: [] });
+    const [credential] = r.reportFindings;
+    expect(credential.foundBy).toEqual([{ source: 'credential-scan', checkId: 'CRED-010', lines: [1] }]);
+    expect(r.recoverySummary.opportunities).toEqual([{ dimension: 'Credentials', pointsRecoverable: credential.recovery.points, action: 'opena2a protect' }]);
+    expect(credential.recovery).toEqual({
+      kind: 'computed', points: r.recoverySummary.totalRecoverable, from: r.recoverySummary.currentScore, to: r.recoverySummary.potentialScore,
+    });
+  });
+
+  it('gives the HMA finding that also reports a credential its re-scored recovery and one entry per check', () => {
+    const matches = [credentialAt('src/config.ts', 1, 'high'), credentialAt('src/config.ts', 2, 'high')];
+    const r = build({
+      warn: [], hmaScore: 90, guard: 'valid', credentials: matches, hmaReported: matches,
+      hmaFindings: [hma('CRED-001', 'high', 'credentials', 'src/config.ts', { fix: 'opena2a protect' })],
+    });
+    expect(r.reportFindings).toHaveLength(1);
+    const [host] = r.reportFindings;
+    expect(host.foundBy).toEqual([
+      { source: 'hma', checkId: 'CRED-001', lines: [] },
+      { source: 'credential-scan', checkId: 'CRED-001', lines: [1, 2] },
+    ]);
+    // Both values moved: the same gain opena2a protect re-scores, plus HMA's share on the next run.
+    expect(r.recoverySummary.totalRecoverable).toBeGreaterThan(0);
+    expect(host.recovery).toEqual({
+      kind: 'atLeast', points: r.recoverySummary.totalRecoverable, from: r.recoverySummary.currentScore, to: r.recoverySummary.potentialScore,
+    });
+  });
+
+  it('lists a credential whose HMA finding joined an env file group on its own', () => {
+    const match = credentialAt('.env', 1, 'medium');
+    const r = build({
+      warn: [], hmaScore: 90, guard: 'valid', credentials: [match], hmaReported: [match],
+      envFiles: [{ path: '.env', assignments: 1, gitIgnored: false, gitTracked: false, stagedByAddAll: true, mode: '-rw-------' }],
+      hmaFindings: [hma('SEM-CRED-002', 'medium', 'Credential Protection', '.env', { line: 1 })],
+    });
+    const env = r.reportFindings.find(f => f.title.startsWith('.env is not ignored'))!;
+    expect(env.foundBy.map(b => b.checkId)).toEqual(['SEM-CRED-002']);
+    const credential = r.reportFindings.find(f => f.foundBy[0].source === 'credential-scan')!;
+    expect(credential).toMatchObject({ title: 'Anthropic API Key in .env', locations: [{ file: '.env', line: 1 }] });
+    expect(credential.recovery.kind).toBe('atLeast');
+    expect(credential.recovery.points).toBe(r.recoverySummary.totalRecoverable);
+  });
+});
+
+describe('env file findings', () => {
+  const envFile = (fact: Partial<EnvFileFact>, warn = ['.env protection']) => build({
+    warn, hmaScore: 90, guard: 'valid', hmaFindings: [],
+    envFiles: [{ path: '.env', assignments: 1, gitIgnored: false, gitTracked: false, stagedByAddAll: true, mode: '-rw-------', ...fact }],
+  });
+
+  it('counts one assignment in the singular and says what stays in history', () => {
+    const [env] = envFile({}).reportFindings;
+    expect(env.evidence[1].text).toBe('1 line assigns a value (values are not read)');
+    expect(env.reason).toBe('No .gitignore rule matches .env, so `git add .` stages it. Once committed and pushed, the value it sets stays in history: removing it takes a history rewrite and rotating it.');
+    expect(envFile({ assignments: 3 }).reportFindings[0].evidence[1].text).toBe('3 lines assign a value (values are not read)');
+    expect(envFile({ assignments: 0 }).reportFindings[0].reason).toBe('No .gitignore rule matches .env, so `git add .` stages it.');
+  });
+
+  it('credits the ignore rule to a tracked file whose Then step adds it', () => {
+    const [env] = envFile({ gitTracked: true }).reportFindings;
+    expect(env).toMatchObject({ fix: { command: 'git rm --cached -- .env' }, then: { command: "printf '\\n.env\\n' >> .gitignore" } });
+    expect(env.foundBy.map(b => b.checkId)).toEqual(['.env protection']);
+    expect(env.recovery.kind).toBe('computed');
+    expect(env.reason).toBe('git tracks .env, so each commit records it, and no ignore rule matches it. Earlier commits keep the value it sets: rotate it.');
+  });
+
+  it('gives a tracked file a rule already matches no rule step and no rule credit', () => {
+    const r = envFile({ gitTracked: true, gitIgnored: true, assignments: 2 });
+    const env = r.reportFindings.find(f => f.locations[0]?.file === '.env')!;
+    expect(env).toMatchObject({ fix: { command: 'git rm --cached -- .env' }, then: null, foundBy: [] });
+    expect(env.recovery).toEqual({ kind: 'none', points: 0, from: r.recoverySummary.currentScore, to: r.recoverySummary.currentScore });
+    expect(env.reason).toBe('git tracks .env, so each commit records it, and the ignore rule that matches it does not apply to a tracked file. Earlier commits keep the 2 values it sets: rotate each one.');
+    // The warning .gitignore check stays a finding of its own, with the credit.
+    const rule = r.reportFindings.find(f => f.title === '.gitignore has no rule for .env files')!;
+    expect(rule.recovery.kind).toBe('computed');
   });
 });
