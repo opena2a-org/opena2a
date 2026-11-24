@@ -339,4 +339,57 @@ describe('evidence from the scanner JSON', () => {
     });
     expect(r.reportFindings[0].evidence.map(e => e.line)).toEqual([1, 2, 3]);
   });
+
+  /** A list of `length` entries whose elements past the third throw when read. */
+  const readOnlyThree = <T>(length: number, make: (i: number) => T): T[] =>
+    new Proxy(Array.from({ length }, (_, i) => make(i)), {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && /^\d+$/.test(key) && Number(key) >= 3) throw new Error(`entry ${key} was read`);
+        return Reflect.get(target, key, receiver);
+      },
+    });
+  const evidenceOf = (evidence: HmaFinding['evidence']) => build({
+    warn: [], hmaScore: 90, guard: 'valid',
+    hmaFindings: [hma('X-001', 'low', 'misc', 'x.js', { evidence })],
+  }).reportFindings[0].evidence;
+
+  it('reads no entry past the third of any list', () => {
+    const lines = readOnlyThree(10, i => ({ n: i + 1, content: `line ${i + 1}` }));
+    const expected = readOnlyThree(10, i => ({ constraint: `rule ${i + 1}`, rationale: '' }));
+    expect(evidenceOf({ kind: 'positive', lines }).map(e => e.line)).toEqual([1, 2, 3]);
+    expect(evidenceOf({ kind: 'absence', observed: { lines, summary: '' }, expected }).map(e => e.line)).toEqual([1, 2, 3]);
+    expect(evidenceOf({ kind: 'absence', observed: { lines: [], summary: '' }, expected }).map(e => e.text))
+      .toEqual(['missing: rule 1', 'missing: rule 2', 'missing: rule 3']);
+  });
+
+  it('keeps three lines in all across the lists, positive lines first, and masks only those', () => {
+    const unread = (n: number) => ({ n, get content(): string { throw new Error(`line ${n} was masked`); } });
+    const ev = evidenceOf({
+      kind: 'mixed',
+      positive: { lines: [{ n: 1, content: 'a' }, { n: 2, content: 'b' }] },
+      absence: { observed: { lines: [{ n: 7, content: 'c' }, unread(8), unread(9)], summary: '' }, expected: [{ constraint: 'rule', rationale: '' }] },
+    });
+    expect(ev.map(e => [e.line, e.text])).toEqual([[1, 'a'], [2, 'b'], [7, 'c']]);
+  });
+
+  it('keeps the observed lines before the missing constraints', () => {
+    const ev = evidenceOf({
+      kind: 'absence',
+      observed: { lines: [{ n: 4, content: 'seen' }], summary: '' },
+      expected: [{ constraint: 'one', rationale: '' }, { constraint: 'two', rationale: '' }, { constraint: 'three', rationale: '' }],
+    });
+    expect(ev.map(e => e.text)).toEqual(['seen', 'missing: one', 'missing: two']);
+  });
+
+  it('keeps three lines on the .env finding when a merged check brings its own evidence', () => {
+    const lines = Array.from({ length: 5 }, (_, i) => ({ n: i + 1, content: `KEY_${i + 1}=x` }));
+    const r = build({
+      warn: ['.env protection'],
+      envFiles: [{ path: '.env', assignments: 5, gitIgnored: false, gitTracked: false, stagedByAddAll: true, mode: '-rw-------' }],
+      hmaScore: 90, guard: 'valid',
+      hmaFindings: [hma('GIT-003', 'critical', 'git', '.env', { evidence: { kind: 'positive', lines } })],
+    });
+    const env = r.reportFindings.find(f => f.foundBy.some(b => b.checkId === 'GIT-003'))!;
+    expect(env.evidence.map(e => e.text)).toEqual(['no rule matches .env', '5 lines assign a value (values are not read)', `KEY_1=${MASK}`]);
+  });
 });

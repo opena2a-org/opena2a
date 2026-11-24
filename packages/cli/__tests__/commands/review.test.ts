@@ -1435,6 +1435,46 @@ describe('aggregateFindings', () => {
     expect(result[0].detail).toBe('config.ts:10');
   });
 
+  it('drops a match in a sibling directory whose name starts with the target name', () => {
+    // `/tmp/target-other` starts with `/tmp/target` but is not inside it:
+    // the guard compares against the target plus a path separator.
+    const credData: CredentialPhaseData = {
+      matches: [
+        makeCredMatch({ filePath: '/tmp/target-other/config.ts', line: 1 }),
+        makeCredMatch({ filePath: '/tmp/targetconfig.ts', line: 2 }),
+        makeCredMatch({ filePath: '/tmp/target/config.ts', line: 10 }),
+      ],
+      totalFindings: 3,
+      bySeverity: { critical: 3 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    };
+
+    const result = aggregateFindings(credData, SHIELD_EMPTY, '/tmp/target', null);
+
+    expect(result.map(r => r.detail)).toEqual(['config.ts:10']);
+  });
+
+  it('resolves the target before comparing, so a trailing separator or a relative target keeps an in-scope match', () => {
+    const credData = (filePath: string): CredentialPhaseData => ({
+      matches: [makeCredMatch({ filePath, line: 10 })],
+      totalFindings: 1,
+      bySeverity: { critical: 1 },
+      driftFindings: [],
+      envVarSuggestions: [],
+    });
+
+    const trailing = aggregateFindings(credData('/tmp/target/config.ts'), SHIELD_EMPTY, `/tmp/target${path.sep}`, null);
+    expect(trailing.map(r => r.detail)).toEqual(['config.ts:10']);
+
+    const relative = aggregateFindings(credData(path.join(process.cwd(), 'config.ts')), SHIELD_EMPTY, '.', null);
+    expect(relative.map(r => r.detail)).toEqual(['config.ts:10']);
+
+    // A relative match path resolves from the working directory too.
+    const relativeFile = aggregateFindings(credData(path.join('sub', '..', 'config.ts')), SHIELD_EMPTY, process.cwd(), null);
+    expect(relativeFile.map(r => r.detail)).toEqual(['config.ts:10']);
+  });
+
   it('upgrades HMA severity to max(hma, cred) when dedupe fires', () => {
     // credData sees CRITICAL (sk-ant-*), HMA returns HIGH. Dedupe must
     // preserve the higher severity so the Observations block and verdict
