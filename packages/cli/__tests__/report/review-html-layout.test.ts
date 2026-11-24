@@ -156,6 +156,22 @@ describe('review report: 375px', () => {
     expect(minWidth).toBeGreaterThanOrEqual(640);
   });
 
+  it('a long project name in the header subtitle wraps instead of widening the page', () => {
+    // The subtitle names the project. A name with no space in it (a
+    // node_modules-style path or a long package name) could not break, and
+    // the header's title column, a flex item, kept the name's full width.
+    const long = 'a-very-long-project-name-without-any-spaces-in-it-at-all-'.repeat(3);
+    const page = generateReviewHtml({
+      projectName: long,
+      directory: '/tmp/demo',
+      timestamp: '2026-10-06T00:00:00Z',
+    } as unknown as ReviewReport);
+    const subtitle = page.match(/<div class="header-subtitle">[\s\S]*?<\/div>/)?.[0] ?? '';
+    expect(subtitle).toContain(long); // non-vacuity: the name is in the subtitle
+    expect(declarations(css, '.header-subtitle')).toContain('overflow-wrap:anywhere');
+    expect(declarations(css, '.header>:first-child')).toContain('min-width:0');
+  });
+
   it('a Hygiene row breaks its value instead of widening the page', () => {
     // The "Security config" row prints the signature store path
     // (.opena2a/guard/signatures.json) as one flex item. Unbreakable, it set

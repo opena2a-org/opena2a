@@ -46,6 +46,11 @@ body {
   font-weight: 700;
   color: var(--primary);
 }
+/* The title column may shrink below its longest word, so a long project
+   name in the subtitle wraps instead of widening the page. */
+.header > :first-child {
+  min-width: 0;
+}
 .header-meta {
   font-size: 12px;
   color: var(--dim);
@@ -633,6 +638,7 @@ summary:focus-visible {
   font-size: 13px;
   color: var(--dim);
   margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 .section-intro {
   font-size: 13px;
