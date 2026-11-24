@@ -23,6 +23,23 @@ export interface AiConfigFinding {
 
 export const MCP_CONFIG_FILES = ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'];
 
+/**
+ * How many MCP config files in `dir` are read by the MCP credential scan
+ * alone, so the credential coverage count can add them without counting a
+ * file twice.
+ *
+ * The source walk (walkFiles) skips every dot-named file and directory except
+ * its `.env*` allowlist, so a config at a dot-named path (`.mcp.json`,
+ * `.mcp/config.json`, `.claude/settings.json`, `.cursor/mcp.json`) is opened
+ * by scanMcpCredentials only. `mcp.json` has no leading dot: the walk opens
+ * and counts it already, so it is left out here.
+ */
+export function countMcpConfigsOutsideSourceWalk(dir: string): number {
+  return MCP_CONFIG_FILES
+    .filter(f => f.startsWith('.') && fs.existsSync(path.join(dir, f)))
+    .length;
+}
+
 const HIGH_RISK_SERVER_PATTERNS = [
   'filesystem', 'shell', 'bash', 'database', 'exec',
 ];

@@ -850,6 +850,15 @@ describe('init', () => {
     expect(text).not.toContain('Run it on the folder that holds your code');
   });
 
+  it('counts a non-dot mcp.json once: the source walk reads it, the MCP count does not add it', async () => {
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: { docs: { command: 'docs-server', args: [] } },
+    }));
+
+    const { output: json } = await captureStdout(() => init({ targetDir: tempDir, format: 'json' }));
+    expect(JSON.parse(json).credentialFilesScanned).toBe(1);
+  });
+
   it('counts the MCP config and template env files the source walk skips', async () => {
     // Each is read by its own credential reader, so neither directory is
     // "no files scanned" even though the source walk opens nothing in it.
