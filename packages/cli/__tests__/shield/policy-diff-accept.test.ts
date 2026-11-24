@@ -84,7 +84,8 @@ const shieldCommand = await import('../../src/commands/shield.js');
 const { shield } = shieldCommand;
 const { shieldInit } = await import('../../src/shield/init.js');
 const { createDefaultPolicy, savePolicy } = await import('../../src/shield/policy.js');
-const { recordPolicyHash, runIntegrityChecks, enterLockdown } = await import('../../src/shield/integrity.js');
+const { recordPolicyHash, runIntegrityChecks, enterLockdown } =
+  await import('../../src/shield/integrity.js');
 const { signAllArtifacts, loadSignatures } = await import('../../src/shield/signing.js');
 
 const SHIELD_CMD_SRC = path.resolve(__dirname, '../../src/commands/shield.ts');

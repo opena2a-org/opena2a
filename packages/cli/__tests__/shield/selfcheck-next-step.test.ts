@@ -30,7 +30,8 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, homedir: () => _mockHomeDir };
 });
 
-const { runIntegrityChecks } = await import('../../src/shield/integrity.js');
+const { runIntegrityChecks } =
+  await import('../../src/shield/integrity.js');
 const { shield, SHIELD_POLICY_VERBS } = await import('../../src/commands/shield.js');
 const { createDefaultPolicy } = await import('../../src/shield/policy.js');
 
@@ -242,8 +243,10 @@ function expectOpena2aStepParses(step: string): void {
   }
 }
 
-function failsOf(checks: IntegrityCheck[]): IntegrityCheck[] {
-  return checks.filter((c) => c.status === 'fail');
+function failsOf(
+  results: IntegrityCheck[],
+): IntegrityCheck[] {
+  return results.filter((c) => c.status === 'fail');
 }
 
 /** Run a command with its output discarded; returns its exit code. */
@@ -354,10 +357,10 @@ describe('every selfcheck FAIL detail names one next command', () => {
 
   it('lockdown names opena2a shield recover --verify', () => {
     enterLockdown('policy tampered');
-    const [check] = runIntegrityChecks({ shell: 'zsh' }).checks;
-    expect(check.name).toBe('lockdown');
-    expect(check.detail).toContain('System is in lockdown: policy tampered.');
-    expect(check.nextStep).toBe('opena2a shield recover --verify');
+    const [row] = runIntegrityChecks({ shell: 'zsh' }).checks;
+    expect(row.name).toBe('lockdown');
+    expect(row.detail).toContain('System is in lockdown: policy tampered.');
+    expect(row.nextStep).toBe('opena2a shield recover --verify');
   });
 
   it('the lockdown step, run as printed, keeps a still-failing machine locked and every file unchanged', async () => {
