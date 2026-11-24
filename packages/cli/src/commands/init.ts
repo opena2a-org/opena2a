@@ -391,10 +391,12 @@ export async function init(options: InitOptions): Promise<number> {
 
     // Contextual tip
     const tip = getContextualTip(report);
-    process.stdout.write(dim(`  Tip: ${tip.command}`) + '\n');
-    const wrappedTipText = wordWrap(tip.text, 68, 7);
-    process.stdout.write(dim(wrappedTipText) + '\n');
-    process.stdout.write('\n');
+    if (tip) {
+      process.stdout.write(dim(`  Tip: ${tip.command}`) + '\n');
+      const wrappedTipText = wordWrap(tip.text, 68, 7);
+      process.stdout.write(dim(wrappedTipText) + '\n');
+      process.stdout.write('\n');
+    }
 
     // Shield init hint
     process.stdout.write(dim('  To set up full Shield protection (11-step orchestration): opena2a shield init') + '\n');
@@ -1138,7 +1140,7 @@ export function getToolRecommendation(
 
 function getContextualTip(
   report: InitReport,
-): { text: string; command: string } {
+): { text: string; command: string } | null {
   const credCount = report.credentialFindings;
   const criticalCount = report.credentialsBySeverity['critical'] ?? 0;
   const driftFindings = report.findings.filter(f => f.findingId.startsWith('DRIFT-'));
@@ -1196,12 +1198,11 @@ function getContextualTip(
   }
 
   // A high score here measures configuration only: no file was read for
-  // credentials, so neither "Strong baseline" nor "Good posture" holds.
+  // credentials, so neither "Strong baseline" nor "Good posture" holds. The
+  // no-files-scanned paragraph above the score already names the command to
+  // run, so there is no tip to add.
   if (report.credentialFilesScanned === 0) {
-    return {
-      text: 'No file in this directory was scanned for credentials. Run init on the folder that holds your code.',
-      command: INIT_PROJECT_DIR_COMMAND,
-    };
+    return null;
   }
 
   if (report.securityScore >= 90) {

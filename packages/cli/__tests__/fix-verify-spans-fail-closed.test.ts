@@ -337,8 +337,9 @@ describe('next-step lines print each operand as a refusing parameter', () => {
     fs.writeFileSync(path.join(dir, 'guide.pdf'), '%PDF-1.4');
     fs.writeFileSync(path.join(dir, '.gitignore'), '.env\nnode_modules\n');
     const r = await capture(() => init({ targetDir: dir }));
-    expect(r.stdout).toContain(`Tip: ${SPANS.initProjectDir}`);
+    expect(r.stdout).not.toContain(`Tip: ${SPANS.initProjectDir}`);
     expect(r.stdout).toContain(`    ${SPANS.initProjectDir}\n`);
+    expect(r.stdout.split(SPANS.initProjectDir).length - 1).toBe(1);
     expect(linesNaming(r.stdout, 'opena2a init').filter(l => PLACEHOLDER.test(l))).toEqual([]);
   });
 
