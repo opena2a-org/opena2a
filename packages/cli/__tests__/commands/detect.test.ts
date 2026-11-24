@@ -975,16 +975,32 @@ describe('detect output formats', () => {
 
 describe('governance scoring', () => {
   let tempDir: string;
+  let fakeHome: string;
+  const saved: Record<string, string | undefined> = {};
+  const HOME_VARS = ['HOME', 'USERPROFILE', 'OPENA2A_HOME'] as const;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-score-'));
+    // The score must not depend on the machine's HOME: an empty or unset HOME
+    // makes os.homedir() "" or the account's real home, so global MCP servers,
+    // plugins and identities would leak in. Pin an empty home of our own.
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-detect-score-home-'));
+    for (const name of HOME_VARS) saved[name] = process.env[name];
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    delete process.env.OPENA2A_HOME;
     // No running agents, so each deduction is measured from a known baseline.
     hostPs.output = '';
   });
 
   afterEach(() => {
     hostPs.output = null;
+    for (const name of HOME_VARS) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
     fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
   });
 
   it('baseline score is consistent for empty project', async () => {
