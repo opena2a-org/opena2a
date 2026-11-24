@@ -799,6 +799,19 @@ describe('init', () => {
     expect(text).toContain('opena2a init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"');
   });
 
+  // The no-files-scanned paragraph names the command to run; a tip that ends
+  // with the same command says it twice.
+  it('a directory in which the credential checks open no file names the init command once', async () => {
+    fs.writeFileSync(path.join(tempDir, 'logo.png'), 'PNG');
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+
+    const { output: text } = await captureStdout(() => init({ targetDir: tempDir }));
+    const command = 'opena2a init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"';
+    expect(text.split(command).length - 1).toBe(1);
+    expect(text).not.toContain('Tip: opena2a init');
+    expect(text).not.toContain('No file in this directory was scanned for credentials');
+  });
+
   it('a directory with a readable source file keeps the clean wording', async () => {
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
