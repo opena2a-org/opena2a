@@ -219,6 +219,24 @@ describe('ML-DSA-65 verification', () => {
     expect(r.reason).toContain('did not verify');
   });
 
+  it('rejects a hybrid credential whose ML-DSA-65 entry verifies but whose Ed25519 entry was altered', () => {
+    for (const pqFirst of [false, true]) {
+      const { atx, anchors } = makeHybridAtx();
+      const ed = atx.signatures.find((s) => s.algorithm === 'Ed25519')!;
+      const bytes = Buffer.from(ed.value, 'base64');
+      bytes[10] ^= 0x01;
+      ed.value = bytes.toString('base64');
+      // Whichever entry is read first, the intact ML-DSA-65 one does not carry
+      // the altered Ed25519 one.
+      if (pqFirst) atx.signatures.reverse();
+      const r = new LocalAtxVerifier(anchors).verify(atx);
+      expect(r.valid, `pqFirst=${pqFirst}`).toBe(false);
+      expect(r.rejectCategory).toBe('SIGNATURE_INVALID');
+      expect(r.reason).toContain('Ed25519');
+      expect(r.reason).toContain('did not verify');
+    }
+  });
+
   it('rejects when the only ML-DSA-65 anchor is controlled by another authority', () => {
     const { atx, anchors } = makeHybridAtx();
     const pq = anchors.publicKeys.find((k) => k.algorithm === 'ML-DSA-65')!;

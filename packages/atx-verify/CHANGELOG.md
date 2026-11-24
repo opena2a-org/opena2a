@@ -13,6 +13,16 @@ change only the repository's tests and CI. Upgrading from the published package
 therefore picks up three changes in behaviour together: ML-DSA-65 verification
 and the two `issuerChain` rules below.
 
+**Conformance: 23 of 23, where `0.3.0` and `0.4.0` produce 21 of 23.** Those
+versions accept two atx-conformance fixtures that are pinned REJECT
+`SIGNATURE_INVALID` (opena2a-standards/atx-spec#46):
+`v1_1-hybrid-mldsa-tampered`, a hybrid credential whose ML-DSA-65 signature
+was altered after signing beside an intact Ed25519 one, and
+`v1_1-untrusted-chain-authority`, a credential signed only by an authority that
+its own signed `issuerChain` names and that the verifier does not trust. This
+version rejects both as `SIGNATURE_INVALID`. Consumers on `0.3.0` or `0.4.0`
+should upgrade to `0.5.0`.
+
 ### Changed
 
 - **ML-DSA-65 signature entries are now verified, as Ed25519 entries already
@@ -60,6 +70,14 @@ and the two `issuerChain` rules below.
 - **The conformance test freezes the expected verdict of each of the 21
   vendored fixtures** (`caea9c4c`, #329), so a fixture that is added, removed,
   renamed or re-verdicted fails the test until the table changes with it.
+  Repository only: nothing in the published package changes.
+
+- **The conformance test replays all 23 fixtures and asserts 23 of 23.** The
+  two fixtures the suite added at atx-conformance `eb06f2c`
+  (`v1_1-hybrid-mldsa-tampered`, `v1_1-no-transparency-log-index`) are vendored
+  verbatim under `src/__fixtures_eb06f2c__/`, apart from the 21 CI
+  byte-compares at its pinned ref. Unit tests add a hybrid credential whose
+  ML-DSA-65 entry verifies and whose Ed25519 entry was altered, which rejects.
   Repository only: nothing in the published package changes.
 
 ### Added
