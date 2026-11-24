@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { countMcpConfigsOutsideSourceWalk, scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../../src/util/ai-config.js';
+import { scanMcpConfig, scanMcpCredentials, scanMcpCredentialsWithCoverage, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../../src/util/ai-config.js';
 
 describe('ai-config', () => {
   let tempDir: string;
@@ -15,16 +15,16 @@ describe('ai-config', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  // --- countMcpConfigsOutsideSourceWalk ---
+  // --- scanMcpCredentialsWithCoverage: filesRead ---
 
-  describe('countMcpConfigsOutsideSourceWalk', () => {
+  describe('scanMcpCredentialsWithCoverage filesRead', () => {
     it('is 0 with no MCP config files', () => {
-      expect(countMcpConfigsOutsideSourceWalk(tempDir)).toBe(0);
+      expect(scanMcpCredentialsWithCoverage(tempDir).filesRead).toBe(0);
     });
 
     it('leaves out mcp.json, which the source walk opens and counts', () => {
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), '{}');
-      expect(countMcpConfigsOutsideSourceWalk(tempDir)).toBe(0);
+      expect(scanMcpCredentialsWithCoverage(tempDir).filesRead).toBe(0);
     });
 
     it('counts each dot-named MCP config, which the source walk skips', () => {
@@ -36,8 +36,27 @@ describe('ai-config', () => {
       fs.writeFileSync(path.join(tempDir, '.claude', 'settings.json'), '{}');
       fs.mkdirSync(path.join(tempDir, '.cursor'));
       fs.writeFileSync(path.join(tempDir, '.cursor', 'mcp.json'), '{}');
-      expect(countMcpConfigsOutsideSourceWalk(tempDir)).toBe(4);
+      expect(scanMcpCredentialsWithCoverage(tempDir).filesRead).toBe(4);
     });
+
+    it('does not count a .mcp.json that is a directory', () => {
+      fs.mkdirSync(path.join(tempDir, '.mcp.json'));
+      expect(scanMcpCredentialsWithCoverage(tempDir).filesRead).toBe(0);
+    });
+
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+      'does not count a .mcp.json that cannot be read',
+      () => {
+        const file = path.join(tempDir, '.mcp.json');
+        fs.writeFileSync(file, '{}');
+        fs.chmodSync(file, 0o000);
+        try {
+          expect(scanMcpCredentialsWithCoverage(tempDir).filesRead).toBe(0);
+        } finally {
+          fs.chmodSync(file, 0o644);
+        }
+      },
+    );
   });
 
   // --- scanMcpConfig ---

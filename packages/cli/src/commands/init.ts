@@ -23,7 +23,7 @@ import { printFooter } from '../util/footer.js';
 import { writeEvent } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
-import { countMcpConfigsOutsideSourceWalk, scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
+import { scanMcpConfig, scanMcpCredentialsWithCoverage, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
 import {
   calculateSecurityScore as calculateSecurityScoreShared,
   scoreToRiskLevel as scoreToRiskLevelShared,
@@ -155,9 +155,11 @@ export async function init(options: InitOptions): Promise<number> {
   // Scan MCP config files for credentials. The source walk skips the
   // dot-named ones (`.mcp.json`, `.cursor/mcp.json`, ...) but also opens
   // `mcp.json`, so only the dot-named configs are added to the files-scanned
-  // count; `mcp.json` is counted once, by the walk.
-  const mcpCreds = scanMcpCredentials(targetDir);
-  const mcpConfigsRead = countMcpConfigsOutsideSourceWalk(targetDir);
+  // count; `mcp.json` is counted once, by the walk. A config that could not
+  // be read (a directory, mode 000) is not counted.
+  const mcpScan = scanMcpCredentialsWithCoverage(targetDir);
+  const mcpCreds = mcpScan.matches;
+  const mcpConfigsRead = mcpScan.filesRead;
   const seenCredValues = new Set(credentialMatches.map(m => m.value));
   for (const mc of mcpCreds) {
     if (!seenCredValues.has(mc.value)) {
