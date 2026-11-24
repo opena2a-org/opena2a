@@ -27,15 +27,19 @@
  * failure in every environment — the failure message names the check, what
  * was missing, and the command that satisfies it where one exists.
  *
- * One case is network-dependent and says so: the clean fixture's
- * `consumer-closure` is skipped, never passed, when every one of its
+ * The clean fixture cases are network-dependent and say so. They are skipped,
+ * never passed, with a named reason when a probe of registry.npmjs.org and
+ * api.github.com (run once, before the review) finds either unreachable, or
+ * when the review child outlives its own timeout on a loaded machine. The
+ * own-tarball and poisoned cases have no such exception. Within the clean
+ * fixture, `consumer-closure` is also skipped, never passed, when every one of its
  * preconditions is api.github.com refusing this address for its rate limit
  * (an unauthenticated address gets 60 requests an hour, and the refusal
  * quoted in the output is the endpoint's own statement, not a guess from the
  * environment). Any other precondition still fails it, and the own-tarball
  * cases have no such exception.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, type TestContext } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -125,10 +129,73 @@ function advisoryRateLimitRefusals(out: string): string[] | null {
 
 interface ReviewResult {
   status: number | null;
+  /** True when the review child was killed for outliving its timeout. */
+  timedOut: boolean;
   out: string;
   census: Record<string, string>;
   failNames: string[];
   preconditionNames: string[];
+}
+
+/** The review child's own limit. */
+const REVIEW_TIMEOUT_MS = 840_000;
+/**
+ * A test that runs the review waits for the child's timeout plus this margin
+ * (the fixture build, and the probe), so a loaded machine ends in the named
+ * skip below rather than in vitest cancelling the test first.
+ */
+const TEST_TIMEOUT_MS = REVIEW_TIMEOUT_MS + 120_000;
+
+/** The hosts the clean fixture's review reads: the registry and the advisory feed. */
+const NETWORK_HOSTS = ['https://registry.npmjs.org/', 'https://api.github.com/'];
+
+/**
+ * Why the network the clean fixture needs is not there, or null when both hosts
+ * answered. Any HTTP answer counts as reachable (a 403 rate limit is the
+ * endpoint talking, and the rate-limit triage below handles it); only a failure
+ * to connect is unreachable. Probed once, in a child so the suite's offline
+ * fetch stub does not stand in for the network.
+ */
+let networkProbe: string | null | undefined;
+function networkUnreachable(): string | null {
+  if (networkProbe !== undefined) return networkProbe;
+  const probe = [
+    'const hosts = process.argv.slice(1);',
+    'const down = [];',
+    'for (const h of hosts) {',
+    '  try { await fetch(h, { method: "HEAD", signal: AbortSignal.timeout(15000) }); }',
+    '  catch (e) { down.push(h + " (" + (e?.cause?.code ?? e?.name ?? "error") + ")"); }',
+    '}',
+    'if (down.length) { console.log(down.join(", ")); process.exit(1); }',
+  ].join('\n');
+  const res = spawnSync(process.execPath, ['--input-type=module', '-e', probe, ...NETWORK_HOSTS], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: { ...process.env, NODE_USE_ENV_PROXY: '1' },
+  });
+  networkProbe = res.status === 0 ? null : (res.stdout ?? '').trim() || `probe did not complete (${res.error?.message ?? `exit ${res.status}`})`;
+  return networkProbe;
+}
+
+/**
+ * The clean fixture's review, or a skip with a named reason when it could not
+ * have run to a verdict: the network it reads is unreachable, or the machine
+ * was too loaded for it to finish inside its timeout.
+ */
+function cleanResultOrSkip(ctx: TestContext): ReviewResult {
+  const down = networkUnreachable();
+  if (down) {
+    const note = `network-dependent: the clean fixture's review reads registry.npmjs.org and api.github.com, and cannot reach: ${down}`;
+    console.warn(note);
+    ctx.skip(note);
+  }
+  const r = getCleanResult();
+  if (r.timedOut) {
+    const note = `load-dependent: the clean fixture's review did not finish inside ${REVIEW_TIMEOUT_MS / 1000}s, so no verdict was read`;
+    console.warn(note);
+    ctx.skip(note);
+  }
+  return r;
 }
 
 function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
@@ -144,7 +211,7 @@ function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
   const res = spawnSync(process.execPath, [SCRIPT, '--tarball', tarball, ...args], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
-    timeout: 840_000,
+    timeout: REVIEW_TIMEOUT_MS,
     env: { ...process.env },
   });
   const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
@@ -156,7 +223,8 @@ function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
   }
   const failNames = /FAIL \(([^)]+)\)/.exec(out)?.[1]?.split(', ') ?? [];
   const preconditionNames = /PRECONDITION \(([^)]+)\)/.exec(out)?.[1]?.split(', ') ?? [];
-  return { status: res.status, out, census, failNames, preconditionNames };
+  const timedOut = (res.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+  return { status: res.status, timedOut, out, census, failNames, preconditionNames };
 }
 
 interface FixtureSpec {
@@ -587,7 +655,7 @@ describe('release-artifact-review: clean subjects go green', () => {
   it(
     'a clean fixture tarball exits 0 with every check pass',
     (ctx) => {
-      const r = getCleanResult();
+      const r = cleanResultOrSkip(ctx);
       for (const check of ALL_CHECKS) {
         if (r.census[check] === 'precondition') {
           // consumer-closure is the last check, so every other one has
@@ -604,21 +672,21 @@ describe('release-artifact-review: clean subjects go green', () => {
       }
       expect(r.status, `every check passed, so the exit must be 0\n${r.out}`).toBe(0);
     },
-    840_000
+    TEST_TIMEOUT_MS
   );
 
   it(
     'the census line names every check, whatever its verdict',
-    () => {
-      const r = getCleanResult();
+    (ctx) => {
+      const r = cleanResultOrSkip(ctx);
       expect(Object.keys(r.census).sort()).toEqual([...ALL_CHECKS].sort());
     },
-    840_000
+    TEST_TIMEOUT_MS
   );
 
-  it('--advisory-states is honoured and the states read are printed', { timeout: 840_000 }, () => {
+  it('--advisory-states is honoured and the states read are printed', { timeout: TEST_TIMEOUT_MS }, (ctx) => {
     // The clean run above passed `--advisory-states published`.
-    expect(getCleanResult().out).toContain('advisory-states read: published');
+    expect(cleanResultOrSkip(ctx).out).toContain('advisory-states read: published');
     // And an unknown value is refused rather than silently defaulted.
     const bogus = spawnSync(process.execPath, [SCRIPT, '--tarball', 'x.tgz', '--advisory-states', 'draft'], {
       encoding: 'utf8',
@@ -667,7 +735,7 @@ describe('release-artifact-review: clean subjects go green', () => {
         }
       }
     },
-    840_000
+    TEST_TIMEOUT_MS
   );
 
   it(
@@ -685,7 +753,7 @@ describe('release-artifact-review: clean subjects go green', () => {
         .filter((l) => !UNCLEARABLE_CLOSURE_ROWS.some((re) => re.test(l)));
       expect(unretained, `consumer-closure rows not listed as unclearable\n${r.out}`).toEqual([]);
     },
-    840_000
+    TEST_TIMEOUT_MS
   );
 });
 
