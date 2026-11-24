@@ -157,8 +157,9 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'execFileSync(npm pack | tar -czf) to build the own, sibling and poisoned tarballs, ' +
       'spawnSync(node scripts/release-artifact-review.mjs --tarball) per case (the script ' +
       'runs npm view, npm install into a probe prefix and the installed bin as its own ' +
-      'children, one at a time), and execFileSync(npm view hackmyagent) for the ' +
-      'deprecation fixture',
+      'children, one at a time), spawnSync(node -e) once to probe registry.npmjs.org and ' +
+      'api.github.com before the clean fixture runs, and execFileSync(npm view hackmyagent) ' +
+      'for the deprecation fixture',
   },
   'mcp-server-flag.test.ts': {
     shape: 'sync',
