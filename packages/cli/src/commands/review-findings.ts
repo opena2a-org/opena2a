@@ -37,7 +37,13 @@ export interface ReportVerify extends Omit<ReportCommand, 'changes'> { expect: s
 
 export interface ReportRecovery {
   /**
-   * atLeast: the re-scored part, HMA's share shows on the next run. nextRun: not re-scorable here.
+   * The fix may also move an analyzer this report cannot re-score (HMA, Shield Runtime Risk,
+   * Project Governance) unless a floor holder it does not move pins the composite.
+   * computed: nothing un-re-scorable is involved, or a holder pins the result; `points` > 0.
+   * atLeast: something un-re-scorable is involved and the re-scored part gains `points` > 0;
+   * that analyzer's share shows on the next run.
+   * nextRun: something un-re-scorable is involved, no holder pins the result, and the
+   * re-scored part gains nothing; `points` and `to` are null.
    * floorPinned: the fix moves a score input, but `holder` keeps the composite where it is.
    * none: the composite does not change and no floor holder is the reason; while a floor
    * holds, that means the fix moves no score input.
@@ -129,6 +135,24 @@ const HOLDER_SOURCES: Record<string, FindingSource[]> = {
   'Project Scan': ['hygiene'], Credentials: ['credential-scan'], 'Config Integrity': ['guard'],
   'HMA Scan': ['hma'], 'Project Governance': ['shadow-ai'], 'Shield Runtime Risk': ['shield'],
 };
+
+/** HMA check-ID prefixes that indicate a credential-related finding.
+ *  Used to scope the prefer-HMA dedupe: only credential HMA findings
+ *  suppress credential-scan matches. Non-credential HMA findings on the
+ *  same file (e.g. GIT-002 on .gitignore) MUST NOT hide a credential that
+ *  the credential scan found in that file. */
+const HMA_CREDENTIAL_PREFIXES = [
+  'CRED', 'AST-CRED', 'WEBCRED', 'SEM-CRED', 'AGENT-CRED',
+  'ENVLEAK', 'CLIPASS', 'DRIFT',
+];
+
+export function isHmaCredentialFinding(checkId: string): boolean {
+  const id = (checkId || '').toUpperCase();
+  for (const p of HMA_CREDENTIAL_PREFIXES) {
+    if (id === p || id.startsWith(p + '-')) return true;
+  }
+  return false;
+}
 
 /** HMA checks whose root cause is an env file git would stage. */
 const ENV_STAGING_CHECKS = new Set(['GIT-003', 'SEM-CRED-002']);
@@ -263,6 +287,21 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
+/** Why an env file `git add .` covers is a finding. `assignments` is null when the file was not read. */
+function envReason(p: string, tracked: boolean, ignored: boolean, assignments: number | null): string {
+  const one = assignments === 1;
+  const values = assignments === null ? 'its values' : one ? 'the value it sets' : `the ${assignments} values it sets`;
+  if (tracked) {
+    const rule = ignored ? 'the ignore rule that matches it does not apply to a tracked file' : 'no ignore rule matches it';
+    const held = assignments === 0 ? '' : ` Earlier commits keep ${values}: rotate ${one ? 'it' : 'each one'}.`;
+    return `git tracks ${p}, so each commit records it, and ${rule}.${held}`;
+  }
+  const held = assignments === 0
+    ? ''
+    : ` Once committed and pushed, ${values} ${one ? 'stays' : 'stay'} in history: removing ${one ? 'it' : 'them'} takes a history rewrite and rotating ${one ? 'it' : 'each one'}.`;
+  return `No .gitignore rule matches ${p}, so \`git add .\` stages it.${held}`;
+}
+
 function hmaEvidence(f: HmaFinding, secret: boolean): Draft['evidence'] {
   const ev = f.evidence;
   if (!ev) return [];
@@ -334,14 +373,20 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
   const ruleEffect = ruleChecks.length > 0 ? passChecks(ruleChecks) : null;
 
   // Env files `git add .` covers, merged with every check reporting the same exposure.
+  let ruleCarried = false;
   for (const fact of initData.envFiles) {
     if (fact.stagedByAddAll !== true) continue;
     const p = fact.path;
     const tracked = fact.gitTracked === true;
+    // A tracked file a rule already matches needs no new rule: only untracking it.
+    const ruleStep = !tracked || fact.gitIgnored !== true;
+    // The ignore-rule effect is credited only to a finding that lists the rule as a step.
+    const credited = ruleStep && ruleEffect !== null;
+    ruleCarried ||= credited;
     const members = hmaFailed.filter(f => !merged.has(f) && f.file === p && ENV_STAGING_CHECKS.has(f.checkId));
     members.forEach(f => merged.add(f));
     const values = fact.assignments ?? 0;
-    const foundBy: Draft['foundBy'] = ruleChecks.map(label => ({ source: 'hygiene', checkId: label, lines: [] }));
+    const foundBy: Draft['foundBy'] = credited ? ruleChecks.map(label => ({ source: 'hygiene', checkId: label, lines: [] })) : [];
     for (const f of members) {
       const entry = foundBy.find(b => b.source === 'hma' && b.checkId === f.checkId);
       const lines = f.line != null ? [f.line] : [];
@@ -356,25 +401,22 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       locations: [{ file: p, line: null }],
       evidence: [
         tracked ? { file: p, line: null, text: "in git's index" } : { file: '.gitignore', line: null, text: `no rule matches ${p}` },
-        ...(fact.assignments !== null ? [{ file: p, line: null, text: `${plural(values, 'line')} assign a value (values are not read)` }] : []),
+        ...(fact.assignments !== null ? [{ file: p, line: null, text: `${plural(values, 'line')} ${values === 1 ? 'assigns' : 'assign'} a value (values are not read)` }] : []),
         ...members.flatMap(f => hmaEvidence(f, true)),
       ].slice(0, EVIDENCE_LINES),
-      reason: tracked
-        ? `git tracks ${p}, so commits record its values and ignore rules do not apply to it.`
-        : `No .gitignore rule matches ${p}, so \`git add .\` stages it. Once committed and pushed, its values stay in history: removing them takes a history rewrite and rotating each one.`,
+      reason: envReason(p, tracked, fact.gitIgnored === true, fact.assignments),
       fix: tracked
-        ? { command: `git rm --cached -- ${shellWord(p)}`, tool: 'git', changes: 'Stops tracking the file and keeps it on disk; earlier commits still hold its values.' }
+        ? { command: `git rm --cached -- ${shellWord(p)}`, tool: 'git', changes: 'Stops tracking the file and keeps it on disk; earlier commits still hold its contents.' }
         : ignoreRuleFix(p),
-      then: tracked ? ignoreRuleFix(p) : values > 0 ? PROTECT_DRY_RUN : null,
+      then: tracked ? (ruleStep ? ignoreRuleFix(p) : null) : values > 0 ? PROTECT_DRY_RUN : null,
       verify: tracked
         ? { command: `git ls-files -- ${shellWord(p)}`, tool: 'git', expect: 'no output' }
         : { command: `git check-ignore -v -- ${shellWord(p)}`, tool: 'git', expect: `.gitignore:<line>:${p}  ${p}` },
       occurrences: 1 + members.length,
-      effect: ruleEffect,
+      effect: credited ? ruleEffect : null,
       uncomputed: members.length > 0 ? hmaShare : [],
     }));
   }
-  const envGrouped = drafts.length > 0;
 
   // HMA, one finding per failed result not merged above.
   const hmaDrafts = new Map<HmaFinding, Draft>();
@@ -408,16 +450,30 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
   }
 
   // Built-in credential scan; a match HMA reports at the same place joins that finding.
+  const resolvedTarget = path.resolve(input.targetDir);
   for (const m of input.credentialData.matches) {
-    const rel = path.relative(path.resolve(input.targetDir), path.resolve(m.filePath));
+    // A match outside the reviewed tree is not listed (aggregateFindings drops it too).
+    const resolvedFile = path.resolve(m.filePath);
+    if (resolvedFile !== resolvedTarget && !resolvedFile.startsWith(resolvedTarget + path.sep)) continue;
+    const rel = path.relative(resolvedTarget, resolvedFile);
     const reported = input.findings.some(f => f.source === 'credential-scan' && f.id === m.findingId && f.detail === `${rel}:${m.line}`);
-    if (!reported) {
-      const atFile = [...hmaDrafts.values()].filter(d => d.locations[0]?.file === rel);
-      const host = atFile.find(d => d.locations[0].line === m.line) ?? atFile.find(d => d.category === 'Secrets') ?? atFile[0];
-      if (host) {
-        host.foundBy.push({ source: 'credential-scan', checkId: m.findingId, lines: [m.line] });
-        host.severity = maxSeverity(host.severity, m.severity);
-      }
+    // Moving the value out of the file lowers the credential count it adds.
+    const removeMatch: Effect = s => {
+      const bySeverity = { ...s.credentials.bySeverity, [m.severity]: Math.max(0, (s.credentials.bySeverity[m.severity] ?? 0) - 1) };
+      return { ...s, credentials: { ...s.credentials, bySeverity } };
+    };
+    // HMA reported this match too (aggregateFindings kept its credential finding at this
+    // line, else in this file): that finding carries it, its effect included.
+    const atFile = reported ? [] : [...hmaDrafts.entries()]
+      .filter(([f]) => f.file === rel && isHmaCredentialFinding(f.checkId)).map(([, d]) => d);
+    const host = atFile.find(d => d.locations[0].line === m.line) ?? atFile[0];
+    if (host) {
+      const entry = host.foundBy.find(b => b.source === 'credential-scan' && b.checkId === m.findingId);
+      if (!entry) host.foundBy.push({ source: 'credential-scan', checkId: m.findingId, lines: [m.line] });
+      else if (!entry.lines.includes(m.line)) entry.lines.push(m.line);
+      host.severity = maxSeverity(host.severity, m.severity);
+      const prior = host.effect;
+      host.effect = prior ? s => removeMatch(prior(s)) : removeMatch;
       continue;
     }
     drafts.push(draft({
@@ -431,11 +487,11 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       reason: m.explanation ?? null,
       fix: { command: 'opena2a protect', tool: 'opena2a', changes: `Moves the value into the encrypted vault and replaces it in the file with a reference to ${m.envVar}.` },
       verify: { command: 'opena2a protect --dry-run', tool: 'opena2a', expect: `${rel}:${m.line} is not listed` },
-      effect: s => {
-        const bySeverity = { ...s.credentials.bySeverity, [m.severity]: Math.max(0, (s.credentials.bySeverity[m.severity] ?? 0) - 1) };
-        return { ...s, credentials: { ...s.credentials, bySeverity } };
-      },
-      uncomputed: hmaShare,
+      effect: removeMatch,
+      // HMA did not report a credential-scan-only match, so its fix moves no HMA input. A
+      // match HMA reported in a file whose credential finding joined an env file group is
+      // listed on its own, with HMA's share measured on the next run.
+      uncomputed: reported ? [] : hmaShare,
     }));
   }
 
@@ -495,7 +551,7 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
   }
 
   // Hygiene checks no finding above already carries.
-  if (ruleEffect && !envGrouped) {
+  if (ruleEffect && !ruleCarried) {
     const noGitignore = ruleChecks.includes('.gitignore');
     drafts.push(draft({
       title: noGitignore ? 'No .gitignore in this directory' : '.gitignore has no rule for .env files',

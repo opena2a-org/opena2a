@@ -48,7 +48,7 @@ import { FINDING_CATALOG, classifyEvents, filterEventsToTarget, type ClassifiedF
 import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, defaultSigningFiles, type ConfigIntegritySummary } from './guard.js';
 import { collectEnvFileFacts, type EnvFileFact } from './review-facts.js';
-import { buildReviewFindings, type FindingCategory, type HardeningItem, type ReportFinding, type ScoreModel } from './review-findings.js';
+import { buildReviewFindings, isHmaCredentialFinding, type FindingCategory, type HardeningItem, type ReportFinding, type ScoreModel } from './review-findings.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -737,10 +737,10 @@ export async function review(options: ReviewOptions): Promise<number> {
   const scoreColor = compositeScore >= 80 ? green
     : compositeScore >= 60 ? yellow : red;
   // Recovery-framed output: show path forward, not punitive grade
-  const topRecovery = recoverySummary.opportunities.slice(0, 3)
-    .map(o => `+${o.pointsRecoverable} ${o.dimension.toLowerCase()}`)
-    .join(', ');
-  const recoveryHint = recoverySummary.totalRecoverable !== null && recoverySummary.totalRecoverable > 0
+  const topRecovery = recoverySummary.opportunities.filter(o => o.pointsRecoverable !== null).slice(0, 3)
+    .map(o => `+${o.pointsRecoverable} ${o.dimension.toLowerCase()}`).join(', ');
+  // The re-scored score, not current + the sum of gains each re-scored alone.
+  const recoveryHint = recoverySummary.potentialScore !== null && recoverySummary.potentialScore > compositeScore
     ? ` -- path to ${recoverySummary.potentialScore} available (${topRecovery})`
     : '';
   // A floor holds the score and no fix re-scores a gain: name the holders instead.
@@ -2012,24 +2012,6 @@ function scoreToGrade(score: number): string {
 }
 
 // --- Findings Aggregation ---
-
-/** HMA check-ID prefixes that indicate a credential-related finding.
- *  Used to scope the prefer-HMA dedupe: only credential HMA findings
- *  suppress credential-scan matches. Non-credential HMA findings on the
- *  same file (e.g. GIT-002 on .gitignore) MUST NOT hide a credential that
- *  the credential scan found in that file. */
-const HMA_CREDENTIAL_PREFIXES = [
-  'CRED', 'AST-CRED', 'WEBCRED', 'SEM-CRED', 'AGENT-CRED',
-  'ENVLEAK', 'CLIPASS', 'DRIFT',
-];
-
-function isHmaCredentialFinding(checkId: string): boolean {
-  const id = (checkId || '').toUpperCase();
-  for (const p of HMA_CREDENTIAL_PREFIXES) {
-    if (id === p || id.startsWith(p + '-')) return true;
-  }
-  return false;
-}
 
 const SEV_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 
