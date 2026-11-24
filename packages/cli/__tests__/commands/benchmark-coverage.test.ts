@@ -46,8 +46,10 @@ const CATEGORIES = [
 
 /** Findings the HardeningScanner returns. Configured per test. */
 let hardeningFindings: Array<Record<string, unknown>> = [];
-/** Credential matches quickCredentialScan returns. Configured per test. */
+/** Credential matches the credential scan returns. Configured per test. */
 let credentialMatches: Array<Record<string, unknown>> = [];
+/** Files the credential scan reports reading. Configured per test. */
+let credentialFilesScanned = 1;
 
 vi.mock('hackmyagent', () => ({
   OASB_1_NAME: 'OASB-1',
@@ -69,9 +71,9 @@ vi.mock('../../src/util/credential-patterns.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/util/credential-patterns.js')>();
   return {
     ...actual,
-    quickCredentialScan: async () => {
+    scanCredentialsWithCoverage: async () => {
       if (credentialScanControl.shouldThrow) throw new Error('scan unavailable');
-      return credentialMatches;
+      return { matches: credentialMatches, filesScanned: credentialFilesScanned, placeholdersSkipped: 0, skippedDirs: [] };
     },
   };
 });
@@ -105,6 +107,7 @@ async function runText(): Promise<string> {
 beforeEach(() => {
   hardeningFindings = [];
   credentialMatches = [];
+  credentialFilesScanned = 1;
 });
 
 const DEFAULT_CATEGORIES = [...CATEGORIES];
@@ -281,6 +284,18 @@ describe('benchmark coverage gating (#250)', () => {
     expect(r.coverage.evaluated).toBe(0);
     expect(r.rating).toBe('Not assessable');
     expect(r.compliance.l1).toBeNull();
+  });
+
+  it('a credential scan that read no file leaves the credential controls not evaluated', async () => {
+    credentialFilesScanned = 0;
+    const r = await runJson();
+    expect(r.coverage.evaluated).toBe(0);
+    expect(r.coverage.notEvaluatedIds).toEqual(expect.arrayContaining(['CRED-002', 'CRED-003', 'CRED-004']));
+    expect(r.coverage.sources).not.toContain('credential scan');
+    expect(r.coverage.credentialFilesScanned).toBe(0);
+    expect(r.compliance.l1).toBeNull();
+    const cred = r.categories.find((c: any) => c.id === 5);
+    expect(cred.compliance).toBeNull();
   });
 
   it('unevaluated controls are never counted as passing', async () => {

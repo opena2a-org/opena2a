@@ -27,8 +27,8 @@
  * level. A partially-assessed target can be `Partial` at best, because a
  * rating over unknown controls is not a rating.
  *
- * Coverage today is genuinely thin — `quickCredentialScan` supplies CRED-002/
- * 003/004 and `HardeningScanner` supplies whatever it emits. The remaining
+ * Coverage today is genuinely thin — the credential scan supplies CRED-002/
+ * 003/004 when it reads at least one file, and `HardeningScanner` supplies whatever it emits. The remaining
  * OASB controls (SEM-*, PERM-*, PROMPT-*, IO-*, NET-*, …) need HMA's semantic
  * pass wired in, tracked separately. Reporting that honestly is the point: a
  * thin-but-true number beats a complete-looking false one.
@@ -36,7 +36,7 @@
 
 import { readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { quickCredentialScan } from '../util/credential-patterns.js';
+import { scanCredentialsWithCoverage } from '../util/credential-patterns.js';
 import { shellWord } from '../util/shell-word.js';
 
 export interface BenchmarkOptions {
@@ -272,13 +272,22 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
     // --- Source 2: credential scan -------------------------------------
     // The same scan `init` and `protect` run. Its vocabulary is enumerable and
     // CRED-002/003/004 are OASB L1 controls, so this is affirmative coverage:
-    // running it evaluates those controls whether or not anything matches.
-    // Without this, a hardcoded key scored Credential Protection 10/10 while
-    // two other commands called the same file CRITICAL.
+    // a scan that read files evaluates those controls whether or not anything
+    // matches. Without this, a hardcoded key scored Credential Protection 10/10
+    // while two other commands called the same file CRITICAL.
+    //
+    // A scan that opened no file assessed nothing (issue #400): counting the
+    // controls as evaluated there scored Credential Protection 100% for a
+    // folder holding only an image. Such a run leaves them NOT EVALUATED.
     let unmappedCredentialFindings: Array<{ id: string; severity: string }> = [];
+    let credentialFilesScanned: number | null = null;
     try {
-      for (const id of OASB_CREDENTIAL_CONTROLS) assessment.evaluated.add(id);
-      const matches = await quickCredentialScan(targetDir);
+      const { matches, filesScanned } = await scanCredentialsWithCoverage(targetDir);
+      credentialFilesScanned = filesScanned;
+      if (filesScanned > 0 || matches.length > 0) {
+        for (const id of OASB_CREDENTIAL_CONTROLS) assessment.evaluated.add(id);
+        sources.push('credential scan');
+      }
       for (const m of matches) {
         if (!m.findingId) continue;
         if ((OASB_CREDENTIAL_CONTROLS as readonly string[]).includes(m.findingId)) {
@@ -294,12 +303,12 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
         assessment.failing.add(CREDENTIAL_CONTROL_FOR_HARDCODED_SECRET);
         unmappedCredentialFindings.push({ id: m.findingId, severity: m.severity });
       }
-      sources.push('credential scan');
     } catch {
       // A credential scan that cannot run leaves those controls unevaluated,
       // which is the correct fail-closed outcome — not a silent pass.
       for (const id of OASB_CREDENTIAL_CONTROLS) assessment.evaluated.delete(id);
       unmappedCredentialFindings = [];
+      credentialFilesScanned = null;
     }
 
     // --- Score ----------------------------------------------------------
@@ -373,6 +382,8 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
         total: score.evaluated.length + score.notEvaluated.length,
         notEvaluatedIds: score.notEvaluated,
         sources,
+        /** Files the credential scan read; 0 leaves CRED-* not evaluated, null means it did not run. */
+        credentialFilesScanned,
       },
       summary: {
         failingControls: score.failing.length,
@@ -401,6 +412,9 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
       );
       if (score.notEvaluated.length > 0) {
         process.stdout.write(`  Not evaluated: ${score.notEvaluated.length} control(s) — these are NOT counted as passing\n`);
+      }
+      if (credentialFilesScanned === 0) {
+        process.stdout.write(`  Credential scan: no files scanned, so ${OASB_CREDENTIAL_CONTROLS.join(', ')} were not evaluated\n`);
       }
       process.stdout.write(`  Failing:    ${score.failing.length}\n`);
       process.stdout.write(`\n`);
