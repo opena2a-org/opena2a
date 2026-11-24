@@ -23,23 +23,6 @@ export interface AiConfigFinding {
 
 export const MCP_CONFIG_FILES = ['mcp.json', '.mcp.json', '.mcp/config.json', '.claude/settings.json', '.cursor/mcp.json'];
 
-/**
- * How many MCP config files in `dir` are read by the MCP credential scan
- * alone, so the credential coverage count can add them without counting a
- * file twice.
- *
- * The source walk (walkFiles) skips every dot-named file and directory except
- * its `.env*` allowlist, so a config at a dot-named path (`.mcp.json`,
- * `.mcp/config.json`, `.claude/settings.json`, `.cursor/mcp.json`) is opened
- * by scanMcpCredentials only. `mcp.json` has no leading dot: the walk opens
- * and counts it already, so it is left out here.
- */
-export function countMcpConfigsOutsideSourceWalk(dir: string): number {
-  return MCP_CONFIG_FILES
-    .filter(f => f.startsWith('.') && fs.existsSync(path.join(dir, f)))
-    .length;
-}
-
 const HIGH_RISK_SERVER_PATTERNS = [
   'filesystem', 'shell', 'bash', 'database', 'exec',
 ];
@@ -158,17 +141,47 @@ export function scanMcpConfig(dir: string): AiConfigFinding[] {
  * into the normal credential pipeline (scoring, grouping, protect).
  */
 export function scanMcpCredentials(dir: string): CredentialMatch[] {
+  return scanMcpCredentialsWithCoverage(dir).matches;
+}
+
+export interface McpCredentialScan {
+  matches: CredentialMatch[];
+  /**
+   * How many MCP config files this scan alone read, so the credential
+   * coverage count can add them without counting a file twice.
+   *
+   * Only a config whose content was read counts: one that is a directory or
+   * that cannot be opened (mode 000) was not scanned. The source walk
+   * (walkFiles) skips every dot-named file and directory except its `.env*`
+   * allowlist, so a config at a dot-named path (`.mcp.json`,
+   * `.mcp/config.json`, `.claude/settings.json`, `.cursor/mcp.json`) is read
+   * by this scan only. `mcp.json` has no leading dot: the walk opens and
+   * counts it already, so it is left out here.
+   */
+  filesRead: number;
+}
+
+/** scanMcpCredentials, plus how many dot-named MCP configs it read. */
+export function scanMcpCredentialsWithCoverage(dir: string): McpCredentialScan {
   const matches: CredentialMatch[] = [];
   const seen = new Set<string>();
+  let filesRead = 0;
 
   for (const configFile of MCP_CONFIG_FILES) {
     const fullPath = path.join(dir, configFile);
     if (!fs.existsSync(fullPath)) continue;
 
+    let rawContent: string;
+    try {
+      rawContent = fs.readFileSync(fullPath, 'utf-8');
+    } catch {
+      continue; // A directory or an unreadable file: nothing was scanned.
+    }
+    if (configFile.startsWith('.')) filesRead++;
+
     let parsed: Record<string, unknown>;
     try {
-      const raw = fs.readFileSync(fullPath, 'utf-8');
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(rawContent);
     } catch {
       continue;
     }
@@ -198,7 +211,6 @@ export function scanMcpCredentials(dir: string): CredentialMatch[] {
           seen.add(dedupKey);
 
           // Find the line number in the raw file
-          const rawContent = fs.readFileSync(fullPath, 'utf-8');
           const lines = rawContent.split('\n');
           let lineNum = 1;
           for (let i = 0; i < lines.length; i++) {
@@ -229,7 +241,7 @@ export function scanMcpCredentials(dir: string): CredentialMatch[] {
     }
   }
 
-  return matches;
+  return { matches, filesRead };
 }
 
 /**
