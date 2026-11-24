@@ -48,7 +48,7 @@ import { FINDING_CATALOG, classifyEvents, filterEventsToTarget, type ClassifiedF
 import { computeARPStats, type ARPStats } from '../shield/arp-bridge.js';
 import { verifyConfigIntegrity, defaultSigningFiles, type ConfigIntegritySummary } from './guard.js';
 import { collectEnvFileFacts, type EnvFileFact } from './review-facts.js';
-import { buildReviewFindings, type HardeningItem, type ReportFinding, type ScoreModel } from './review-findings.js';
+import { buildReviewFindings, type FindingCategory, type HardeningItem, type ReportFinding, type ScoreModel } from './review-findings.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
@@ -921,7 +921,7 @@ export async function review(options: ReviewOptions): Promise<number> {
           findings: findings.map((f, i) => ({
             findingId: f.id || `REVIEW-${String(i + 1).padStart(3, '0')}`,
             severity: f.severity,
-            category: f.source,
+            category: contributionCategory(f, reportFindings),
             title: f.title,
             description: f.detail,
           })),
@@ -2234,6 +2234,23 @@ function openInBrowser(filePath: string): void {
     : platform() === 'win32' ? 'start'
     : 'xdg-open';
   spawn(cmd, [filePath], { detached: true, stdio: 'ignore' }).unref();
+}
+
+/** Categories by source, for a finding no report finding lists. */
+const SOURCE_CATEGORY: Record<string, FindingCategory> = {
+  'credential-scan': 'Secrets', shield: 'Runtime', advisories: 'Dependencies',
+};
+
+/**
+ * The category a review contributes for a finding: the one the report gives
+ * the finding that lists it (same source and check, at the same place when
+ * the finding names one), not the name of the analyzer that found it.
+ */
+export function contributionCategory(finding: ReviewFinding, reportFindings: ReportFinding[]): FindingCategory {
+  const listing = reportFindings.filter(r => r.foundBy.some(b => b.source === finding.source && b.checkId === finding.id));
+  const atPlace = listing.find(r => r.locations.some(l =>
+    finding.detail === (l.line != null ? `${l.file}:${l.line}` : l.file) || finding.detail.startsWith(`${l.file}:`)));
+  return (atPlace ?? listing[0])?.category ?? SOURCE_CATEGORY[finding.source] ?? 'Configuration';
 }
 
 /**
