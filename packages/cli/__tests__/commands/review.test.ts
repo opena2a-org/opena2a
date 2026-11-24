@@ -103,6 +103,7 @@ import {
   shieldRiskFloorScore,
   governanceCompositeScore,
   credentialFloorScore,
+  hmaCredentialBySeverity,
   scoreReview,
   CRITICAL_BAND,
   type ScoreState,
@@ -687,9 +688,10 @@ describe('review', () => {
     expect(report.credentialData.filesScanned).toBe(0);
     expect(report.hmaData.available).toBe(true);
     expect(report.findings.some((f: any) => f.id === 'CRED-001')).toBe(true);
-    // The unread local check carries no weight; HMA's own dimension keeps
-    // the finding.
-    expect(report.compositeScore).toBe(84);
+    // The unread local check carries no weight in the average, but the
+    // critical credential HMA reports caps the score as a local one would
+    // (#415), so the score agrees with the verdict.
+    expect(report.compositeScore).toBe(20);
 
     expect(terminalLine('Categories')).toContain('credentials (1 critical)');
     expect(terminalLine('Checks')).toContain('0 skipped');
@@ -1649,6 +1651,71 @@ describe('scoreReview when the credential check read no file', () => {
     expect(credentialsParticipant(read)?.ran).toBe(true);
     expect(unread.composite).toBe(47);
     expect(credentialsParticipant(unread)?.ran).toBe(false);
+  });
+});
+
+describe('scoreReview with a credential HMA reports (#415)', () => {
+  const state = (opts: {
+    filesScanned: number;
+    local: Record<string, number>;
+    hma: Record<string, number> | undefined;
+    hmaAvailable?: boolean;
+  }): ScoreState => ({
+    hygieneChecks: [
+      { label: '.gitignore', status: 'pass', detail: 'present' },
+      { label: '.env protection', status: 'pass', detail: 'present' },
+      { label: 'Lock file', status: 'pass', detail: 'present' },
+    ],
+    credentials: {
+      matches: [],
+      totalFindings: Object.values(opts.local).reduce((a, b) => a + b, 0),
+      filesScanned: opts.filesScanned,
+      bySeverity: opts.local,
+      driftFindings: [],
+      envVarSuggestions: [],
+      coverage: { filesRead: opts.filesScanned, placeholdersSkipped: 0, skippedDirs: [] },
+    },
+    guard: { filesMonitored: 0, tamperedFiles: [], signatureStatus: 'unsigned', candidates: [] },
+    shield: { classifiedFindings: [] as ScoreState['shield']['classifiedFindings'] },
+    hma: { available: opts.hmaAvailable ?? true, score: 85, credentialBySeverity: opts.hma },
+    detect: { mcpServers: [], aiConfigs: [] },
+  });
+
+  it('caps the composite at 20 for a critical credential from HMA, as for one from the local check', () => {
+    const clean = scoreReview(state({ filesScanned: 4, local: {}, hma: {} }));
+    const local = scoreReview(state({ filesScanned: 4, local: { critical: 1 }, hma: {} }));
+    const scanner = scoreReview(state({ filesScanned: 4, local: {}, hma: { critical: 1 } }));
+
+    expect(clean.composite).toBeGreaterThanOrEqual(80);
+    expect(local.composite).toBe(20);
+    expect(scanner.composite).toBe(20);
+    expect(scanner.participants.find(p => p.name === 'Credentials')).toEqual({ name: 'Credentials', score: 20, ran: true });
+  });
+
+  it('caps the composite when the local check read no file but HMA reports a critical credential', () => {
+    const scanner = scoreReview(state({ filesScanned: 0, local: {}, hma: { critical: 1 } }));
+    expect(scanner.composite).toBe(20);
+    expect(scanner.credentialsRead).toBe(false);
+  });
+
+  it('caps a high credential from HMA at the high band, and leaves medium ones to the average', () => {
+    expect(scoreReview(state({ filesScanned: 4, local: {}, hma: { high: 1 } })).composite).toBe(CRITICAL_BAND - 5);
+    expect(scoreReview(state({ filesScanned: 4, local: {}, hma: { medium: 2 } })).composite)
+      .toBe(scoreReview(state({ filesScanned: 4, local: {}, hma: {} })).composite);
+  });
+
+  it('ignores HMA credential counts when HMA did not run', () => {
+    const r = scoreReview(state({ filesScanned: 4, local: {}, hma: { critical: 1 }, hmaAvailable: false }));
+    expect(r.composite).toBeGreaterThan(CRITICAL_BAND);
+  });
+
+  it('counts only failed credential checks from a ran HMA', () => {
+    const f = (checkId: string, severity: string) => ({ checkId, severity }) as HmaFinding;
+    expect(hmaCredentialBySeverity({
+      available: true,
+      allFailedFindings: [f('CRED-001', 'critical'), f('SEM-CRED-002', 'high'), f('GIT-002', 'critical'), f('CREDENTIALS-X', 'critical')],
+    })).toEqual({ critical: 1, high: 1 });
+    expect(hmaCredentialBySeverity({ available: false, allFailedFindings: [f('CRED-001', 'critical')] })).toEqual({});
   });
 });
 
