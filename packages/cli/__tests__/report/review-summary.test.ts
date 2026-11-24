@@ -15,8 +15,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { REVIEW_ASSETS_DIR, assembleReviewClientScript } from '../../src/report/review-assets.js';
-import { floorPathLine } from '../../src/commands/review.js';
+import { REVIEW_CLIENT_FILES, assembleReviewClientScript } from '../../src/report/review-assets.js';
+import { describeHmaNoResult, floorPathLine, type HmaRunStatusCode } from '../../src/commands/review.js';
+
+// The client files as committed under src, never a built copy under dist.
+const SRC_ASSETS_DIR = join(__dirname, '..', '..', 'src', 'report', 'review', 'assets');
 
 /** The Overview's markup, rendered by the report's own client script. */
 function renderOverview(report: object): string {
@@ -29,7 +32,7 @@ function renderOverview(report: object): string {
     },
     querySelectorAll: () => [],
   };
-  runInNewContext(assembleReviewClientScript(), { document, window: { addEventListener() {} } });
+  runInNewContext(assembleReviewClientScript(REVIEW_CLIENT_FILES, SRC_ASSETS_DIR), { document, window: { addEventListener() {} } });
   return pages['page-overview'].innerHTML;
 }
 
@@ -141,6 +144,30 @@ describe('review report: Summary', () => {
     expect(t).toContain('Provisional score 91 of 100.');
     expect(t).toContain('Checked: 5 of 6 analyzers');
     expect(t).not.toContain('HMA 0.30.0');
+  });
+
+  // Worded by run.status as the terminal words it (describeHmaNoResult): a
+  // scan that timed out, failed or printed no report is not "did not run".
+  it.each([
+    ['skipped', 'skipped by --skip-hma'],
+    ['notFound', 'npx could not start hackmyagent (not found)'],
+    ['timedOut', 'hackmyagent secure did not finish within 120 s'],
+    ['exitError', 'hackmyagent secure exited with code 2'],
+    ['badOutput', 'hackmyagent secure printed no JSON report'],
+  ] as [HmaRunStatusCode, string][])('words a %s HMA run as the terminal does', (status, reason) => {
+    const run = { status, reason, version: null, durationMs: 0 };
+    const t = text(renderOverview(report({
+      provisional: true,
+      compositeScore: 91,
+      phases: PHASES.map(p => (p.name === 'HMA Scan' ? { ...p, status: 'skip' } : p)),
+      hmaData: { available: false, totalChecks: 0, run },
+    })));
+    const { headline } = describeHmaNoResult(run);
+    expect(t).toContain(`Provisional: HMA ${headline} (${reason}). HMA-only threats are not reflected in this score.`);
+    if (status === 'timedOut' || status === 'exitError' || status === 'badOutput') {
+      expect(t).toContain('Provisional: HMA produced no result');
+      expect(t).not.toContain('did not run');
+    }
   });
 
   it('says in words when an analyzer holds the score at the floor', () => {
@@ -282,7 +309,7 @@ describe('review text output: the path line while a floor holds the score', () =
 });
 
 describe('review report: Summary and Fix first wording', () => {
-  const src = readFileSync(join(REVIEW_ASSETS_DIR, 'client', '10-overview.js'), 'utf-8');
+  const src = readFileSync(join(SRC_ASSETS_DIR, 'client', '10-overview.js'), 'utf-8');
 
   it('carries no letter grade, deduction, alarm copy or blanket all-clear', () => {
     for (const banned of [/\b[A-F]<\/strong> \d+\+/, /deducted/i, /#1 cause/i, /Your project is clean/i, /path to/i, /actionImpact/, /\bgrade\b/i]) {

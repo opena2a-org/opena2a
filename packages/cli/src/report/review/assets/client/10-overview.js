@@ -79,12 +79,21 @@ function countsLine(counts) {
 function hmaRun() {
   return report.hmaData && report.hmaData.run ? report.hmaData.run : null;
 }
+/**
+ * What HMA did, read from `run.status` as describeHmaNoResult in review.ts
+ * words it: a scan that timed out, failed or printed no report ran and
+ * produced no result; only a skipped or missing scanner did not run.
+ */
+function hmaNoResultHeadline(run) {
+  var status = run ? run.status : null;
+  return status === 'timedOut' || status === 'exitError' || status === 'badOutput' ? 'produced no result' : 'did not run';
+}
 /** Why the verdict is provisional, or degraded, one sentence per analyzer. */
 function summaryNotices() {
   var notes = [];
   if (report.provisional) {
     var run = hmaRun();
-    notes.push('Provisional: HMA did not run' + (run && run.reason ? ' (' + run.reason + ')' : '') + '. HMA-only threats are not reflected in this score.');
+    notes.push('Provisional: HMA ' + hmaNoResultHeadline(run) + (run && run.reason ? ' (' + run.reason + ')' : '') + '. HMA-only threats are not reflected in this score.');
   }
   var phases = report.phases || [];
   for (var i = 0; i < phases.length; i++) {
