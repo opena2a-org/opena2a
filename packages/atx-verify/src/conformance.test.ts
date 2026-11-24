@@ -1,10 +1,18 @@
 /**
- * Conformance gate: run LocalAtxVerifier against the FULL OpenA2A ATX
- * conformance suite (verbatim copies from `atx-conformance/fixtures/` pinned at
- * d2b8376, including their PINNED Ed25519 signatures and issuer public keys —
- * CI byte-compares the vendored copies against the pinned suite). This proves
- * the verifier accepts/rejects exactly the credentials the Go and Python
- * reference verifiers do.
+ * Conformance gate: run LocalAtxVerifier against all 23 fixtures of the OpenA2A
+ * ATX conformance suite (verbatim copies from `atx-conformance/fixtures/`,
+ * including their PINNED Ed25519 and ML-DSA-65 signatures and issuer public
+ * keys). This proves the verifier accepts/rejects exactly the credentials the
+ * Go and Python reference verifiers do.
+ *
+ * The fixtures come from two refs. 21 are under `./__fixtures__/`, pinned at
+ * d2b8376; CI byte-compares that directory against the suite at its
+ * `ATX_CONFORMANCE_REF` in both directions. The two the suite added at
+ * eb06f2c (`v1_1-hybrid-mldsa-tampered`, `v1_1-no-transparency-log-index`)
+ * are under `./__fixtures_eb06f2c__/`, so the CI byte-compare still holds
+ * until CI moves its pin. 0.3.0 and 0.4.0 produced 21 of these 23
+ * (opena2a-standards/atx-spec#46): they accepted `v1_1-hybrid-mldsa-tampered`
+ * and `v1_1-untrusted-chain-authority`, both pinned REJECT SIGNATURE_INVALID.
  *
  * The expected verdict of every fixture is FROZEN in this file
  * (`PINNED_VERDICTS`, keyed by vendored file name) rather than read only from
@@ -37,6 +45,7 @@ import {
   LocalAtxVerifier,
   type AtxPublicKey,
   type AtxTrustAnchors,
+  type AtxVerificationResult,
   type RejectCategory,
 } from './atx.js';
 import { topLevelMemberSpan } from './strict-parse.js';
@@ -67,14 +76,29 @@ const CI_WORKFLOW_URL = new URL('../../../.github/workflows/ci.yml', import.meta
 /** The suite pinned at atx-conformance d2b8376 has exactly 21 fixtures. */
 const PINNED_SUITE_SIZE = 21;
 
+/**
+ * The atx-conformance commit the two fixtures under `./__fixtures_eb06f2c__/`
+ * were copied from: the suite's 23-fixture ref.
+ */
+export const ADDED_FIXTURES_REF = 'eb06f2c76a264a3abf999e91e0502dba594e3495';
+
+/** The fixtures the suite added between d2b8376 and eb06f2c. */
+const ADDED_FIXTURE_FILES = [
+  'v1_1-hybrid-mldsa-tampered.json',
+  'v1_1-no-transparency-log-index.json',
+] as const;
+
+/** All 23 fixtures: the 21 at d2b8376 and the 2 added at eb06f2c. */
+const CONFORMANCE_SUITE_SIZE = PINNED_SUITE_SIZE + ADDED_FIXTURE_FILES.length;
+
 /** A frozen row: the suite's own spelling of the verdict (PARSE_ERROR kept). */
 type PinnedVerdict =
   | { verifyResult: 'ACCEPT'; rejectCategory?: undefined }
   | { verifyResult: 'REJECT'; rejectCategory: string };
 
 /**
- * The FROZEN verdict table for the suite pinned at atx-conformance d2b8376,
- * keyed by vendored fixture FILE NAME under `./__fixtures__/`. Each row is the
+ * The FROZEN verdict table for all 23 fixtures, keyed by vendored fixture FILE
+ * NAME under `./__fixtures__/` or `./__fixtures_eb06f2c__/`. Each row is the
  * fixture's own `expected.verifyResult` and, for a REJECT, its own
  * `expected.rejectCategory` exactly as the suite writes it (PARSE_ERROR stays
  * PARSE_ERROR here; `expectedCategory` maps it to MALFORMED at compare time).
@@ -107,6 +131,14 @@ export const PINNED_VERDICTS: Readonly<Record<string, PinnedVerdict>> = Object.f
   },
   'v1_1-declared-purpose-valid.json': { verifyResult: 'ACCEPT' },
   'v1_1-duplicate-purpose-member.json': { verifyResult: 'REJECT', rejectCategory: 'PARSE_ERROR' },
+  // Added at eb06f2c: a hybrid credential whose Ed25519 signature is intact and
+  // whose ML-DSA-65 signature was flipped by one bit after signing.
+  'v1_1-hybrid-mldsa-tampered.json': {
+    verifyResult: 'REJECT',
+    rejectCategory: 'SIGNATURE_INVALID',
+  },
+  // Added at eb06f2c: the optional transparencyLogIndex is outside JCS(TBS).
+  'v1_1-no-transparency-log-index.json': { verifyResult: 'ACCEPT' },
   'v1_1-tampered-capabilities.json': { verifyResult: 'REJECT', rejectCategory: 'SIGNATURE_INVALID' },
   'v1_1-tampered-declared-purpose.json': {
     verifyResult: 'REJECT',
@@ -122,9 +154,58 @@ export const PINNED_VERDICTS: Readonly<Record<string, PinnedVerdict>> = Object.f
 });
 
 const FIXTURES_DIR = new URL('./__fixtures__/', import.meta.url);
-const fixtureFiles = readdirSync(FIXTURES_DIR)
-  .filter((f) => f.endsWith('.json'))
-  .sort();
+const ADDED_FIXTURES_DIR = new URL('./__fixtures_eb06f2c__/', import.meta.url);
+
+function jsonFiles(dir: URL): string[] {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+}
+
+/** The 21 fixtures at d2b8376 (the directory CI byte-compares). */
+const pinnedFixtureFiles = jsonFiles(FIXTURES_DIR);
+/** The 2 fixtures added at eb06f2c. */
+const addedFixtureFiles = jsonFiles(ADDED_FIXTURES_DIR);
+/** All 23, each with the directory it is read from. */
+const fixtureSources: Array<{ file: string; dir: URL }> = [
+  ...pinnedFixtureFiles.map((file) => ({ file, dir: FIXTURES_DIR })),
+  ...addedFixtureFiles.map((file) => ({ file, dir: ADDED_FIXTURES_DIR })),
+].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+const fixtureFiles = fixtureSources.map((s) => s.file);
+
+interface LoadedFixture {
+  fixture: Fixture;
+  /** The credential bytes, sliced raw so strict-parse fixtures keep duplicates. */
+  rawAtx: string;
+}
+
+function loadFixture(file: string, dir: URL): LoadedFixture {
+  const rawText = readFileSync(new URL(file, dir), 'utf-8');
+  // Wrapper parse is lenient (harness metadata); the credential bytes are
+  // sliced raw so strict-parse fixtures keep their duplicate members.
+  const fixture = JSON.parse(rawText) as Fixture;
+  const span = topLevelMemberSpan(rawText, 'atx');
+  if (span === null) {
+    throw new Error(`fixture ${file} has no top-level atx member`);
+  }
+  return { fixture, rawAtx: rawText.slice(span.start, span.end) };
+}
+
+function loadNamedFixture(file: string): LoadedFixture {
+  const source = fixtureSources.find((s) => s.file === file);
+  if (source === undefined) {
+    throw new Error(`fixture ${file} is not vendored`);
+  }
+  return loadFixture(source.file, source.dir);
+}
+
+/** Whether the verifier's result is the row's verdict and, for a REJECT, its category. */
+function matchesPinned(pinned: PinnedVerdict, result: AtxVerificationResult): boolean {
+  if (pinned.verifyResult === 'ACCEPT') {
+    return result.valid;
+  }
+  return !result.valid && result.rejectCategory === expectedCategory(pinned.rejectCategory);
+}
 
 function anchorsFromFixture(f: Fixture): AtxTrustAnchors {
   const clock = new Date(f.verifierState.clockRfc3339);
@@ -147,14 +228,19 @@ function describeVerdict(v: { verifyResult: string; rejectCategory?: string }): 
   return `${v.verifyResult}${v.rejectCategory ? ` (${v.rejectCategory})` : ''}`;
 }
 
-describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', () => {
-  it(`covers the full pinned suite (${PINNED_SUITE_SIZE} fixtures)`, () => {
-    expect(fixtureFiles.length).toBe(PINNED_SUITE_SIZE);
+describe('conformance fixtures (atx-conformance @ d2b8376 + eb06f2c, pinned signatures)', () => {
+  it(`vendors the ${PINNED_SUITE_SIZE} fixtures at d2b8376 and the ${ADDED_FIXTURE_FILES.length} added at eb06f2c`, () => {
+    expect(pinnedFixtureFiles.length).toBe(PINNED_SUITE_SIZE);
+    expect(addedFixtureFiles).toEqual([...ADDED_FIXTURE_FILES]);
+    expect(pinnedFixtureFiles.filter((f) => addedFixtureFiles.includes(f))).toEqual([]);
+    expect(fixtureFiles.length).toBe(CONFORMANCE_SUITE_SIZE);
+    expect(CONFORMANCE_SUITE_SIZE).toBe(23);
+    expect(ADDED_FIXTURES_REF).toMatch(/^eb06f2c[0-9a-f]{33}$/);
   });
 
-  it(`frozen verdict table has exactly ${PINNED_SUITE_SIZE} rows, each a complete verdict`, () => {
+  it(`frozen verdict table has exactly ${CONFORMANCE_SUITE_SIZE} rows, each a complete verdict`, () => {
     const rows = Object.entries(PINNED_VERDICTS);
-    expect(rows.length).toBe(PINNED_SUITE_SIZE);
+    expect(rows.length).toBe(CONFORMANCE_SUITE_SIZE);
     for (const [file, row] of rows) {
       expect(file, `table key ${file} must be a vendored .json file name`).toMatch(/^[^/\\]+\.json$/);
       if (row.verifyResult === 'ACCEPT') {
@@ -166,7 +252,7 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     }
   });
 
-  it('table key set equals the vendored __fixtures__ directory listing', () => {
+  it('table key set equals the two vendored fixture directory listings', () => {
     const tableKeys = Object.keys(PINNED_VERDICTS).sort();
     // Both directions are reported in ONE assertion so a rename names both the
     // stray file and the orphaned table key.
@@ -202,16 +288,50 @@ describe('conformance fixtures (atx-conformance @ d2b8376, pinned signatures)', 
     expect(match?.[1]).toBe(ATX_CONFORMANCE_REF);
   });
 
-  for (const file of fixtureFiles) {
-    const rawText = readFileSync(new URL(file, FIXTURES_DIR), 'utf-8');
-    // Wrapper parse is lenient (harness metadata); the credential bytes are
-    // sliced raw below so strict-parse fixtures keep their duplicate members.
-    const f = JSON.parse(rawText) as Fixture;
-    const span = topLevelMemberSpan(rawText, 'atx');
-    if (span === null) {
-      throw new Error(`fixture ${file} has no top-level atx member`);
+  it('v1_1-hybrid-mldsa-tampered: rejects SIGNATURE_INVALID on the ML-DSA-65 entry, not the Ed25519 one', () => {
+    // 0.3.0 and 0.4.0 accepted this credential: they verified its intact
+    // Ed25519 signature and only recorded that an ML-DSA-65 one was present.
+    expect(PINNED_VERDICTS['v1_1-hybrid-mldsa-tampered.json']).toEqual({
+      verifyResult: 'REJECT',
+      rejectCategory: 'SIGNATURE_INVALID',
+    });
+    const { fixture, rawAtx } = loadNamedFixture('v1_1-hybrid-mldsa-tampered.json');
+    const result = new LocalAtxVerifier(anchorsFromFixture(fixture)).verifyCredential(rawAtx);
+    expect(result.valid).toBe(false);
+    expect(result.rejectCategory).toBe('SIGNATURE_INVALID');
+    expect(result.reason).toContain('ML-DSA-65');
+    expect(result.reason).toContain('did not verify');
+    expect(result.mldsaPresent).toBe(true);
+  });
+
+  it('v1_1-untrusted-chain-authority: rejects SIGNATURE_INVALID though the signed chain names the signer', () => {
+    // 0.3.0 and 0.4.0 accepted this credential: its only signature is by an
+    // authority its own signed issuerChain names and trustedIssuers does not.
+    const { fixture, rawAtx } = loadNamedFixture('v1_1-untrusted-chain-authority.json');
+    const chain = JSON.parse(rawAtx).issuerChain as string[];
+    const untrusted = chain.filter((did) => !fixture.verifierState.trustedIssuers.includes(did));
+    expect(untrusted.length, 'fixture must name an untrusted chain authority').toBeGreaterThan(0);
+    const result = new LocalAtxVerifier(anchorsFromFixture(fixture)).verifyCredential(rawAtx);
+    expect(result.valid).toBe(false);
+    expect(result.rejectCategory).toBe('SIGNATURE_INVALID');
+  });
+
+  it(`produces the pinned verdict on ${CONFORMANCE_SUITE_SIZE} of ${CONFORMANCE_SUITE_SIZE} fixtures`, () => {
+    const misses: string[] = [];
+    for (const { file, dir } of fixtureSources) {
+      const { fixture, rawAtx } = loadFixture(file, dir);
+      const result = new LocalAtxVerifier(anchorsFromFixture(fixture)).verifyCredential(rawAtx);
+      if (!matchesPinned(PINNED_VERDICTS[file], result)) {
+        misses.push(`${file}: pinned ${describeVerdict(PINNED_VERDICTS[file])}, got ` +
+          `${result.valid ? 'ACCEPT' : `REJECT (${result.rejectCategory}): ${result.reason}`}`);
+      }
     }
-    const rawAtx = rawText.slice(span.start, span.end);
+    expect(misses, misses.join('\n')).toEqual([]);
+    expect(fixtureSources.length - misses.length).toBe(23);
+  });
+
+  for (const { file, dir } of fixtureSources) {
+    const { fixture: f, rawAtx } = loadFixture(file, dir);
 
     it(`${f.name} -> ${describeVerdict(f.expected)}`, () => {
       // The fixture's own `expected` member must agree with the frozen table
