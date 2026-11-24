@@ -202,7 +202,7 @@ export function verifyPolicyIntegrity(
     return {
       valid: false,
       detail: 'Failed to parse policy-hash.json; file may be corrupted.',
-      nextStep: { label: 'Inspect the record', command: `cat ${shellQuote(hashFile)}` },
+      nextStep: { label: 'Inspect the record', command: `cat -v ${shellQuote(hashFile)}` },
     };
   }
 
@@ -323,7 +323,9 @@ export function verifyShellHookIntegrity(
     'Installed shell hook does not match expected content. The hook may have been tampered with.',
     {
       label: 'Review the installed hook',
-      command: `sed -n ${shellQuote(`/${HOOK_START_MARKER}/,/${HOOK_END_MARKER}/p`)} ${shellQuote(rcFile)}`,
+      // `cat -v` shows control characters in a tampered hook instead of
+      // letting them act on the terminal.
+      command: `sed -n ${shellQuote(`/${HOOK_START_MARKER}/,/${HOOK_END_MARKER}/p`)} ${shellQuote(rcFile)} | cat -v`,
     },
     now,
   );
