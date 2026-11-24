@@ -812,6 +812,27 @@ describe('init', () => {
     expect(text).not.toContain('No files were scanned for credentials');
   });
 
+  // A key file is found by name, not by opening it, so a directory can hold a
+  // credential finding while no file was scanned. The finding wins: the tip
+  // and the Credential scan check describe it, not the empty scan.
+  it('a credential finding with no files scanned keeps the protect tip and a failing Credential scan', async () => {
+    fs.mkdirSync(path.join(tempDir, '.certs'));
+    fs.writeFileSync(path.join(tempDir, '.certs', 'server.key'), 'FAKE\n');
+
+    const { output: json } = await captureStdout(() => init({ targetDir: tempDir, format: 'json' }));
+    const report = JSON.parse(json);
+    expect(report.credentialFilesScanned).toBe(0);
+    expect(report.credentialFindings).toBe(1);
+    expect(report.findings.find((f: any) => f.findingId === 'CRED-KEYFILE')).toBeDefined();
+    expect(report.hygieneChecks.find((c: any) => c.label === 'Credential scan'))
+      .toEqual({ label: 'Credential scan', status: 'fail', detail: '1 finding' });
+
+    const { output: text } = await captureStdout(() => init({ targetDir: tempDir }));
+    expect(text).toContain('Tip: opena2a protect');
+    expect(text).not.toContain('Tip: opena2a init');
+    expect(text).not.toContain('No file in this directory was scanned for credentials');
+  });
+
   it('counts the MCP config and template env files the source walk skips', async () => {
     // Each is read by its own credential reader, so neither directory is
     // "no files scanned" even though the source walk opens nothing in it.
