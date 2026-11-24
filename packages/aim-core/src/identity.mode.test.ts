@@ -71,3 +71,32 @@ it('creates identity.json at 0o600 under umask 000 with every chmod inert and le
   const leftovers = fs.readdirSync(tmpDir).filter((name) => name.startsWith('identity.json.tmp.'));
   expect(leftovers).toEqual([]);
 });
+
+it('never calls chmod on the identity file: the mode comes from the creating open alone', () => {
+  const chmod = vi.spyOn(fs, 'chmodSync');
+  const fchmod = vi.spyOn(fs, 'fchmodSync');
+
+  withUmask(0o022, () => createIdentity(tmpDir, 'test-agent'));
+
+  expect(chmod).not.toHaveBeenCalled();
+  expect(fchmod).not.toHaveBeenCalled();
+  expect(modeOf(path.join(tmpDir, 'identity.json'))).toBe(0o600);
+});
+
+it('refuses to write the key through a symlink planted at the temp path after the stale-file removal', () => {
+  const decoy = path.join(tmpDir, 'decoy.txt');
+  fs.writeFileSync(decoy, 'untouched');
+  const realRmSync = fs.rmSync;
+  // Simulate a racing process: right after the stale temp file is removed, a symlink to
+  // another file appears at the temp path. An exclusive create must fail rather than follow it.
+  vi.spyOn(fs, 'rmSync').mockImplementation((p, opts) => {
+    realRmSync(p, opts);
+    if (String(p).includes('identity.json.tmp.')) fs.symlinkSync(decoy, p);
+  });
+
+  expect(() => createIdentity(tmpDir, 'test-agent')).toThrow(/EEXIST/);
+  vi.restoreAllMocks();
+
+  expect(fs.readFileSync(decoy, 'utf-8')).toBe('untouched');
+  expect(fs.existsSync(path.join(tmpDir, 'identity.json'))).toBe(false);
+});
