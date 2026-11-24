@@ -661,16 +661,19 @@ export async function review(options: ReviewOptions): Promise<number> {
     detectData,
   };
 
-  // Severity counts. The terminal count and Verdict count a matched advisory
-  // beside `findings`, as the report's Overview does; the score and the counts
-  // sent to the Registry (`analyzerCounts`) do not, as it concerns a dependency.
+  // Severity counts. The Verdict counts a matched advisory beside `findings`,
+  // as the report's Overview does; the score and the counts sent to the
+  // Registry (`analyzerCounts`) do not, as it concerns a dependency. The
+  // terminal's finding line counts `reportFindings`, the list JSON and the
+  // report give, so the three never disagree on how many findings there are.
   const advisoryFindings = reportFindings.filter(f => f.foundBy.some(b => b.source === 'advisories'));
   const countBySeverity = (list: { severity: string }[]) => list.reduce((counts, f) => {
     if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
     return counts;
   }, { critical: 0, high: 0, medium: 0, low: 0 });
   const [analyzerCounts, sevCounts] = [countBySeverity(findings), countBySeverity([...findings, ...advisoryFindings])];
-  const totalFindings = findings.length + advisoryFindings.length;
+  const lineCounts = countBySeverity(reportFindings);
+  const totalFindings = reportFindings.length;
 
   // Why the advisories were not checked (a refused registry.url, no answer,
   // OPENA2A_ADVISORIES=off). On stderr, so `--format json` stays parseable.
@@ -769,7 +772,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   process.stdout.write(
     `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}${dim(scopeNote)}` +
     (floorPath ? `\n  ${floorPath}` : '') +
-    `\n  ${totalFindings} findings (${sevCounts.critical} critical, ${sevCounts.high} high, ${sevCounts.medium} medium)` +
+    `\n  ${totalFindings} findings (${lineCounts.critical} critical, ${lineCounts.high} high, ${lineCounts.medium} medium)` +
     `${yellow(chainNote)}\n`,
   );
 
