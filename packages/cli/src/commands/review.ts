@@ -2320,9 +2320,14 @@ function runHygieneChecks(
   const checks: HygieneCheck[] = [];
 
   if (credCount === 0) {
-    // No finding over no file read is not a pass.
-    const status = credentialFilesScanned === 0 ? 'info' : 'pass';
-    checks.push({ label: 'Credential scan', status, detail: 'no findings' });
+    // No finding over no file read is not a pass, and the detail says why,
+    // in the words init uses.
+    const noFilesRead = credentialFilesScanned === 0;
+    checks.push({
+      label: 'Credential scan',
+      status: noFilesRead ? 'info' : 'pass',
+      detail: noFilesRead ? 'no files scanned' : 'no findings',
+    });
   } else {
     checks.push({
       label: 'Credential scan',

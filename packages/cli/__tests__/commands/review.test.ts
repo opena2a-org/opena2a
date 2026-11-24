@@ -593,8 +593,9 @@ describe('review', () => {
     expect(weightRow('credentials')).toEqual({ dimension: 'credentials', weight: 0, score: null });
     expect(weightRow('trust').weight).toBe(0.375);
     expect(report.compositeScore).toBe(83);
+    // The check reads as init's does: no files scanned, not "no findings".
     const credentialHygiene = report.initData.hygieneChecks.find((c: any) => c.label === 'Credential scan');
-    expect(credentialHygiene.status).toBe('info');
+    expect(credentialHygiene).toEqual({ label: 'Credential scan', status: 'info', detail: 'no files scanned' });
 
     expect(credentialsTab).not.toContain('No hardcoded credentials found');
     expect(credentialsTab).not.toContain('Your project is clean');
@@ -642,7 +643,7 @@ describe('review', () => {
     expect(report.scoreModel.weights.find((w: any) => w.dimension === 'credentials'))
       .toEqual({ dimension: 'credentials', weight: 0.2, score: 100 });
     const credentialHygiene = report.initData.hygieneChecks.find((c: any) => c.label === 'Credential scan');
-    expect(credentialHygiene.status).toBe('pass');
+    expect(credentialHygiene).toEqual({ label: 'Credential scan', status: 'pass', detail: 'no findings' });
     expect(credentialsTab).toContain('No hardcoded credentials found. Your project is clean.');
     expect(terminalLine('Checks')).toContain('0 skipped');
     expect(terminalLine('Categories')).toContain('credentials');
