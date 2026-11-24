@@ -89,8 +89,8 @@ const FILE_MODE = {
   foundBy: [{ source: 'hma', checkId: 'PERM-001', lines: [] }],
   evidence: [],
   reason: '.env has mode -rw-r--r--, so every user on this machine can read it.',
-  fix: { command: 'chmod 600 .env', tool: 'shell', changes: 'Leaves read and write access to the owner only.' },
-  verify: { command: 'ls -l .env', tool: 'shell', expect: 'the line starts with -rw-------' },
+  fix: { command: 'chmod 600 -- .env', tool: 'shell', changes: 'Leaves read and write access to the owner only.' },
+  verify: { command: 'ls -l -- .env', tool: 'shell', expect: 'the line starts with -rw-------' },
 };
 const LOCK_FILE = {
   ...FILE_MODE,

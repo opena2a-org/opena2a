@@ -38,6 +38,7 @@ interface LocalVerdictFinding {
 import { detectProject, type ProjectType } from '../util/detect.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
+import { redactUrlPasswords } from '../util/redact-url-password.js';
 import { fixedVersions, readAdvisories, ADVISORY_LIMIT, ADVISORY_WINDOW_DAYS } from '../util/advisories.js';
 import { getRegistryUrl } from '../util/report-submission.js';
 import { printable } from '../util/printable.js';
@@ -1349,32 +1350,12 @@ function runChild(start: () => ChildProcess, timeoutMs: number): Promise<ChildOu
   });
 }
 
-/** Replace the password of every URL with user information: the part after
- *  the user name's colon (the name may be empty, as in `redis://:…@host`), up
- *  to the last `@` before whitespace. A scanner's error text need not be a
- *  valid URL, so the password may hold `/` or `@`. Each run of text without
- *  whitespace is read once, front to back, so the time grows with the length
- *  of the text rather than its square. */
-function redactUrlPasswords(text: string): string {
-  return text.replace(/\S+/g, (run) => {
-    const lastAt = run.lastIndexOf('@');
-    for (let sep = run.indexOf('://'); sep !== -1 && sep < lastAt; sep = run.indexOf('://', sep + 3)) {
-      if (sep === 0 || !/[a-z0-9+.-]/i.test(run[sep - 1])) continue;
-      let end = sep + 3;
-      while (end < run.length && !'/@:'.includes(run[end])) end++;
-      if (run[end] !== ':' || end + 1 >= lastAt) continue;
-      return `${run.slice(0, end + 1)}[redacted]${run.slice(lastAt)}`;
-    }
-    return run;
-  });
-}
-
 /** Text a child process printed may carry a credential: a scanner that
  *  fails on a line names that line. Every URL password and every value the
  *  credential catalog recognises is replaced, so the `hmaData.run` reason and
  *  version never carry one. */
 function redactCredentials(text: string): string {
-  let out = redactUrlPasswords(text);
+  let out = redactUrlPasswords(text, '[redacted]');
   for (const p of CREDENTIAL_PATTERNS) out = out.replace(p.pattern, '[redacted]');
   return out;
 }
