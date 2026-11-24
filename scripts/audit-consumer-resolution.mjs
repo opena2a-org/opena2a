@@ -344,11 +344,16 @@ export const FORBIDDEN_PACKAGES = [
         'and the fix is to bump the range and delete the entry. Until then the remedies are an ' +
         'intermediate release that drops hackmyagent or admits the version this CLI ships, or ' +
         'this CLI dropping the intermediate, and a CI gate should force none of them. Dated ' +
-        'rather than deleted so the decision is re-taken rather than inherited. While it ' +
+        'rather than deleted so the decision is re-taken rather than inherited. Re-checked on ' +
+        '2026-11-24 against both the published opena2a-cli@0.10.13 and this branch: the ' +
+        'intermediate is ai-trust, whose 0.2.x line (0.2.25 resolved) asks for hackmyagent ' +
+        '"^0.17.1" and nests 0.17.11; ai-trust@0.7.6, its latest release, pins hackmyagent to ' +
+        'exactly "0.23.11", which does not admit the 0.30.0 this branch ships, so raising the ' +
+        'ai-trust range would move the nested copy to 0.23.11 rather than remove it. While it ' +
         'stands a consumer installs a second scanner at the version the intermediate pinned, ' +
         "and npm prints that copy's deprecation notice during the install whenever that " +
         'version is deprecated.',
-      reviewBy: '2026-12-01',
+      reviewBy: '2027-01-15',
       derive: deriveNestedHackmyagent,
     },
   },
