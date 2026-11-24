@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Adapter, AdapterConfig, RunOptions, RunResult } from './types.js';
-import { createLineRebrander } from '../util/rebrand.js';
+import { createLineRebrander, rewordContributionClaims } from '../util/rebrand.js';
 import { buildChildEnv, probeEnv } from '../util/child-env.js';
 import { inheritEnv } from './registry.js';
 
@@ -64,7 +64,10 @@ export class SpawnAdapter implements Adapter {
       child.stderr?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stderr += chunk;
-        if (!options.quiet) process.stderr.write(chunk);
+        // stderr is always human-readable (prompts, tips), so the contribution
+        // wording is corrected even in JSON mode. Per chunk, not line-buffered:
+        // an interactive prompt with no trailing newline must not be withheld.
+        if (!options.quiet) process.stderr.write(rewordContributionClaims(chunk));
       });
 
       child.on('error', (err) => {

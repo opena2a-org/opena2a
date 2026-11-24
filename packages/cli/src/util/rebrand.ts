@@ -119,6 +119,50 @@ export function rebrandBundledCommands(text: string): string {
 }
 
 /**
+ * "anonymized" / "anonymised", optionally after an article, and the first
+ * letter of the word that follows it when the word is used attributively
+ * ("anonymized scan findings").
+ */
+const ANONYMIZED_CLAIM = /\b(?:(an?)(\s+))?(anonymi[sz]ed)(?:\s+([A-Za-z]))?/gi;
+
+/** Wording that replaces a predicative "anonymized" ("results are anonymized"). */
+const CONTRIBUTED_WITH_TOKEN = 'sent with a contributor token';
+
+function capitalizeLike(model: string, word: string): string {
+  return /^[A-Z]/.test(model) ? word.charAt(0).toUpperCase() + word.slice(1) : word;
+}
+
+/**
+ * Remove the claim that contributed scan results are anonymized from text a
+ * bundled engine prints (issue #388). They are not: each contributed summary
+ * is sent with a contributor token made on the machine. "Share anonymized scan
+ * findings" becomes "Share scan findings"; an article before the word is kept
+ * in agreement ("an anonymized summary" -> "a summary"), and a predicative use
+ * ("results are anonymized") becomes "results are sent with a contributor token".
+ */
+export function rewordContributionClaims(text: string): string {
+  return text.replace(
+    ANONYMIZED_CLAIM,
+    (_match, article: string | undefined, gap: string | undefined, word: string, next: string | undefined) => {
+      if (next === undefined) {
+        const lead = article ? `${article}${gap}` : '';
+        return lead + (article ? CONTRIBUTED_WITH_TOKEN : capitalizeLike(word, CONTRIBUTED_WITH_TOKEN));
+      }
+      if (article) {
+        const agreed = /^[aeiou]/i.test(next) ? 'an' : 'a';
+        return `${capitalizeLike(article, agreed)}${gap}${next}`;
+      }
+      return capitalizeLike(word, next);
+    },
+  );
+}
+
+/** Every rewrite applied to a bundled engine's human-readable output. */
+function rebrandBundledText(text: string): string {
+  return rewordContributionClaims(rebrandBundledCommands(text));
+}
+
+/**
  * Line-buffered transform usable on a streaming child-process stdout. Returns a
  * function that accepts raw chunks and emits rebranded chunks, buffering any
  * trailing partial segment until the next chunk (or flush). This preserves live
@@ -129,6 +173,9 @@ export function rebrandBundledCommands(text: string): string {
  * Segments are delimited by `\n` OR `\r`, so carriage-return progress UIs
  * (e.g. a spinner that rewrites one line with `\r`) still stream live rather
  * than being withheld until flush.
+ *
+ * Besides command citations, each segment has its contribution wording
+ * corrected (`rewordContributionClaims`).
  */
 export function createLineRebrander(): { push: (chunk: string) => string; flush: () => string } {
   let pending = '';
@@ -139,11 +186,11 @@ export function createLineRebrander(): { push: (chunk: string) => string; flush:
       if (boundary === -1) return '';
       const complete = pending.slice(0, boundary + 1);
       pending = pending.slice(boundary + 1);
-      return rebrandBundledCommands(complete);
+      return rebrandBundledText(complete);
     },
     flush(): string {
       if (!pending) return '';
-      const out = rebrandBundledCommands(pending);
+      const out = rebrandBundledText(pending);
       pending = '';
       return out;
     },
