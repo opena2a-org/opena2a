@@ -86,12 +86,12 @@ documentation of this (one entry per field, with `source`, `scale`, and
 | `trustLevel` | registry | 0..4 ordinal | "Does the registry trust this package?" (gate here) |
 | `trustScore` | registry | 0..1 | continuous *input* to `trustLevel` — not a standalone gate |
 | `verdict` | registry | string | the word label of `trustLevel` ("blocked".."verified") |
-| `scanStatus` | registry | enum | has the registry's *server-side* scan run yet |
+| `scanStatus` | registry | enum or null | the registry's *server-side* scan: `"passed"`, `"warnings"`, `"failed"`, `"not_applicable"`, or `null` (no Registry result) |
 
 - `score: 100` means "the local scan found nothing" — **not** a registry
-  trust verdict. A package the registry has never scanned can still read
-  `score: 100`, with `scanStatus: "pending"`. That is not a contradiction:
-  the local scan ran; the registry's has not.
+  trust verdict. A package the registry has no scan result for can still
+  read `score: 100`, with `scanStatus: null`. That is not a contradiction:
+  the local scan ran; the registry has no result.
 - `trustLevel` (0..4: Blocked, Warning, Listed, Scanned, Verified) is
   derived from `trustScore` **plus hard gates** — a critical finding forces
   Blocked, Verified additionally needs SLSA L2+, 30+ days observation, and a

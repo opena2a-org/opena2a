@@ -128,9 +128,9 @@ export interface CheckInput {
  *     `trustLevel` (0..4 ordinal, DERIVED from trustScore + hard gates —
  *     gate on this), and `verdict` (the string label of `trustLevel`).
  *     A high `trustScore` does not imply a high `trustLevel`.
- *   - REGISTRY-SCAN-STATE axis: `scanStatus`. `scanStatus: "pending"` next
- *     to `score: 100` is not a contradiction — local scan ran, registry's
- *     server-side scan has not.
+ *   - REGISTRY-SCAN-STATE axis: `scanStatus`. `scanStatus: null` next to
+ *     `score: 100` is not a contradiction — local scan ran, the registry
+ *     has no server-side scan result.
  */
 export interface CheckOutput {
   name: string;

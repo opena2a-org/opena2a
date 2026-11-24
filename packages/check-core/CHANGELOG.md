@@ -9,7 +9,9 @@ All notable changes to `@opena2a/check-core`.
   describe `scanStatus` with one line per value the Registry serves
   (`"passed"`, `"warnings"`, `"failed"`, `"not_applicable"`) and one for
   `null`, meaning no Registry result, and no longer present `pending` or
-  `completed` as served values.
+  `completed` as served values. The README and the `CheckOutput` doc
+  comment give `scanStatus: null` next to `score: 100` as the example,
+  where they gave `"pending"`.
 
 ## 0.3.0 — 2026-06-10
 
