@@ -297,7 +297,7 @@ You do not need to memorize commands. The CLI provides contextual assistance:
 ```bash
 opena2a ?                           # Context-aware recommendations for your project
 opena2a ~shadow ai                  # Semantic search across all commands
-opena2a "find leaked credentials"   # Natural language command matching
+opena2a find hardcoded credentials  # Natural language command matching
 opena2a                             # Interactive guided wizard (no args)
 ```
 
