@@ -243,16 +243,6 @@ function cmdBlock(cmd) {
 function statCard(value, label, color) {
   return '<div class="stat-card"><div class="stat-value" style="color:' + color + '">' + esc(String(value)) + '</div><div class="stat-label">' + esc(label) + '</div></div>';
 }
-function scoreBanner(score, recoverySummary) {
-  var clr = scoreColor(score);
-  var h = '<div class="score-banner"><div class="score-banner-num" style="color:' + clr + '">' + score + '</div><div class="score-banner-bar"><div class="score-banner-label"><span>Composite Score</span><span>' + score + '/100</span></div><div class="score-banner-track"><div class="score-banner-fill" style="width:' + score + '%;background:' + clr + '"></div></div></div>';
-  if (recoverySummary && recoverySummary.totalRecoverable > 0) {
-    var recovBg = score >= 70 ? 'rgba(6,182,212,0.15)' : score >= 50 ? 'rgba(234,179,8,0.15)' : 'rgba(239,68,68,0.15)';
-    h += '<div class="score-banner-grade" style="color:' + clr + ';background:' + recovBg + '">+' + recoverySummary.totalRecoverable + ' recoverable</div>';
-  }
-  h += '</div>';
-  return h;
-}
 function governanceBanner(score, recoverablePoints) {
   var clr = scoreColor(score);
   var h = '<div class="score-banner"><div class="score-banner-num" style="color:' + clr + '">' + score + '</div><div class="score-banner-bar"><div class="score-banner-label"><span>Governance Score</span><span>' + score + '/100</span></div><div class="score-banner-track"><div class="score-banner-fill" style="width:' + score + '%;background:' + clr + '"></div></div></div>';
@@ -263,18 +253,4 @@ function governanceBanner(score, recoverablePoints) {
   }
   h += '</div>';
   return h;
-}
-var phaseDescriptions = {
-  'Project Scan': 'Checks .gitignore, lock files, security config, and dependency advisories',
-  'Credentials': 'Scans source files for hardcoded API keys, tokens, and secrets',
-  'Config Integrity': 'Verifies cryptographic signatures on monitored config files',
-  'Shield Analysis': 'Analyzes 7 days of security events, policy violations, and ARP detections',
-  'HMA Scan': 'Runs HackMyAgent security checks against your AI agent endpoints',
-  'Shadow AI': 'Detects AI agents, MCP servers, and AI configs; checks governance posture'
-};
-function phaseCard(phase) {
-  var statusCls = 'status-' + phase.status;
-  var time = phase.status === 'skip' ? '--' : (phase.durationMs / 1000).toFixed(1) + 's';
-  var desc = phaseDescriptions[phase.name] || '';
-  return '<div class="phase-card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="phase-name">' + esc(phase.name) + '</div><span class="status-badge ' + statusCls + '">' + esc(phase.status) + '</span></div><div class="phase-detail">' + esc(phase.detail) + '</div>' + (desc ? '<div class="phase-desc">' + esc(desc) + '</div>' : '') + '<div class="phase-time">' + esc(time) + '</div></div>';
 }
