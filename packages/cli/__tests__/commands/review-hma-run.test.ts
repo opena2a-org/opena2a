@@ -12,6 +12,20 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, homedir: () => mockHome.dir || actual.homedir() };
 });
 
+// Every text review cleans passes through redactUrlPasswords; recording what
+// it is handed shows which lines of a child's output were read.
+const redactSpy = vi.hoisted(() => ({ inputs: [] as string[] }));
+vi.mock('../../src/util/redact-url-password.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/util/redact-url-password.js')>();
+  return {
+    ...actual,
+    redactUrlPasswords: (text: string, replacement: string) => {
+      redactSpy.inputs.push(text);
+      return actual.redactUrlPasswords(text, replacement);
+    },
+  };
+});
+
 import { review, runHmaPhase } from '../../src/commands/review.js';
 
 // The stubs are POSIX shell scripts standing in for `npx`.
@@ -121,11 +135,15 @@ posix('runHmaPhase records why HMA produced no result', () => {
   });
 
   it('only the first non-empty line of the version output is read', async () => {
-    stubNpx(`if [ "$2" = "--version" ]; then echo; echo "9.9.9-stub"; ${SCHEME_RUN}; exit 0; fi\necho '{"findings":[],"score":90,"maxScore":100}'`);
-    const started = Date.now();
+    const later = `LATER-${randomBytes(8).toString('hex')}`;
+    stubNpx(`if [ "$2" = "--version" ]; then echo; echo "9.9.9-stub"; echo "${later}"; ${SCHEME_RUN}; exit 0; fi\necho '{"findings":[],"score":90,"maxScore":100}'`);
+    redactSpy.inputs.length = 0;
     const hma = await runHmaPhase('.');
-    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(hma.run.status).toBe('ran');
     expect(hma.run.version).toBe('9.9.9-stub');
+    // The version line was cleaned; the lines after it never were.
+    expect(redactSpy.inputs).toContain('9.9.9-stub');
+    expect(redactSpy.inputs.filter((t) => t.includes(later) || t.includes('a+b.c-'))).toEqual([]);
   });
 
   it('a credential printed where the version goes is redacted too', async () => {
