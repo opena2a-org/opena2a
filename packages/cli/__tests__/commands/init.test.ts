@@ -831,6 +831,23 @@ describe('init', () => {
     expect(text).toContain('Tip: opena2a protect');
     expect(text).not.toContain('Tip: opena2a init');
     expect(text).not.toContain('No file in this directory was scanned for credentials');
+    expect(text).not.toContain('No files were scanned for credentials');
+  });
+
+  it('a key-file finding with no files scanned does not print the no-files-scanned paragraph', async () => {
+    fs.mkdirSync(path.join(tempDir, '.certs'));
+    fs.writeFileSync(path.join(tempDir, '.certs', 'server.key'), 'placeholder\n');
+    fs.writeFileSync(path.join(tempDir, '.server.key'), 'placeholder\n');
+
+    const { output: json } = await captureStdout(() => init({ targetDir: tempDir, format: 'json' }));
+    const report = JSON.parse(json);
+    expect(report.credentialFilesScanned).toBe(0);
+    expect(report.credentialFindings).toBeGreaterThan(0);
+
+    const { output: text } = await captureStdout(() => init({ targetDir: tempDir }));
+    expect(text).toContain('Private key file');
+    expect(text).not.toContain('No files were scanned for credentials');
+    expect(text).not.toContain('Run it on the folder that holds your code');
   });
 
   it('counts the MCP config and template env files the source walk skips', async () => {

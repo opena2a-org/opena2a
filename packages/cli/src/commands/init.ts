@@ -1328,7 +1328,10 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
   }
 
   // Zero findings over zero files read is "nothing examined", not "clean".
-  if (report.credentialFilesScanned === 0) {
+  // A key file is found by its name, without being opened, so a credential
+  // finding can stand over zero files scanned; the result is then not clean
+  // for that reason, and saying nothing was scanned would contradict it.
+  if (report.credentialFilesScanned === 0 && report.credentialFindings === 0) {
     process.stdout.write(yellow('  No files were scanned for credentials, so this is not a clean result.') + '\n');
     process.stdout.write(dim(wordWrap(
       'The credential check opens source and config files, and everything in this directory is a file type or folder it skips (for example images, archives, lockfiles, dependency and test folders, and dotfiles other than .env). Run it on the folder that holds your code:',
