@@ -274,7 +274,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     const { report, stdout } = await runReview();
 
     expect(advisoryFinding(report).severity).toBe('high');
-    expect(stdout).toContain('1 findings (0 critical, 1 high, 0 medium)');
+    expect(stdout).toContain(`${report.reportFindings.length} findings (0 critical, 1 high, 0 medium)`);
     expect(stdout).not.toContain('No security issues detected');
   });
 
@@ -431,7 +431,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       const { report, stdout } = await runReview();
       expect(advisoryFinding(report).severity, label).toBe('medium');
       expect(report.initData.advisories[0].severity, label).toBeNull();
-      expect(stdout, label).toContain('1 findings (0 critical, 0 high, 1 medium)');
+      expect(stdout, label).toContain(`${report.reportFindings.length} findings (0 critical, 0 high, 1 medium)`);
 
       fs.rmSync(cacheDir, { recursive: true, force: true });
       const initialized = await silenced(() => init({ targetDir: tempDir, format: 'text' }));

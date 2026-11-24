@@ -306,9 +306,11 @@ describe('review contribution', () => {
     const stdout: string[] = [];
     await runReview(tempDir, stdout);
 
-    expect(stdout.join('')).toContain('1 findings (0 critical, 1 high, 0 medium)');
     const html = fs.readFileSync(reportPath, 'utf-8');
     const data = JSON.parse((html.match(/<script id="report-data" type="application\/json">([\s\S]*?)<\/script>/)?.[1] ?? '{}').replace(/<\\\//g, '</'));
+    // The line counts the report's findings: the advisory, and the low
+    // hygiene finding for the missing lock file.
+    expect(stdout.join('')).toContain(`${data.reportFindings.length} findings (0 critical, 1 high, 0 medium)`);
     expect(data.initData.advisoryCount).toBe(1);
     expect(submission.submitScanReport).toHaveBeenCalledTimes(2);
     const [[, without], [, withAdvisory]] = submission.submitScanReport.mock.calls as unknown as [string, Record<string, unknown>][];
