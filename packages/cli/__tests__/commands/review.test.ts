@@ -578,6 +578,8 @@ describe('review', () => {
     fs.writeFileSync(path.join(tempDir, 'logo.png'), 'PNG');
     fs.writeFileSync(path.join(tempDir, 'guide.pdf'), '%PDF-1.4');
     fs.writeFileSync(path.join(tempDir, '.toolrc'), 'x=1\n');
+    // A .gitignore with an .env rule, so no hygiene finding is listed either.
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
 
     const { report, terminal, terminalLine, credentialsTab, overviewTab } = await reviewBothFormats(tempDir);
 
@@ -592,7 +594,7 @@ describe('review', () => {
     const weightRow = (d: string) => report.scoreModel.weights.find((w: any) => w.dimension === d);
     expect(weightRow('credentials')).toEqual({ dimension: 'credentials', weight: 0, score: null });
     expect(weightRow('trust').weight).toBe(0.375);
-    expect(report.compositeScore).toBe(83);
+    expect(report.compositeScore).toBe(92);
     // The check reads as init's does: no files scanned, not "no findings".
     const credentialHygiene = report.initData.hygieneChecks.find((c: any) => c.label === 'Credential scan');
     expect(credentialHygiene).toEqual({ label: 'Credential scan', status: 'info', detail: 'no files scanned' });
@@ -630,6 +632,7 @@ describe('review', () => {
 
   it('a directory with a readable source file and no credential keeps the clean wording', async () => {
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
 
     const { report, terminalLine, credentialsTab } = await reviewBothFormats(tempDir);
 
@@ -637,7 +640,7 @@ describe('review', () => {
     const credPhase = report.phases.find((p: any) => p.name === 'Credentials');
     expect(credPhase.detail).toBe('No hardcoded credentials');
     // A check that read a file keeps its score and weight.
-    expect(report.compositeScore).toBe(86);
+    expect(report.compositeScore).toBe(94);
     expect(credPhase.status).toBe('pass');
     expect(credPhase.score).toBe(100);
     expect(report.scoreModel.weights.find((w: any) => w.dimension === 'credentials'))
@@ -705,6 +708,7 @@ describe('review', () => {
     // the medium finding's verdict stands: it is not replaced by the
     // no-files-scanned verdict, which only stands in for a "safe" one.
     fs.writeFileSync(path.join(tempDir, 'logo.png'), 'PNG');
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
     fakeHma.report = {
       score: 90,
       maxScore: 100,

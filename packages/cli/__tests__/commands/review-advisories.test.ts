@@ -267,14 +267,17 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     report.reportFindings.find((f: any) => f.foundBy.some((b: any) => b.source === 'advisories'));
 
   // The terminal printed "0 findings" and "No security issues detected"
-  // while the report counted the matched advisory as a high finding.
+  // while the report counted the matched advisory as a high finding. It now
+  // counts the report's own list.
   it('the terminal summary counts a matched advisory as the report does', async () => {
     mockFetch.mockResolvedValue(listResponse([ADVISORY]));
 
     const { report, stdout } = await runReview();
 
     expect(advisoryFinding(report).severity).toBe('high');
-    expect(stdout).toContain('1 findings (0 critical, 1 high, 0 medium)');
+    // The advisory, and the missing .gitignore and lock file the report lists beside it.
+    expect(report.reportFindings).toHaveLength(3);
+    expect(stdout).toContain('3 findings (0 critical, 1 high, 0 medium)');
     expect(stdout).not.toContain('No security issues detected');
   });
 
@@ -431,7 +434,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       const { report, stdout } = await runReview();
       expect(advisoryFinding(report).severity, label).toBe('medium');
       expect(report.initData.advisories[0].severity, label).toBeNull();
-      expect(stdout, label).toContain('1 findings (0 critical, 0 high, 1 medium)');
+      expect(stdout, label).toContain(`${report.reportFindings.length} findings (0 critical, 0 high, 1 medium)`);
 
       fs.rmSync(cacheDir, { recursive: true, force: true });
       const initialized = await silenced(() => init({ targetDir: tempDir, format: 'text' }));
