@@ -183,6 +183,20 @@ describe('review report: Summary', () => {
     expect(t).toContain('In this project: 1 MCP server, 0 AI config files.');
   });
 
+  it('says so when the credential scan read no file, as for a directory of skipped files', () => {
+    const notice = 'Credentials: no file was read, so no credential findings is not a clean result. This directory is empty or holds only files the credential check skips.';
+    const html = renderOverview(report({
+      reportFindings: [],
+      fixFirst: [],
+      phases: PHASES.map(p => (p.name === 'Credentials' ? { ...p, status: 'skip', score: 0 } : p)),
+      credentialData: { filesScanned: 0, totalFindings: 0 },
+    }));
+    expect(html).toContain('<p class="sum-notice">Credentials: no file was read');
+    expect(text(html)).toContain(notice);
+    expect(text(html)).toContain('0 files read for credentials.');
+    expect(text(renderOverview(report()))).not.toContain(notice);
+  });
+
   it('claims nothing it did not measure when there are no findings', () => {
     const html = renderOverview(report({ reportFindings: [], fixFirst: [] }));
     const t = text(html);
