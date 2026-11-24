@@ -585,7 +585,7 @@ export const MCP_HELP: SubcommandHelpRegistry = {
   },
   sign: {
     summary:
-      'Create a signed identity for a configured MCP server, recording a hash of its command or URL in .opena2a/mcp-identities.',
+      'Create a signed identity for a configured MCP server, recording a hash of its command or URL. The identity holds a private key and is kept in the per-project user store (~/.opena2a/projects/<key>/mcp-identities, or under $OPENA2A_HOME), not in the project.',
     usage: '[server]',
     options: [
       { flag: '--server <name>', description: 'Server name (same as the positional)' },

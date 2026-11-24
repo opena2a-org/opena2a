@@ -5,6 +5,12 @@ import * as crypto from 'node:crypto';
 import { bold, dim, green, yellow, red, cyan, gray } from '../util/colors.js';
 import { getVersion } from '../util/version.js';
 import { registryNameFor } from '../util/mcp-registry-name.js';
+import {
+  findMcpIdentityFile,
+  legacyMcpIdentityPath,
+  mcpIdentityStoreDir,
+  mcpIdentityStorePath,
+} from '../util/mcp-identity-store.js';
 
 // No local default: the registry host is resolved once, centrally, so this
 // command cannot drift onto a different answer than `trust` / `claim` / `config
@@ -137,12 +143,10 @@ function detectPinnedVersion(command?: string, args?: string[]): boolean {
   return false;
 }
 
+/** Where `mcp sign` writes identities: the per-project user store, outside the project tree. */
 function getIdentityDir(targetDir: string): string {
-  return path.join(targetDir, '.opena2a', 'mcp-identities');
+  return mcpIdentityStoreDir(targetDir);
 }
-
-/** The .gitignore rule that keeps the in-tree identity files, private keys included, uncommitted. */
-const MCP_IDENTITY_IGNORE_RULE = '.opena2a/mcp-identities/';
 
 /**
  * Write a file that holds a private key: created at mode 600 by the open that
@@ -157,7 +161,12 @@ function writePrivateFile(filePath: string, content: string): void {
 }
 
 function getIdentityPath(targetDir: string, serverName: string): string {
-  return path.join(getIdentityDir(targetDir), `${serverName}.json`);
+  return mcpIdentityStorePath(targetDir, serverName);
+}
+
+/** The identity to read for a server: the store's, else one an older release left in the project tree. */
+function findIdentityPath(targetDir: string, serverName: string): string | null {
+  return findMcpIdentityFile(targetDir, serverName);
 }
 
 function computeConfigHash(entry: McpServerEntry): string {
@@ -259,13 +268,12 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
   const allServers = grouped.flatMap(g => g.servers);
 
   // Check identity status for each server
-  const identityDir = getIdentityDir(options.targetDir);
-  const identityStatus: Map<string, { signed: boolean; verified: boolean }> = new Map();
+  const identityStatus: Map<string, { signed: boolean; verified: boolean; idPath: string | null }> = new Map();
   for (const server of allServers) {
-    const idPath = getIdentityPath(options.targetDir, server.name);
-    const signed = fs.existsSync(idPath);
+    const idPath = findIdentityPath(options.targetDir, server.name);
+    const signed = idPath !== null;
     let verified = false;
-    if (signed) {
+    if (idPath) {
       try {
         const identity: McpIdentity = JSON.parse(fs.readFileSync(idPath, 'utf-8'));
         const currentHash = computeConfigHash(server);
@@ -274,7 +282,7 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
         verified = false;
       }
     }
-    identityStatus.set(server.name, { signed, verified });
+    identityStatus.set(server.name, { signed, verified, idPath });
   }
 
   // Look up trust scores (best-effort, parallel); --ci sends no lookup
@@ -374,8 +382,8 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
           const envKeys = Object.keys(server.env);
           process.stdout.write(dim(`                     env vars: ${envKeys.join(', ')}`) + '\n');
         }
-        if (status?.signed) {
-          process.stdout.write(dim(`                     identity: .opena2a/mcp-identities/${server.name}.json`) + '\n');
+        if (status?.idPath) {
+          process.stdout.write(dim(`                     identity: ${status.idPath.replace(os.homedir(), '~')}`) + '\n');
         }
         const fullCmd = server.transport === 'stdio'
           ? [server.command, ...(server.args ?? [])].join(' ')
@@ -460,8 +468,9 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     // Compute fingerprint
     const fingerprint = crypto.createHash('sha256').update(pubKeyDer).digest('hex').substring(0, 16);
 
-    // Store identity. The file holds the private key and sits inside the project
-    // tree, so it is created owner-only by the write that creates it.
+    // Store identity. The file holds the private key, so it goes to the
+    // per-project user store, never the project tree, and is created
+    // owner-only by the write that creates it.
     const identityDir = getIdentityDir(options.targetDir);
     fs.mkdirSync(identityDir, { recursive: true, mode: 0o700 });
 
@@ -477,6 +486,11 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     const idPath = getIdentityPath(options.targetDir, serverName);
     writePrivateFile(idPath, JSON.stringify(identity, null, 2));
 
+    // An older release wrote this server's identity, private key included,
+    // into the project tree. It is superseded now; name it so it is removed.
+    const legacyPath = legacyMcpIdentityPath(options.targetDir, serverName);
+    const legacyInTree = fs.existsSync(legacyPath) ? legacyPath : null;
+
     if (isJson) {
       process.stdout.write(JSON.stringify({
         status: 'signed',
@@ -485,6 +499,7 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
         configHash,
         identityFile: idPath,
         containsPrivateKey: true,
+        legacyIdentityFile: legacyInTree,
       }, null, 2) + '\n');
       return 0;
     }
@@ -495,10 +510,13 @@ async function handleSign(options: McpCommandOptions): Promise<number> {
     process.stdout.write(`  Fingerprint:  ${cyan(fingerprint)}\n`);
     process.stdout.write(`  Config hash:  ${dim(configHash.substring(0, 32) + '...')}\n`);
     process.stdout.write(`  Private key:  ${dim(idPath)}\n`);
+    process.stdout.write(dim('  This file holds the server\'s private signing key. It is kept in your user store, outside the project tree.') + '\n');
     process.stdout.write('\n');
-    process.stdout.write(yellow('This file holds the server\'s private signing key and is inside the project tree.') + '\n');
-    process.stdout.write(dim('  Keep it out of version control: add ' + MCP_IDENTITY_IGNORE_RULE + ' to the project\'s .gitignore.\n'));
-    process.stdout.write('\n');
+    if (legacyInTree) {
+      process.stdout.write(yellow(`An older identity file is still in the project tree and holds a private key: ${legacyInTree}`) + '\n');
+      process.stdout.write(dim('  It is no longer used. Delete it, and remove it from version control if it was committed.') + '\n');
+      process.stdout.write('\n');
+    }
     process.stdout.write(dim('Tip: To manage signatures automatically across all files, create an agent identity:\n'));
     process.stdout.write(dim('  opena2a identity create --name ' + serverName + '\n'));
     process.stdout.write(dim('  Then: hackmyagent fix-all --with-aim\n'));
@@ -522,8 +540,8 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
   const isJson = options.format === 'json';
 
   // Check identity file exists
-  const idPath = getIdentityPath(options.targetDir, serverName);
-  if (!fs.existsSync(idPath)) {
+  const idPath = findIdentityPath(options.targetDir, serverName);
+  if (!idPath) {
     if (isJson) {
       process.stdout.write(JSON.stringify({
         status: 'not_signed',
@@ -671,6 +689,7 @@ export const _internals = {
   findServer,
   getIdentityPath,
   getIdentityDir,
+  findIdentityPath,
   extractCapabilities,
   detectPinnedVersion,
   lookupTrust,

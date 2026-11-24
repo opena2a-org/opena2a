@@ -242,7 +242,7 @@ Address the findings based on severity. Critical and high findings should be res
 
 ## Step 6: Verify
 
-The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one `.opena2a/mcp-identities/<name>.json` per server. Then run detection again:
+The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one identity file per server to the user store for the project, `~/.opena2a/projects/<key>/mcp-identities/<name>.json`, not into the project. Then run detection again:
 
 ```bash
 npx opena2a-cli detect "$HOME"
@@ -273,7 +273,7 @@ MCP Servers (3 found)
 
 ```
 
-Signed servers are the ones marked `verified`; an unsigned project server is what the score deducts for. For the capture, `~/.claude/settings.json` moved its tools from `allow` to `ask`, and each `mcp sign` ran from the home directory, which is where it writes `.opena2a/mcp-identities/` and where `detect "$HOME"` looks for signatures. The summary line still counts all three AI config files; none grants broad permissions any more, so the report does not list them. Credentials are in the environment, behavioral governance is defined in `SOUL.md`, and every project MCP server has a signature to check against.
+Signed servers are the ones marked `verified`; an unsigned project server is what the score deducts for. For the capture, `~/.claude/settings.json` moved its tools from `allow` to `ask`, and each `mcp sign` ran from the home directory, so it wrote to the user store for that directory, which is where `detect "$HOME"` looks for signatures. The summary line still counts all three AI config files; none grants broad permissions any more, so the report does not list them. Credentials are in the environment, behavioral governance is defined in `SOUL.md`, and every project MCP server has a signature to check against.
 
 ---
 
