@@ -98,7 +98,7 @@ function renderHma() {
         filesHtml += '</div>';
       }
       filesHtml += '</div>';
-      h += '<tr ' + rowStyle + '><td style="white-space:nowrap">' + esc(f.checkId) + '</td><td>' + esc(f.name) + '<div style="font-size:11px;color:var(--dim);margin-top:2px">' + esc(f.description) + '</div>' + whyAndEvidence(f) + '</td><td><span class="sev-badge sev-' + esc(f.severity) + '">' + esc(f.severity) + '</span></td><td style="text-transform:capitalize" class="col-category-td">' + esc(f.category) + (f.attackClass ? ' <span style="color:var(--dim);font-size:10px;text-transform:none">&middot; ' + esc(f.attackClass) + '</span>' : '') + '</td><td style="text-align:center"><span style="font-weight:700;font-size:15px">' + f.count + '</span>' + filesHtml + '</td><td>' + fixCell(f) + '</td></tr>';
+      h += '<tr ' + rowStyle + '><td>' + esc(f.checkId) + '</td><td>' + esc(f.name) + '<div style="font-size:11px;color:var(--dim);margin-top:2px">' + esc(f.description) + '</div>' + whyAndEvidence(f) + '</td><td><span class="sev-badge sev-' + esc(f.severity) + '">' + esc(f.severity) + '</span></td><td style="text-transform:capitalize" class="col-category-td">' + esc(f.category) + (f.attackClass ? ' <span style="color:var(--dim);font-size:10px;text-transform:none">&middot; ' + esc(f.attackClass) + '</span>' : '') + '</td><td style="text-align:center"><span style="font-weight:700;font-size:15px">' + f.count + '</span>' + filesHtml + '</td><td>' + fixCell(f) + '</td></tr>';
     }
     h += '</tbody></table>';
     if (tf.length > showCount) {
