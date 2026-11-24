@@ -1003,15 +1003,15 @@ describe('governance scoring', () => {
     fs.rmSync(fakeHome, { recursive: true, force: true });
   });
 
-  it('baseline score is consistent for empty project', async () => {
+  it('baseline score is 100 for empty project with no running agents', async () => {
     const { output } = await captureStdout(() =>
       detect({ targetDir: tempDir, format: 'json' })
     );
     const result = JSON.parse(output);
-    // Score depends on real running agents (e.g., Claude Code in test env)
-    // but must be a valid number between 0 and 100
-    expect(result.summary.governanceScore).toBeGreaterThanOrEqual(0);
-    expect(result.summary.governanceScore).toBeLessThanOrEqual(100);
+    // The process list is pinned empty, so agents running on the host (e.g.
+    // Claude Code driving this test run) cannot deduct from the baseline.
+    expect(result.agents).toEqual([]);
+    expect(result.summary.governanceScore).toBe(100);
   });
 
   it('project with SOUL.md scores higher than or equal to without', async () => {
