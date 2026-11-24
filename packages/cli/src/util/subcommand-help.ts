@@ -31,6 +31,19 @@ export interface SubcommandHelp {
 export type SubcommandHelpRegistry = Record<string, SubcommandHelp>;
 
 /**
+ * One `term  description` row of hand-written help text, indented by two
+ * columns, with the description starting at `column` and wrapped at
+ * HELP_WIDTH under itself.
+ */
+export function helpRow(term: string, description: string, column: number): string {
+  const lead = `  ${term}`;
+  const wrapped = wordWrap(description, HELP_WIDTH, column).slice(column);
+  return lead.length + 1 < column
+    ? `${lead.padEnd(column)}${wrapped}`
+    : `${lead}\n${' '.repeat(column)}${wrapped}`;
+}
+
+/**
  * Print per-subcommand --help text. Returns true if a subcommand-specific
  * block was printed; false if `sub` is unknown (caller should fall back
  * to parent help).

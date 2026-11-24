@@ -26,6 +26,7 @@ import { HELP_CONTRACTS, formatHelpContract } from './util/help-contract.js';
 import {
   answerHelpRequest,
   HELP_WIDTH,
+  helpRow,
   GUARD_HELP,
   SHIELD_HELP,
   IDENTITY_HELP,
@@ -136,9 +137,13 @@ async function main(): Promise<void> {
       });
     })
     .showHelpAfterError('Run opena2a --help for available commands.')
-    // Subcommands created below inherit this, so every Commander-rendered
-    // help screen wraps at 80 columns even on a wider terminal.
-    .configureHelp({ helpWidth: HELP_WIDTH })
+    // Commander wraps a description only when at least `minWidthToWrap`
+    // columns (default 40) are left beside the term column. The root's term
+    // column is 42 wide, which leaves 34 of 80, so with the default its
+    // options and commands ran past 80 columns on any terminal. Subcommands
+    // created below inherit this configuration, wrapping at 80 even on a
+    // wider terminal.
+    .configureHelp({ helpWidth: HELP_WIDTH, minWidthToWrap: 20 })
     // 'before', not 'beforeAll': the quick-start block belongs to the root
     // help only, so each subcommand's --help opens with its own Usage line.
     .addHelpText('before', `
@@ -149,7 +154,8 @@ Quick start:
   $ opena2a shield init             Full 11-step security setup
 
 Commands by category:
-  Scan & Harden:  init, scan, check, detect, protect, comply, benchmark, harden-skill
+  Scan & Harden:  init, scan, check, detect, protect, comply, benchmark,
+                  harden-skill
   Identity:       identity, skill, mcp, trust, claim
   Governance:     scan-soul, harden-soul, guard, shield
   Runtime:        runtime, review, status, baselines
@@ -157,35 +163,44 @@ Commands by category:
   Training:       train, demo
   Smart input:    ? (advisor)  ~query (search)  "natural language"
 `)
-    .addHelpText('after', `
+    .addHelpText('after', () => {
+      const rows = (entries: Array<[string, string]>): string =>
+        entries.map(([term, description]) => helpRow(term, description, 33)).join('\n');
+      const para = (text: string): string => wordWrap(text, HELP_WIDTH, 2);
+      return `
 Quick Start:
-  $ opena2a shield init          Full 11-step security setup (scan, protect, sign, policy, hooks)
-  $ opena2a init                 Read-only security assessment (no changes to your project)
-  $ opena2a protect              Detect and migrate hardcoded credentials
-  $ opena2a comply               Classify content for PII/credentials before it reaches an LLM
-  $ opena2a guard sign           Sign config files for tamper detection
-  $ opena2a check express        Check npm package against Registry + HMA
-  $ opena2a scan secure          Run ${HMA_CHECK_COUNT} security checks on your AI agent
-  $ opena2a skill create         Scaffold a secure skill (SKILL.md, heartbeat, tests)
-  $ opena2a guard harden         Scan skills for security issues (--fix to auto-fix)
-  $ opena2a harden-skill         Harden a skill file (frontmatter, permissions, integrity pin)
-  $ opena2a scan-soul            Scan governance file for behavioral safety (AGS)
-  $ opena2a scan-soul --strict   Fail if critical SOUL controls are missing
-  $ opena2a harden-soul          Generate or improve SOUL.md governance file
+${rows([
+  ['$ opena2a shield init', 'Full 11-step security setup (scan, protect, sign, policy, hooks)'],
+  ['$ opena2a init', 'Read-only security assessment (no changes to your project)'],
+  ['$ opena2a protect', 'Detect and migrate hardcoded credentials'],
+  ['$ opena2a comply', 'Classify content for PII/credentials before it reaches an LLM'],
+  ['$ opena2a guard sign', 'Sign config files for tamper detection'],
+  ['$ opena2a check express', 'Check npm package against Registry + HMA'],
+  ['$ opena2a scan secure', `Run ${HMA_CHECK_COUNT} security checks on your AI agent`],
+  ['$ opena2a skill create', 'Scaffold a secure skill (SKILL.md, heartbeat, tests)'],
+  ['$ opena2a guard harden', 'Scan skills for security issues (--fix to auto-fix)'],
+  ['$ opena2a harden-skill', 'Harden a skill file (frontmatter, permissions, integrity pin)'],
+  ['$ opena2a scan-soul', 'Scan governance file for behavioral safety (AGS)'],
+  ['$ opena2a scan-soul --strict', 'Fail if critical SOUL controls are missing'],
+  ['$ opena2a harden-soul', 'Generate or improve SOUL.md governance file'],
+])}
 
 Smart Features:
-  $ opena2a                      Interactive guided mode (no args)
-  $ opena2a ~<query>             Search commands (e.g. opena2a ~drift)
-  $ opena2a ?                    Get smart recommendations for your project
-  $ opena2a find secrets         Natural language command matching
-  $ opena2a audit my project     Natural language command matching
+${rows([
+  ['$ opena2a', 'Interactive guided mode (no args)'],
+  ['$ opena2a ~<query>', 'Search commands (e.g. opena2a ~drift)'],
+  ['$ opena2a ?', 'Get smart recommendations for your project'],
+  ['$ opena2a find secrets', 'Natural language command matching'],
+  ['$ opena2a audit my project', 'Natural language command matching'],
+])}
 
 Telemetry:
-  ${telemetryHelpLine(tele.status())}
-  Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute
-  review and init read the Registry's advisory list, sending no project data. Disable: OPENA2A_ADVISORIES=off
+${para(telemetryHelpLine(tele.status()))}
+${para('Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute')}
+${para("review and init read the Registry's advisory list, sending no project data. Disable: OPENA2A_ADVISORIES=off")}
 
-Learn more: https://opena2a.org/docs`);
+Learn more: https://opena2a.org/docs`;
+    });
 
   // Stream-split --version (cli-ui 0.5.2): bare `opena2a x.y.z` to stdout
   // (single parseable line), telemetry disclosure to stderr. Use a manual

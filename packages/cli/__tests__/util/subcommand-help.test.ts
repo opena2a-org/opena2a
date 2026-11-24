@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   answerHelpRequest,
+  helpRow,
   isHelpRequest,
   printSubcommandHelp,
   SUBCOMMAND_ROUTES,
@@ -25,6 +26,21 @@ function captureStdout(fn: () => boolean): { result: boolean; output: string } {
     process.stdout.write = origWrite;
   }
 }
+
+describe('helpRow', () => {
+  it('wraps the description at 80 columns under its own first word', () => {
+    const row = helpRow('$ opena2a shield init', 'Full 11-step security setup (scan, protect, sign, policy, hooks)', 33);
+    expect(row.split('\n')).toEqual([
+      '  $ opena2a shield init          Full 11-step security setup (scan, protect,',
+      '                                 sign, policy, hooks)',
+    ]);
+  });
+
+  it('starts the description on its own line when the term reaches the column', () => {
+    const row = helpRow('$ opena2a a-very-long-example-term', 'Short text', 20);
+    expect(row.split('\n')).toEqual(['  $ opena2a a-very-long-example-term', '                    Short text']);
+  });
+});
 
 describe('isHelpRequest (#132)', () => {
   it('matches --help in the explicit args array', () => {
