@@ -997,3 +997,32 @@ export function scanTemplateEnvLeaksWithCoverage(
   walk(targetDir);
   return { leaks, filesScanned };
 }
+
+// --- Detection coverage ---
+
+/**
+ * The number of distinct credential types the protect/init scan looks for:
+ * the local `CREDENTIAL_PATTERNS` plus the canonical catalog's breadth pass,
+ * counted once per name (case-insensitive) so a provider both lists is not
+ * counted twice. With an empty catalog (a degraded install) this is the local
+ * pattern count, which is exactly what the scan then covers.
+ */
+export function credentialTypeCount(catalog: CanonicalCredentialPattern[]): number {
+  const names = new Set<string>();
+  for (const p of CREDENTIAL_PATTERNS) names.add(p.title.toLowerCase());
+  for (const p of catalog) names.add(p.name.toLowerCase());
+  return names.size;
+}
+
+/**
+ * The line protect prints after a migration whose re-scan found nothing.
+ * It states what was migrated and how wide detection is, and never claims
+ * the source is free of credentials: the scan only finds the types it knows
+ * (#270).
+ */
+export function describeMigrationOutcome(migrated: number, detected: number, typeCount: number): string {
+  const noun = detected === 1 ? 'credential' : 'credentials';
+  const types = typeCount === 1 ? 'type' : 'types';
+  return `Migrated ${migrated} of ${detected} detected ${noun}. ` +
+    `Detection covers ${typeCount} credential ${types}; review the source for credentials of other types.`;
+}

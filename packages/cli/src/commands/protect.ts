@@ -147,7 +147,7 @@ import {
   refineCredentialLabel,
   loadCanonicalPatterns,
   loadCanonicalAllowlist,
-  collectCatalogMatches,
+  collectCatalogMatches, credentialTypeCount, describeMigrationOutcome,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
 import {
@@ -615,7 +615,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     if (!isJson) {
       spinner.stop();
       if (verificationPassed) {
-        process.stdout.write(green('Verification passed: no credentials remain in source.\n\n'));
+        process.stdout.write(green(describeMigrationOutcome(migrated, matches.length, credentialTypeCount(await loadCanonicalPatterns())) + '\n\n'));
       } else {
         process.stdout.write(yellow(
           `Verification: ${remainingMatches.length} credential(s) still detected.\n` +
