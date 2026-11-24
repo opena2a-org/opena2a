@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { rebrandBundledCommands } from '../util/rebrand.js';
+import { redactUrlPasswords } from '../util/redact-url-password.js';
 import { ADAPTER_REGISTRY } from '../adapters/registry.js';
 import { knownCommandNames } from '../natural/known-commands.js';
 import type {
@@ -144,32 +145,67 @@ const BUNDLED_CITATION = /\b(?:hackmyagent|secretless-ai|ai-trust|cryptoserve)\b
 /** The form of an npm package name, as review.ts checks it before a
  *  contribution: only these characters reach an advisory's install command. */
 const NPM_NAME_FORM = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+/** Evidence lines the report keeps per finding. */
+const EVIDENCE_LINES = 3;
 const MASK = '••••';
 const SECRET_WORD = '(?:key|token|secret|passw|pwd|auth|credential|private)';
-const URL_PASSWORD = /(\b[a-z][\w+.-]{0,64}:\/\/[^\s:/@]+:)[^\s@]{1,256}@/gi;
-const NAMED_VALUE = new RegExp(`(${SECRET_WORD}[\\w.-]{0,64}["']?\\s*[:=]\\s*)("[^"]*"|'[^']*'|[^\\s,;}]+)`, 'gi');
-const FLAG_VALUE = new RegExp(`(--?[\\w-]{0,64}${SECRET_WORD}[\\w-]{0,64}[ =])(\\S+)`, 'gi');
+const AUTH_SCHEME = '(?:(?:bearer|basic|token|digest)[ \\t]{1,16})?';
+const NAMED_VALUE = new RegExp(`(${SECRET_WORD}[\\w.-]{0,64}["']?\\s*[:=]\\s*)(${AUTH_SCHEME}(?:"[^"]*"|'[^']*'|[^\\s,;}]+))`, 'gi');
+const FLAG_VALUE = new RegExp(`(--?[\\w-]{0,64}${SECRET_WORD}[\\w-]{0,64}[ =])(${AUTH_SCHEME}\\S+)`, 'gi');
 const ASSIGNMENT = /^(\s*(?:export\s+)?["']?[\w.-]+["']?\s*[:=]\s*)(\S.*)$/;
 const LONG_TOKEN = /[A-Za-z0-9_+/-]{16,}/g;
+/** Characters of a line read before masking; the report keeps 160 of them. */
+const MASK_WINDOW = 2048;
+const LINE_BREAKS = /[\r\n\u2028\u2029]+/;
 
 /** A line from the tree with URL passwords and secret-named values masked; for
- *  a secret finding, every assigned value or long token too. The identifier, scheme
- *  and URL-password runs in the patterns are bounded so one long line costs time
- *  linear in its length. */
+ *  a secret finding, every assigned value or long token too. Only the first
+ *  MASK_WINDOW characters are read, so one long line costs bounded time; text
+ *  cut off at the window's end counts as part of any URL password it ends in.
+ *  A line break of any kind (CR, LF, CRLF) ends a part, and each part is masked
+ *  on its own. The identifier and scheme runs in the patterns are bounded, and
+ *  the URL-password scan is linear in its input. */
 export function maskEvidenceLine(line: string, secret: boolean): string {
-  let out = line.replace(URL_PASSWORD, `$1${MASK}@`).replace(NAMED_VALUE, `$1${MASK}`).replace(FLAG_VALUE, `$1${MASK}`);
+  const cut = line.length > MASK_WINDOW;
+  let out = (cut ? `${line.slice(0, MASK_WINDOW)}@` : line)
+    .split(LINE_BREAKS)
+    .filter(part => part.length > 0)
+    .map(part => maskPart(part, secret))
+    .join(' ');
+  // The closing @ only ends a URL password cut off by the window; it is not part of the line.
+  if (cut) out = out.replace(/@$/, '');
+  if (out.length > 160) return `${out.slice(0, 159)}…`;
+  return cut ? `${out}…` : out;
+}
+
+function maskPart(part: string, secret: boolean): string {
+  let out = redactUrlPasswords(part, MASK).replace(NAMED_VALUE, `$1${MASK}`).replace(FLAG_VALUE, `$1${MASK}`);
   if (secret) {
     const assigned = ASSIGNMENT.exec(out);
     out = assigned ? (assigned[2].includes(MASK) ? out : assigned[1] + MASK) : out.replace(LONG_TOKEN, MASK);
   }
-  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
+  return out;
 }
 
 const SAFE_PATH = /^[\w.][\w./-]*$/;
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
-/** A path as one shell word. */
+/** A path as one shell word. A name with a control character is written in
+ *  $'…' form so the command stays on one line and keeps the exact name. */
 function shellWord(p: string): string {
-  return SAFE_PATH.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`;
+  if (SAFE_PATH.test(p)) return p;
+  if (CONTROL_CHARS.test(p)) {
+    return `$'${p.replace(/[\\']/g, '\\$&').replace(/[\x00-\x1f\x7f]/g, c => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`)}'`;
+  }
+  return `'${p.replace(/'/g, `'\\''`)}'`;
+}
+
+/** A gitignore rule for exactly this path: a leading ! or # and any of [*?\ would
+ *  otherwise read as negation, comment or pattern; a trailing space would be dropped.
+ *  A rule cannot hold a control character, so each one is matched by `?`. */
+function ignorePattern(rel: string): string {
+  return rel.replace(/[[*?\\]/g, '\\$&').replace(/^[!#]/, '\\$&').replace(/ $/, '\\ ')
+    .replace(/[\x00-\x1f\x7f]/g, '?');
 }
 
 /** The leading newline keeps a last rule with no newline intact. */
@@ -177,7 +213,7 @@ function ignoreRuleFix(rel: string): ReportCommand {
   return {
     command: SAFE_PATH.test(rel)
       ? `printf '\\n${rel}\\n' >> .gitignore`
-      : `printf '\\n%s\\n' '${rel.replace(/'/g, `'\\''`)}' >> .gitignore`,
+      : `printf '\\n%s\\n' ${shellWord(ignorePattern(rel))} >> .gitignore`,
     tool: 'shell',
     changes: 'Appends one ignore rule to .gitignore, creating the file if needed.',
   };
@@ -233,13 +269,16 @@ function hmaEvidence(f: HmaFinding, secret: boolean): Draft['evidence'] {
   const file = f.file ?? null;
   const positive = ev.kind === 'positive' ? ev.lines : ev.kind === 'mixed' ? ev.positive?.lines : [];
   const absence = ev.kind === 'absence' ? ev : ev.kind === 'mixed' ? ev.absence : null;
+  // The scanner's JSON may list any number of lines: take at most the three the
+  // report keeps from each list before joining them, so a long list is never copied.
+  const firstThree = <T>(list: T[] | undefined): T[] => (Array.isArray(list) ? list.slice(0, EVIDENCE_LINES) : []);
   const entries: Array<{ n: number; content: string } | { constraint: string }> = [
-    ...(positive ?? []),
-    ...(absence?.observed?.lines ?? []),
-    ...(absence?.expected ?? []),
+    ...firstThree(positive),
+    ...firstThree(absence?.observed?.lines),
+    ...firstThree(absence?.expected),
   ];
-  // Only the three lines the report keeps are masked.
-  return entries.slice(0, 3).map(e => 'constraint' in e
+  // Only the lines the report keeps are masked.
+  return entries.slice(0, EVIDENCE_LINES).map(e => 'constraint' in e
     ? { file, line: null, text: `missing: ${e.constraint}` }
     : { file, line: e.n, text: maskEvidenceLine(String(e.content ?? ''), secret) });
 }
@@ -319,7 +358,7 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
         tracked ? { file: p, line: null, text: "in git's index" } : { file: '.gitignore', line: null, text: `no rule matches ${p}` },
         ...(fact.assignments !== null ? [{ file: p, line: null, text: `${plural(values, 'line')} assign a value (values are not read)` }] : []),
         ...members.flatMap(f => hmaEvidence(f, true)),
-      ].slice(0, 3),
+      ].slice(0, EVIDENCE_LINES),
       reason: tracked
         ? `git tracks ${p}, so commits record its values and ignore rules do not apply to it.`
         : `No .gitignore rule matches ${p}, so \`git add .\` stages it. Once committed and pushed, its values stay in history: removing them takes a history rewrite and rotating each one.`,
@@ -357,9 +396,9 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       reason: readable
         ? `${f.file} has mode ${mode}, so ${mode![7] === 'r' ? 'every user on this machine' : 'its group'} can read it.`
         : f.rationale?.plainEnglish || f.guidance || null,
-      fix: readable ? { command: `chmod 600 ${shellWord(f.file!)}`, tool: 'shell', changes: 'Leaves read and write access to the owner only.' } : remedy.fix,
+      fix: readable ? { command: `chmod 600 -- ${shellWord(f.file!)}`, tool: 'shell', changes: 'Leaves read and write access to the owner only.' } : remedy.fix,
       verify: readable
-        ? { command: `ls -l ${shellWord(f.file!)}`, tool: 'shell', expect: 'the line starts with -rw-------' }
+        ? { command: `ls -l -- ${shellWord(f.file!)}`, tool: 'shell', expect: 'the line starts with -rw-------' }
         : { command: 'opena2a secure', tool: 'opena2a', expect: `${f.checkId} is not reported${f.file ? ` for ${f.file}` : ''}` },
       advice: remedy.advice,
       uncomputed: hmaShare,
@@ -483,7 +522,7 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       evidence: [{ file: null, line: null, text: 'no lock file in this directory' }],
       reason: 'Without a lock file, two installs of this project can resolve different dependency versions.',
       fix: node ? { command: 'npm install --package-lock-only', tool: 'npm', changes: 'Writes package-lock.json from package.json without installing packages.' } : null,
-      verify: node ? { command: 'ls package-lock.json', tool: 'shell', expect: 'package-lock.json' } : null,
+      verify: node ? { command: 'ls -- package-lock.json', tool: 'shell', expect: 'package-lock.json' } : null,
       advice: node ? null : 'Commit the lock file your package manager writes.',
       effect: passChecks(['Lock file']),
     }));

@@ -100,7 +100,7 @@ describe('review findings on the envcase tree', () => {
     });
     expect(env.foundBy.map(b => [b.checkId, b.lines])).toEqual([['.env protection', []], ['GIT-003', []], ['SEM-CRED-002', [2, 3]]]);
     expect([second.foundBy[0].checkId, third.foundBy[0].checkId]).toEqual(['SEM-CRED-001', 'PERM-001']);
-    expect(third).toMatchObject({ fix: { command: 'chmod 600 .env' }, verify: { command: 'ls -l .env' } });
+    expect(third).toMatchObject({ fix: { command: 'chmod 600 -- .env' }, verify: { command: 'ls -l -- .env' } });
     expect(r.fixFirst).toEqual([env, second, third].map(f => f.fingerprint));
   });
 
@@ -279,4 +279,64 @@ it.each([
   [`curl -H ${SECRET}`, true, 'curl -H ••••'],
 ])('maskEvidenceLine(%s)', (line, secret, masked) => {
   expect(maskEvidenceLine(line, secret)).toBe(masked);
+});
+
+describe('maskEvidenceLine inputs', () => {
+  it('masks each part of a line broken by CR, LF or CRLF', () => {
+    expect(maskEvidenceLine(`A=1\rAPI_KEY=${SECRET}\r\n`, true)).toBe(`A=${MASK} API_KEY=${MASK}`);
+    expect(maskEvidenceLine(`password=${SECRET}\nnote`, false)).toBe(`password=${MASK} note`);
+  });
+
+  it('masks a value that follows an authorization scheme', () => {
+    expect(maskEvidenceLine(`Authorization: Bearer ${SECRET}`, false)).toBe(`Authorization: ${MASK}`);
+    expect(maskEvidenceLine(`curl --token Bearer ${SECRET}`, false)).toBe(`curl --token ${MASK}`);
+  });
+
+  it('masks a URL password of any length, also when the window cuts it off', () => {
+    // Joined at run time so no line here reads as a URL with a password; the passwords are FAKE.
+    const head = ['postgres', '://', 'app', ':'].join('');
+    const fake = (n: number) => 'p'.repeat(n);
+    expect(maskEvidenceLine(head + fake(300) + '@db/app', false)).toBe(`${head}${MASK}@db/app`);
+    expect(maskEvidenceLine(head + fake(5000) + '@db/app', false)).toBe(`${head}${MASK}…`);
+    expect(maskEvidenceLine('u=' + head + fake(5000), false)).toBe(`u=${head}${MASK}…`);
+  });
+});
+
+describe('fix commands for unusual file names', () => {
+  const ruleFor = (name: string, tracked = false) => build({
+    warn: ['.env protection'], hmaScore: 90, guard: 'valid', hmaFindings: [],
+    envFiles: [{ path: name, assignments: 0, gitIgnored: false, gitTracked: tracked, stagedByAddAll: true, mode: '-rw-r--r--' }],
+  }).reportFindings[0].fix!.command;
+
+  it.each([
+    ['!keep', "printf '\\n%s\\n' '\\!keep' >> .gitignore"],
+    ['#note', "printf '\\n%s\\n' '\\#note' >> .gitignore"],
+    ['a[1]*?\\b', "printf '\\n%s\\n' 'a\\[1]\\*\\?\\\\b' >> .gitignore"],
+    ['a b ', "printf '\\n%s\\n' 'a b\\ ' >> .gitignore"],
+  ])('escapes the ignore rule for %s', (name, command) => {
+    expect(ruleFor(name)).toBe(command);
+  });
+
+  it('puts -- before a file name that starts with a dash', () => {
+    const r = build({
+      warn: [], hmaScore: 90, guard: 'valid', hmaFindings: [hma('PERM-001', 'high', 'permissions', '-x.env')],
+      envFiles: [{ path: '-x.env', assignments: 0, gitIgnored: true, gitTracked: false, stagedByAddAll: false, mode: '-rw-r--r--' }],
+    });
+    expect(r.reportFindings[0]).toMatchObject({ fix: { command: "chmod 600 -- '-x.env'" }, verify: { command: "ls -l -- '-x.env'" } });
+  });
+
+  it('keeps a file name with a line break on one line', () => {
+    expect(ruleFor('a\nb', true)).toBe("git rm --cached -- $'a\\x0ab'");
+  });
+});
+
+describe('evidence from the scanner JSON', () => {
+  it('keeps three lines of an unbounded list', () => {
+    const lines = Array.from({ length: 50_000 }, (_, i) => ({ n: i + 1, content: `line ${i}` }));
+    const r = build({
+      warn: [], hmaScore: 90, guard: 'valid',
+      hmaFindings: [hma('X-001', 'low', 'misc', 'x.js', { evidence: { kind: 'positive', lines } })],
+    });
+    expect(r.reportFindings[0].evidence.map(e => e.line)).toEqual([1, 2, 3]);
+  });
 });
