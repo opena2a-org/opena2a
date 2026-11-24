@@ -729,6 +729,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
     try {
       const { recordScanAndMaybePrompt, isContributeEnabled, getRegistryUrl, submitScanReport } =
         await import('../util/report-submission.js');
+      const { getVersion } = await import('../util/version.js');
       await recordScanAndMaybePrompt();
 
       if (await isContributeEnabled()) {
@@ -738,7 +739,7 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
             packageName: 'agent-trust',
             packageType: 'trust',
             scannerName: 'opena2a-identity',
-            scannerVersion: '0.6.3',
+            scannerVersion: getVersion(),
             overallScore: displayScore,
             scanDurationMs: 0,
             criticalCount: 0,

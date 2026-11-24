@@ -42,7 +42,8 @@ vi.mock('../../src/util/report-submission.js', () => ({
   submitScanReport: submission.submitScanReport,
 }));
 
-import { review, contributionPackage } from '../../src/commands/review.js';
+import { review, contributionPackage, contributionCategory, type ReviewFinding } from '../../src/commands/review.js';
+import type { ReportFinding } from '../../src/commands/review-findings.js';
 import { detectProject } from '../../src/util/detect.js';
 
 // Text mode: the JSON branch returns before the contribution step runs.
@@ -125,6 +126,35 @@ describe('contributionPackage', () => {
     for (const name of notInNpmForm) {
       expect(contributionPackage({ type: 'node', name }), JSON.stringify(name)).toBeNull();
     }
+  });
+});
+
+describe('contributionCategory', () => {
+  const reportFinding = (category: ReportFinding['category'], source: ReportFinding['foundBy'][number]['source'], checkId: string, file: string | null, line: number | null = null) =>
+    ({ category, foundBy: [{ source, checkId, lines: [] }], locations: file ? [{ file, line }] : [] }) as unknown as ReportFinding;
+  const finding = (source: string, id: string, detail: string): ReviewFinding =>
+    ({ id, title: id, severity: 'high', source, detail, remediation: '' });
+
+  it('takes the category of the report finding that lists the same check at the same place', () => {
+    const report = [
+      reportFinding('Git hygiene', 'hma', 'GIT-003', '.env'),
+      reportFinding('Secrets', 'hma', 'GIT-003', '.env.local'),
+      reportFinding('MCP config', 'hma', 'MCP-001', 'mcp.json', 3),
+    ];
+    expect(contributionCategory(finding('hma', 'GIT-003', '.env.local:2'), report)).toBe('Secrets');
+    expect(contributionCategory(finding('hma', 'GIT-003', '.env'), report)).toBe('Git hygiene');
+    expect(contributionCategory(finding('hma', 'MCP-001', 'mcp.json:3'), report)).toBe('MCP config');
+  });
+
+  it('takes the category of a report finding listing the check when no place matches', () => {
+    const report = [reportFinding('Agent instructions', 'hma', 'SKILL-001', null)];
+    expect(contributionCategory(finding('hma', 'SKILL-001', 'a message'), report)).toBe('Agent instructions');
+  });
+
+  it('a finding no report finding lists is categorized by what found it, never sent as its source', () => {
+    expect(contributionCategory(finding('credential-scan', 'CRED-001', 'a.ts:1'), [])).toBe('Secrets');
+    expect(contributionCategory(finding('shield', 'SHIELD-001', '1 occurrence(s)'), [])).toBe('Runtime');
+    expect(contributionCategory(finding('hma', 'X-1', ''), [])).toBe('Configuration');
   });
 });
 
@@ -223,6 +253,25 @@ describe('review contribution', () => {
     expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
     const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(report.scannerVersion).toBe(cliVersion);
+  });
+
+  // Regression (#410): each finding was sent with the name of the analyzer
+  // that found it ("credential-scan", "hma", "shield") as its category, so
+  // the Registry filed a hardcoded key under "credential-scan".
+  it('each finding is sent with the category the report gives it, not the analyzer that found it', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'revfix', version: '1.0.0' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    fs.writeFileSync(path.join(tempDir, 'config.ts'), `const key = "${'sk-ant-api03-' + 'A'.repeat(85)}";\n`);
+
+    await runReview(tempDir);
+
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
+    const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, { findings: { category: string; description?: string }[] }];
+    const key = report.findings.find(f => f.description === 'config.ts:1');
+    expect(key?.category).toBe('Secrets');
+    for (const f of report.findings) {
+      expect(['credential-scan', 'hma', 'shield', 'hygiene', 'guard', 'shadow-ai', 'advisories']).not.toContain(f.category);
+    }
   });
 
   // Regression (#464): a matched advisory was added to the severity counts
