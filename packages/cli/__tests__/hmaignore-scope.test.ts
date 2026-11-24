@@ -8,7 +8,7 @@ import * as path from 'node:path';
 // The root .hmaignore narrows what `hackmyagent secure --ci` reads, so its
 // contents are a security-relevant surface: a silently added rule is a
 // suppressed finding. This test pins the file to its ruled shape — exactly
-// two single-file exclusions, each carrying its own check-id + public-issue
+// one single-file exclusion, carrying its own check-id + public-issue
 // comment — so that ANY change to the exclusion set shows up as a test diff
 // and has to be re-approved, and so that a rule that matches nothing (or a
 // blanket negation/directory rule) cannot land at all.
@@ -22,10 +22,15 @@ import * as path from 'node:path';
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const rootIgnorePath = path.join(repoRoot, '.hmaignore');
 
-/** The two ruled exclusions, verbatim and in file order. */
+/**
+ * The ruled exclusions, verbatim and in file order. The NEMO-008 rule for
+ * packages/cli/__tests__/shield/events.test.ts is retired: the lines the
+ * scanner paired are rewritten at source, and
+ * scripts/__tests__/self-scan-verify-exec.test.mjs keeps the whole tree
+ * clear of that pairing.
+ */
 const RULED_PATHS = [
   'packages/cli/scripts/shield-lock-trace-loop.ts',
-  'packages/cli/__tests__/shield/events.test.ts',
 ];
 
 /** e.g. NEMO-007, SKILL-023 — the id of the check the rule suppresses. */
@@ -148,7 +153,7 @@ describe('root .hmaignore scope guard (real repository state)', () => {
     expect(fs.existsSync(path.join(repoRoot, 'packages', 'cli', '.hmaignore'))).toBe(false);
   });
 
-  it('the rule list equals the two ruled paths verbatim', () => {
+  it('the rule list equals the ruled path verbatim', () => {
     expect(rulePaths(content)).toEqual(RULED_PATHS);
   });
 
@@ -165,9 +170,6 @@ describe('scope guard audit (fixture contents built here, both directions)', () 
   const ruledFixture = [
     ...ruledComment,
     RULED_PATHS[0],
-    '',
-    ...ruledComment,
-    RULED_PATHS[1],
     '',
   ].join('\n');
 

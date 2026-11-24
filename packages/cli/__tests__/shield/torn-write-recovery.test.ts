@@ -28,7 +28,8 @@ vi.mock('node:os', async (importOriginal) => {
 const { writeEvent, readVerifiedEvents, GENESIS_HASH, getShieldDir, getEventsPath } =
   await import('../../src/shield/events.js');
 
-const { runIntegrityChecks } = await import('../../src/shield/integrity.js');
+const { runIntegrityChecks } =
+  await import('../../src/shield/integrity.js');
 
 let tempDir: string;
 

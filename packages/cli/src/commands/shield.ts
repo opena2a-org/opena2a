@@ -236,7 +236,8 @@ async function handleLog(options: ShieldOptions): Promise<number> {
 }
 
 async function handleSelfcheck(options: ShieldOptions): Promise<number> {
-  const { runIntegrityChecks } = await import('../shield/integrity.js');
+  const { runIntegrityChecks } =
+    await import('../shield/integrity.js');
   const isJson = options.format === 'json';
 
   const shell = process.env.SHELL?.includes('zsh') ? 'zsh' as const
@@ -682,7 +683,8 @@ async function handleRecover(options: ShieldOptions): Promise<number> {
   const reason = getLockdownReason();
 
   if (options.verify) {
-    const { runIntegrityChecks } = await import('../shield/integrity.js');
+    const { runIntegrityChecks } =
+      await import('../shield/integrity.js');
     const shell = process.env.SHELL?.includes('zsh') ? 'zsh' as const
       : process.env.SHELL?.includes('bash') ? 'bash' as const
       : undefined;
