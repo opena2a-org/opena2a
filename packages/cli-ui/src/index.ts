@@ -56,6 +56,7 @@ export {
   type CheckTone,
   type CheckRevocation,
 } from "./check-block.js";
+export { NO_SCAN_RESULT_TEXT, NO_SCAN_RESULT_SHORT_TEXT } from "./no-scan-result-text.js";
 export {
   renderNotFoundBlock,
   type NotFoundBlockInput,

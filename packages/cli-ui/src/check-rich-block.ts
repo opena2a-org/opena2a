@@ -36,6 +36,7 @@ import {
   type ThreatModelArtifactType,
 } from "./threat-model-questions.js";
 import { sanitizeForTerminal } from "./terminal-safe.js";
+import { NO_SCAN_RESULT_SHORT_TEXT } from "./no-scan-result-text.js";
 import {
   renderVerdictReasoningBlock,
   type VerdictReasoningStatementLike,
@@ -216,7 +217,7 @@ function buildHeaderMetaLines(input: CheckRichBlockInput): RichBlockMetaLine[] {
   if (header.lastScanAge && header.lastScanAge.length > 0) {
     parts2.push(`Last scan: ${sanitizeForTerminal(header.lastScanAge)}`);
   } else if (header.trustVerdict === "LISTED_UNSCANNED") {
-    parts2.push("Never scanned");
+    parts2.push(NO_SCAN_RESULT_SHORT_TEXT);
   }
   if (header.latestVersionLabel && header.latestVersionLabel.length > 0) {
     parts2.push(`Latest: ${sanitizeForTerminal(header.latestVersionLabel)}`);

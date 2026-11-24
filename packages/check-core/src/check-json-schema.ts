@@ -33,11 +33,16 @@
  *          (0→"blocked", 1→"warning", 2→"listed", 3→"scanned", 4→"verified")
  *          — the genuine redundant pair is `verdict` ↔ `trustLevel`.
  *
- *   3. REGISTRY-SCAN-STATE axis — `scanStatus`. Whether the *registry's*
- *      server-side scan has run (`pending`, `completed`, `warnings`,
- *      `failed`, …). `scanStatus: "pending"` alongside `score: 100` is
- *      not a contradiction: the local scan ran (hence the score), the
- *      registry's has not (hence pending).
+ *   3. REGISTRY-SCAN-STATE axis — `scanStatus`. The state of the
+ *      *registry's* server-side scan, one of:
+ *        - `"passed"`
+ *        - `"warnings"`
+ *        - `"failed"`
+ *        - `"not_applicable"`
+ *        - `null`: no Registry result
+ *      `scanStatus: null` alongside `score: 100` is not a contradiction:
+ *      the local scan ran (hence the score), the registry has no result
+ *      (hence null).
  *
  * ## Which field do I gate CI on?
  *
@@ -153,8 +158,14 @@ export const CHECK_FIELD_GUIDE: Record<string, CheckFieldDoc> = {
   },
   scanStatus: {
     source: "registry",
-    description:
-      "State of the registry's server-side scan (pending, completed, warnings, failed). Orthogonal to the local `score`.",
+    description: [
+      "State of the registry's server-side scan. Orthogonal to the local `score`. One of:",
+      '"passed"',
+      '"warnings"',
+      '"failed"',
+      '"not_applicable"',
+      "null: no Registry result",
+    ].join("\n"),
   },
   packageType: {
     source: "registry",
