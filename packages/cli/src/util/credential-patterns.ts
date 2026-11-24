@@ -784,7 +784,17 @@ export interface CredentialScanResult {
   skippedDirs: string[];
 }
 
-export async function scanCredentialsWithCoverage(targetDir: string): Promise<CredentialScanResult> {
+export interface CredentialScanOptions {
+  /** True for a file the caller wrote itself. Such a file is still scanned
+   *  for credentials but is left out of `filesScanned`, so reading it does
+   *  not turn "nothing examined" into a clean result. */
+  notCounted?: (filePath: string, content: string) => boolean;
+}
+
+export async function scanCredentialsWithCoverage(
+  targetDir: string,
+  options: CredentialScanOptions = {},
+): Promise<CredentialScanResult> {
   const matches: CredentialMatch[] = [];
   let filesScanned = 0;
   const seen = new Set<string>();
@@ -803,7 +813,7 @@ export async function scanCredentialsWithCoverage(targetDir: string): Promise<Cr
     } catch {
       return;
     }
-    filesScanned++;
+    if (!options.notCounted?.(filePath, content)) filesScanned++;
 
     const lines = content.split('\n');
 

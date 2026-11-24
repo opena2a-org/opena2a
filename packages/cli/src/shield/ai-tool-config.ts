@@ -108,6 +108,18 @@ function appendShieldSection(filePath: string): boolean {
   return true;
 }
 
+/** The Secretless section, from its marker to the last line Secretless writes. */
+const SECRETLESS_SECTION = /<!-- secretless:managed -->[\s\S]*?redacted by Secretless AI\n?/g;
+
+/**
+ * True when an instruction file holds nothing but the sections Shield and
+ * Secretless write, so `shield init` wrote all of it. A line anyone else
+ * added makes it false.
+ */
+export function holdsOnlyManagedSections(content: string): boolean {
+  return content.split(SHIELD_SECTION).join('').replace(SECRETLESS_SECTION, '').trim() === '';
+}
+
 /**
  * Check if the Shield marker exists in a file.
  */

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { homedir } from 'node:os';
 import type {
   EnvironmentScan,
@@ -15,11 +15,11 @@ import { generatePolicyFromScan, savePolicy } from './policy.js';
 import { writeEvent, getShieldDir } from './events.js';
 import { recordPolicyHash, getExpectedHookContent, policyChangedSinceRecorded } from './integrity.js';
 import { signAllArtifacts, signArtifact, loadSignatures, saveSignatures } from './signing.js';
-import { configureAiTools } from './ai-tool-config.js';
+import { configureAiTools, holdsOnlyManagedSections } from './ai-tool-config.js';
 import type { AiToolConfigResult } from './ai-tool-config.js';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
-import { runtimeInitSilent } from '../commands/runtime.js';
+import { runtimeInitSilent, isGeneratedInitConfig } from '../commands/runtime.js';
 
 /**
  * The rerun the credential audit suggests when it read no file. The directory
@@ -103,7 +103,17 @@ export async function shieldInit(options: {
   let credentialFilesScanned: number | null = null;
   try {
     const { scanCredentialsWithCoverage } = await import('../util/credential-patterns.js');
-    const { matches, filesScanned } = await scanCredentialsWithCoverage(targetDir);
+    // A file an earlier init wrote here is scanned but not counted: on a
+    // second run over a directory of skipped files it is all the audit reads,
+    // and reading it says nothing about the user's code.
+    const ownFiles: string[] = [];
+    const { matches, filesScanned } = await scanCredentialsWithCoverage(targetDir, {
+      notCounted: (filePath, content) => {
+        const own = isShieldInitOutput(targetDir, filePath, content);
+        if (own) ownFiles.push(relative(targetDir, filePath));
+        return own;
+      },
+    });
     credentialFindings = matches.length;
     credentialFilesScanned = filesScanned;
     if (isText) {
@@ -111,7 +121,12 @@ export async function shieldInit(options: {
         // The step status stays `done` and the exit code stays 0; only the
         // wording stops calling an unread directory clean.
         process.stdout.write(yellow('  No files were scanned for credentials, so this is not a clean result.\n'));
-        process.stdout.write(dim('  Everything in this directory is a file type or folder the audit skips\n'));
+        if (ownFiles.length > 0) {
+          process.stdout.write(dim(`  The only files read were ones shield init wrote (${ownFiles.sort().join(', ')}), so they are not counted.\n`));
+          process.stdout.write(dim('  Everything else in this directory is a file type or folder the audit skips\n'));
+        } else {
+          process.stdout.write(dim('  Everything in this directory is a file type or folder the audit skips\n'));
+        }
         process.stdout.write(dim('  (for example images, lockfiles, dependency and test folders, and\n'));
         process.stdout.write(dim('  dotfiles other than .env). Run it on the folder that holds your code:\n'));
         process.stdout.write(`    ${cyan(SHIELD_INIT_PROJECT_DIR_COMMAND)}\n`);
@@ -504,6 +519,19 @@ export async function shieldInit(options: {
 
   const hasFailure = credentialFindings > 0;
   return { exitCode: hasFailure ? 1 : 0, result };
+}
+
+/**
+ * True when `filePath` is a file shield init writes into the project and its
+ * content is still what init wrote: the ARP config from step 8, or a
+ * CLAUDE.md holding only the Secretless (step 3) and Shield (step 9)
+ * sections. A file the user has edited is theirs and is counted.
+ */
+export function isShieldInitOutput(targetDir: string, filePath: string, content: string): boolean {
+  const rel = relative(targetDir, filePath);
+  if (rel === 'arp.yaml') return isGeneratedInitConfig(content);
+  if (rel === 'CLAUDE.md') return holdsOnlyManagedSections(content);
+  return false;
 }
 
 /**
