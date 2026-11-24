@@ -1360,12 +1360,12 @@ function redactCredentials(text: string): string {
   return out;
 }
 
-/** One printable line: escape sequences and control characters removed,
- *  credentials redacted, whitespace collapsed, clipped. */
+/** One printable line: escape sequences, C0/C1 controls and bidi controls
+ *  removed, credentials redacted, whitespace collapsed, clipped. */
 function oneLine(text: string, max = 200): string {
   const clean = redactCredentials(text
-    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
-    .replace(/[\x00-\x1f\x7f]+/g, ' '))
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/[\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/[\x00-\x1f\x7f-\x9f]+/g, ' '))
     .replace(/\s+/g, ' ')
     .trim();
   return clean.length > max ? clean.slice(0, max) + '…' : clean;
