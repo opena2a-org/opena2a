@@ -1,6 +1,6 @@
 /**
  * Pins what the CANDIDATE consumer-resolution audit SAYS when it fails, and the
- * one base comparison that lets it name this branch as the cause (QGF-112).
+ * one base comparison that lets it name this branch as the cause.
  *
  * The gate itself cannot be exercised from a test: making it fail requires an
  * `npm install` resolved against the live registry and an `npm audit` against
@@ -30,7 +30,7 @@ const auditSource = fs.readFileSync(AUDIT_SCRIPT, 'utf-8');
 
 /**
  * The two substrings that attribute a failure to the diff under review. They
- * are the whole subject of AC1 and AC2: printing them is a claim about a
+ * are the whole subject of the attribution cases: printing them is a claim about a
  * comparison, and a run that took no comparison may not make it.
  */
 const ATTRIBUTION = ['about the change under review', 'fixable in this branch'];
@@ -69,7 +69,7 @@ async function auditModule(): Promise<any> {
  * import lands somewhere this test can see.
  */
 function importInChild(overrides: Record<string, string> = {}) {
-  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qgf112-import-probe-'));
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'consumer-audit-import-probe-'));
   try {
     const emptyPath = path.join(sandbox, 'no-tools');
     const home = path.join(sandbox, 'home');
@@ -175,7 +175,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
     // TMPDIR points at a path that does not exist, so the `mkdtempSync` that
     // opens the audit would throw ENOENT — outside the run's own try/catch, so
     // it would reject the import. A clean import is the measurement.
-    const missing = path.join(os.tmpdir(), `qgf112-absent-tmpdir-${process.pid}-${Date.now()}`);
+    const missing = path.join(os.tmpdir(), `consumer-audit-absent-tmpdir-${process.pid}-${Date.now()}`);
     expect(fs.existsSync(missing)).toBe(false);
 
     const child = importInChild({ TMPDIR: missing });

@@ -21,7 +21,7 @@
  * (opena2a #339 and #340) while their table rows merged cleanly.
  * child-process-audit.test.ts now fails if a count comes back into this
  * comment, and child-process-audit-merge.test.ts pins the difference in
- * merge behaviour that is the reason for keeping it out (QGF-146).
+ * merge behaviour that is the reason for keeping it out.
  *
  * Root `package.json` keeps `turbo run test --concurrency=1` on purpose:
  * every vitest instance carries the fixed
@@ -52,7 +52,7 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
     spawns:
       'spawn(tsx concurrent-write-child.ts) — MAX_LIVE_CHILDREN = 4 tsx children ' +
       'live at once (each running the CLI in its own node child, so 8 processes ' +
-      'worst case); was an unbounded N=8 Promise.all fan-out before QGF-40',
+      'worst case); was an unbounded N=8 Promise.all fan-out before the bound',
   },
   'version-stream-split.test.ts': {
     shape: 'sync',
@@ -158,7 +158,7 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node scripts/release-artifact-review.mjs --tarball) per case (the script ' +
       'runs npm view, npm install into a probe prefix and the installed bin as its own ' +
       'children, one at a time), and execFileSync(npm view hackmyagent) for the ' +
-      'deprecation fixture (OPA-04)',
+      'deprecation fixture',
   },
   'mcp-server-flag.test.ts': {
     shape: 'sync',

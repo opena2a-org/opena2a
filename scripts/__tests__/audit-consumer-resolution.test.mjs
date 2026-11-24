@@ -155,7 +155,7 @@ function scratchRootDir() {
     tried.push(root);
     try {
       mkdirSync(root, { recursive: true });
-      const dir = mkdtempSync(path.join(root, 'qgf97-exec-'));
+      const dir = mkdtempSync(path.join(root, 'consumer-audit-exec-'));
       const usable = execCapable(dir);
       rmSync(dir, { recursive: true, force: true });
       if (usable) {
@@ -195,7 +195,7 @@ function tarball(dir, manifest) {
  * the registry answers for; `audit` is the report.
  */
 function runGate({ scopedDeps = SCOPED_DEPS, served = [], audit = CLEAN_REPORT } = {}) {
-  const dir = mkdtempSync(path.join(scratchRootDir(), 'qgf97-consumer-audit-'));
+  const dir = mkdtempSync(path.join(scratchRootDir(), 'consumer-audit-'));
   try {
     return measure(dir, { scopedDeps, served, audit });
   } finally {
@@ -239,7 +239,7 @@ function measure(dir, { scopedDeps, served, audit }) {
     env: {
       ...process.env,
       PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-      QGF97_FAKE_NPM_FIXTURE: fixture,
+      FAKE_NPM_FIXTURE: fixture,
     },
   });
 

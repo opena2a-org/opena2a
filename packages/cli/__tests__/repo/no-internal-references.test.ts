@@ -66,19 +66,15 @@ const DECISION_ID_CITATION = /\[[A-Z]{2,4}-\d{3}\]|(?<![A-Za-z0-9_])(?:per|after
 
 // An acceptance criterion of a private plan cited by id: a ticket id followed
 // by `.AC` and a number. A reader cannot resolve it: name the behaviour it
-// stood for (#388). The one exception is a test title that a stored vitest
-// snapshot is keyed by, and that key: renaming the title re-keys the snapshot
-// file, so the two change together or not at all.
+// stood for (#388).
 const CRITERION_ID = /\b[A-Z]{2,4}-\d+\.AC\d+\b/;
 
-/** The `describe` and `it` titles the keys of a vitest snapshot file are built from. */
-function snapshotTitles(snap: string): string[] {
-  const titles = new Set<string>();
-  for (const [, key] of snap.matchAll(/^exports\[`(.*?) \d+`\]/gm)) {
-    for (const title of key.split(' > ')) titles.add(title);
-  }
-  return [...titles];
-}
+// A ticket of the private tracker cited by id, with or without the hyphen and
+// in either case (`QGF-305`, `qgf97-`, `OPA-04`). Checked in test files, test
+// fixtures, stored snapshots and vitest configs, which a contributor reads and
+// cannot resolve such an id from: name the case or behaviour instead (#388).
+const TICKET_ID = /(?<![A-Za-z0-9])(?:QGF|OPA)-?\d+/i;
+const TEST_SURFACE = /(?:^|\/)(?:__tests__|__snapshots__|__fixtures__|test-fixtures)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)vitest\.[\w.]+\.[cm]?[jt]s$/;
 
 const SOURCE_EXT = /\.(ts|tsx|js|mjs|cjs)$/;
 const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
@@ -252,36 +248,48 @@ describe('tracked repository files cite no internal references', () => {
     expect(hits, `drop the number and state the behaviour it stood for:\n${hits.join('\n')}`).toEqual([]);
   });
 
-  it('no tracked line cites an acceptance-criterion id, outside a stored snapshot key and the test title it is built from', () => {
-    const tracked = new Set(files);
+  it('no tracked line cites an acceptance-criterion id, stored snapshot keys included', () => {
     const hits: string[] = [];
     for (const file of files) {
-      const snap = path.posix.join(path.posix.dirname(file), '__snapshots__', `${path.posix.basename(file)}.snap`);
-      const keyed = tracked.has(snap)
-        ? snapshotTitles(fs.readFileSync(path.join(REPO_ROOT, snap), 'utf-8'))
-            .filter((title) => CRITERION_ID.test(title))
-            .flatMap((title) => [`"${title}"`, `'${title}'`, `\`${title}\``])
-        : [];
       const lines = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8').split('\n');
       lines.forEach((line, i) => {
         const m = CRITERION_ID.exec(line);
-        if (!m) return;
-        if (file.endsWith('.snap') && line.startsWith('exports[`')) return;
-        if (keyed.some((quoted) => line.includes(quoted))) return;
-        hits.push(`${file}:${i + 1}: "${m[0]}"`);
+        if (m) hits.push(`${file}:${i + 1}: "${m[0]}"`);
       });
     }
     expect(hits, `drop the id and name the behaviour it stood for:\n${hits.join('\n')}`).toEqual([]);
   });
 
-  it('the criterion check matches the id shape and reads snapshot keys back into their titles', () => {
-    // Assembled from parts, so that a search of the tree for the id shape
+  it('no test, test fixture, stored snapshot or vitest config cites a ticket id', () => {
+    const surface = files.filter((f) => TEST_SURFACE.test(f));
+    // A filter that silently matched nothing would make this pass vacuously.
+    expect(surface).toContain('packages/cli/vitest.config.ts');
+    expect(surface).toContain('packages/cli-ui/src/__snapshots__/grammar.test.ts.snap');
+    expect(surface).toContain('packages/cli/__tests__/child-process-audit.ts');
+    expect(surface).toContain('scripts/__tests__/fixtures/fake-npm.mjs');
+    const hits: string[] = [];
+    for (const file of surface) {
+      const lines = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8').split('\n');
+      lines.forEach((line, i) => {
+        const m = TICKET_ID.exec(line);
+        if (m) hits.push(`${file}:${i + 1}: "${m[0]}"`);
+      });
+    }
+    expect(hits, `drop the id and name the case or behaviour it stood for:\n${hits.join('\n')}`).toEqual([]);
+  });
+
+  it('the criterion and ticket checks match the id shapes they were written for', () => {
+    // Assembled from parts, so that a search of the tree for the id shapes
     // lists only real citations.
     const id = ['ABC', '01.AC1'].join('-');
     expect(CRITERION_ID.test(`pinned by ${id}`)).toBe(true);
     expect(CRITERION_ID.test('NEMO-009, AC1 and 1.AC1')).toBe(false);
-    const snap = `exports[\`rules (${id}) > ${id} renders 1\`] = \`"x"\`;\n\nexports[\`rules (${id}) > ${id} renders 2\`] = \`"y"\`;\n`;
-    expect(snapshotTitles(snap)).toEqual([`rules (${id})`, `${id} renders`]);
+    for (const ticket of [['QGF', '305'].join('-'), ['qgf', '97-exec-'].join(''), `(${['OPA', '04'].join('-')})`]) {
+      expect(TICKET_ID.test(ticket), ticket).toBe(true);
+    }
+    for (const allowed of ['opena2a-qgf-clean', '0.0.0-qgf-smokefail', 'SHIELD-INT-002', 'NEMO-009']) {
+      expect(TICKET_ID.test(allowed), allowed).toBe(false);
+    }
   });
 
   it('no tracked line points to a private planning file or local path', () => {

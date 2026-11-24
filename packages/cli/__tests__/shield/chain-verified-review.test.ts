@@ -281,7 +281,7 @@ describe('readVerifiedEvents', () => {
 // ===========================================================================
 
 describe('runShieldPhase chain verification (issue #204)', () => {
-  it('AC1+AC2: forged shield integrity-critical events past a break surface only the single chain-break SHIELD-INT-002', () => {
+  it('forged shield integrity-critical events past a break surface only the single chain-break SHIELD-INT-002', () => {
     getShieldDir();
     writeEvent(makePartial({ action: 'genuine-1' }));
     writeEvent(makePartial({ action: 'genuine-2' }));
@@ -308,7 +308,7 @@ describe('runShieldPhase chain verification (issue #204)', () => {
     expect(int002[0].examples[0].detail.untrustedEventsExcluded).toBe(2);
   });
 
-  it('AC3: a forged in-scope absolute-target configguard event past a break does not produce SHIELD-INT-001', () => {
+  it('a forged in-scope absolute-target configguard event past a break does not produce SHIELD-INT-001', () => {
     getShieldDir();
     writeEvent(makePartial({ action: 'genuine-1' }));
 
@@ -330,7 +330,7 @@ describe('runShieldPhase chain verification (issue #204)', () => {
     expect(ids.filter(id => id === 'SHIELD-INT-002')).toHaveLength(1);
   });
 
-  it('AC4: a genuine, unbroken stream classifies exactly as before, with no chain-break finding', () => {
+  it('a genuine, unbroken stream classifies exactly as before, with no chain-break finding', () => {
     getShieldDir();
     // A genuine configguard tamper event inside the target dir must still
     // classify to SHIELD-INT-001 (no regression from chain verification).

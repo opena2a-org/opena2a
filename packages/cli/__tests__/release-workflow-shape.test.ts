@@ -36,7 +36,7 @@ const RELEASE_WORKFLOW = path.join(REPO_ROOT, '.github', 'workflows', 'release.y
 /** The step that holds both the roster and the `npm pack` invocation. */
 const PACK_STEP = 'Pack every workspace the publish job will sign';
 
-/** The entry QGF-114 moves, matched as it is written in the workflow. */
+/** The opena2a-cli roster entry, matched as it is written in the workflow. */
 const CLI_ENTRY = '["packages/cli","opena2a-cli"]';
 
 /** npm's install-time fields. `devDependencies` never ship, so they cannot strand a publish. */

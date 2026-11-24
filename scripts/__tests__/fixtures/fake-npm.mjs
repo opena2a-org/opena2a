@@ -46,9 +46,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const FIXTURE = process.env.QGF97_FAKE_NPM_FIXTURE;
+const FIXTURE = process.env.FAKE_NPM_FIXTURE;
 if (!FIXTURE || !existsSync(FIXTURE)) {
-  process.stderr.write(`fake npm: QGF97_FAKE_NPM_FIXTURE is not a readable file (${FIXTURE})\n`);
+  process.stderr.write(`fake npm: FAKE_NPM_FIXTURE is not a readable file (${FIXTURE})\n`);
   process.exit(66);
 }
 const scenario = JSON.parse(readFileSync(FIXTURE, 'utf8'));
