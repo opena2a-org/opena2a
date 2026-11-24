@@ -228,7 +228,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
       }
     }
     const { resignConsent } = await import('./guard-snapshots.js');
-    const given = await resignConsent(changed.map(c => c.filePath), { isJson, isCi: options.ci ?? false });
+    const given = await resignConsent(changed.map(c => c.filePath), { isJson, isCi: options.ci ?? false, command: 'guard sign' });
     if (!given) return 1;
     consent = given;
   }
@@ -301,7 +301,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
       process.stdout.write('\n');
       process.stdout.write(cyan('Tip:') + ' Create an agent identity to manage signatures automatically.\n');
       process.stdout.write(dim('  opena2a identity create --name ' + path.basename(targetDir) + '\n'));
-      process.stdout.write(dim('  Then run: hackmyagent fix-all --with-aim\n'));
+      process.stdout.write(dim('  Then run: opena2a fix-all --with-aim\n'));
       process.stdout.write(dim('  AIM signs files with Ed25519, logs changes, and tracks trust score.\n'));
       process.stdout.write(dim('  No need to manually re-sign after edits.\n'));
     }

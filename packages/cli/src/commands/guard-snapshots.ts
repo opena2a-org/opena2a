@@ -174,17 +174,19 @@ export type ResignConsent = 'prompt' | 'ci';
  * without it. --format json selects an output format and does not imply
  * consent, so without --ci it refuses rather than prompting into
  * machine-read output. Returns how consent was given, or null once the
- * refusal or the cancellation has been printed.
+ * refusal or the cancellation has been printed. The refusal names the
+ * command to re-run in its `opena2a` form.
  */
 export async function resignConsent(
   files: string[],
-  options: { isJson: boolean; isCi: boolean },
+  options: { isJson: boolean; isCi: boolean; command: 'guard resign' | 'guard sign' },
 ): Promise<ResignConsent | null> {
   if (options.isCi) return 'ci';
   if (options.isJson || !process.stdin.isTTY) {
+    const cmd = `opena2a ${options.command}`;
     const reason = options.isJson
-      ? '--format json does not prompt, so the change cannot be confirmed. Re-run with --ci to re-sign without confirmation, or without --format json at a terminal to confirm.'
-      : 'stdin is not a terminal, so the change cannot be confirmed. Re-run at a terminal to confirm, or pass --ci to re-sign without confirmation.';
+      ? `--format json does not prompt, so the change cannot be confirmed. Re-run \`${cmd}\` with --ci to re-sign without confirmation, or without --format json at a terminal to confirm.`
+      : `stdin is not a terminal, so the change cannot be confirmed. Re-run \`${cmd}\` at a terminal to confirm, or with --ci to re-sign without confirmation.`;
     const msg = `Refusing to re-sign: ${reason}`;
     if (options.isJson) { process.stdout.write(JSON.stringify({ error: msg, files }, null, 2) + '\n'); }
     else { process.stderr.write(msg + '\n'); }
@@ -244,7 +246,7 @@ export async function guardResign(targetDir: string, options: ResignOptions): Pr
   }
 
   // The event records how consent was given.
-  const consent = await resignConsent(tampered.map(t => t.filePath), { isJson, isCi });
+  const consent = await resignConsent(tampered.map(t => t.filePath), { isJson, isCi, command: 'guard resign' });
   if (!consent) return 1;
 
   // Create safety snapshot before re-signing

@@ -102,6 +102,7 @@ describe('guard resign consent', () => {
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toContain('Refusing to re-sign');
     expect(r.stderr).toContain('--ci');
+    expect(r.stderr).toContain('Re-run `opena2a guard resign` at a terminal');
     expect(r.stdout).not.toContain('Confirm re-sign?');
     expect(r.stdout).not.toContain('Re-signed');
     expect(fs.readFileSync(storePath, 'utf-8')).toBe(storeBefore);
@@ -117,6 +118,7 @@ describe('guard resign consent', () => {
     expect(r.exitCode).toBe(1);
     const body = JSON.parse(r.stdout);
     expect(body.error).toContain('--ci');
+    expect(body.error).toContain('`opena2a guard resign`');
     expect(body.files).toEqual(['package.json']);
     expect(body.resigned).toBeUndefined();
     expect(fs.readFileSync(storePath, 'utf-8')).toBe(storeBefore);
@@ -206,6 +208,7 @@ describe('guard sign over a store whose signed files changed', () => {
     expect(r.stdout).toContain('CHANGED package.json');
     expect(r.stderr).toContain('Refusing to re-sign');
     expect(r.stderr).toContain('--ci');
+    expect(r.stderr).toContain('Re-run `opena2a guard sign` at a terminal');
     expect(r.stdout).not.toContain('Confirm re-sign?');
     expect(fs.readFileSync(storePath, 'utf-8')).toBe(storeBefore);
   });
@@ -246,5 +249,20 @@ describe('guard sign over a store whose signed files changed', () => {
     expect(JSON.parse(r.stdout).files).toEqual(['package.json', 'tsconfig.json']);
     expect(JSON.parse(r.stdout).resigned).toBeUndefined();
     for (const event of signedEvents()) expect(event.detail).not.toHaveProperty('consent');
+  });
+});
+
+// Regression (#408): with no agent identity, `guard sign` told the user to
+// run `hackmyagent fix-all --with-aim`, a binary `npm i -g opena2a-cli` does
+// not install; the wrapper forwards `opena2a fix-all` to it.
+describe('guard sign identity tip', () => {
+  it('names the opena2a form of fix-all', async () => {
+    fs.writeFileSync(path.join(targetDir, 'package.json'), '{}');
+
+    const r = await run({}, { answer: '', isTTY: false }, 'sign');
+
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain('Then run: opena2a fix-all --with-aim');
+    expect(r.stdout).not.toContain('hackmyagent');
   });
 });

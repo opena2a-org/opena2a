@@ -191,3 +191,24 @@ describe('submitScanReport identity fields', () => {
     }]);
   });
 });
+
+// Regression (#408): a report parsed from a scanner's JSON that carries no
+// scanner version was queued and published as tool version 0.1.0, a version
+// no CLI release has had; it now carries the version of the CLI that sent it.
+describe('submitScanReport tool version', () => {
+  beforeEach(() => {
+    registry.publishScan.mockClear();
+    queue.scanResult.mockClear();
+  });
+
+  it('a report with no scanner version is queued and published with the CLI version', async () => {
+    const { getVersion } = await import('../../src/util/version.js');
+    const noVersion = { ...report({ packageName: 'revfix', packageType: 'npm' }), scannerVersion: undefined } as unknown as ScanReport;
+
+    await submitScanReport(REGISTRY_URL, noVersion);
+
+    expect(getVersion()).not.toBe('0.1.0');
+    expect(queued().toolVersion).toBe(getVersion());
+    expect(published().toolVersion).toBe(getVersion());
+  });
+});

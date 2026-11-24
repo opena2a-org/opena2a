@@ -200,7 +200,7 @@ export async function submitScanReport(
     const { contribute } = await import('@opena2a/contribute');
     await contribute.scanResult({
       tool: report.scannerName ?? 'opena2a-cli',
-      toolVersion: report.scannerVersion ?? '0.1.0',
+      toolVersion: report.scannerVersion || getVersion(),
       packageName: report.packageName,
       packageVersion: report.packageVersion,
       // The ecosystem as the report names it; the Registry keeps the event
@@ -251,7 +251,7 @@ export async function submitScanReport(
         score: report.overallScore,
         maxScore: 100,
         tool: report.scannerName || 'opena2a-cli',
-        toolVersion: report.scannerVersion || '0.1.0',
+        toolVersion: report.scannerVersion || getVersion(),
         findings: report.findings.map(f => ({
           checkId: f.findingId,
           name: f.title,
@@ -433,7 +433,7 @@ async function submitLegacyScanReport(
       body: JSON.stringify({
         ...report,
         submittedAt: new Date().toISOString(),
-        clientVersion: '0.1.0',
+        clientVersion: getVersion(),
       }),
       signal: AbortSignal.timeout(10_000),
     });
