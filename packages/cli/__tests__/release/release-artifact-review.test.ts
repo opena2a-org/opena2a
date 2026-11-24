@@ -208,7 +208,7 @@ const WELL_BEHAVED_BIN = [
  */
 const CONTROL_CLASS_LINE = `const OPENAI_API_KEY = '${'sk-' + 'proj-' + 'A'.repeat(48)}';\nmodule.exports = { OPENAI_API_KEY };\n`;
 
-const scratch = mkdtempSync(path.join(tmpdir(), 'opa04-review-tests-'));
+const scratch = mkdtempSync(path.join(tmpdir(), 'release-artifact-review-tests-'));
 
 /** Memoised heavy runs, so several tests can assert on one invocation. */
 let cleanResult: ReviewResult | undefined;

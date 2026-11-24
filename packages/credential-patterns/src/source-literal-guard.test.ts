@@ -82,7 +82,7 @@ describe('source-literal guard', () => {
   });
 
   it('refuses a scratch copy with a planted provider-shape literal', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opa12-guard-'));
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'source-literal-guard-'));
     try {
       // Plant into a copy of a real scanned file; the planted value is itself
       // assembled at plant time so this test's source stays shape-free.

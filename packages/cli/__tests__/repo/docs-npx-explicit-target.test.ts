@@ -145,7 +145,7 @@ describe('documented npx opena2a-cli invocations name their target', () => {
 
   it('the cwd-implied form is refused and the explicit form is admitted', () => {
     // Negative path pinned: reintroducing a cwd-implied line in any scanned
-    // file fails AC2 above; this pins the rule itself against regression.
+    // file fails the first case above; this pins the rule itself against regression.
     expect(checkInvocation(' review')).not.toBeNull();
     expect(checkInvocation(' review --format json --ci')).not.toBeNull();
     expect(checkInvocation(' review ./')).not.toBeNull();

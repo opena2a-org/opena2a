@@ -1,12 +1,12 @@
 /**
- * QGF-305: the shared yes/no confirm prompt (src/util/confirm.ts).
+ * The shared yes/no confirm prompt (src/util/confirm.ts).
  *
- * AC1 -- affirmative lines resolve true.
- * AC2 -- every other line, an empty line and EOF resolve false; the promise
- *        settles exactly once on every input.
- * AC5 -- the readline interface is created only inside the shared function;
- *        guard-snapshots.ts and admin.ts hold no createInterface call and both
- *        call the shared function.
+ * - Affirmative lines resolve true.
+ * - Every other line, an empty line and EOF resolve false; the promise
+ *   settles exactly once on every input.
+ * - The readline interface is created only inside the shared function;
+ *   guard-snapshots.ts and admin.ts hold no createInterface call and both
+ *   call the shared function.
  */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';

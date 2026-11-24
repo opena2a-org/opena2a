@@ -129,7 +129,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// AC1 — one declaration point, one resolver
+// One declaration point, one resolver
 // ---------------------------------------------------------------------------
 
 describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
@@ -222,7 +222,7 @@ describe('CHILD_ENV_CONTRACTS, childEnv and inheritEnv (#246)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC4 — every route to the delegated scanner hands it the same environment
+// Every route to the delegated scanner hands it the same environment
 // ---------------------------------------------------------------------------
 
 describe('every route to hackmyagent (#246)', () => {
@@ -296,7 +296,7 @@ describe('every route to hackmyagent (#246)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC6 — a credential-shaped name no contract declares reaches no fixed site
+// A credential-shaped name no contract declares reaches no fixed site
 // ---------------------------------------------------------------------------
 
 describe('the seven fixed sites (#246)', () => {

@@ -33,9 +33,10 @@ const STEP_NAME = 'HackMyAgent security scan';
  * The severity counts as the recipe derives them: straight out of `findings[]`,
  * naming no top-level count key, because the scanner emits none.
  *
- * This constant is the one place the expressions are written down: AC1 holds the
- * doc to them and AC3 builds its stand-in scan reports to match. Nothing here
- * asserts that the scanner agrees — AC4 measures that against the pinned CLI, so
+ * This constant is the one place the expressions are written down: the doc
+ * cases hold the doc to them and the gate cases build their stand-in scan
+ * reports to match. Nothing here asserts that the scanner agrees — the
+ * pinned-scanner case measures that against the pinned CLI, so
  * a shape change goes red there rather than being assumed away here.
  */
 const COUNT_EXPR = {
@@ -174,7 +175,7 @@ function jqCompact(json: string, expr: string): string {
   return r.stdout.trim();
 }
 
-// --- AC3: driving the gate body ------------------------------------------
+// --- Driving the gate body ----------------------------------------------
 
 /**
  * The gate as bash runs it: the recipe's body with the scanner invocation
@@ -193,7 +194,7 @@ function gateScript(body: string): string {
  * scanner emits: a `findings[]` of items with a lowercase `severity`, and no
  * top-level count object, because 0.30.0 emits none.
  *
- * Everything outside the critical entries is held identical across both AC3
+ * Everything outside the critical entries is held identical across both gate
  * reports — same trailing finding, same scores, same coverage — so a difference
  * in exit code is attributable to the critical count and nothing else. The count
  * now *is* the findings array, which is why the array is what varies.
@@ -247,7 +248,7 @@ function runGate(report: string): number {
   }
 }
 
-// --- AC4/AC5: the pinned scanner -----------------------------------------
+// --- The pinned scanner ------------------------------------------------
 
 /** The hackmyagent version packages/cli/package.json pins, read from the file. */
 function pinnedVersion(): string {

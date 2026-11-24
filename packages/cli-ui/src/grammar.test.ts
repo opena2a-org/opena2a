@@ -1,9 +1,8 @@
 /**
  * The seven grammar exports, pinned by golden snapshots; the negative/rule
- * pins live in grammar-rules.test.ts. The titles the stored snapshot keys are
- * built from still carry an old ticket id: renaming one re-keys
- * __snapshots__/grammar.test.ts.snap, so the titles and the keys change
- * together.
+ * pins live in grammar-rules.test.ts. The stored snapshot keys in
+ * __snapshots__/grammar.test.ts.snap are built from the describe and it
+ * titles below: renaming a title re-keys the file, so the two change together.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
@@ -37,7 +36,7 @@ function progressText(input: Parameters<typeof renderProgress>[0]): string {
   return writes.join("");
 }
 
-describe("grammar exports (OPA-03.AC1)", () => {
+describe("grammar exports", () => {
   it("grammar module exports exactly the seven grammar names", async () => {
     const grammar = await import("./grammar.js");
     expect(Object.keys(grammar).sort()).toEqual([
@@ -67,7 +66,7 @@ describe("grammar exports (OPA-03.AC1)", () => {
     }
   });
 
-  it("OPA-03.AC1 envelope builds exactly the eight camelCase top-level keys in order", () => {
+  it("envelope builds exactly the eight camelCase top-level keys in order", () => {
     const built = envelope({
       tool: "hackmyagent",
       version: "1.2.3",
@@ -91,34 +90,34 @@ describe("grammar exports (OPA-03.AC1)", () => {
   });
 });
 
-describe("golden snapshots, plain form (OPA-03.AC1)", () => {
-  it("OPA-03.AC1 renderVerdict golden", () => {
+describe("golden snapshots, plain form", () => {
+  it("renderVerdict golden", () => {
     expect(renderVerdict({ verdict: "warning", summary: "2 findings" }, { color: false })).toMatchSnapshot();
     expect(renderVerdict({ verdict: "safe" }, { color: false })).toMatchSnapshot();
     expect(renderVerdict({ verdict: "blocked", summary: "1 critical finding" }, { color: false })).toMatchSnapshot();
   });
 
-  it("OPA-03.AC1 renderScore golden", () => {
+  it("renderScore golden", () => {
     expect(renderScore({ score: 72, pathTo100: "hackmyagent secure ." }, { color: false })).toMatchSnapshot();
     expect(renderScore({ score: 100 }, { color: false })).toMatchSnapshot();
     expect(renderScore({ score: 0 }, { color: false })).toMatchSnapshot();
   });
 
-  it("OPA-03.AC1 renderFinding golden", () => {
+  it("renderFinding golden", () => {
     expect(renderFinding(FINDING, { color: false })).toMatchSnapshot();
   });
 
-  it("OPA-03.AC1 renderNextSteps golden", () => {
+  it("renderNextSteps golden", () => {
     expect(
       renderNextSteps(["hackmyagent secure .", "hackmyagent report"], { color: false }),
     ).toMatchSnapshot();
   });
 
-  it("OPA-03.AC1 renderProgress golden", () => {
+  it("renderProgress golden", () => {
     expect(progressText({ label: "scanning src/config.ts", current: 2, total: 5 })).toMatchSnapshot();
   });
 
-  it("OPA-03.AC1 renderError golden", () => {
+  it("renderError golden", () => {
     expect(
       renderError(
         {

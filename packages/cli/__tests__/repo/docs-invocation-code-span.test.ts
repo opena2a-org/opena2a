@@ -53,7 +53,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const LITERAL_FILES = ['README.md', 'packages/cli/README.md'] as const;
 const DOCS_DIR = 'docs';
 
-/** Every occurrence this lint reasons about. AC1 names this regex. */
+/** Every occurrence this lint reasons about. The walked-set cases name this regex. */
 const INVOCATION = /npx (?:-y )?opena2a-cli/g;
 
 /**
@@ -399,7 +399,7 @@ function occurrenceLinesDigest(sources: readonly Source[]): string {
 const UNWALKED_TAPE = { file: 'docs/images/review-demo.tape', line: 28 } as const;
 
 describe('every documented `npx opena2a-cli` invocation sits in a fence or a code span', () => {
-  // --- AC1: the walked set, the root resolution, and the runner chain ------
+  // --- The walked set, the root resolution, and the runner chain ----------
 
   it('resolves the repository root from this file, not from process.cwd()', () => {
     expect(REPO_ROOT).toBe(path.resolve(__dirname, '..', '..', '..', '..'));
@@ -466,7 +466,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(EXEMPTIONS).toHaveLength(0);
   });
 
-  // --- AC2: the negative case ---------------------------------------------
+  // --- The negative case -------------------------------------------------
 
   it('reports every bare-prose invocation as file:line, not only the first', () => {
     const { fenced, codeSpan, bare } = classify(plant(readWalkedSet()));
@@ -503,7 +503,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(classify(readWalkedSet()).bare).toEqual([]);
   });
 
-  // --- AC3: the census and the two mechanics ------------------------------
+  // --- The census and the two mechanics ----------------------------------
 
   it('the census: 59 occurrences, 54 fenced, 5 code-span, 0 bare', () => {
     const { fenced, codeSpan, bare } = classify(readWalkedSet());
@@ -587,7 +587,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(stripped.bare).toHaveLength(1);
   });
 
-  // --- AC4: the instrument moves nothing ----------------------------------
+  // --- The instrument moves nothing --------------------------------------
 
   it('the 58 occurrence lines are byte-identical to the base tree', () => {
     const sources = readWalkedSet();

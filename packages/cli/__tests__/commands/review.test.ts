@@ -1130,7 +1130,7 @@ describe('review', () => {
   });
 
   it('renders the @opena2a/cli-ui Observations block with Surfaces/Checks/Categories/Verdict labels', async () => {
-    // Smoke test for the CA-030 cli-ui wire at packages/cli/src/commands/review.ts:430.
+    // Smoke test for the cli-ui Observations wire at packages/cli/src/commands/review.ts:430.
     // Asserts the dynamic import of @opena2a/cli-ui succeeded AND the four label
     // strings appear between the Score summary and the Report line. A regression
     // here means either cli-ui is missing from node_modules or the renderer was
