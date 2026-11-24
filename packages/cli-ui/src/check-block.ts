@@ -18,6 +18,7 @@ import { trustLevelLabel, trustLevelLegend } from "./trust-level.js";
 import { formatScanAge } from "./scan-age.js";
 import { normalizeVerdict } from "./verdict.js";
 import { sanitizeForTerminal } from "./terminal-safe.js";
+import { NO_SCAN_RESULT_TEXT } from "./no-scan-result-text.js";
 
 export type CheckTone = "default" | "good" | "warning" | "critical" | "dim";
 
@@ -52,7 +53,7 @@ export interface CheckBlockInput {
   /**
    * Scan status from the registry — controls whether the Trust meter is rendered.
    * Meter shown iff `completed` or `warnings`. Other values (`pending`, `unscanned`,
-   * undefined) hide the meter and emit a "not scanned" line instead.
+   * undefined) hide the meter and emit the `NO_SCAN_RESULT_TEXT` line instead.
    */
   scanStatus?: string;
   /** Number of shared scans the Registry counts for the package in the last 90 days; absent when they carry fewer than three distinct contributor tokens. The Registry does not verify them. */
@@ -193,7 +194,7 @@ export function renderCheckBlock(input: CheckBlockInput): RenderedCheck {
   } else {
     lines.push({
       label: "Trust",
-      value: "not scanned — request a scan to see a score",
+      value: NO_SCAN_RESULT_TEXT,
       tone: "dim",
     });
   }

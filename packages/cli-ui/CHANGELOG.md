@@ -43,6 +43,11 @@
   (hackmyagent#393).
 
 ### Changed
+- For a version with no Registry scan result, `renderCheckBlock`'s Trust
+  line prints `not scanned, no score` and `renderCheckRichBlock`'s score
+  line prints `not scanned`, from the new exports `NO_SCAN_RESULT_TEXT` and
+  `NO_SCAN_RESULT_SHORT_TEXT`, in place of an instruction that named no
+  command and `Never scanned`.
 - The `telemetry` help line reads "Inspect or toggle the persisted
   usage-telemetry opt-out for <tool>." It called the telemetry anonymous,
   and each event carries an install ID that identifies the machine.

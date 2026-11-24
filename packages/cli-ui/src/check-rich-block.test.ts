@@ -253,7 +253,7 @@ describe("renderCheckRichBlock — LISTED (UNSCANNED) skill", () => {
       }),
     );
     expect(out.header.metaLines[1].text).toContain("Score: [—]");
-    expect(out.header.metaLines[1].text).toContain("Never scanned");
+    expect(out.header.metaLines[1].text).toContain("not scanned");
     expect(
       out.sections.some((s) => s.divider === "What we observed"),
     ).toBe(false);
