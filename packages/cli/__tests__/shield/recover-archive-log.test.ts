@@ -245,7 +245,7 @@ describe('shield recover --archive-log', () => {
     expect(payload.untrustedCount).toBe(1);
   });
 
-  it('checks the chain keeping no event but the first one past the break', async () => {
+  it('checks the chain with empty windows, keeping only the first event past the break', async () => {
     getShieldDir();
     writeEvent(makePartial({ action: 'genuine-1' }));
     writeEvent(makePartial({ action: 'genuine-2' }));
@@ -255,8 +255,9 @@ describe('shield recover --archive-log', () => {
 
     expect(await runArchive()).toBe(0);
 
-    // One pass over the log that keeps no event in its windows: every event
-    // is counted, and the only one kept is the first past the break.
+    // One pass over the log with both windows empty: each event is held
+    // while its link is checked and then counted, and the one event kept
+    // after its check is the first past the break.
     expect(check).toHaveBeenCalledTimes(1);
     expect(check).toHaveBeenCalledWith(path.join(getShieldDir(), 'events.jsonl'), { countsOnly: true });
     const result = check.mock.results[0];

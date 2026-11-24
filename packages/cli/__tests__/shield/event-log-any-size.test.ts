@@ -287,6 +287,8 @@ describe('chunked reading', () => {
     expect(result.events.map(e => e.action)).toEqual(['e6', 'e4']);
     expect(result.trustedCount).toBe(6);
 
+    // Counts only: both windows come back empty, and the counts still cover
+    // every event the check parsed.
     const counts = verifyEventLog(getEventsPath(), { countsOnly: true });
     expect(counts.events).toEqual([]);
     expect(counts.trustedCount).toBe(6);

@@ -581,8 +581,8 @@ async function handleArchiveLog(options: ShieldOptions): Promise<number> {
   }
 
   // Counts only: the verdict and the anchor come from the counters, so the
-  // chain is checked in fixed chunks and at most one event, the first one
-  // past the break, is kept, whatever the size.
+  // chain is checked in fixed chunks, each event is held only while its link
+  // is checked, and the one event kept is the first one past the break.
   let verification: ReturnType<typeof verifyEventLog>;
   try {
     verification = verifyEventLog(eventsPath, { countsOnly: true });

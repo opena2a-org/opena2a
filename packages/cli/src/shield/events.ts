@@ -569,8 +569,11 @@ export interface EventLogReadOptions {
   /** The events to keep, as readEvents filters them.  The rest are only counted. */
   filters?: EventFilters;
   /**
-   * Keep no events in the windows: return the verdict, the counts and
-   * `firstUntrusted`, the one event kept, the first past the break.
+   * Leave both windows empty (`events` and `untrusted` come back as []).
+   * The chain check still parses each line into an event and holds it while
+   * its link is checked; once checked it is only counted, except
+   * `firstUntrusted`, the first event past the break, which is kept and
+   * returned with the verdict and the counts.
    */
   countsOnly?: boolean;
   /** Bytes per read.  Tests lower it to move the chunk edges. */
