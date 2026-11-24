@@ -39,6 +39,22 @@ function listedFormats(text: string): string[] {
   return [...text.matchAll(/^ {2}--format (\S+) /gm)].map(m => m[1]);
 }
 
+/**
+ * One option's row of a help screen, its wrapped description lines (which
+ * start deeper than an option's two-column indent) joined into one.
+ */
+function optionRow(text: string, term: string): string | undefined {
+  const lines = text.split('\n');
+  const start = lines.findIndex(l => l.startsWith(`  ${term} `));
+  if (start === -1) return undefined;
+  const row = [lines[start]];
+  for (const line of lines.slice(start + 1)) {
+    if (!/^ {3,}\S/.test(line)) break;
+    row.push(line);
+  }
+  return row.map(l => l.trim()).join(' ').replace(/\s+/g, ' ');
+}
+
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'opena2a-format-help-'));
   const home = join(root, 'home');
@@ -65,8 +81,8 @@ describe('--format help (#412)', () => {
   });
 
   it('the global --format help does not offer sarif to every command', () => {
-    const line = help([]).split('\n').find(l => l.trimStart().startsWith('--format <type>'));
-    expect(line).toBeDefined();
-    expect(line).toMatch(/sarif where a command produces it/);
+    const row = optionRow(help([]), '--format <type>');
+    expect(row).toBeDefined();
+    expect(row).toMatch(/sarif where a command produces it/);
   });
 });

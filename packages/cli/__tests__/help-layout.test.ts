@@ -14,6 +14,11 @@
  * bundled engine after a short header; only that header is rendered by this
  * CLI, so the width check stops at its last line (the engine's own help is
  * maintained in the engine's repository).
+ *
+ * `opena2a --help` itself fits 80 columns too, also when rendered for a
+ * 200-column terminal: Commander sizes help to the terminal unless a
+ * helpWidth is configured, and its 42-column command list left too little
+ * room beside it for Commander to wrap at all.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -93,8 +98,20 @@ afterAll(() => {
   rmSync(xdgConfigHome, { recursive: true, force: true });
 });
 
-function runCli(args: string[]): { stdout: string; status: number } {
-  const res = spawnSync(process.execPath, [CLI_PATH, ...args], {
+/**
+ * Makes the child's stdout report a terminal `columns` wide, the width
+ * Commander renders help for when none is configured.
+ */
+function terminalPreload(columns: number): string[] {
+  const source =
+    "Object.defineProperty(process.stdout,'isTTY',{value:true});" +
+    `Object.defineProperty(process.stdout,'columns',{value:${columns}});`;
+  return ['--import', `data:text/javascript,${encodeURIComponent(source)}`];
+}
+
+function runCli(args: string[], columns?: number): { stdout: string; status: number } {
+  const preload = columns === undefined ? [] : terminalPreload(columns);
+  const res = spawnSync(process.execPath, [...preload, CLI_PATH, ...args], {
     encoding: 'utf8',
     timeout: 20000,
     input: '',
@@ -132,6 +149,26 @@ describe('subcommand --help layout', () => {
 
   it('opena2a --help keeps the quick-start and category block', () => {
     for (const marker of ROOT_ONLY_MARKERS) expect(root).toContain(marker);
+  });
+
+  it.each([
+    ['a pipe', undefined],
+    ['a 200-column terminal', 200],
+  ] as const)('opena2a --help fits 80 columns on %s', (_where, columns) => {
+    const { stdout, status } = runCli(['--help'], columns);
+    expect(status).toBe(0);
+    const lines = stdout.replace(STRIP_ANSI, '').split('\n');
+    expect(lines).toContain('Commands:');
+    expect(lines.filter((l) => l.length > MAX_WIDTH)).toEqual([]);
+  });
+
+  it('the preload makes the child see a 200-column terminal', () => {
+    const res = spawnSync(
+      process.execPath,
+      [...terminalPreload(200), '-e', 'process.stdout.write(String(process.stdout.isTTY && process.stdout.columns))'],
+      { encoding: 'utf8', timeout: 20000, env: { ...process.env, NODE_OPTIONS: '' } },
+    );
+    expect(res.stdout).toBe('200');
   });
 
   it('the walk covers every registered command, adapters included', () => {
