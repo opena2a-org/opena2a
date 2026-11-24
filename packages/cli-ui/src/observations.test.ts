@@ -149,6 +149,12 @@ describe('buildVerdict', () => {
     expect(v.message).toContain('project');
   });
 
+  it('safe verdict treats the display label "Unknown" as unknown', () => {
+    const v = buildVerdict({ critical: 0, high: 0, medium: 0, low: 0 }, { kind: 'Unknown' });
+    expect(v.message).toBe('No security issues detected. This project looks safe to use.');
+    expect(v.message).not.toContain('Unknown');
+  });
+
   it('remote needs-fix verdict drops the `secure --fix` suffix (third-party code)', () => {
     const local = buildVerdict(
       { critical: 0, high: 0, medium: 1, low: 0 },

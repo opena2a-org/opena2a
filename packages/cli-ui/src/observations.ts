@@ -242,7 +242,7 @@ export function buildVerdict(
   const total = critical + high + medium + low;
 
   if (total === 0) {
-    const surfaceLabel = surface.kind && surface.kind !== 'unknown' ? surface.kind : 'project';
+    const surfaceLabel = surface.kind && surface.kind.toLowerCase() !== 'unknown' ? surface.kind : 'project';
     return {
       status: 'safe',
       message: `No security issues detected. This ${surfaceLabel} looks safe to use.`,

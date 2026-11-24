@@ -785,7 +785,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   if (!quiet) {
     try {
       const cliUi = await import('@opena2a/cli-ui');
-      const projectLabel = report.projectType && report.projectType !== 'unknown'
+      const projectLabel = report.projectType && report.projectType.toLowerCase() !== 'unknown'
         ? report.projectType
         : 'project';
       const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
