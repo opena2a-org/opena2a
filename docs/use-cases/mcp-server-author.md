@@ -41,7 +41,7 @@ Next Steps
   opena2a mcp verify <name>     Verify server signature and trust score
 ```
 
-Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists under `.opena2a/mcp-identities/`, and its registry trust score. `no trust score` means the registry held no record of that server when the audit ran -- which is what every unregistered server looks like, yours included, until Step 5. `Verified` in the summary counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
+Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists in the user store for the project (`~/.opena2a/projects/<key>/mcp-identities/`, or under `$OPENA2A_HOME`), and its registry trust score. `no trust score` means the registry held no record of that server when the audit ran -- which is what every unregistered server looks like, yours included, until Step 5. `Verified` in the summary counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
 
 ---
 

@@ -15,6 +15,7 @@ import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
 import { registryNameFor, hasNpmPackageNameForm } from '../util/mcp-registry-name.js';
+import { findMcpIdentityFile, listMcpIdentityNames } from '../util/mcp-identity-store.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -490,15 +491,9 @@ export function scanIdentity(targetDir: string): IdentitySummary {
     aimIdentities++;
   }
 
-  if (fs.existsSync(opena2aDir)) {
-
-    const mcpIdDir = path.join(opena2aDir, 'mcp-identities');
-    if (fs.existsSync(mcpIdDir)) {
-      try {
-        mcpIdentities = fs.readdirSync(mcpIdDir).filter((f) => f.endsWith('.json')).length;
-      } catch { /* ignore */ }
-    }
-  }
+  // MCP identities written by `opena2a mcp sign`: the per-project user store,
+  // plus any an older release left in the project tree.
+  mcpIdentities = listMcpIdentityNames(targetDir).length;
 
   for (const p of [path.join(targetDir, 'SOUL.md'), path.join(targetDir, '.opena2a', 'SOUL.md')]) {
     if (fs.existsSync(p)) soulFiles++;
@@ -1382,14 +1377,10 @@ export async function detect(options: DetectOptions): Promise<number> {
   }
 
   // Enrich MCP servers with signing status
-  const mcpIdDir = path.join(dir, '.opena2a', 'mcp-identities');
-  if (fs.existsSync(mcpIdDir)) {
-    for (const server of mcpServers) {
-      const idFile = path.join(mcpIdDir, `${server.name}.json`);
-      if (fs.existsSync(idFile)) {
-        server.verified = true;
-        server.risk = 'low';
-      }
+  for (const server of mcpServers) {
+    if (findMcpIdentityFile(dir, server.name)) {
+      server.verified = true;
+      server.risk = 'low';
     }
   }
 

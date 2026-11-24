@@ -65,15 +65,23 @@ function captureStderr(fn: () => Promise<number>): Promise<{ exitCode: number; o
 
 describe('mcp-audit', () => {
   let tempDir: string;
+  let userHome: string;
+  const previousOpena2aHome = process.env.OPENA2A_HOME;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-mcp-test-'));
+    // Signing writes to the per-project user store; keep it out of the real one.
+    userHome = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-mcp-home-'));
+    process.env.OPENA2A_HOME = userHome;
     registryStub.checkTrust.mockReset();
     registryStub.checkTrust.mockRejectedValue(new Error('registry not stubbed for this test'));
   });
 
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(userHome, { recursive: true, force: true });
+    if (previousOpena2aHome === undefined) delete process.env.OPENA2A_HOME;
+    else process.env.OPENA2A_HOME = previousOpena2aHome;
   });
 
   describe('parseConfigFile', () => {
@@ -504,6 +512,10 @@ describe('mcp-audit', () => {
       expect(identity.privateKey).toBeTruthy();
       expect(identity.signature).toBeTruthy();
       expect(identity.createdAt).toBeTruthy();
+
+      // The identity holds a private key: nothing is written into the project tree.
+      expect(fs.existsSync(path.join(tempDir, '.opena2a'))).toBe(false);
+      expect(idPath.startsWith(path.join(userHome, 'projects') + path.sep)).toBe(true);
     });
 
     it('produces text output', async () => {
@@ -529,9 +541,8 @@ describe('mcp-audit', () => {
       expect(output).toContain('Fingerprint');
     });
 
-    // The identity file carries the server's private key inside the project tree.
-    // Until it moves to the per-project user store, sign must say so and must not
-    // leave the key readable by other users.
+    // The identity file carries the server's private key. Sign says so and does
+    // not leave the key readable by other users.
     it('names the identity file as a private key in text and JSON output', async () => {
       const config = { mcpServers: { 'pk-label': { command: 'node', args: ['server.js'] } } };
       fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify(config));
@@ -543,7 +554,7 @@ describe('mcp-audit', () => {
       expect(text.exitCode).toBe(0);
       expect(text.output).toContain(`Private key:  ${idPath}`);
       expect(text.output).toContain('private signing key');
-      expect(text.output).toContain('.opena2a/mcp-identities/');
+      expect(text.output).toContain('outside the project tree');
       expect(text.output).not.toContain('Stored in:');
 
       const json = await captureStdout(() =>
@@ -552,6 +563,27 @@ describe('mcp-audit', () => {
       const result = JSON.parse(json.output);
       expect(result.identityFile).toBe(idPath);
       expect(result.containsPrivateKey).toBe(true);
+      expect(result.legacyIdentityFile).toBeNull();
+    });
+
+    it('names an identity an older release left in the project tree, and reads the store copy after re-signing', async () => {
+      const config = { mcpServers: { 'pk-legacy': { command: 'node', args: ['server.js'] } } };
+      fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify(config));
+      const legacyDir = path.join(tempDir, '.opena2a', 'mcp-identities');
+      fs.mkdirSync(legacyDir, { recursive: true });
+      const legacyPath = path.join(legacyDir, 'pk-legacy.json');
+      fs.writeFileSync(legacyPath, '{}');
+
+      // The legacy file is still read until the server is re-signed.
+      expect(_internals.findIdentityPath(tempDir, 'pk-legacy')).toBe(legacyPath);
+
+      const text = await captureStdout(() =>
+        mcpCommand({ subcommand: 'sign', server: 'pk-legacy', targetDir: tempDir, format: 'text' }),
+      );
+      expect(text.exitCode).toBe(0);
+      expect(text.output).toContain('still in the project tree and holds a private key');
+      expect(text.output).toContain(legacyPath);
+      expect(_internals.findIdentityPath(tempDir, 'pk-legacy')).toBe(_internals.getIdentityPath(tempDir, 'pk-legacy'));
     });
 
     it.skipIf(process.platform === 'win32')('writes the identity file owner-only, also when re-signing over a wider file', async () => {
@@ -1106,9 +1138,10 @@ describe('mcp-audit', () => {
   });
 
   describe('getIdentityPath', () => {
-    it('returns correct path structure', () => {
-      const p = _internals.getIdentityPath('/project', 'my-server');
-      expect(p).toBe(path.join('/project', '.opena2a', 'mcp-identities', 'my-server.json'));
+    it('is in the per-project user store, outside the project tree', () => {
+      const p = _internals.getIdentityPath('/srv/example-project', 'my-server');
+      // 2550ea6e13e5f88a is the store key every implementation pins for /srv/example-project.
+      expect(p).toBe(path.join(userHome, 'projects', '2550ea6e13e5f88a', 'mcp-identities', 'my-server.json'));
     });
   });
 });

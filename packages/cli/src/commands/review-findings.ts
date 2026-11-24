@@ -430,7 +430,7 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       foundBy: [{ source: 'shadow-ai', checkId: 'mcp-server', lines: [] }],
       locations: [{ file, line: null }],
       evidence: [{ file, line: null, text: `${s.name} (${s.transport}): ${s.capabilities.join(', ') || 'no capabilities inferred'}` }],
-      reason: `There is no identity file for ${s.name} in .opena2a/mcp-identities.`,
+      reason: `There is no identity file for ${s.name} from opena2a mcp sign.`,
       fix: { command: 'opena2a mcp audit', tool: 'opena2a', changes: 'Lists the MCP servers and their identity status; changes nothing.' },
       verify: { command: 'opena2a detect', tool: 'opena2a', expect: `${s.name} is not listed at critical risk` },
       advice: `Remove ${s.name} from ${file} if this project does not use it, or narrow the command and arguments it runs with.`,

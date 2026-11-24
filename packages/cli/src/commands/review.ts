@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { platform, tmpdir } from 'node:os';
 import { childEnv } from '../adapters/registry.js';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
+import { findMcpIdentityFile } from '../util/mcp-identity-store.js';
 
 /** Local structural subset of @opena2a/cli-ui types. Duplicated here
  *  because this package is CJS and cli-ui is ESM; static type imports
@@ -1533,13 +1534,9 @@ async function runDetectPhase(targetDir: string): Promise<DetectPhaseData> {
   }
 
   // Enrich MCP servers with signing status
-  const mcpIdDir = path.join(targetDir, '.opena2a', 'mcp-identities');
-  if (fs.existsSync(mcpIdDir)) {
-    for (const server of detectedMcpServers) {
-      const idFile = path.join(mcpIdDir, `${server.name}.json`);
-      if (fs.existsSync(idFile)) {
-        server.verified = true;
-      }
+  for (const server of detectedMcpServers) {
+    if (findMcpIdentityFile(targetDir, server.name)) {
+      server.verified = true;
     }
   }
 

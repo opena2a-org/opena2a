@@ -275,7 +275,7 @@ const CODE_SPAN_ROW = {
 const CODE_SPAN_SIGN_STEP = {
   file: 'docs/use-cases/developer.md',
   line: 245,
-  text: 'The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one `.opena2a/mcp-identities/<name>.json` per server. Then run detection again:',
+  text: 'The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one identity file per server to the user store for the project, `~/.opena2a/projects/<key>/mcp-identities/<name>.json`, not into the project. Then run detection again:',
 } as const;
 
 /**
@@ -375,9 +375,15 @@ const DISCRIMINATION: ReadonlyArray<{
  * trust-gate-action block, with its one fence pair, went. The 13 ci-cd.md occurrences after it
  * moved up sixteen lines with their text unchanged, the troubleshooting row from line 529 to
  * 513, ci-cd.md's fence lines from 34 to 32, and no other file changed.
+ *
+ * Recomputed again when `opena2a mcp sign` stopped writing identity files into the project
+ * tree (#295): the sign step in the developer walkthrough (line 245) said each server got a
+ * `.opena2a/mcp-identities/<name>.json`, which was no longer true, and now names the user store
+ * it writes to. Its `npx opena2a-cli mcp sign filesystem` code span is unchanged, the line did
+ * not move, and no other occurrence changed.
  */
 const OCCURRENCE_LINES_SHA256 =
-  '6cf46b71dfa7afc3e0dede13698f5f7cadd46a62bb480239817b17a1d7080de2';
+  'bbc22d6e44d0637b44afd39ad96a84875c88311f2fe7ae4d99b2fca4ed8d971f';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];
