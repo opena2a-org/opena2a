@@ -698,6 +698,52 @@ describe('review', () => {
     expect(terminal).not.toContain('all clear');
   });
 
+  it('a non-credential finding on a directory the local credential check read nothing from keeps credentials skipped and the verdict', async () => {
+    // The local walker skips an image, so it reads no file here; the bundled
+    // scanner reports one medium finding outside the credentials category.
+    // Credentials stay off the Categories line and are named as skipped, and
+    // the medium finding's verdict stands: it is not replaced by the
+    // no-files-scanned verdict, which only stands in for a "safe" one.
+    fs.writeFileSync(path.join(tempDir, 'logo.png'), 'PNG');
+    fakeHma.report = {
+      score: 90,
+      maxScore: 100,
+      findings: [{
+        checkId: 'NET-001', name: 'Server binds to all interfaces', category: 'network',
+        severity: 'medium', passed: false, message: 'Server listens on 0.0.0.0',
+      }],
+    };
+
+    const origStderr = process.stderr.write;
+    process.stderr.write = (() => true) as any;
+    let report: any;
+    let terminal = '';
+    try {
+      const { output } = await captureStdout(() => review({
+        targetDir: tempDir, format: 'json', autoOpen: false,
+      }));
+      report = JSON.parse(output);
+      ({ output: terminal } = await captureStdout(() => review({
+        targetDir: tempDir, autoOpen: false, ci: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+    const terminalLine = (label: string) => terminal.split('\n').find(l => l.includes(label)) ?? '';
+
+    expect(report.credentialData.filesScanned).toBe(0);
+    expect(report.hmaData.available).toBe(true);
+    expect(report.findings.some((f: any) => f.id === 'NET-001')).toBe(true);
+
+    // 25 categories, less the unread credentials one, less the one that fired.
+    expect(terminalLine('Categories')).toContain('network (1 medium) · 23 others clear');
+    expect(terminalLine('Categories')).not.toContain('credentials');
+    expect(terminalLine('Checks')).toContain('1 skipped (credentials — no files scanned)');
+    expect(terminalLine('Verdict')).toContain('Usable with caveats');
+    expect(terminalLine('Verdict')).not.toContain('No files were scanned for credentials');
+    expect(terminal).not.toContain('all clear');
+  });
+
   it('reads the project for credentials once per review', async () => {
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
     credentialWalks.count = 0;
