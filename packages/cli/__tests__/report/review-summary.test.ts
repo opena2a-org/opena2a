@@ -191,6 +191,19 @@ describe('review report: Summary', () => {
     expect(t).toContain('Checked: 6 analyzers');
     expect(t).not.toMatch(/\bundefined\b|\bNaN\b/);
   });
+
+  it('renders a severity or source named "constructor" as its own value, not one from Object.prototype', () => {
+    const odd = { ...LOCK_FILE, fingerprint: 'c0457c70', severity: 'constructor', foundBy: [{ source: 'constructor', checkId: 'X-1', lines: [] }] };
+    const t = text(renderOverview(report({ reportFindings: [ENV_GROUP, odd], fixFirst: [ENV_GROUP.fingerprint, 'constructor'] })));
+    expect(t).toContain('Not ready to ship: 1 critical finding.');
+    expect(t).toMatch(/critical 1 high 0 medium 0 low 0 constructor 1/);
+    expect(t).toContain('1 more finding:');
+    expect(t).not.toMatch(/\bundefined\b|\bNaN\b|native code|function/);
+    const solo = text(renderOverview(report({ reportFindings: [odd], fixFirst: [odd.fingerprint] })));
+    expect(solo).toContain('No critical or high findings. 1 constructor finding to review.');
+    expect(solo).toContain('Found by constructor X-1');
+    expect(solo).not.toMatch(/\bundefined\b|\bNaN\b|native code|function/);
+  });
 });
 
 describe('review report: Fix first', () => {

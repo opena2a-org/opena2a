@@ -23,6 +23,10 @@ var SOURCE_TAB = {
 };
 var TAB_LABEL = { hma: 'HMA', credentials: 'Credentials', shield: 'Shield', shadowai: 'Shadow AI', hygiene: 'Hygiene' };
 var FLOOR_LABEL = { 'HMA Scan': 'HMA' };
+/** The map's own value for a key; a report value such as "constructor" never reaches Object.prototype. */
+function lookup(map, key) {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+}
 /** Escaped text with `code` spans marked up. */
 function richText(s) {
   return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -48,7 +52,7 @@ function severityKeys(counts) {
   return keys;
 }
 function severityCounts(findings) {
-  var counts = {};
+  var counts = Object.create(null);
   for (var i = 0; i < findings.length; i++) {
     var s = findings[i].severity;
     counts[s] = (counts[s] || 0) + 1;
@@ -98,14 +102,14 @@ function recoveryLabel(r) {
 }
 /** The analyzers holding a floorPinned score, in words. */
 function holderWords(r) {
-  return joinWords((r.holder || []).map(function(n) { return FLOOR_LABEL[n] || n; }));
+  return joinWords((r.holder || []).map(function(n) { return lookup(FLOOR_LABEL, n) || n; }));
 }
 function scoreSentences(top) {
   var model = report.scoreModel;
   var s = (report.provisional ? 'Provisional score ' : 'Score ') + report.compositeScore + ' of 100.';
   var held = model && model.floorHeldBy && model.floorHeldBy.length > 0;
   if (held) {
-    var who = joinWords(model.floorHeldBy.map(function(n) { return FLOOR_LABEL[n] || n; }));
+    var who = joinWords(model.floorHeldBy.map(function(n) { return lookup(FLOOR_LABEL, n) || n; }));
     s += ' The score is held at ' + report.compositeScore + ' because ' + who + ' scored this tree ' + report.compositeScore + ' of 100. It rises once ' + (model.floorHeldBy.length === 1 ? 'that score reaches ' : 'those scores reach ') + model.floorBand + '; fixes in other areas do not change the score until then.';
   }
   var first = top.length > 0 ? top[0].recovery : null;
@@ -168,7 +172,7 @@ function textRow(key, text) {
 }
 function foundByText(f) {
   return (f.foundBy || []).map(function(b) {
-    var src = SOURCE_LABEL[b.source] || b.source;
+    var src = lookup(SOURCE_LABEL, b.source) || b.source;
     var id = b.source === 'hygiene' ? '"' + b.checkId + '"' : b.checkId;
     var lines = b.lines && b.lines.length > 0 ? ' (' + (b.lines.length === 1 ? 'line ' : 'lines ') + b.lines.join(', ') + ')' : '';
     return src + ' ' + id + lines;
@@ -212,24 +216,24 @@ function fixFirstCard(f, n) {
 }
 /** The findings after Fix first, counted by the tab that lists them. */
 function moreFindings(rest) {
-  var byTab = {};
+  var byTab = Object.create(null);
   var order = [];
   for (var i = 0; i < rest.length; i++) {
     var src = rest[i].foundBy && rest[i].foundBy[0] ? rest[i].foundBy[0].source : '';
-    var tab = SOURCE_TAB[src];
+    var tab = lookup(SOURCE_TAB, src);
     if (!tab) continue;
     if (!byTab[tab]) order.push(tab);
     byTab[tab] = (byTab[tab] || 0) + 1;
   }
   var h = '<p class="ff-more">' + esc(plural(rest.length, 'more finding')) + ':';
   for (var j = 0; j < order.length; j++) {
-    h += ' <button type="button" class="ff-tab-link" onclick="goToTab(&quot;' + order[j] + '&quot;)">' + TAB_LABEL[order[j]] + ' ' + byTab[order[j]] + '</button>';
+    h += ' <button type="button" class="ff-tab-link" onclick="goToTab(&quot;' + order[j] + '&quot;)">' + lookup(TAB_LABEL, order[j]) + ' ' + byTab[order[j]] + '</button>';
   }
   return h + '</p>';
 }
 function renderOverview() {
   var findings = report.reportFindings || [];
-  var byFp = {};
+  var byFp = Object.create(null);
   for (var i = 0; i < findings.length; i++) byFp[findings[i].fingerprint] = findings[i];
   var top = (report.fixFirst || []).map(function(fp) { return byFp[fp]; }).filter(Boolean);
   var h = renderSummary(findings, top);
