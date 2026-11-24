@@ -661,16 +661,16 @@ export async function review(options: ReviewOptions): Promise<number> {
     detectData,
   };
 
-  // Severity counts. The terminal count and Verdict count a matched advisory
-  // beside `findings`, as the report's Overview does; the score and the counts
-  // sent to the Registry (`analyzerCounts`) do not, as it concerns a dependency.
-  const advisoryFindings = reportFindings.filter(f => f.foundBy.some(b => b.source === 'advisories'));
+  // Severity counts. The terminal count and Verdict read `reportFindings`, the
+  // list the report's Summary counts, so the two agree for the same run. The
+  // counts sent to the Registry (`analyzerCounts`) stay on the analyzers'
+  // `findings`: a matched advisory concerns a dependency, not the project.
   const countBySeverity = (list: { severity: string }[]) => list.reduce((counts, f) => {
     if (f.severity in counts) counts[f.severity as keyof typeof counts]++;
     return counts;
   }, { critical: 0, high: 0, medium: 0, low: 0 });
-  const [analyzerCounts, sevCounts] = [countBySeverity(findings), countBySeverity([...findings, ...advisoryFindings])];
-  const totalFindings = findings.length + advisoryFindings.length;
+  const [analyzerCounts, sevCounts] = [countBySeverity(findings), countBySeverity(reportFindings)];
+  const totalFindings = reportFindings.length;
 
   // Why the advisories were not checked (a refused registry.url, no answer,
   // OPENA2A_ADVISORIES=off). On stderr, so `--format json` stays parseable.
@@ -785,24 +785,21 @@ export async function review(options: ReviewOptions): Promise<number> {
       const projectLabel = report.projectType && report.projectType !== 'unknown'
         ? report.projectType
         : 'project';
-      const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
-        checkId: f.id,
-        name: f.title,
-        category: f.source,
+      // The same list the counts above and the report's Summary read, in the
+      // report's order, so the Verdict leads with the report's first finding.
+      // Titles can carry analyzer or Registry text, cut to one printable line.
+      const categorizable: LocalCategorizableFinding[] = reportFindings.map(f => ({
+        checkId: observationCheckId(f),
+        name: printable(f.title),
+        category: f.foundBy[0]?.source ?? '',
         passed: false,
         severity: f.severity as LocalSeverity,
       }));
-      const verdictFindings: LocalVerdictFinding[] = findings.map(f => ({
+      const verdictFindings: LocalVerdictFinding[] = reportFindings.map(f => ({
         severity: f.severity as LocalSeverity,
-        name: f.title,
-        checkId: f.id,
+        name: printable(f.title),
+        checkId: printable(f.foundBy[0]?.checkId ?? ''),
       }));
-      // Advisory titles carry Registry text, cut to one printable line.
-      for (const f of advisoryFindings) {
-        const name = printable(f.title);
-        categorizable.push({ checkId: 'DEP-ADVISORY', name, category: 'supply-chain', passed: false, severity: f.severity as LocalSeverity });
-        verdictFindings.push({ severity: f.severity as LocalSeverity, name, checkId: printable(f.foundBy[0]?.checkId ?? '') });
-      }
       // A credential check that opened no file found nothing because it read
       // nothing. The block must not list credentials as clear, close the
       // category list with "(all clear)" or call the directory safe to use.
@@ -2234,6 +2231,25 @@ function openInBrowser(filePath: string): void {
     : platform() === 'win32' ? 'start'
     : 'xdg-open';
   spawn(cmd, [filePath], { detached: true, stdio: 'ignore' }).unref();
+}
+
+/** The check-ID prefix cli-ui files each report category under. */
+const CATEGORY_CHECK_PREFIX: Record<FindingCategory, string> = {
+  Secrets: 'CRED', 'Agent instructions': 'PROMPT', 'MCP config': 'MCP', 'Git hygiene': 'GIT',
+  'Supply chain': 'SUPPLY', Dependencies: 'DEP', Configuration: 'CONFIG', Runtime: 'PROC', Governance: 'GOV',
+};
+
+/**
+ * The check ID the terminal's Categories line files a report finding under.
+ * HMA, credential-scan and Shield findings keep their own check ID, as they
+ * did before the line read the report's list; the hygiene, guard, Shadow AI
+ * and advisory checks have IDs cli-ui does not know, so their report
+ * category decides the bucket.
+ */
+export function observationCheckId(f: ReportFinding): string {
+  const by = f.foundBy[0];
+  if (by && (by.source === 'hma' || by.source === 'credential-scan' || by.source === 'shield')) return printable(by.checkId);
+  return `${CATEGORY_CHECK_PREFIX[f.category] ?? 'CONFIG'}-${by?.source ?? 'review'}`.toUpperCase();
 }
 
 /** Categories by source, for a finding no report finding lists. */
