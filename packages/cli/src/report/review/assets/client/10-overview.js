@@ -90,6 +90,11 @@ function summaryNotices() {
   for (var i = 0; i < phases.length; i++) {
     if (phases[i].provisional && phases[i].provisionalReason) notes.push(phases[i].name + ': ' + phases[i].provisionalReason);
   }
+  // Zero findings over zero files is "nothing examined", not "clean".
+  var cred = report.credentialData;
+  if (cred && cred.filesScanned === 0) {
+    notes.push('Credentials: no file was read, so no credential findings is not a clean result. This directory is empty or holds only files the credential check skips.');
+  }
   return notes;
 }
 function recoveryLabel(r) {
