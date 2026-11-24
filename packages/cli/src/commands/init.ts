@@ -23,7 +23,7 @@ import { printFooter } from '../util/footer.js';
 import { writeEvent } from '../shield/events.js';
 import { getShieldStatus } from '../shield/status.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
-import { MCP_CONFIG_FILES, scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
+import { countMcpConfigsOutsideSourceWalk, scanMcpConfig, scanMcpCredentials, scanAiConfigFiles, scanSkillFiles, scanSoulFile } from '../util/ai-config.js';
 import {
   calculateSecurityScore as calculateSecurityScoreShared,
   scoreToRiskLevel as scoreToRiskLevelShared,
@@ -152,13 +152,12 @@ export async function init(options: InitOptions): Promise<number> {
   const sourceScan = await scanCredentialsWithCoverage(targetDir);
   const credentialMatches = sourceScan.matches;
 
-  // Scan MCP config files for credentials (these are skipped by walkFiles)
+  // Scan MCP config files for credentials. The source walk skips the
+  // dot-named ones (`.mcp.json`, `.cursor/mcp.json`, ...) but also opens
+  // `mcp.json`, so only the dot-named configs are added to the files-scanned
+  // count; `mcp.json` is counted once, by the walk.
   const mcpCreds = scanMcpCredentials(targetDir);
-  // The walk never enters a dot-named path, so every dot-named MCP config
-  // that exists was read by the MCP scan alone; `mcp.json` is walked already.
-  const mcpConfigsRead = MCP_CONFIG_FILES
-    .filter(f => f.startsWith('.') && fs.existsSync(path.join(targetDir, f)))
-    .length;
+  const mcpConfigsRead = countMcpConfigsOutsideSourceWalk(targetDir);
   const seenCredValues = new Set(credentialMatches.map(m => m.value));
   for (const mc of mcpCreds) {
     if (!seenCredValues.has(mc.value)) {
