@@ -89,9 +89,11 @@ vi.mock('../../src/commands/guard.js', () => ({
   guard: vi.fn(),
 }));
 
-vi.mock('../../src/commands/runtime.js', () => ({
-  runtime: vi.fn(),
-}));
+// ARP init runs for real so a second init finds the arp.yaml the first wrote.
+vi.mock('../../src/commands/runtime.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/commands/runtime.js')>();
+  return { ...actual, runtime: vi.fn() };
+});
 
 vi.mock('../../src/util/colors.js', () => ({
   bold: (s: string) => s,
@@ -277,6 +279,48 @@ describe('shield init credential audit over a directory it reads no file in', ()
     expect(audit).not.toContain('No files were scanned for credentials');
     expect(result.credentialFilesScanned).toBe(1);
     expect(exitCode).toBe(0);
+  });
+
+  function skippedOnlyProject(name: string): string {
+    const project = path.join(tempDir, name);
+    fs.mkdirSync(path.join(project, 'node_modules', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(project, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    fs.writeFileSync(path.join(project, 'yarn.lock'), '# yarn lockfile v1\n');
+    fs.writeFileSync(path.join(project, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;\n');
+    return project;
+  }
+
+  it('does not call a directory of skipped files clean on the second run', async () => {
+    const project = skippedOnlyProject('second-run');
+
+    await shieldInit({ targetDir: project, format: 'text', aiTools: true });
+    // The first run wrote these into the project; the second run reads them.
+    expect(fs.existsSync(path.join(project, 'arp.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(project, 'CLAUDE.md'))).toBe(true);
+    vi.mocked(process.stdout.write).mockClear();
+
+    const { exitCode, result } = await shieldInit({ targetDir: project, format: 'text', aiTools: true });
+
+    const audit = auditSection(textOutput());
+    expect(audit).not.toContain('No hardcoded credentials found');
+    expect(audit).toContain('No files were scanned for credentials, so this is not a clean result.');
+    expect(audit).toContain('The only files read were ones shield init wrote (CLAUDE.md, arp.yaml), so they are not counted.');
+    expect(result.credentialFilesScanned).toBe(0);
+    expect(exitCode).toBe(0);
+  });
+
+  it('counts a file shield init wrote once the user has edited it', async () => {
+    const project = skippedOnlyProject('second-run-edited');
+
+    await shieldInit({ targetDir: project, format: 'text' });
+    fs.appendFileSync(path.join(project, 'arp.yaml'), 'rules: []\n');
+    vi.mocked(process.stdout.write).mockClear();
+
+    const { result } = await shieldInit({ targetDir: project, format: 'text' });
+
+    const audit = auditSection(textOutput());
+    expect(audit).toContain('No hardcoded credentials found');
+    expect(result.credentialFilesScanned).toBe(1);
   });
 
   it('carries the files-read count in --json', async () => {

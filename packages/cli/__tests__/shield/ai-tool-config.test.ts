@@ -11,6 +11,7 @@ import {
   configureClineForShield,
   configureAiTools,
   hasShieldMarker,
+  holdsOnlyManagedSections,
 } from '../../src/shield/ai-tool-config.js';
 
 let tempDir: string;
@@ -142,5 +143,22 @@ describe('ai-tool-config', () => {
       configureClaudeCodeForShield(tempDir);
       expect(hasShieldMarker(path.join(tempDir, 'CLAUDE.md'))).toBe(true);
     });
+  });
+});
+
+describe('holdsOnlyManagedSections', () => {
+  const secretless = '\n<!-- secretless:managed -->\n## Secretless Mode\n\n' +
+    '- Credentials in this conversation are automatically redacted by Secretless AI\n';
+
+  it('is true for a CLAUDE.md holding only the Secretless and Shield sections', () => {
+    fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), secretless);
+    configureClaudeCodeForShield(tempDir);
+    expect(holdsOnlyManagedSections(fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf-8'))).toBe(true);
+  });
+
+  it('is false once anyone else has written to the file', () => {
+    fs.writeFileSync(path.join(tempDir, 'CLAUDE.md'), '# My Project\n' + secretless);
+    configureClaudeCodeForShield(tempDir);
+    expect(holdsOnlyManagedSections(fs.readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf-8'))).toBe(false);
   });
 });

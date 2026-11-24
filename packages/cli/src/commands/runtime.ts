@@ -78,6 +78,13 @@ function buildInitConfig(agentName: string, hasMcp: boolean): string {
   ].join('\n');
 }
 
+/** True when `content` is an arp.yaml `init` wrote and nobody has edited. */
+export function isGeneratedInitConfig(content: string): boolean {
+  const name = /^agentName: (.*)\n/.exec(content)?.[1];
+  if (name === undefined) return false;
+  return content === buildInitConfig(name, false) || content === buildInitConfig(name, true);
+}
+
 // --- Types ---
 
 export interface RuntimeOptions {
