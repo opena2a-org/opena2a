@@ -60,7 +60,7 @@ Each line links to the section for that job.
 
 ```bash
 opena2a "~credentials"                 # search commands by keyword
-opena2a "find leaked credentials"      # natural language to matched command
+opena2a find hardcoded credentials     # natural language to matched command
 opena2a                                # interactive guided mode (no arguments)
 ```
 

@@ -36,7 +36,7 @@ You do not need this README. The CLI has built-in discovery:
 ```bash
 opena2a ?                           # Contextual recommendations for your project
 opena2a ~shadow ai                  # Semantic search across all commands
-opena2a "find leaked credentials"   # Natural language command matching
+opena2a find hardcoded credentials  # Natural language command matching
 opena2a                             # Interactive guided wizard (no args)
 ```
 
