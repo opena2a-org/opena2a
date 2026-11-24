@@ -398,6 +398,27 @@ describe('every selfcheck FAIL detail names one next command', () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toBe('{not json');
   });
+
+  it('steps that print a file use cat -v, so a control character shows instead of acting', () => {
+    fs.writeFileSync(path.join(shieldDir, 'policy.yaml'), 'mode: monitor\n');
+    fs.writeFileSync(path.join(shieldDir, 'policy-hash.json'), '{not json\x1b[2J');
+    const block = [
+      '# >>> opena2a shield hook >>>',
+      'opena2a_shield_preexec() { return 0; } # \x1b[2J',
+      '# <<< opena2a shield hook <<<',
+    ].join('\n');
+    fs.writeFileSync(path.join(tempHome, '.zshrc'), `${block}\n`);
+
+    const fails = failsOf(runIntegrityChecks({ shell: 'zsh' }).checks);
+    for (const name of ['policy', 'shell-hook']) {
+      const step = fails.find((c) => c.name === name)!.nextStep!;
+      expect(step).toMatch(/\bcat -v\b/);
+      const run = spawnSync('/bin/sh', ['-c', step], { encoding: 'utf-8' });
+      expect(run.status, `"${step}" exited ${run.status}: ${run.stderr}`).toBe(0);
+      expect(run.stdout).not.toContain('\x1b');
+      expect(run.stdout).toContain('^[[2J');
+    }
+  });
 });
 
 describe('no failing check escapes the walk', () => {
