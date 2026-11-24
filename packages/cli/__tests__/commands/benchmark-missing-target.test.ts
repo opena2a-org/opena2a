@@ -49,9 +49,9 @@ vi.mock('../../src/util/credential-patterns.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/util/credential-patterns.js')>();
   return {
     ...actual,
-    quickCredentialScan: async () => {
+    scanCredentialsWithCoverage: async () => {
       credentialScan.calls += 1;
-      return [];
+      return { matches: [], filesScanned: 0, placeholdersSkipped: 0, skippedDirs: [] };
     },
   };
 });
