@@ -614,6 +614,16 @@ describe('review', () => {
     expect(terminalLine('Verdict')).toContain('Run `opena2a review .` from the folder that holds your code.');
   });
 
+  it('an unrecognised project type is not named "Unknown" in the verdict', async () => {
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hi");\n');
+
+    const { report, terminal } = await reviewBothFormats(tempDir);
+
+    expect(report.projectType).toBe('Unknown');
+    expect(terminal).not.toContain('This Unknown');
+    expect(terminal).not.toMatch(/Unknown looks safe/);
+  });
+
   it('the no-files Credentials tab names every scanned .env file, the other skips, and a command that pastes as-is', async () => {
     // An empty directory reads nothing too, and gets the same tab.
     const { credentialsTab } = await reviewBothFormats(tempDir);
