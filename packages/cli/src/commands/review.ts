@@ -782,7 +782,9 @@ export async function review(options: ReviewOptions): Promise<number> {
   if (!quiet) {
     try {
       const cliUi = await import('@opena2a/cli-ui');
-      const projectLabel = report.projectType && report.projectType !== 'unknown'
+      // formatProjectType spells an undetected type "Unknown"; compare without
+      // case so the verdict never reads "This Unknown looks safe to use".
+      const projectLabel = report.projectType && report.projectType.toLowerCase() !== 'unknown'
         ? report.projectType
         : 'project';
       const categorizable: LocalCategorizableFinding[] = findings.map(f => ({

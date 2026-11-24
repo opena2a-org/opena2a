@@ -1210,6 +1210,26 @@ describe('review', () => {
     expect(output).toContain('semantic (NanoMind AST)');
   });
 
+  it('a clean project of no known type is called a project in the verdict, not "Unknown"', async () => {
+    // No package.json, go.mod or pyproject: detectProject finds no type and
+    // the project type reads "Unknown". The verdict must not say
+    // "This Unknown looks safe to use".
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
+    fs.writeFileSync(path.join(tempDir, 'run.sh'), 'echo hello\n');
+
+    const { output } = await captureStdout(() => review({
+      targetDir: tempDir,
+      autoOpen: false,
+      skipHma: true,
+      ci: true,
+    }));
+
+    const verdictLine = output.split('\n').find(l => l.includes('Verdict')) ?? '';
+    expect(verdictLine).toContain('looks safe to use');
+    expect(verdictLine).toContain('This project looks safe to use.');
+    expect(output).not.toContain('Unknown looks safe');
+  });
+
   it('credentials from quickCredentialScan show up in the Categories line', async () => {
     // Regression for the review-HMA-coverage fix. Before, aggregateFindings
     // could produce zero credential findings even when credData had matches
