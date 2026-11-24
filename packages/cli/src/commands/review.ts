@@ -616,7 +616,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     credentials: credentialData,
     guard: guardData,
     shield: shieldData,
-    hma: { available: hmaAvailable, score: hmaData.score },
+    hma: { available: hmaAvailable, score: hmaData.score, credentialBySeverity: hmaCredentialBySeverity(hmaData) },
     detect: detectData,
   };
   const scored = scoreReview(scoreState);
@@ -1794,8 +1794,27 @@ export interface ScoreState {
   credentials: CredentialPhaseData;
   guard: GuardPhaseData;
   shield: Pick<ShieldPhaseData, 'classifiedFindings' | 'preExclusionCounts'>;
-  hma: { available: boolean; score: number };
+  hma: {
+    available: boolean;
+    score: number;
+    /** Failed HMA credential findings by severity (see hmaCredentialBySeverity).
+     *  They cap the Credentials floor as the local check's findings do. */
+    credentialBySeverity?: Record<string, number>;
+  };
   detect: Pick<DetectPhaseData, 'mcpServers' | 'aiConfigs'>;
+}
+
+/** Failed HMA credential findings counted by severity; empty when HMA did not run. */
+export function hmaCredentialBySeverity(
+  hmaData: Pick<HmaPhaseData, 'available' | 'allFailedFindings'>,
+): Record<string, number> {
+  const bySeverity: Record<string, number> = {};
+  if (!hmaData.available) return bySeverity;
+  for (const f of hmaData.allFailedFindings) {
+    if (!isHmaCredentialFinding(f.checkId)) continue;
+    bySeverity[f.severity] = (bySeverity[f.severity] || 0) + 1;
+  }
+  return bySeverity;
 }
 
 export interface ScoreResult {
@@ -1835,10 +1854,19 @@ export function scoreReview(state: ScoreState): ScoreResult {
   };
   const credentialsRead = state.credentials.filesScanned !== 0;
   const weighted = computeCompositeScore(inputs, hmaAvailable, credentialsRead);
+  // A critical or high credential HMA reports caps the Credentials floor as the
+  // local check's own finding does, so the score agrees with the verdict
+  // whichever analyzer found the credential (#415).
+  const hmaCredentials = hmaAvailable ? state.hma.credentialBySeverity ?? {} : {};
+  const floorSeverities: Record<string, number> = { ...state.credentials.bySeverity };
+  for (const [sev, n] of Object.entries(hmaCredentials)) {
+    floorSeverities[sev] = (floorSeverities[sev] ?? 0) + n;
+  }
+  const hmaCredentialFloor = (hmaCredentials['critical'] ?? 0) > 0 || (hmaCredentials['high'] ?? 0) > 0;
   const participants = buildFloorParticipants({
     trustScore,
-    credScore: credentialFloorScore(credScore, state.credentials.bySeverity),
-    credentialsRead,
+    credScore: credentialFloorScore(credScore, floorSeverities),
+    credentialsRead: credentialsRead || hmaCredentialFloor,
     guardScore,
     hmaScore,
     hmaAvailable,
