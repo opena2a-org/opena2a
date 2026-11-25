@@ -54,7 +54,8 @@ console.log(aim.checkCapability('db:read'));   // => true
 console.log(aim.checkCapability('net:fetch')); // => false
 console.log(aim.checkCapability('db:write'));  // => false
 
-// Trust scoring: a 0-100 score from eight weighted factors, each 0 or 1
+// Trust scoring: a 0-100 score from eight weighted factors, each 0 or 1,
+// plus up to 5 bonus points from five extended hints (capped at 100)
 const trust = aim.calculateTrust();
 console.log(trust.score); // => 45
 console.log(trust.grade); // => 'moderate'
@@ -64,6 +65,8 @@ console.log(trust.factors);
 ```
 
 The identity, the policy file and the audit log give the 45 above. The other five factors are reported by your code through `setTrustHints()`: `aim.setTrustHints({ secretsManaged: true })` adds 15 points to the next `calculateTrust()`, and `configSigned`, `skillsVerified`, `networkControlled` and `heartbeatMonitored` add 10 each.
+
+Five extended hints add a bonus on top of the eight factors: `sessionsProtected`, `promptsGuarded`, `daemonHardened`, `dlpEnabled` and `runtimeProtected`. Each one adds 1 point, so all five add up to 5 points. They do not appear in `trust.factors`, and the score never exceeds 100. For example, `aim.setTrustHints({ dlpEnabled: true, runtimeProtected: true })` adds 2 points.
 
 ## API
 
