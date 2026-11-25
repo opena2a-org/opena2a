@@ -463,7 +463,12 @@ function networkError(registryUrl: string, err: Error, isJson: boolean): number 
   return 1;
 }
 
-function usage(isJson: boolean): number {
+/**
+ * Print usage. With no subcommand it is a usage request (exit 0 in text mode);
+ * a word the handler does not route is named on stderr with the usage, exit 1,
+ * as the other parent commands do.
+ */
+function usage(isJson: boolean, unknown?: string): number {
   const lines = [
     'Usage: opena2a admin sensors <subcommand>',
     '',
@@ -474,6 +479,12 @@ function usage(isJson: boolean): number {
     '',
     'Options: --json  --yes  --api-key <key>  --registry <url>',
   ];
+  if (unknown !== undefined) {
+    const msg = `Unknown admin subcommand: ${unknown}`;
+    if (isJson) emitJson({ error: msg, usage: lines });
+    else process.stderr.write(msg + '\n\n' + lines.join('\n') + '\n');
+    return 1;
+  }
   if (isJson) emitJson({ error: 'unknown or missing subcommand', usage: lines });
   else process.stdout.write(lines.join('\n') + '\n');
   return isJson ? 1 : 0;
@@ -525,5 +536,5 @@ export async function admin(options: AdminOptions): Promise<number> {
     }
   }
 
-  return usage(isJson);
+  return usage(isJson, group);
 }

@@ -264,15 +264,39 @@ describe('admin sensors reject', () => {
 });
 
 describe('admin -- usage', () => {
-  it('prints usage for an unknown subcommand', async () => {
-    const { out } = await captureStdout(() =>
-      admin({ subcommand: 'sensors', args: ['frobnicate'], apiKey: 'k' }));
+  it('prints usage and exits 0 with no subcommand', async () => {
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: undefined, args: [], apiKey: 'k' }));
+    expect(exitCode).toBe(0);
     expect(out).toMatch(/Usage: opena2a admin sensors/);
+  });
+
+  it('names an unknown subcommand on stderr and exits 1', async () => {
+    const { exitCode, out, err } = await captureStdout(() =>
+      admin({ subcommand: 'zzz', args: [], apiKey: 'k' }));
+    expect(exitCode).toBe(1);
+    expect(out).toBe('');
+    expect(err).toContain('Unknown admin subcommand: zzz');
+    expect(err).toMatch(/Usage: opena2a admin sensors/);
+  });
+
+  it('names an unknown sensors verb on stderr and exits 1', async () => {
+    const { exitCode, err } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['frobnicate'], apiKey: 'k' }));
+    expect(exitCode).toBe(1);
+    expect(err).toContain('Unknown admin subcommand: frobnicate');
+  });
+
+  it('reports an unknown subcommand as a JSON error under --json', async () => {
+    const { exitCode, out } = await captureStdout(() =>
+      admin({ subcommand: 'zzz', args: [], apiKey: 'k', json: true }));
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(out).error).toBe('Unknown admin subcommand: zzz');
   });
 
   it('keeps every usage line within 80 columns', async () => {
     const { out } = await captureStdout(() =>
-      admin({ subcommand: 'sensors', args: ['frobnicate'], apiKey: 'k' }));
+      admin({ subcommand: 'sensors', args: [], apiKey: 'k' }));
     expect(out).toContain('(alias: pending, ls)');
     for (const line of out.split('\n')) {
       expect(line.length, line).toBeLessThanOrEqual(80);
