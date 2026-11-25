@@ -13,6 +13,17 @@ Security issues: report them privately to `info@opena2a.org` (coordinated disclo
 - npm >= 9
 - Git
 
+The floor above is what the packages need at runtime. The development tools
+`npm install` adds (eslint, vite and vitest among them) do not support every
+release above it: they leave out the odd-numbered lines and the 22 line
+before 22.13. To build, lint and test, use a release in this range:
+
+Development: Node.js `^20.19.0 || ^22.13.0 || >=24`
+
+`packages/cli/__tests__/repo/node-engines-floor.test.ts` checks this range
+against the `engines.node` of every package in the development tree, so a
+devDependency update that narrows it fails the test.
+
 ## Repository Structure
 
 This is a monorepo managed by [Turborepo](https://turbo.build/):
