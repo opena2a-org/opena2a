@@ -157,6 +157,87 @@ describe('advisories', () => {
     expect(result.matchedPackages).toContain('flask');
   });
 
+  describe('matching on ecosystem and version, not the name alone', () => {
+    const advisory = (id: string, affected: unknown[]) => ({
+      id,
+      summary: `Advisory ${id}`,
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      affected,
+      published: '2026-10-01T00:00:00Z',
+    });
+    const serve = (advisories: unknown[]) => mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ advisories, total: advisories.length, format: 'osv' }),
+    });
+    const ids = (result: Awaited<ReturnType<typeof checkAdvisories>>) => result.advisories.map(a => a.id);
+
+    // Regression: an npm advisory flagged a PyPI requirement of the same
+    // name, which review reported as a high finding.
+    it('does not flag a requirements.txt-only project from an npm advisory with the same package name', async () => {
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'requests==2.31.0\nflask>=2.0\n');
+      serve([
+        advisory('OA2A-2026-0201', [{ package: { name: 'requests', ecosystem: 'npm' } }]),
+        advisory('OA2A-2026-0202', [{ package: { name: 'flask', ecosystem: 'npm' } }]),
+      ]);
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(result.checked).toBe(true);
+      expect(result.advisories).toHaveLength(0);
+      expect(result.matchedPackages).toEqual([]);
+    });
+
+    it('flags a requirement from a PyPI advisory, comparing the name as PyPI does', async () => {
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'Flask_Login[extra]==0.6.0 ; python_version >= "3.8"\n');
+      serve([advisory('OA2A-2026-0203', [{ package: { name: 'flask-login', ecosystem: 'PyPI' } }])]);
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(ids(result)).toEqual(['OA2A-2026-0203']);
+      expect(result.matchedPackages).toEqual(['flask-login']);
+    });
+
+    it('does not flag a PyPI advisory against an npm dependency of the same name', async () => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ dependencies: { requests: '1.0.0' } }));
+      serve([advisory('OA2A-2026-0204', [{ package: { name: 'requests', ecosystem: 'PyPI' } }])]);
+
+      expect((await checkAdvisories(tempDir, 'https://registry.test')).advisories).toHaveLength(0);
+    });
+
+    it('flags a pinned version inside the range and not one outside it', async () => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+        dependencies: { 'old-pkg': '1.2.0', 'new-pkg': '1.3.0', 'last-pkg': '2.0.1', 'pre-pkg': '1.3.0-rc.1' },
+      }));
+      fs.writeFileSync(path.join(tempDir, 'requirements.txt'), 'flask==2.0.0\ndjango==4.2.1\n');
+      const semver = (events: unknown[]) => [{ type: 'SEMVER', events }];
+      serve([
+        advisory('OA2A-2026-0210', [{ package: { name: 'old-pkg', ecosystem: 'npm' }, ranges: semver([{ introduced: '0' }, { fixed: '1.3.0' }]) }]),
+        advisory('OA2A-2026-0211', [{ package: { name: 'new-pkg', ecosystem: 'npm' }, ranges: semver([{ introduced: '0' }, { fixed: '1.3.0' }]) }]),
+        advisory('OA2A-2026-0212', [{ package: { name: 'last-pkg', ecosystem: 'npm' }, ranges: semver([{ introduced: '2.0.0' }, { last_affected: '2.0.1' }]) }]),
+        advisory('OA2A-2026-0213', [{ package: { name: 'pre-pkg', ecosystem: 'npm' }, ranges: semver([{ introduced: '0' }, { fixed: '1.3.0' }]) }]),
+        advisory('OA2A-2026-0214', [{ package: { name: 'flask', ecosystem: 'PyPI' }, ranges: [{ type: 'ECOSYSTEM', events: [{ introduced: '0' }, { fixed: '2.0.0' }] }] }]),
+        advisory('OA2A-2026-0215', [{ package: { name: 'django', ecosystem: 'PyPI' }, ranges: [{ type: 'ECOSYSTEM', events: [{ introduced: '4.2' }, { fixed: '4.2.2' }] }] }]),
+      ]);
+
+      const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+      expect(ids(result)).toEqual(['OA2A-2026-0210', 'OA2A-2026-0212', 'OA2A-2026-0213', 'OA2A-2026-0215']);
+      expect(result.matchedPackages).toEqual(['old-pkg', 'last-pkg', 'pre-pkg', 'django']);
+    });
+
+    it('flags a dependency whose version is a range or whose advisory range cannot be read', async () => {
+      fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+        dependencies: { 'caret-pkg': '^1.0.0', 'git-pkg': '1.0.0' },
+      }));
+      serve([
+        advisory('OA2A-2026-0220', [{ package: { name: 'caret-pkg', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.0.1' }] }] }]),
+        advisory('OA2A-2026-0221', [{ package: { name: 'git-pkg', ecosystem: 'npm' }, ranges: [{ type: 'GIT', events: [{ introduced: 'abc123' }] }] }]),
+      ]);
+
+      expect(ids(await checkAdvisories(tempDir, 'https://registry.test'))).toEqual(['OA2A-2026-0220', 'OA2A-2026-0221']);
+    });
+  });
+
   // Regression (#420): review and init called the check with no Registry URL,
   // so the request never left the process and the empty result read as
   // "no matching advisories found". The result now says whether a list was
