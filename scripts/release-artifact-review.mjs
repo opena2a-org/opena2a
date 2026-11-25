@@ -811,8 +811,34 @@ function parseGithubRepo(url) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
+/**
+ * Advisories read from a local JSON file (`--advisories-file`) instead of
+ * api.github.com: an object mapping `owner/repo` to that repository's
+ * advisory list, in the endpoint's own shape. For tests that must reach a
+ * verdict without the endpoint (no token, exhausted rate limit). release.yml
+ * never passes it, and every run that does says so in its detail lines.
+ */
+function readAdvisoriesFile(file) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (e) {
+    return { error: `advisories file ${file} is unreadable: ${short(e.message, 200)}` };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { error: `advisories file ${file} is not an object mapping owner/repo to advisory lists` };
+  }
+  return { byRepo: parsed };
+}
+
 const advisoryCache = new Map();
-async function fetchAdvisories(repo, states) {
+async function fetchAdvisories(repo, states, advisoriesFile) {
+  if (advisoriesFile) {
+    if (advisoriesFile.error) return { error: advisoriesFile.error };
+    const list = advisoriesFile.byRepo[repo];
+    if (list === undefined) return { error: `advisories file has no entry for ${repo}` };
+    return Array.isArray(list) ? { advisories: list } : { error: `advisories file entry for ${repo} is not a list` };
+  }
   const key = `${repo} ${states}`;
   if (advisoryCache.has(key)) return advisoryCache.get(key);
   const stateParam = states === 'published' ? '&state=published' : '';
@@ -841,7 +867,7 @@ async function fetchAdvisories(repo, states) {
   return result;
 }
 
-async function checkConsumerClosure(closure, packedManifest, advisoryStates) {
+async function checkConsumerClosure(closure, packedManifest, advisoryStates, advisoriesFilePath) {
   if (closure.error) {
     return { status: 'precondition', detail: [`the fresh-install closure did not resolve: ${closure.error}`] };
   }
@@ -855,6 +881,10 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates) {
   const detail = [`advisory-states read: ${advisoryStates}`];
   const fails = [];
   const preconditions = [];
+  const advisoriesFile = advisoriesFilePath ? readAdvisoriesFile(advisoriesFilePath) : null;
+  if (advisoriesFilePath) {
+    detail.push(`advisories source: ${advisoriesFilePath} (--advisories-file; api.github.com NOT read, advisory-states not applied)`);
+  }
 
   // Alias-aware roster rows out of the lockfile: an entry's real name is its
   // `name` field when aliased, else the tail of its node_modules path. The
@@ -919,7 +949,7 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates) {
   let advisoriesRead = 0;
   const advisoriesByRepo = new Map();
   for (const repo of canaryRepos) {
-    const res = await fetchAdvisories(repo, advisoryStates);
+    const res = await fetchAdvisories(repo, advisoryStates, advisoriesFile);
     if (res.error) {
       // Only load-bearing when a closure row needs this repo; recorded either
       // way so a half-dead feed is visible in the log.
@@ -1007,7 +1037,7 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates) {
 
 function usage(msg) {
   console.error(msg);
-  console.error('usage: node scripts/release-artifact-review.mjs --tarball <path> [--advisory-states published|all]');
+  console.error('usage: node scripts/release-artifact-review.mjs --tarball <path> [--advisory-states published|all] [--advisories-file <path>]');
   process.exit(2);
 }
 
@@ -1020,6 +1050,9 @@ async function main() {
   const advisoryStates = si === -1 ? 'all' : argv[si + 1];
   if (!['published', 'all'].includes(advisoryStates)) usage(`--advisory-states must be "published" or "all", got "${advisoryStates}".`);
   if (!existsSync(tarball)) usage(`no such tarball: ${tarball}`);
+  const ai = argv.indexOf('--advisories-file');
+  if (ai !== -1 && !argv[ai + 1]) usage('--advisories-file needs a path.');
+  const advisoriesFile = ai === -1 ? null : path.resolve(argv[ai + 1]);
 
   const scratchRoot = mkdtempSync(path.join(tmpdir(), 'release-artifact-review-'));
   const results = new Map();
@@ -1057,7 +1090,7 @@ async function main() {
       closure = { error: short(e.stderr || e.message) };
     }
     record('npm-audit', checkNpmAudit(closure));
-    record('consumer-closure', await checkConsumerClosure(closure, manifest, advisoryStates));
+    record('consumer-closure', await checkConsumerClosure(closure, manifest, advisoryStates, advisoriesFile));
   } catch (e) {
     // A crash before the census would be a verdictless exit; convert it into
     // preconditions on everything that never ran, so the census still says so.
