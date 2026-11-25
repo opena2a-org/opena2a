@@ -104,7 +104,7 @@ Telemetry is **off by default** in these cases, with no configuration:
   reasons.
 - **Temporary homes**: the config directory (`$XDG_CONFIG_HOME/opena2a` or
   `~/.config/opena2a`) or the home directory is inside the system temporary directory
-  (`os.tmpdir()`, which follows `TMPDIR`; `TEMP` / `TMP` on Windows), as with
+  (`os.tmpdir()`, which follows TMPDIR, TMP or TEMP), as with
   `HOME=$(mktemp -d)`. The config file there is discarded after the run, so every run
   would look like a first run on a new machine. Symlinks are resolved before the
   paths are compared. A throwaway home elsewhere, such as a container filesystem, is
