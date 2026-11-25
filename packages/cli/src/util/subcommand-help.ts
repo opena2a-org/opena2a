@@ -582,7 +582,7 @@ export const IDENTITY_HELP: SubcommandHelpRegistry = {
   },
   suspend: {
     summary:
-      'Suspend the agent connected to the AIM server; it stops all operations until reactivated. Log in first with opena2a login.',
+      'Ask the AIM server to suspend the agent connected to it; reactivate asks it to undo this. Log in first with opena2a login.',
     examples: ['opena2a identity suspend'],
   },
   reactivate: {

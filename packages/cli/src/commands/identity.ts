@@ -120,7 +120,7 @@ const USAGE = [
   '  mcp attach                     Auto-discover and attach all MCP servers',
   '',
   'Lifecycle',
-  '  suspend                        Suspend agent on server (stops all operations)',
+  '  suspend                        Ask the AIM server to suspend the agent',
   '  reactivate                     Reactivate a suspended or revoked agent',
   '  revoke                         Revoke agent on server',
   '',

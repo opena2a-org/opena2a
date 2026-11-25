@@ -188,6 +188,21 @@ describe('subcommand help registries (#132)', () => {
       expect(IDENTITY_HELP[sub], `missing IDENTITY_HELP entry for ${sub}`).toBeDefined();
     }
   });
+
+  it('suspend help and identity usage only say the CLI asks the server to suspend', () => {
+    // The CLI posts to the server's suspend endpoint; it never observes what
+    // the server then stops, so neither text may claim the agent's operations stop.
+    const identitySource = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', 'src', 'commands', 'identity.ts'),
+      'utf-8',
+    );
+    const usageRow = identitySource.split('\n').find((line) => /^\s*'\s+suspend\s{2,}/.test(line));
+    expect(usageRow).toBeDefined();
+    for (const text of [IDENTITY_HELP.suspend.summary, usageRow!]) {
+      expect(text).toContain('Ask the AIM server to suspend');
+      expect(text).not.toMatch(/stops|operations/i);
+    }
+  });
 });
 
 describe('shield help matches what the shield command reads', () => {
