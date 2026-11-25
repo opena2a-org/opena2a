@@ -278,7 +278,7 @@ describe('CANDIDATE consumer-resolution audit: what it reports and what it attri
           '@opena2a/aicomply': '2.2.3',
           '@opena2a/cli-ui': '0.6.0',
           '@opena2a/contribute': '0.1.0',
-          '@opena2a/credential-patterns': '0.1.3',
+          '@opena2a/credential-patterns': '0.1.4',
           '@opena2a/registry-client': '0.2.0',
           '@opena2a/shared': '0.1.3',
           '@opena2a/telemetry': '0.3.0',
