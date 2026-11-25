@@ -13,7 +13,9 @@ import {
   RUNTIME_HELP,
   SKILL_HELP,
   MCP_HELP,
+  valueFlags,
 } from '../../src/util/subcommand-help.js';
+import { Command } from 'commander';
 
 function captureStdout(fn: () => boolean): { result: boolean; output: string } {
   const chunks: string[] = [];
@@ -55,6 +57,17 @@ describe('isHelpRequest (#132)', () => {
     expect(isHelpRequest([])).toBe(false);
   });
 
+  it('does not read a help flag as help when it is the value of an option', () => {
+    const flags = ['--data', '-n'];
+    expect(isHelpRequest(['identity', 'sign', '--data', '--help'], flags)).toBe(false);
+    expect(isHelpRequest(['identity', 'sign', '--data', '-h'], flags)).toBe(false);
+    expect(isHelpRequest(['identity', 'create', '-n', '--help'], flags)).toBe(false);
+    expect(isHelpRequest(['identity', 'sign', '--data', '--help', '--help'], flags)).toBe(true);
+    expect(isHelpRequest(['identity', 'sign', '--data', 'x', '-h'], flags)).toBe(true);
+    expect(isHelpRequest(['identity', 'sign', '--data=--help'], flags)).toBe(false);
+    expect(isHelpRequest(['identity', 'sign', '--verbose', '--help'], flags)).toBe(true);
+  });
+
   it('falls back to process.argv when args omitted', () => {
     const origArgv = process.argv;
     try {
@@ -65,6 +78,21 @@ describe('isHelpRequest (#132)', () => {
     } finally {
       process.argv = origArgv;
     }
+  });
+});
+
+describe('valueFlags', () => {
+  it('lists the options of the command and its parents that take a required value', () => {
+    const program = new Command();
+    program.option('--format <type>').option('--verbose');
+    const identity = program
+      .command('identity [subcommand]')
+      .option('-n, --name <name>')
+      .option('--data <data>')
+      .option('--files <files...>')
+      .option('--maybe [value]')
+      .option('--all');
+    expect(valueFlags(identity).sort()).toEqual(['--data', '--files', '--format', '--name', '-n']);
   });
 });
 
