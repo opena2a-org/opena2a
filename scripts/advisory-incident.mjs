@@ -126,8 +126,12 @@ const RESOLVED =
 /** `Unlisted <severity> advisory in the consumer tree: <id> (via <packages>).` */
 const ADVISORY = /Unlisted \S+ advisory in the consumer tree: (\S+) \(via /g;
 
-/** What an advisory id may look like to be repeated outside the quoted block. */
-const PLAIN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/**
+ * What an advisory id may look like to be repeated outside the quoted block: a
+ * GitHub advisory id or a numeric npm advisory id. A looser token, such as
+ * `www.example.invalid` or `GH-1`, renders as a link or a reference.
+ */
+const ADVISORY_ID = /^(?:GHSA(?:-[0-9a-z]{4}){3}|\d{1,10})$/;
 
 /** The first `[PUBLISHED] ` / `[CANDIDATE] ` banner decides which tree this was. */
 const BANNER = /^\[(PUBLISHED|CANDIDATE)\] /m;
@@ -155,7 +159,8 @@ function clean(capture) {
  * Everything the record is built from, read out of one capture.
  *
  * `packageCount` stays the captured string: it is quoted back, never arithmetic.
- * `withheldAdvisoryLines` counts advisory lines whose id is not a plain token;
+ * `withheldAdvisoryLines` counts advisory lines whose id is not a GHSA or
+ * numeric npm advisory id;
  * they stay in the excerpt and are never dropped without being counted.
  * `auditPassed` is true when the output reports a pass and no failure: the
  * audit was not what failed the run, and the record has to say so.
@@ -168,7 +173,7 @@ export function parseAuditCapture(capture) {
   const advisoryIds = new Set();
   let withheldAdvisoryLines = 0;
   for (const [, id] of text.matchAll(ADVISORY)) {
-    if (PLAIN_ID.test(id)) advisoryIds.add(id);
+    if (ADVISORY_ID.test(id)) advisoryIds.add(id);
     else withheldAdvisoryLines++;
   }
 

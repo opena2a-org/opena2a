@@ -442,6 +442,27 @@ test('nothing from the capture is repeated outside the quoted block unless it is
   assert.equal(scopedBody.slice(0, scopedBody.indexOf('\n```\n')).split('@some-org').length, 2);
 });
 
+test('only GHSA and numeric npm advisory ids are repeated: a web address or GH-1 stays in the block', async () => {
+  const { buildIncidentRecord, parseAuditCapture } = await incident();
+  const capture = publishedCaptureWith([
+    ...unlisted('high', 'www.example.invalid', 'adm-zip'),
+    ...unlisted('high', 'GH-1', 'adm-zip'),
+    ...unlisted('high', '1096', 'adm-zip'),
+    ...unlisted('critical', ADVISORY_CRITICAL, 'hackmyagent'),
+  ]);
+
+  const parsed = parseAuditCapture(capture);
+  assert.deepEqual(parsed.advisoryIds, ['1096', ADVISORY_CRITICAL]);
+  assert.equal(parsed.withheldAdvisoryLines, 2);
+
+  const body = buildIncidentRecord({ capture, runUrl: RUN_URL }).body;
+  const beforeBlock = body.slice(0, body.indexOf('\n```\n'));
+  assert.ok(!beforeBlock.includes('www.example.invalid'));
+  assert.ok(!beforeBlock.includes('GH-1'));
+  assert.match(beforeBlock, /2 advisory lines/);
+  assert.ok(body.includes('www.example.invalid'), 'the quoted block still carries the line as written');
+});
+
 test('control characters and colour codes never reach the record, and a long capture is bounded', async () => {
   const { buildIncidentRecord, parseAuditCapture, EXCERPT_LIMIT } = await incident();
   const noisy = PUBLISHED_CAPTURE.replace(FAILED_BANNER, `\u001b[31m${FAILED_BANNER}\u001b[0m\u0000\u0007`).replace(/\n/g, '\r\n');
