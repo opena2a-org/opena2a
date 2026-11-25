@@ -298,13 +298,14 @@ Learn more: https://opena2a.org/docs`;
     .description('Inspect or toggle usage telemetry: on | off | status')
     .action(async (action: TelemetryAction | undefined) => {
       // Scans this CLI contributes carry the contributor token, not the
-      // install_id, so status shows both.
-      const { getContributorToken } = await import('@opena2a/contribute');
+      // install_id, so status shows both. The peek reads the token without
+      // creating its salt: printing the status writes nothing.
+      const { peekContributorToken } = await import('./util/contributor-token.js');
       console.log(runTelemetryCommand(action, {
         tool: BRAND,
         getStatus: tele.status,
         setOptOut: tele.setOptOut,
-        getContributorToken,
+        getContributorToken: peekContributorToken,
       }));
     });
 

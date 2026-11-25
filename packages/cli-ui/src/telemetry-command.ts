@@ -15,11 +15,13 @@ export interface TelemetryCommandInput {
   setOptOut: (enabled: boolean) => unknown;
   /**
    * Returns the token that community scan contributions from this machine
-   * carry. Typically `getContributorToken` from `@opena2a/contribute`. Only
-   * CLIs that contribute scans pass it; without it no `contributor_token:`
-   * line is printed.
+   * carry. Typically `peekContributorToken` from `@opena2a/contribute`, which
+   * reads the token without creating it: printing the status must write
+   * nothing. Returns null when this machine has no token yet. Only CLIs that
+   * contribute scans pass it; without it no `contributor_token:` line is
+   * printed.
    */
-  getContributorToken?: () => string;
+  getContributorToken?: () => string | null;
 }
 
 /**
@@ -147,11 +149,12 @@ function renderStatus(
   return lines.join("\n");
 }
 
-// The token is derived from a salt file under the home directory; a status
-// command must still print when that file cannot be read or created.
-function contributorTokenOrUnavailable(getToken: () => string): string {
+// The token is derived from a salt file under the home directory, created
+// when the first scan is contributed. A status command reports it without
+// creating it, and must still print when that file cannot be read.
+function contributorTokenOrUnavailable(getToken: () => string | null): string {
   try {
-    return getToken();
+    return getToken() ?? "none (created when a scan is first contributed)";
   } catch {
     return "unavailable";
   }

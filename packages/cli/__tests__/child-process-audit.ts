@@ -396,4 +396,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node dist/index.js runtime tail [-c 5 | --count 5] [--format json]) in a scratch ' +
       'HOME and cwd holding an ARP event log, one at a time',
   },
+  'util/contributor-token.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js telemetry status) and spawnSync(node -e <getContributorToken ' +
+      'from @opena2a/contribute>) in a scratch HOME, one at a time (#469)',
+  },
 };
