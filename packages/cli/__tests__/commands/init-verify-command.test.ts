@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { init, getVerificationCommand, getToolRecommendation } from '../../src/commands/init.js';
 
-// Regression for the 0.10.8 release-test P3 finding: `init` on an empty project
+// Regression found in the 0.10.8 release test: `init` on an empty project
 // emitted an ENV-DOTENV Verify command (`cat .gitignore | grep -c '.env'`) that
 // errors when no .gitignore exists ("No such file or directory"). The Verify
 // command must be runnable on a project with no .gitignore.
@@ -22,7 +22,7 @@ function finding(findingId: string) {
   };
 }
 
-describe('getVerificationCommand — ENV-DOTENV (#release-test P3)', () => {
+describe('getVerificationCommand — ENV-DOTENV on a project with no .gitignore', () => {
   it('returns a command that suppresses errors and defaults to 0', () => {
     const cmd = getVerificationCommand(finding('ENV-DOTENV'), '/tmp');
     expect(cmd).toBeTruthy();

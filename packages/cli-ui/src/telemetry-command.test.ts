@@ -174,7 +174,7 @@ describe("runTelemetryCommand", () => {
     expect(out).not.toContain("OPENA2A_TELEMETRY=on");
   });
 
-  it("status hint suggests 'on' when telemetry is off (papercut from DVAA 0.9.0 release-test)", () => {
+  it("status hint suggests 'on' when telemetry is off", () => {
     // The original papercut (#170) was hint DIRECTION: status suggested
     // turning telemetry *off* when it was already off. That guard is intact —
     // `dvaa telemetry on` is still suggested, and no "off" affordance appears.
@@ -221,7 +221,7 @@ describe("runTelemetryCommand", () => {
     expect(input.setOptOut).not.toHaveBeenCalled();
   });
 
-  it("'--help' prints usage instead of error (papercut from DVAA 0.9.0 release-test)", () => {
+  it("'--help' prints usage instead of error", () => {
     const input = makeInput();
     const out = runTelemetryCommand("--help", input);
     expect(out).not.toContain("Unknown action");

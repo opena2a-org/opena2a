@@ -158,7 +158,7 @@ describe('vault/crypto', () => {
     });
   });
 
-  describe('decrypt — fail closed (CR-006)', () => {
+  describe('decrypt — fail closed', () => {
     const key = nacl.randomBytes(32);
 
     it('wrong key throws', () => {

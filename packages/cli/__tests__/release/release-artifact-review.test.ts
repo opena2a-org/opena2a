@@ -34,7 +34,8 @@
  * own-tarball and poisoned cases have no such exception. Within the clean
  * fixture, `consumer-closure` is also skipped, never passed, when every one of its
  * preconditions is api.github.com refusing this address for its rate limit
- * (an unauthenticated address gets 60 requests an hour, and the refusal
+ * (an unauthenticated address gets 60 requests an hour; the script sends
+ * GH_TOKEN or GITHUB_TOKEN as a Bearer token when either is set, and the refusal
  * quoted in the output is the endpoint's own statement, not a guess from the
  * environment). Any other precondition still fails it, and the own-tarball
  * cases have no such exception.
@@ -662,7 +663,7 @@ describe('release-artifact-review: clean subjects go green', () => {
           // already been asserted when this skips.
           const refusals = check === 'consumer-closure' ? advisoryRateLimitRefusals(r.out) : null;
           if (refusals) {
-            const note = `network-dependent: api.github.com refused consumer-closure's advisories reads for its rate limit, so the check could not run (refusal${refusals.length === 1 ? '' : 's'} below). Export GH_TOKEN for an authenticated limit, or re-run after the limit resets.`;
+            const note = `network-dependent: api.github.com refused consumer-closure's advisories reads for its rate limit, so the check could not run (refusal${refusals.length === 1 ? '' : 's'} below). Export GH_TOKEN or GITHUB_TOKEN (the script sends either as a Bearer token, which raises the limit from 60 to 5,000 requests an hour), or re-run after the limit resets.`;
             console.warn(`${note}\n${refusals.join('\n')}`);
             ctx.skip(note);
           }
