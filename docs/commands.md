@@ -93,7 +93,9 @@ Outcomes:
 
 - **Broker authorizes** -> protect proceeds.
 - **Broker denies (HTTP 403)** -> protect exits 3 with a one-line pointer to `~/.secretless-ai/policies/`. Per AAP §6.6 the denial is opaque; reasons live only in the broker's signed audit log.
-- **Broker unreachable** -> protect exits 4 with a `secretless broker start` hint.
+- **`--atx` file missing or invalid** -> protect exits 2 before it contacts the broker.
+- **Broker unreachable** -> protect exits 4 with a `secretless broker start` hint. It also exits 4 when the broker rejects the token (401), answers 200 without a JSON body, or its socket belongs to another user.
+- **Grant check fails unexpectedly** -> protect exits 5.
 - **Broker returns an unexpected status** -> protect exits 6. The response body is never echoed to the user; reasons live only in the broker audit log.
 - **No `--grant` flag** -> protect runs exactly as before; the gate is opt-in.
 

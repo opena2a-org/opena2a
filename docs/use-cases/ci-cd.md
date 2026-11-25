@@ -511,7 +511,7 @@ jobs:
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | `npx opena2a-cli` hangs | npm prompting for install confirmation | Use `npx -y opena2a-cli` |
-| Exit code 1 on `scan-soul` | No SOUL.md in the scanned directory (it scores 0), or a score below 60 | Create one with `opena2a harden-soul` first |
+| Exit code 1 on `scan-soul` | No SOUL.md in the scanned directory (it scores 0), a score below 60, with `--strict` a missing SOUL-IH-003 or SOUL-HB-001, the scanner could not be loaded, or the scan failed | Create one with `opena2a harden-soul` first; `opena2a scan-soul --help` lists every exit code |
 | JSON parse errors | Notices on stderr were captured into the JSON file, for example with `2>&1` | Redirect stdout only (`> file.json`); the JSON goes to stdout and notices to stderr |
 | High download times | npx downloading on every run | Cache node_modules or install globally in a setup step |
 
