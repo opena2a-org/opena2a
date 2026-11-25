@@ -107,7 +107,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['6', 'the broker answered with a status other than 200, 401 or 403'],
     ],
     json: 'prints the result as JSON and skips the confirmation prompt; when stdin is not a terminal, --ci is still needed',
-    ci: 'migrates without prompting (needed when stdin is not a terminal)',
+    ci: 'migrates without prompting (needed when stdin is not a terminal), does not print the finding explanations, and skips the vault upgrade offer after a migration',
   },
   comply: {
     exit: [

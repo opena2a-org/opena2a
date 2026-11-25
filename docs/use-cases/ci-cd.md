@@ -69,7 +69,7 @@ jobs:
 - `detect`: never asks before scanning unknown MCP packages, does not open the `--report` file, and does not share the summary, and does not print the hint to install hackmyagent when `--auto-scan` finds it missing; with `--auto-scan` and contributions enabled, each unknown server scan is still shared
 - `review`: does not open the report in a browser
 - `scan-soul`: no effect
-- `protect`: migrates without prompting (needed when stdin is not a terminal)
+- `protect`: migrates without prompting (needed when stdin is not a terminal), does not print the finding explanations, and skips the vault upgrade offer after a migration
 
 ```bash
 npx opena2a-cli detect my-agent --ci      # No prompts, no browser, no shared summary
