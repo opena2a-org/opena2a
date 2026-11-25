@@ -5,7 +5,7 @@
  * maps that host to it. Nothing here leaves 127.0.0.1.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
@@ -15,6 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as tls from 'node:tls';
 import type { AddressInfo } from 'node:net';
+import { promisify } from 'node:util';
 import {
   envProxyFor,
   isNoProxyHost,
@@ -28,6 +29,19 @@ import { AimClient, AimServerError } from '../../src/util/aim-client.js';
 import { realFetch } from '../setup/offline-fetch.js';
 
 const AIM_HOST = 'aim.scratch.invalid';
+
+const execFileAsync = promisify(execFile);
+
+/** Child processes in this file are TypeScript, run under the workspace's own tsx. */
+function resolveTsx(): string {
+  const candidates = [
+    path.resolve(__dirname, '..', '..', 'node_modules', '.bin', 'tsx'),
+    path.resolve(__dirname, '..', '..', '..', '..', 'node_modules', '.bin', 'tsx'),
+  ];
+  const found = candidates.find((p) => fs.existsSync(p));
+  if (!found) throw new Error(`tsx not found; looked in:\n${candidates.join('\n')}`);
+  return found;
+}
 
 describe('envProxyFor', () => {
   it('uses HTTPS_PROXY for https targets and HTTP_PROXY for http targets', () => {
@@ -169,6 +183,16 @@ describe('AimClient behind a proxy', () => {
         socket.on('end', () => socket.destroy());
         return;
       }
+      if (req.url === `ctl.${AIM_HOST}:443`) {
+        // A refusal whose status text holds C0 (ESC, BEL) and C1 (0x85, 0x9b)
+        // control bytes; Node reads them into statusMessage as they are.
+        socket.end(Buffer.concat([
+          Buffer.from('HTTP/1.1 502 Bad\x1b[31m Gate\x07', 'latin1'),
+          Buffer.from([0x85, 0x9b]),
+          Buffer.from('way\r\n\r\n', 'latin1'),
+        ]));
+        return;
+      }
       if (req.url !== `${AIM_HOST}:${aimPort}`) { socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'); return; }
       const upstream = net.connect(aimPort, '127.0.0.1', () => {
         socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
@@ -255,11 +279,29 @@ describe('AimClient behind a proxy', () => {
     });
 
     it('does not turn on a proxy for the rest of the process', async () => {
-      withoutBuiltInSupport();
-      expect(routeThroughEnvProxy(`http://${AIM_HOST}:${aimPort}`)?.routing).toBe('cli');
-      await expect(globalThis.fetch(`http://${AIM_HOST}:${aimPort}/health`)).rejects.toThrow();
+      // Runs in a child process. When the test runner itself starts with
+      // NODE_USE_ENV_PROXY=1 and a proxy in HTTP_PROXY or HTTPS_PROXY (as some
+      // sandboxes and CI hosts set), Node.js sends this process's global fetch
+      // to that proxy from startup, whatever the CLI does, and the request
+      // gets an answer. The child starts without any of those variables, then
+      // gets this suite's proxy in HTTP_PROXY and HTTPS_PROXY, as useProxyEnv
+      // would set them, so only the CLI could make its fetch use the proxy.
+      const env: NodeJS.ProcessEnv = {};
+      for (const [name, value] of Object.entries(process.env)) {
+        if (/^(node_use_env_proxy|(https?|all|no)_proxy)$/i.test(name)) continue;
+        env[name] = value;
+      }
+      if (env.NODE_OPTIONS) env.NODE_OPTIONS = env.NODE_OPTIONS.replace(/--use-env-proxy\b/g, '').trim();
+      env.HTTP_PROXY = proxyUrl;
+      env.HTTPS_PROXY = proxyUrl;
+      const { stdout } = await execFileAsync(
+        resolveTsx(),
+        [path.resolve(__dirname, 'fixtures', 'env-proxy-global-fetch-child.ts'), `http://${AIM_HOST}:${aimPort}`],
+        { env, timeout: 60_000 },
+      );
+      expect(JSON.parse(stdout.trim())).toEqual({ routing: 'cli', fetched: 'failed' });
       expect(proxyLog).toEqual([]);
-    });
+    }, 90_000);
 
     it('sends a request body and its headers through the proxy', async () => {
       withoutBuiltInSupport();
@@ -282,6 +324,17 @@ describe('AimClient behind a proxy', () => {
       expect((err as AimServerError).proxyRoute).toEqual({ proxy: { url: proxyUrl, variable: 'HTTPS_PROXY' }, routing: 'cli' });
       expect((err as AimServerError).message).toContain(proxyUrl);
       expect((err as AimServerError).message).toContain('502');
+    });
+
+    it('removes C0 and C1 control characters from the status text of a CONNECT refusal', async () => {
+      withoutBuiltInSupport();
+      const client = new AimClient(`https://ctl.${AIM_HOST}`, { timeoutMs: 5000 });
+      const err = await client.health().then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(AimServerError);
+      expect(proxyLog).toEqual([`CONNECT ctl.${AIM_HOST}:443`]);
+      const message = (err as AimServerError).message;
+      expect(message).toContain(`the proxy answered 502 Bad[31m Gateway to CONNECT ctl.${AIM_HOST}:443`);
+      expect(message).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
     });
 
     it('sends the proxy user name and password as Proxy-Authorization and never prints them', async () => {

@@ -15,6 +15,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
+import { printable } from './printable.js';
 
 export interface EnvProxy {
   /** Proxy URL with any user name and password removed; safe to print. */
@@ -324,7 +325,10 @@ function fetchThroughProxy(target: URL, proxy: URL, init: RequestInit): Promise<
       createConnection: () => track(connectToProxy(proxy)),
     });
     const refused = (res: http.IncomingMessage): void => {
-      fail(new Error(`the proxy answered ${`${res.statusCode ?? 0} ${res.statusMessage ?? ''}`.trimEnd()} to CONNECT ${authority}`));
+      // The status message is the proxy's text; its control characters are
+      // removed before it goes into an error a terminal may print.
+      const answer = `${res.statusCode ?? 0} ${printable(res.statusMessage ?? '')}`.trimEnd();
+      fail(new Error(`the proxy answered ${answer} to CONNECT ${authority}`));
     };
     tunnel.on('error', fail);
     tunnel.on('response', refused);

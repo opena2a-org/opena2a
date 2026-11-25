@@ -294,11 +294,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'as its own children (#462)',
   },
   'util/env-proxy.test.ts': {
-    shape: 'sync',
+    shape: 'async-bounded',
     maxSimultaneousChildren: 1,
     spawns:
       'spawnSync(openssl version) when the file loads, then execFileSync(openssl req / openssl ' +
-      'x509) to write a throwaway CA and the server certificates of the tunnel tests, one at a time',
+      'x509) to write a throwaway CA and the server certificates of the tunnel tests, one at a time; ' +
+      'execFile(tsx env-proxy-global-fetch-child.ts) once, awaited, never alongside another child, ' +
+      'started without the runner\'s proxy variables',
   },
   'commands/guard-resign-pty.test.ts': {
     shape: 'sync',
