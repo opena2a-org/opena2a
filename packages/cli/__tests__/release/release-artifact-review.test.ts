@@ -371,6 +371,22 @@ function getOwnPublishedResult(): ReviewResult {
  *     on every tree without a package.json (benchmark rates a clean project
  *     "Needs Improvement"); the fix (hackmyagent#756) is on main, unpublished.
  *     Moving the pin waits for the release that carries both.
+ *
+ * Tracking (issue #473), last checked 2026-11-25 against the registry:
+ *   - hackmyagent latest is 0.33.2 (published 2026-09-18, before #756 was
+ *     noted unpublished); its dist/hardening/scanner.js still emits DEP-001
+ *     whenever no lock file is read, package.json or not. No fixed release.
+ *   - @opena2a/aim-sdk latest is 1.3.1, reachable only through hackmyagent
+ *     0.33.x, so the aim-sdk row waits on the hackmyagent release above.
+ *   - GHSA-ccp3-g7fv-9cqr still lists no patched version.
+ *   - ai-trust `^0.2.23` resolves to 0.2.25 (hackmyagent `^0.17.1`, so the
+ *     deprecated 0.17.11); ai-trust latest 0.7.6 pins hackmyagent 0.23.11,
+ *     also deprecated.
+ * To clear: when a hackmyagent release carries #756 and aim-sdk >= 1.3.1,
+ * move packages/cli's `hackmyagent` pin to it and delete the aim-sdk row;
+ * delete the deprecation row once an ai-trust release in range pins a
+ * non-deprecated hackmyagent; delete the GHSA-ccp3 row once the advisory
+ * gains a patched range the pin satisfies.
  */
 const UNCLEARABLE_CLOSURE_ROWS = [
   /^FAIL hackmyagent@\S+ inside GHSA-ccp3-g7fv-9cqr \(critical, ">= 0\.17\.11"\)$/,
