@@ -58,7 +58,7 @@ export interface ScanResult {
 
 /**
  * A skill-resolver result — HMA's `@anthropic/code-review` fallback path.
- * ai-trust and opena2a-cli do not inject a skill adapter in 0.1.0
+ * ai-trust does not inject a skill adapter in 0.1.0
  * (skill handling is HMA-only).
  */
 export interface SkillResult {

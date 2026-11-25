@@ -1,6 +1,6 @@
 /**
  * Package narrative — rich-context payload that powers the `check`
- * skill+mcp v1 view in the OpenA2A CLI fleet (HMA, opena2a-cli, ai-trust).
+ * skill+mcp v1 view in the OpenA2A CLIs that depend on this package (HMA, ai-trust).
  *
  * Wire shape mirrors the registry's `package_narratives` row.
  * v1 covers `skill` and `mcp` artifact types only; npm/PyPI/A2A artifacts

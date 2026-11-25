@@ -1,7 +1,8 @@
 # @opena2a/check-core
 
 Data-shape and orchestration primitives for the `check` command across
-OpenA2A CLIs (`hackmyagent`, `opena2a`, `ai-trust`).
+OpenA2A CLIs. `hackmyagent` and `ai-trust` depend on it; the `opena2a` CLI
+does not.
 
 One implementation of:
 - input classification (npm / pypi / github / local / url)
@@ -16,8 +17,8 @@ Rendering stays in [`@opena2a/cli-ui`](https://www.npmjs.com/package/@opena2a/cl
 
 Three CLIs emit `check --json`. Before 0.18.3 their outputs disagreed on
 five load-bearing fields (trustLevel, verdict, packageType, scanStatus,
-name). This package is the single shared implementation every CLI imports,
-so the wire shape cannot drift between them.
+name). This package is the single shared implementation that `hackmyagent`
+and `ai-trust` import, so the wire shape cannot drift between them.
 
 ## API
 
