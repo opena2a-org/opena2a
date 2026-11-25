@@ -322,6 +322,12 @@ Learn more: https://opena2a.org/docs`;
     .option('--broker-socket <path>', 'Override the Secretless broker socket path')
     .option('--broker-token <path>', 'Override the Secretless broker token file path')
     .option('--grant-agent-id <id>', 'Agent ID sent to the broker (default: opena2a_protect_cli)')
+    .addHelpText('after', `
+protect keeps no copy of the original file by design: that copy would hold
+the plaintext credential. It prints no redacted previews of the values it
+finds. MCP server findings (high-risk tools and permissions) are not fixed
+here; run "opena2a shield init".
+`)
     .action(async (directory: string | undefined, opts) => {
       const { protect: runProtect } = await import('./commands/protect.js');
       const globalOpts = program.opts();

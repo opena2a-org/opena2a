@@ -1493,7 +1493,7 @@ const VAULT_GET_COMMAND =
  * end.
  *
  * Deliberately NOT solved by writing a backup of the original file: that file
- * still contains the plaintext credential, so a rollback manifest on disk
+ * still contains the plaintext credential, so an undo copy on disk
  * would re-create the exposure protect just removed. Outside a repo the honest
  * answer is that the edit is not reversible from disk, plus the vault command
  * that reads the value back so the user can restore it by hand.
