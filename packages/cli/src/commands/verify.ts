@@ -2,8 +2,8 @@
  * opena2a verify -- Look up installed OpenA2A tools in the registry.
  * Computes the SHA-256 of each package's entry file (one file, not the
  * installed tree) and asks the registry whether that hash matches its record.
- * The default list does not include opena2a-cli itself, and nothing here
- * checks the CLI's own installed files.
+ * The default list does not include opena2a-cli itself, so a run without
+ * --package does not check the CLI's own installed files.
  */
 
 import { createHash } from 'node:crypto';
