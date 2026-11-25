@@ -62,9 +62,10 @@ const PLANNING_FINDING_ID = /(?<![A-Za-z0-9_#\\-])§?F\d{1,2}\b(?![-.]\w)/;
 // e.g. `briefs/<name>.md`, `todo/<date>-<name>.md`, `todo/scripts/<name>.mjs`
 // or `~/workspace/...`, or a checkout's local instruction file cited by path
 // (`<repo>/CLAUDE.md`), which is never tracked. A reader cannot open any of
-// them: state the rule instead.
+// them: state the rule instead. A `todo/` or `briefs/` segment inside a URL
+// or a longer path (`.../blob/main/todo/x.md`) is a public file, not a citation.
 const PRIVATE_PATH =
-  /(?<![A-Za-z0-9_.-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.(?:md|mjs|js|ts|py|sh)\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
+  /(?<![A-Za-z0-9_./-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.(?:md|mjs|js|ts|py|sh)\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
 
 // A decision id cited as `[AB-123]`, or as "per / after CA-123" with an
 // internal role prefix. Matched by that citation shape, not by any `AB-123`
@@ -198,6 +199,7 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(PLANNING_FINDING_ID.test('meter gating (F6)')).toBe(true);
     expect(PLANNING_FINDING_ID.test('git-style misses, §F3')).toBe(true);
     expect(PRIVATE_PATH.test('todo/scripts/own-package-census.mjs')).toBe(true);
+    expect(PRIVATE_PATH.test('see todo/2026-01-05-rollout.md')).toBe(true);
     // Assembled from parts, so that a search of the tree for the id shapes
     // lists only real citations.
     const decision = ['CA', '034'].join('-');
@@ -211,6 +213,7 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(named('review phase label').test('// Phase 3.5: Update AI tool config files')).toBe(false);
     expect(named('private registry file').test("repositoryUrl: 'https://github.com/opena2a-org/opena2a-registry'")).toBe(false);
     expect(PLANNING_FINDING_ID.test('color #F59E0B, key 0xF1, F1-score')).toBe(false);
+    expect(PRIVATE_PATH.test('https://github.com/acme/widgets/blob/main/todo/x.md')).toBe(false);
     expect(DECISION_ID_CITATION.test('hashed per sha-256')).toBe(false);
     expect(DECISION_ID_CITATION.test('retried after rfc-822')).toBe(false);
     expect(DECISION_ID_CITATION.test('run after NEMO-009 fires')).toBe(false);
