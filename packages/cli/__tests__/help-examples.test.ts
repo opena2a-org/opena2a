@@ -390,6 +390,19 @@ describe('--help prints help and never runs the command', () => {
     });
   }
 
+  it('identity sign --data --help signs the string --help', () => {
+    const { out, status } = runCli('help', ['--format', 'json', 'identity', 'sign', '--data', '--help']);
+    expect(status, out).toBe(0);
+    expect(out).not.toContain('Usage: opena2a identity');
+    expect(JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)).data).toBe('--help');
+  }, RUN_TIMEOUT);
+
+  it('identity sign --data -h --help still prints the sign help', () => {
+    const { out, status } = runCli('help', ['identity', 'sign', '--data', '-h', '--help']);
+    expect(status).toBe(0);
+    expect(out.startsWith('Usage: opena2a identity sign'), out).toBe(true);
+  }, RUN_TIMEOUT);
+
   it('guard . --help prints the status help, the subcommand a path runs', () => {
     const { out, status } = runCli('help', ['guard', '.', '--help']);
     expect(status).toBe(0);

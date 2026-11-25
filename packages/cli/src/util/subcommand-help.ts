@@ -84,18 +84,49 @@ export function printSubcommandHelp(
 
 /**
  * Detect a help request. Treats `--help` / `-h` anywhere in the raw
- * `process.argv` as a help request, mirroring Commander's behavior.
+ * `process.argv` as a help request, mirroring Commander's behavior,
+ * except as the value of an option in `valueFlags`: Commander gives an
+ * option declared `<value>` the next argument whatever it is, so
+ * `identity sign --data --help` signs the string `--help`.
  *
  * Uses argv directly because subtree commands have varied arg shapes
  * ([args...] vs [directory] vs [name]) and `--help` may not surface in
  * the action's parameters under `allowUnknownOption(true)`.
  */
-export function isHelpRequest(args?: ReadonlyArray<string>): boolean {
+export function isHelpRequest(
+  args?: ReadonlyArray<string>,
+  valueFlags: ReadonlyArray<string> = [],
+): boolean {
   const source = args ?? process.argv.slice(2);
-  for (const a of source) {
+  for (let i = 0; i < source.length; i++) {
+    const a = source[i];
     if (a === '--help' || a === '-h') return true;
+    if (valueFlags.includes(a)) i++;
   }
   return false;
+}
+
+/** The shape of a Commander command that valueFlags reads. */
+interface CommandOptions {
+  options: ReadonlyArray<{ required?: boolean; long?: string; short?: string }>;
+  parent?: CommandOptions | null;
+}
+
+/**
+ * The flags of `cmd` and of the commands above it whose option takes a
+ * required value (`--data <data>`), which Commander fills with the next
+ * argument even when that argument starts with a dash.
+ */
+export function valueFlags(cmd: CommandOptions): string[] {
+  const flags: string[] = [];
+  for (let c: CommandOptions | null | undefined = cmd; c; c = c.parent) {
+    for (const o of c.options) {
+      if (!o.required) continue;
+      if (o.long) flags.push(o.long);
+      if (o.short) flags.push(o.short);
+    }
+  }
+  return flags;
 }
 
 /**
@@ -138,8 +169,9 @@ export function answerHelpRequest(
   registry: SubcommandHelpRegistry,
   parentHelp: () => string,
   args?: ReadonlyArray<string>,
+  valueFlagList: ReadonlyArray<string> = [],
 ): boolean {
-  if (!isHelpRequest(args)) return false;
+  if (!isHelpRequest(args, valueFlagList)) return false;
   if (sub && printSubcommandHelp(parent, sub, registry)) return true;
   // A typo such as `guard signs --help` must not read as a valid command.
   if (sub && !sub.startsWith('-') && !(SUBCOMMAND_ROUTES[parent] ?? []).includes(sub)) {
