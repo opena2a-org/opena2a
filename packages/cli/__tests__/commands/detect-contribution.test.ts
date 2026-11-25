@@ -101,7 +101,7 @@ vi.mock('node:child_process', async (importOriginal) => {
   };
 });
 
-import { detect, installedPackageDir } from '../../src/commands/detect.js';
+import { detect, installedPackageDir, installedPackageRecord } from '../../src/commands/detect.js';
 
 async function runDetect(options: Parameters<typeof detect>[0]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const chunks: string[] = [];
@@ -324,6 +324,84 @@ describe('detect contribution', () => {
     expect(scanner.scan).toHaveBeenCalledTimes(1);
     expect(submission.submitScanReport).not.toHaveBeenCalled();
     submission.isContributeEnabled.mockResolvedValue(true);
+  });
+
+  // The record is named from the scanned directory's own package.json, and
+  // carries the version it declares and the version the scanner reports.
+  it('the report carries the name and version the scanned package.json declares and the scanner version the scan reports', async () => {
+    installPackage(tempDir, '@modelcontextprotocol/server-filesystem');
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(submission.submitScanReport).toHaveBeenCalledTimes(1);
+    const [, report] = submission.submitScanReport.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(report.packageName).toBe('@modelcontextprotocol/server-filesystem');
+    expect(report.packageVersion).toBe('0.0.0');
+    expect(report.scannerVersion).toBe('0.30.0');
+    expect(JSON.stringify(report)).not.toContain('filesystem-root');
+  });
+
+  // A directory under the package's name whose package.json declares another
+  // package, or none, is not the installed copy of the package the launch
+  // runs: its findings are not sent under that name.
+  it('a package directory whose package.json declares another name, or no readable package.json, is not sent', async () => {
+    const mismatched = path.join(tempDir, 'node_modules', '@modelcontextprotocol', 'server-filesystem');
+    fs.mkdirSync(mismatched, { recursive: true });
+    fs.writeFileSync(path.join(mismatched, 'package.json'), JSON.stringify({ name: 'some-other-package', version: '1.2.3' }));
+    fs.mkdirSync(path.join(tempDir, 'node_modules', 'server-without-manifest'), { recursive: true });
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+      bare: { command: 'npx', args: ['-y', 'server-without-manifest'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scanner.scan).toHaveBeenCalledTimes(2);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const servers = JSON.parse(stdout).mcpServers as Array<{ name: string; scanResult: { contributed: boolean } }>;
+    for (const server of servers) expect(server.scanResult.contributed).toBe(false);
+  });
+
+  // The scanner version is the one the scan or the hackmyagent module states;
+  // with neither, the report is not sent rather than sent under a made-up
+  // version.
+  it('a scan that reports no scanner version, from a module that exports none, is not sent', async () => {
+    scanner.scan.mockResolvedValueOnce({
+      overallScore: 90, maxScore: 100, findings: [], criticalCount: 0, highCount: 0,
+      mediumCount: 0, lowCount: 0, infoCount: 0, scanDurationMs: 5,
+    } as unknown as Awaited<ReturnType<typeof scanner.scan>>);
+    installPackage(tempDir, '@modelcontextprotocol/server-filesystem');
+    writeMcpConfig(tempDir, {
+      'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+    });
+
+    const { exitCode, stdout } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true });
+
+    expect(exitCode).toBe(0);
+    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'filesystem-root');
+    expect(server.scanResult.contributed).toBe(false);
+  });
+
+  it('installedPackageRecord answers the declared name and a well-formed version only', () => {
+    const dir = path.join(tempDir, 'pkg');
+    fs.mkdirSync(dir);
+    expect(installedPackageRecord(dir, 'pkg')).toBeNull();
+    fs.writeFileSync(path.join(dir, 'package.json'), 'not json');
+    expect(installedPackageRecord(dir, 'pkg')).toBeNull();
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'other', version: '1.0.0' }));
+    expect(installedPackageRecord(dir, 'pkg')).toBeNull();
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '../pkg' }));
+    expect(installedPackageRecord(dir, '../pkg')).toBeNull();
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'pkg', version: 'bad\nversion' }));
+    expect(installedPackageRecord(dir, 'pkg')).toEqual({ name: 'pkg' });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'pkg', version: '2.3.4' }));
+    expect(installedPackageRecord(dir, 'pkg')).toEqual({ name: 'pkg', version: '2.3.4' });
   });
 
   // The package looked for is the one the launch names. A launch whose package
