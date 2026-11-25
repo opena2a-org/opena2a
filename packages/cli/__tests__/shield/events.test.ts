@@ -21,6 +21,7 @@ vi.mock('node:os', async (importOriginal) => {
 const { writeEvent, verifyEventChain, GENESIS_HASH, getShieldDir } =
   await import('../../src/shield/events.js');
 
+// Split so NEMO-008 (#388) reads neither line as a verify step; the root .hmaignore rule that excluded this file is retired.
 const { runIntegrityChecks } =
   await import('../../src/shield/integrity.js');
 
