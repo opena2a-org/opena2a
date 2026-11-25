@@ -14,9 +14,12 @@
 #   - Process integrity (runtime environment)
 #   - Artifact signatures (signed artifact validation)
 #
-# Exit codes:
-#   0 = healthy or degraded (pass)
-#   1 = compromised or lockdown (fail)
+# Exit codes of the steps below:
+#   shield init       0 = no hardcoded credentials found
+#                     1 = hardcoded credentials found, or the directory cannot be used
+#   shield selfcheck  0 = healthy or degraded (pass)
+#                     1 = compromised or lockdown (fail)
+#   shield report     0 = the report was printed
 
 name: Shield Security Check
 

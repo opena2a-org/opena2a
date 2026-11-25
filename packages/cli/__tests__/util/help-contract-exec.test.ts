@@ -667,6 +667,17 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         },
         output: /checked the hash pins only/,
       },
+      // An unsigned file fails verify only when the guard policy requires it.
+      {
+        when: 'also with unsigned files the guard policy does not require',
+        args: ['guard', 'verify', '--enforce'],
+        setup: async (s, cli) => {
+          put(s, 'package.json', '{"name":"demo"}\n');
+          expect((await cli(['guard', 'sign'])).status).toBe(0);
+          put(s, 'tsconfig.json', '{}\n');
+        },
+        output: /1 unsigned/,
+      },
     ],
     '1': [
       {
@@ -706,11 +717,59 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         output: /No signature store found/,
       },
       { when: 'no SKILL.md or HEARTBEAT.md to check with no store', args: ['guard', 'verify', '--skills', '--heartbeats'], output: /Nothing to verify/ },
+      {
+        when: 'tampered or missing signed files (status)',
+        args: ['guard', 'status'],
+        setup: async (s, cli) => {
+          put(s, 'package.json', '{"name":"demo"}\n');
+          expect((await cli(['guard', 'sign'])).status).toBe(0);
+          put(s, 'package.json', '{"name":"changed"}\n');
+        },
+        output: /Tampered:\s+1/,
+      },
+      {
+        when: 'no signed file left for watch to watch',
+        args: ['guard', 'watch'],
+        setup: async (s, cli) => {
+          put(s, 'package.json', '{"name":"demo"}\n');
+          expect((await cli(['guard', 'sign'])).status).toBe(0);
+          rmSync(join(s.project, 'package.json'));
+        },
+        output: /No files to watch/,
+      },
+      {
+        when: 'findings harden left unresolved',
+        args: ['guard', 'harden', '--skills'],
+        setup: (s) => { put(s, 'SKILL.md', '# Demo skill\n'); },
+        output: /fixable/,
+      },
+      {
+        when: 'a re-sign by sign or resign that cannot be confirmed (no terminal, or --json, without --ci)',
+        args: ['guard', 'sign'],
+        setup: async (s, cli) => {
+          put(s, 'package.json', '{"name":"demo"}\n');
+          expect((await cli(['guard', 'sign'])).status).toBe(0);
+          put(s, 'package.json', '{"name":"changed"}\n');
+        },
+        output: /Refusing to re-sign/,
+      },
+      {
+        when: 'a re-sign by sign or resign that cannot be confirmed (no terminal, or --json, without --ci)',
+        args: ['guard', 'resign', '--format', 'json'],
+        setup: async (s, cli) => {
+          put(s, 'package.json', '{"name":"demo"}\n');
+          expect((await cli(['guard', 'sign'])).status).toBe(0);
+          put(s, 'package.json', '{"name":"changed"}\n');
+        },
+        output: /Refusing to re-sign/,
+      },
+      { when: 'the directory does not exist', args: (s) => ['guard', 'verify', join(s.project, 'missing')], output: /Directory not found/ },
       { when: 'an unknown subcommand', args: ['guard', 'no-such-subcommand'] },
+      { when: 'an unknown subcommand or action', args: ['guard', 'policy', 'no-such-action'], output: /Unknown policy action/ },
     ],
     '3': [
       {
-        when: 'verify --enforce found tampered, missing or unsigned files',
+        when: 'verify --enforce found tampered or missing files',
         args: ['guard', 'verify', '--enforce'],
         setup: async (s, cli) => {
           put(s, 'package.json', '{"name":"demo"}\n');
@@ -735,6 +794,8 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
       { when: 'a missing or unknown subcommand', args: ['runtime'] },
       { when: 'a missing or unknown subcommand', args: ['runtime', 'no-such-subcommand'] },
       { when: 'no ARP configuration', args: ['runtime', 'start'], output: /No ARP configuration found/ },
+      { when: 'start found hackmyagent not installed', args: ['runtime', 'start'], hide: ['hackmyagent'], output: /hackmyagent is not installed/ },
+      { when: 'init could not write arp.yaml', args: (s) => ['runtime', 'init', join(s.project, 'missing')], output: /arp\.yaml/ },
     ],
   },
   login: {
@@ -847,6 +908,31 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         setup: (s) => shieldCompromised(s, true),
         output: /Verification failed/,
       },
+      {
+        when: 'init was given more than one directory or a path that is not a directory',
+        args: (s) => ['shield', 'init', join(s.project, 'missing')],
+        output: /is not a directory/,
+      },
+      {
+        when: 'init was given more than one directory or a path that is not a directory',
+        args: ['shield', 'init', '.', 'other'],
+        output: /takes one directory, got 2/,
+      },
+      {
+        when: 'status found Shield in lockdown',
+        args: ['shield', 'status'],
+        setup: (s) => shieldCompromised(s, true),
+      },
+      {
+        when: 'recover --archive-log found no event log',
+        args: ['shield', 'recover', '--archive-log'],
+        output: /Nothing to archive/,
+      },
+      {
+        when: 'an unknown policy action',
+        args: ['shield', 'policy', 'no-such-action'],
+        output: /Unknown policy action/,
+      },
     ],
   },
   'scan-soul': {
@@ -895,17 +981,40 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
       { when: 'hackmyagent is unavailable', args: ['benchmark'], hide: ['hackmyagent'] },
       { when: 'the --level is invalid', args: ['benchmark', '--level', 'L9'], output: /Invalid level/ },
     ],
+    '2': [
+      { when: 'the target does not exist', args: (s) => ['benchmark', join(s.project, 'missing')], output: /does not exist, so nothing was scanned/ },
+      {
+        when: 'is not a directory',
+        args: (s) => ['benchmark', join(s.project, 'file.txt')],
+        setup: (s) => { put(s, 'file.txt', 'text\n'); },
+        output: /is not a directory, so nothing was scanned/,
+      },
+      {
+        when: 'or cannot be read',
+        args: (s) => ['benchmark', join(s.project, 'locked')],
+        permissions: true,
+        setup: (s) => { mkdirSync(join(s.project, 'locked')); lock(join(s.project, 'locked'), 0o000); },
+        output: /could not be read, so nothing was scanned/,
+      },
+    ],
   },
   'self-register': {
     '0': [
-      { when: 'or a --dry-run', args: ['self-register', '--dry-run'] },
+      { when: 'or a --dry-run listed the tools it would register', args: ['self-register', '--dry-run'], output: /\[DRY RUN\]/ },
       {
         when: 'a registration the registry refused or that could not reach it is shown as [SKIP] and still exits 0',
         args: (s) => ['self-register', '--yes', '--skip-scan', '--verbose', '--registry-url', s.url],
         output: /\[SKIP\]/,
       },
     ],
-    '1': [{ when: 'no tool matched --only', args: ['self-register', '--dry-run', '--only', 'no-such-tool'] }],
+    '1': [
+      { when: 'no tool matched --only', args: ['self-register', '--dry-run', '--only', 'no-such-tool'] },
+      {
+        when: 'an invalid --registry-url (both also with --dry-run)',
+        args: ['self-register', '--dry-run', '--registry-url', 'http://example.invalid'],
+        output: /must use HTTPS/,
+      },
+    ],
     '2': [{
       when: 'a non-interactive run without --yes',
       args: (s) => ['self-register', '--skip-scan', '--registry-url', s.url],
@@ -1104,6 +1213,17 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         args: ['skill', 'create', 'demo-skill', '--ci'],
         setup: (s) => { put(s, 'demo-skill/notes.txt', 'keep\n'); },
       },
+      {
+        when: 'a target that is not a directory',
+        args: ['skill', 'create', 'demo-skill', '--ci', '--output', 'blocker'],
+        setup: (s) => { put(s, 'blocker', 'a file\n'); },
+        output: /exists and is not a directory/,
+      },
+      {
+        when: 'the scaffold files could not be written',
+        args: ['skill', 'create', 'demo-skill', '--ci', '--output', 'blocker/demo-skill'],
+        setup: (s) => { put(s, 'blocker', 'a file\n'); },
+      },
     ],
   },
   mcp: {
@@ -1157,7 +1277,7 @@ const CONDITIONS_NOT_RUN: Record<string, string> = {
   'skill 1: a critical warning in the scaffold': 'only the interactive prompts choose the capabilities that raise one; --ci and CI use the defaults',
   'self-register 2: declined at the prompt': 'the prompt is shown only on a terminal',
   'self-register 1: processing a tool threw an error': 'no input found that makes a tool fail; a registry that refuses or cannot be reached is a [SKIP]',
-  'benchmark 1: the run failed': 'no input found that makes the scan throw; a directory that does not exist is benchmarked and exits 0',
+  'benchmark 1: the run failed': 'no input found that makes the scan throw; a target that does not exist or cannot be read is refused with exit 2 before any scan',
   'harden-soul 1: generation failed': 'no input found that makes generation throw; a directory it cannot write to exits 0',
   'guard 1: a declined resign': 'the confirmation is shown only on a terminal',
   'admin 1: approve or reject declined': 'the confirmation is shown only on a terminal; the refusal without --yes runs',

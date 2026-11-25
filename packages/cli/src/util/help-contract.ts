@@ -152,17 +152,17 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   guard: {
     exit: [
-      ['0', 'the files verify clean, or the subcommand succeeded; with --skills or --heartbeats, no signature store and none of the files guard signs by default present, verify checks only the hash pins and exits 0 when every pin passes'],
-      ['1', 'tampered, missing or policy-violating files, changes found by diff, a changed, unpinned or expired hash pin, no signature store (unless --skills or --heartbeats check only the pins), no SKILL.md or HEARTBEAT.md to check with no store, a declined resign, an unknown subcommand, or an error'],
-      ['3', 'verify --enforce found tampered, missing or unsigned files, or a failed pin or policy check (quarantine mode), with or without a signature store; an unreadable signature store still exits 1'],
+      ['0', 'the files verify clean, also with unsigned files the guard policy does not require, or the subcommand succeeded; with --skills or --heartbeats, no signature store and none of the files guard signs by default present, verify checks only the hash pins and exits 0 when every pin passes'],
+      ['1', 'tampered, missing or policy-violating files (verify), tampered or missing signed files (status), changes found by diff, a changed, unpinned or expired hash pin, no signature store (unless --skills or --heartbeats check only the pins), no SKILL.md or HEARTBEAT.md to check with no store, no signed file left for watch to watch, findings harden left unresolved, a declined resign, a re-sign by sign or resign that cannot be confirmed (no terminal, or --json, without --ci), the directory does not exist, an unknown subcommand or action, or an error'],
+      ['3', 'verify --enforce found tampered or missing files, unsigned files the guard policy requires, or a failed pin (quarantine mode); with no signature store only where --skills or --heartbeats check the pins alone, since a missing or unreadable signature store still exits 1'],
     ],
     json: 'prints JSON for every subcommand except hook',
-    ci: 'resign re-signs without asking for confirmation',
+    ci: 'sign and resign re-sign changed files without asking for confirmation',
   },
   runtime: {
     exit: [
       ['0', 'the subcommand succeeded'],
-      ['1', 'a missing or unknown subcommand, no ARP configuration, or monitoring failed to start'],
+      ['1', 'a missing or unknown subcommand, start found hackmyagent not installed, no ARP configuration, monitoring failed to start, or init could not write arp.yaml'],
     ],
     json: 'prints JSON',
     ci: 'no effect',
@@ -202,7 +202,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   shield: {
     exit: [
       ['0', 'the subcommand succeeded'],
-      ['1', "init found hardcoded credentials, selfcheck found Shield compromised or in lockdown, evaluate blocked the action, no policy is loaded, policy diff or accept found a policy that does not parse or was given --dir, policy accept was not given the policy's hash or ran in lockdown, recover --verify failed, suggest, explain or triage have no LLM backend, or an unknown subcommand"],
+      ['1', "init found hardcoded credentials, init was given more than one directory or a path that is not a directory, status found Shield in lockdown, selfcheck found Shield compromised or in lockdown, evaluate blocked the action, no policy is loaded, policy diff or accept found a policy that does not parse or was given --dir, policy accept was not given the policy's hash or ran in lockdown or could not log the policy.accepted event, recover --verify failed, recover --archive-log found no event log, a log it could not read or an intact hash chain, suggest, explain or triage have no LLM backend, an unknown policy action, or an unknown subcommand"],
     ],
     json: 'prints JSON',
     ci: 'init prints JSON, rewrites an existing policy unless it changed since it was recorded, and skips --shell-hook and --ai-tools; other subcommands are unchanged',
@@ -244,18 +244,19 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     exit: [
       ['0', 'the benchmark ran (the score does not change the exit status)'],
       ['1', 'hackmyagent is unavailable, the --level is invalid, or the run failed'],
+      ['2', 'the target does not exist, is not a directory or cannot be read; nothing is scanned and no rating is printed'],
     ],
     json: 'prints the results as JSON',
     ci: 'no effect',
   },
   'self-register': {
     exit: [
-      ['0', 'every tool was processed, or a --dry-run; a registration the registry refused or that could not reach it is shown as [SKIP] and still exits 0'],
-      ['1', 'no tool matched --only, or processing a tool threw an error'],
+      ['0', 'every tool was processed, or a --dry-run listed the tools it would register; a registration the registry refused or that could not reach it is shown as [SKIP] and still exits 0'],
+      ['1', 'no tool matched --only, an invalid --registry-url (both also with --dry-run), or processing a tool threw an error'],
       ['2', 'not confirmed: declined at the prompt, or a non-interactive run without --yes'],
     ],
     json: 'prints the result as JSON; never prompts, so pass --yes to write',
-    ci: 'never prompts; without --yes it exits 2 before writing anything',
+    ci: 'never prompts; without --yes or --dry-run it exits 2 before writing anything',
   },
   verify: {
     exit: [
@@ -341,7 +342,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   skill: {
     exit: [
       ['0', 'the skill was created'],
-      ['1', 'a missing or unknown subcommand, a non-empty target directory without --force, or a critical warning in the scaffold'],
+      ['1', 'a missing or unknown subcommand, a non-empty target directory without --force, a target that is not a directory, the scaffold files could not be written, or a critical warning in the scaffold'],
     ],
     json: 'prints the result as JSON',
     ci: 'creates without prompts from the given name and --template, or the defaults (also when CI is set)',
