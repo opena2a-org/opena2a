@@ -14,21 +14,21 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const PACKAGES_DIR = path.join(REPO_ROOT, 'packages');
 
-// The id prefixes of the internal roles, used both for their charter rules
-// and for their decision ids.
-const INTERNAL_ROLE_PREFIX = '(?:CA|CCO|CDE|CDO|CDS|CISO|CPO|CRO|CSR|DPO)';
+// The id prefixes of the internal roles, used for their decision ids. A
+// charter rule is matched by its shape alone, so a role missing here still
+// cannot cite its rules.
+const INTERNAL_ROLES = ['CA', 'CCO', 'CDE', 'CDO', 'CDS', 'CISO', 'CPO', 'CRO', 'CSR', 'DPO'];
+const INTERNAL_ROLE_PREFIX = `(?:${INTERNAL_ROLES.join('|')})`;
 
 const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   { name: 'internal decision log', pattern: /COUNCIL_LEDGER/ },
   { name: 'internal role tag', pattern: /\bCHIEF-[A-Z]{2,4}\b/ },
   { name: 'internal ruling', pattern: /design-function ruling/ },
   // A numbered rule from an internal role's charter, e.g. "Rule 11" cited
-  // under a role name. "CISO" as a reader ("the CISO scanning the output")
-  // stays allowed; only the rule citation is matched.
-  {
-    name: 'internal charter rule',
-    pattern: new RegExp(`\\b${INTERNAL_ROLE_PREFIX}[- ][Rr]ule[- ]?\\d+\\b`),
-  },
+  // under a role acronym. Any two to four capitals count, so a new role needs
+  // no list entry. "CISO" as a reader ("the CISO scanning the output") stays
+  // allowed; only the rule citation is matched.
+  { name: 'internal charter rule', pattern: /\b[A-Z]{2,4}[- ][Rr]ule[- ]?\d+\b/ },
   { name: 'private notes file', pattern: /\b(?:feedback|project|reference|user)_[a-z0-9_]+\.md\b/ },
   // A section, mockup, baseline or session of a private planning brief. A
   // reader cannot open the brief: state the behaviour the citation stood for.
@@ -205,6 +205,7 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(DECISION_ID_CITATION.test(`Per ${decision}, each consumer`)).toBe(true);
     expect(DECISION_ID_CITATION.test(`a rule [${decision}]`)).toBe(true);
     expect(named('internal charter rule').test(`${['CISO', 'Rule'].join('-')}-11`)).toBe(true);
+    expect(named('internal charter rule').test('// CXO Rule 4')).toBe(true);
     // Ordinary prose and public references stay allowed.
     expect(named('planning brief citation').test('a brief pause before retrying')).toBe(false);
     expect(named('review phase label').test('// Phase 3.5: Update AI tool config files')).toBe(false);
@@ -214,6 +215,7 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(DECISION_ID_CITATION.test('retried after rfc-822')).toBe(false);
     expect(DECISION_ID_CITATION.test('run after NEMO-009 fires')).toBe(false);
     expect(DECISION_ID_CITATION.test(`after ${decision.toLowerCase()}`)).toBe(false);
+    expect(named('internal charter rule').test('the CISO scanning the output')).toBe(false);
   });
 });
 

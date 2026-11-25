@@ -5,7 +5,7 @@ import type { ScanResult, TrustData } from "./types.js";
 import type { PackageNarrative } from "./narrative.js";
 
 /**
- * Issue #124, UX rule 7: the machine-readable JSON schema must be
+ * Issue #124: the machine-readable JSON schema must be
  * documented AND self-consistent with what `buildCheckOutput` actually
  * emits. These tests fail the moment a new field is added to the emitter
  * without a matching entry in the field guide — so the documented
