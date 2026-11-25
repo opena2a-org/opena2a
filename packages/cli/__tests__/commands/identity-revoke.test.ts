@@ -142,7 +142,7 @@ describe('identity revoke', () => {
 
     expect(printed).toBe(true);
     expect(stdout.startsWith('Usage: opena2a identity revoke')).toBe(true);
-    expect(stdout).not.toMatch(RETENTION_OR_DELETION);
+    expect(stdout.replace(/\s+/g, ' ')).not.toMatch(RETENTION_OR_DELETION);
     expect(stdout).not.toMatch(/irreversible|within that window/i);
   });
 });
