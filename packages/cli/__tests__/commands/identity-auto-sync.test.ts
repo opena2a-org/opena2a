@@ -148,3 +148,41 @@ describe('identity autoSync', () => {
     expect(readManifest(dir)?.bridging.lastSyncAt).toBeNull();
   });
 });
+
+// `identity integrate --auto-sync` changed nothing: autoSync was written as
+// true whether or not the flag was given. --no-auto-sync now turns it off, and
+// a later integrate without either flag keeps what was chosen.
+describe('identity integrate autoSync setting', () => {
+  it('turns autoSync on by default', async () => {
+    const code = await identity({ subcommand: 'integrate', dir, format: 'json' });
+
+    expect(code).toBe(0);
+    expect(readManifest(dir)?.bridging.autoSync).toBe(true);
+  });
+
+  it('turns autoSync off with --no-auto-sync and keeps it off on a later integrate', async () => {
+    expect(await identity({ subcommand: 'integrate', dir, format: 'json', autoSync: false })).toBe(0);
+    expect(readManifest(dir)?.bridging.autoSync).toBe(false);
+
+    expect(await identity({ subcommand: 'integrate', dir, format: 'json' })).toBe(0);
+    expect(readManifest(dir)?.bridging.autoSync).toBe(false);
+
+    expect(await identity({ subcommand: 'integrate', dir, format: 'json', autoSync: true })).toBe(0);
+    expect(readManifest(dir)?.bridging.autoSync).toBe(true);
+  });
+
+  it('parses --auto-sync and --no-auto-sync to true, false and unset', async () => {
+    const { Command } = await import('commander');
+    const parse = (...argv: string[]): boolean | undefined => {
+      const cmd = new Command()
+        .exitOverride()
+        .option('--auto-sync')
+        .option('--no-auto-sync');
+      cmd.parse(argv, { from: 'user' });
+      return cmd.opts().autoSync as boolean | undefined;
+    };
+    expect(parse('--auto-sync')).toBe(true);
+    expect(parse('--no-auto-sync')).toBe(false);
+    expect(parse()).toBeUndefined();
+  });
+});
