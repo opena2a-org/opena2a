@@ -20,8 +20,7 @@ export type CheckPackageResult =
 /**
  * Registry-first, scan-on-miss orchestrator for `check <target>`.
  *
- * This is the shared flow ai-trust uses by default, and that opena2a-cli
- * uses when not spawn-delegating to hackmyagent. hackmyagent itself
+ * This is the shared flow ai-trust uses by default. hackmyagent itself
  * keeps its scan-first flow and calls `buildCheckOutput` directly on
  * the merged (scan + registry) data; it doesn't need this orchestrator.
  *

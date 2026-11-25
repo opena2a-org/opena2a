@@ -5,7 +5,7 @@
  * Same inputs always produce the same outputs — there is no NanoMind
  * call, no I/O, and no time-of-day dependency in this path.
  *
- * Lives in @opena2a/check-core so HMA, opena2a-cli, and ai-trust share
+ * Lives in @opena2a/check-core so HMA and ai-trust share
  * one implementation. Output is consumed by `renderCheckRichBlock` in
  * @opena2a/cli-ui and embedded in the registry-stored
  * `PackageNarrative` so re-renders are byte-stable across CLIs.
