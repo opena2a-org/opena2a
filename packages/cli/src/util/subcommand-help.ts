@@ -616,9 +616,9 @@ export const RUNTIME_HELP: SubcommandHelpRegistry = {
     summary: 'Show the last runtime events recorded in .opena2a/arp/events.jsonl.',
     usage: '[directory]',
     options: [
-      { flag: '--count <n>', description: 'Number of events to show (default: 20)' },
+      { flag: '--count <n>', description: 'Number of events to show (default: 20; short form -c)' },
     ],
-    examples: ['opena2a runtime tail', 'opena2a runtime tail --count 50'],
+    examples: ['opena2a runtime tail', 'opena2a runtime tail --count 50', 'opena2a runtime tail -c 5'],
   },
   init: {
     summary: 'Write an arp.yaml for the project, generated from its detected type.',
