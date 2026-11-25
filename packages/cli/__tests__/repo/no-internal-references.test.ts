@@ -37,6 +37,9 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
     pattern: /\bbrief (?:§|`|mockups?\b|baseline\b|acceptance\b)|\bper brief\b|\bdivergence brief\b/i,
   },
   { name: 'planning mockup number', pattern: /\bmockup \d/i },
+  // The name of an internal measurement environment. A reader has no access
+  // to it: state its limits instead (process cap, CPU count).
+  { name: 'internal environment name', pattern: /\bfleet[- ]lanes?\b/i },
   { name: 'planning session label', pattern: /\bsession \d+[a-z]?\b/i },
   { name: 'review finding label', pattern: /\bPhase \d+(?:\.\d+)? (?:adversarial review )?finding\b/i },
   // The step number of an internal pre-release review checklist. The CLI's
@@ -182,6 +185,8 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(named('planning mockup number').test('VERIFIED skill (mockup 3.2)')).toBe(true);
     expect(named('planning session label').test('cli-ui 0.4.0 (session 3)')).toBe(true);
     expect(named('review finding label').test('Phase 3 adversarial review finding HIGH-1')).toBe(true);
+    expect(named('internal environment name').test(`measured in the ${['fleet', 'lane'].join(' ')}`)).toBe(true);
+    expect(named('internal environment name').test(`(${['fleet', 'lane'].join('-')} census)`)).toBe(true);
     expect(named('review phase label').test('is allowlisted (Phase 4.5 fix)')).toBe(true);
     expect(named('review phase label').test('config bonus (#116/Phase4.5)')).toBe(true);
     expect(named('private registry file').test('opena2a-registry/docs/telemetry-spec.md')).toBe(true);

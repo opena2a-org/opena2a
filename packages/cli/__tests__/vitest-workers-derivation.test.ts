@@ -36,7 +36,7 @@ describe('vitest worker-cap derivation', () => {
   it('yields at least two workers at pidsMax=512 with four or more CPUs', () => {
     expect(deriveMaxWorkers(512, 4)).toBeGreaterThanOrEqual(2);
     expect(deriveMaxWorkers(512, 16)).toBeGreaterThanOrEqual(2);
-    // The contract's arithmetic bound behind that result: at 512 pids, two
+    // The arithmetic bound behind that result: at 512 pids, two
     // workers exist only if one worker's worst case fits in half the budget.
     expect(TASKS_PER_WORKER).toBeLessThanOrEqual(
       Math.floor((512 - BASE_TASKS - SPAWN_HEADROOM) / 2),
@@ -45,7 +45,8 @@ describe('vitest worker-cap derivation', () => {
 
   it('covers the fan-out ceiling concurrent-write.test.ts actually enforces', () => {
     // Each live child is a tsx process plus the node child it runs the CLI
-    // in, about 11 threads each (measured 2026-09-05, fleet-lane census);
+    // in, about 11 threads each (measured 2026-09-05 by a process census in a
+    // container capped at 512 processes on 16 CPUs);
     // the worker fork itself is about 7. Raising MAX_LIVE_CHILDREN without
     // re-deriving TASKS_PER_WORKER re-creates the unbounded regression this
     // derivation exists to contain, so it fails here.
