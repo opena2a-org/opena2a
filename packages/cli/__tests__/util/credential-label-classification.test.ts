@@ -105,8 +105,8 @@ describe('refineCredentialLabel', () => {
     expect(refined.explanation).not.toMatch(/Generic API key/i);
   });
 
-  it('does not name a provider in the prose that contradicts the refined title (regression P2-1)', () => {
-    // P2-1 from the 0.10.8 release test: refined Type "OpenRouter API Key" shipped
+  it('does not name a provider in the prose that contradicts the refined title', () => {
+    // Found in the 0.10.8 release test: refined Type "OpenRouter API Key" shipped
     // with "Why: OpenAI API key … grants full OpenAI API access" — a self-contradiction.
     // For every refinable catch-all whose value resolves to a DIFFERENT provider,
     // the refined prose must reference the refined title and no other vendor.
@@ -197,7 +197,7 @@ describe('quickCredentialScan label routing (integration)', () => {
     expect(m!.envVar).toBe('OPENAI_API_KEY');
   });
 
-  it('renders explanation/impact prose that matches the refined title (regression P2-1)', async () => {
+  it('renders explanation/impact prose that matches the refined title', async () => {
     // The rendered "Why:"/"Impact:" come from match.explanation/businessImpact.
     // An OpenRouter key must not carry "OpenAI" rationale.
     write('llm.js', `const apiKey = "${OPENROUTER_KEY}";`);

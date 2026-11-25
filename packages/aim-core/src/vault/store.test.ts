@@ -108,7 +108,7 @@ describe('vault/store', () => {
       zeroize(resolved);
     });
 
-    it('unlock with wrong key fails on resolve (CR-006)', () => {
+    it('unlock with wrong key fails on resolve', () => {
       const store = new VaultStore(vaultDir);
       store.init('aim_test123', agentKp.secretKey);
       store.storeCredential('github', new TextEncoder().encode('ghp_token'));

@@ -88,7 +88,7 @@ describe('vault/resolution', () => {
     });
   });
 
-  describe('resolveWithPolicy — invalid signature (CR-002)', () => {
+  describe('resolveWithPolicy — invalid signature', () => {
     it('rejects request signed by wrong key', () => {
       const wrongKp = nacl.sign.keyPair();
       const req = createResolutionRequest('github', 'read', 'aim_test123', wrongKp.secretKey);
@@ -169,7 +169,7 @@ describe('vault/resolution', () => {
     });
   });
 
-  describe('resolveWithPolicy — capability check (CR-003)', () => {
+  describe('resolveWithPolicy — capability check', () => {
     it('rejects when capability checker denies', () => {
       const ctxWithCap: ResolutionContext = {
         ...context,

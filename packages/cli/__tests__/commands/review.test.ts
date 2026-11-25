@@ -241,7 +241,7 @@ describe('review', () => {
     expect(report.phases).toHaveLength(6);
   });
 
-  it('C1: --skip-hma sets report.provisional=true and emits a stderr notice', async () => {
+  it('--skip-hma sets report.provisional=true and emits a stderr notice', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project', version: '1.0.0' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\nnode_modules\n');
 
@@ -268,7 +268,7 @@ describe('review', () => {
     expect(output).not.toMatch(/Provisional verdict/); // stdout JSON stays clean
   });
 
-  it('C6: a broken event chain marks the Shield phase provisional and says so on stderr', async () => {
+  it('a broken event chain marks the Shield phase provisional and says so on stderr', async () => {
     // Before this, the only trace of the exclusion in ANY output was nested
     // inside shieldData.classifiedFindings[0].examples[0].detail in the JSON.
     // A terminal user saw a small "N events, M findings" and a clean-looking
@@ -342,7 +342,7 @@ describe('review', () => {
     expect(shieldFindingIds).not.toContain('SHIELD-PROC-001');
   });
 
-  it('C6: a broken chain is visible in the human summary and on the HTML Shield tab', async () => {
+  it('a broken chain is visible in the human summary and on the HTML Shield tab', async () => {
     // The two surfaces a person actually looks at. The JSON fields and the
     // stderr notice are covered above; these are the ones that were silent.
     const { writeEvent, getShieldDir, getEventsPath } = await import('../../src/shield/events.js');
@@ -356,7 +356,7 @@ describe('review', () => {
     };
     getShieldDir();
     writeEvent({ ...base, action: 'genuine-1', target: 'baseline' });
-    // A forged event that does not continue the chain (see the C6 test above)
+    // A forged event that does not continue the chain (see the broken-chain test above)
     fs.appendFileSync(getEventsPath(), JSON.stringify({
       id: 'forged', timestamp: new Date().toISOString(), version: 1,
       ...base, action: 'genuine-1', target: 'baseline',
@@ -387,7 +387,7 @@ describe('review', () => {
     expect(shieldHtml).toContain('opena2a shield selfcheck');
   });
 
-  it('C6: an intact event chain leaves the Shield phase non-provisional and silent', async () => {
+  it('an intact event chain leaves the Shield phase non-provisional and silent', async () => {
     // Non-vacuity for the test above: the provisional flag and the notice must
     // be caused by the break, not emitted unconditionally.
     const { writeEvent, getShieldDir } = await import('../../src/shield/events.js');
@@ -1725,7 +1725,7 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
   it('includes only target-scoped analyzers, never the host-polluted Shadow AI or adoption baselines', () => {
     const names = buildFloorParticipants(base).map(p => p.name);
     expect(names).toEqual(['Project Scan', 'Credentials', 'Config Integrity', 'HMA Scan', 'Project Governance', 'Shield Runtime Risk']);
-    // H1 regression: the raw "Shadow AI" governanceScore is host-polluted (ps aux)
+    // Regression: the raw "Shadow AI" governanceScore is host-polluted (ps aux)
     // and must NOT be a floor participant. Only the target-local slice
     // ("Project Governance") and genuine runtime risk ("Shield Runtime Risk")
     // participate — never the adoption baseline posture.
@@ -1733,7 +1733,7 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
     expect(names).not.toContain('Shield Analysis');
   });
 
-  it('H1: a host-driven low governance score cannot clamp a clean project', () => {
+  it('a host-driven low governance score cannot clamp a clean project', () => {
     // Clean repo (trust/cred/config/HMA healthy) on a machine whose RAW
     // governance tanked from ambient host agents. The raw governanceScore is
     // never passed in; projectGovernanceRan is false (no in-repo critical
@@ -1742,7 +1742,7 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
     expect(applyDominantAnalyzerFloor(82, participants)).toBe(82);
   });
 
-  it('H1-collateral: a target-local critical governance signal STILL floors (no detection narrowing)', () => {
+  it('a target-local critical governance signal STILL floors (no detection narrowing)', () => {
     // A repo whose only critical signal is an in-repo malicious MCP server:
     // trust/cred/config/HMA all clean, but projectGovernance fires.
     const participants = buildFloorParticipants({
@@ -1772,7 +1772,7 @@ describe('buildFloorParticipants (#175 — target-malice scoping)', () => {
     expect(applyDominantAnalyzerFloor(67, participants)).toBe(0);
   });
 
-  it('C1: without HMA (and no target-local gov signal), kitchen-sink shape is NOT floored (verdict provisional)', () => {
+  it('without HMA (and no target-local gov signal), kitchen-sink shape is NOT floored (verdict provisional)', () => {
     // Documents degraded mode: HMA is the only critical signal for this shape,
     // so when it does not run the floor cannot fire. review() emits the
     // provisional notice + sets report.provisional=true.
@@ -1825,7 +1825,7 @@ describe('adoption-as-recovery composite scoring (#175 follow-up)', () => {
       expect(shieldCompositeScore({ classifiedFindings: [sev('medium')] })).toBe(84);   // 90-6 (not neutralized)
       expect(shieldCompositeScore({ classifiedFindings: [sev('critical'), sev('critical'), sev('critical')] })).toBe(0); // clamped
     });
-    it('C1: takes the harsher of reported and intact-chain counts when the chain broke', () => {
+    it('takes the harsher of reported and intact-chain counts when the chain broke', () => {
       // The reported findings are only what survived chain verification. When
       // the exclusion dropped genuine findings, scoring the survivors alone
       // rewards the break. `preExclusionCounts` is what an intact chain would
@@ -1856,7 +1856,7 @@ describe('adoption-as-recovery composite scoring (#175 follow-up)', () => {
       expect(high.ran).toBe(true);
       expect(high.score).toBeLessThan(CRITICAL_BAND);
     });
-    it('C1: an excluded critical still floors, even when the survivors would not', () => {
+    it('an excluded critical still floors, even when the survivors would not', () => {
       // Currently defence-in-depth rather than a live path: runShieldPhase
       // always injects a critical chain-break finding, so the reported side is
       // already at the harshest band whenever preExclusionCounts exists. The
