@@ -64,7 +64,7 @@ opena2a                             # Interactive guided wizard (no args)
 
 ## Ecosystem
 
-Each command routes to a specialized tool, installed on first use:
+Each command routes to a specialized tool. HackMyAgent, Secretless AI and ai-trust are npm dependencies of `opena2a-cli`, installed with it. CryptoServe (`opena2a crypto`) is a Python package: it runs as `python3 -m cryptoserve` (install it with `pip install cryptoserve`), or as `pipx run cryptoserve` when no Python 3 is found. DVAA (`opena2a train`) runs as a Docker container, so it needs Docker.
 
 | Command | Tool | Description |
 |---------|------|-------------|

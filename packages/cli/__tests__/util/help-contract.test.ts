@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HELP_CONTRACTS, formatHelpContract } from '../../src/util/help-contract.js';
+import { HELP_CONTRACTS, adapterSourceLine, formatHelpContract } from '../../src/util/help-contract.js';
 import { HELP_WIDTH } from '../../src/util/subcommand-help.js';
 import { ADAPTER_REGISTRY } from '../../src/adapters/registry.js';
 
@@ -67,5 +67,26 @@ describe('HELP_CONTRACTS', () => {
   it('identity: --json says revoke proceeds without the confirmation step, as --ci does', () => {
     expect(HELP_CONTRACTS.identity.json).toContain('revoke proceeds without the confirmation step');
     expect(HELP_CONTRACTS.identity.ci).toContain('revoke proceeds without the confirmation step');
+  });
+});
+
+describe('adapterSourceLine', () => {
+  const lineFor = (name: string): string => {
+    const config = ADAPTER_REGISTRY[name];
+    const tool = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
+    return adapterSourceLine(config.method, tool);
+  };
+
+  it('states each tool\'s real install path and never calls it bundled', () => {
+    expect(lineFor('crypto')).toContain('python3 -m cryptoserve');
+    expect(lineFor('crypto')).toContain('pipx run cryptoserve');
+    expect(lineFor('train')).toContain('opena2a/dvaa Docker image');
+    expect(lineFor('train')).toContain('needs Docker');
+    for (const name of ['scan', 'secrets', 'registry']) {
+      expect(lineFor(name)).toContain('npm dependency installed with opena2a-cli');
+    }
+    for (const name of Object.keys(ADAPTER_REGISTRY)) {
+      expect(lineFor(name)).not.toMatch(/bundled|first use/i);
+    }
   });
 });

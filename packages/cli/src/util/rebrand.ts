@@ -134,7 +134,7 @@ function capitalizeLike(model: string, word: string): string {
 
 /**
  * Remove the claim that contributed scan results are anonymized from text a
- * bundled engine prints (issue #388). They are not: each contributed summary
+ * delegated tool prints (issue #388). They are not: each contributed summary
  * is sent with a contributor token made on the machine. "Share anonymized scan
  * findings" becomes "Share scan findings"; an article before the word is kept
  * in agreement ("an anonymized summary" -> "a summary"), and a predicative use
@@ -157,7 +157,7 @@ export function rewordContributionClaims(text: string): string {
   );
 }
 
-/** Every rewrite applied to a bundled engine's human-readable output. */
+/** Every rewrite applied to a delegated tool's human-readable output. */
 function rebrandBundledText(text: string): string {
   return rewordContributionClaims(rebrandBundledCommands(text));
 }

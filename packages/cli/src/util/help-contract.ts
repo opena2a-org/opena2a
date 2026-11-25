@@ -11,6 +11,7 @@
 
 import { wordWrap } from './format.js';
 import { HELP_WIDTH } from './subcommand-help.js';
+import type { AdapterMethod } from '../adapters/types.js';
 
 export interface HelpContract {
   /** Exit status (or `engine` for a passed-through status) and its condition. */
@@ -22,7 +23,7 @@ export interface HelpContract {
 }
 
 /**
- * A command that runs a bundled engine returns the engine's exit status, adds
+ * A command that runs a delegated tool returns the engine's exit status, adds
  * 1 when the engine cannot be started, and does not pass --ci on: the only
  * --ci effect is that the share prompt after a run stays quiet.
  */
@@ -376,4 +377,25 @@ export function formatHelpContract(contract: HelpContract, width: number = HELP_
     'Automation:',
     ...formatRows([['--json', contract.json], ['--ci', contract.ci]], width),
   ].join('\n');
+}
+
+/**
+ * The line an adapter command's --help prints to say which tool it runs and
+ * how that tool gets onto the machine. npm tools (hackmyagent, secretless-ai,
+ * ai-trust) are dependencies installed with opena2a-cli; cryptoserve is a
+ * Python package run with python3 or pipx; DVAA is a Docker image.
+ */
+export function adapterSourceLine(method: AdapterMethod, tool: string): string {
+  switch (method) {
+    case 'docker':
+      return `This command runs the ${tool} Docker image, so it needs Docker.`;
+    case 'python':
+      return (
+        `This command runs the ${tool} Python package as \`python3 -m ${tool}\` ` +
+        `(install it with \`pip install ${tool}\`), or as \`pipx run ${tool}\` ` +
+        'when no Python 3 is found.'
+      );
+    default:
+      return `This command runs ${tool}, an npm dependency installed with opena2a-cli.`;
+  }
 }

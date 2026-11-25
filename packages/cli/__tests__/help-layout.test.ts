@@ -11,7 +11,7 @@
  *
  * Walks the command list printed by the built `dist/index.js --help` and runs
  * each `<command> --help` from the build. Adapter commands hand --help to a
- * bundled engine after a short header; only that header is rendered by this
+ * delegated tool after a short header; only that header is rendered by this
  * CLI, so the width check stops at its last line (the engine's own help is
  * maintained in the engine's repository).
  *
