@@ -1279,7 +1279,7 @@ const CONDITIONS_NOT_RUN: Record<string, string> = {
   'skill 1: a critical warning in the scaffold': 'only the interactive prompts choose the capabilities that raise one; --ci and CI use the defaults',
   'self-register 2: declined at the prompt': 'the prompt is shown only on a terminal',
   'self-register 1: processing a tool threw an error': 'no input found that makes a tool fail; a registry that refuses or cannot be reached is a [SKIP]',
-  'benchmark 1: the run failed': 'no input found that makes the scan throw; a target that does not exist or cannot be read is refused with exit 2 before any scan',
+  'benchmark 1: the run failed': 'no input found that makes the scan throw; a target that is missing, is not a directory or cannot be read exits 2 before any scan',
   'harden-soul 1: generation failed': 'no input found that makes generation throw; a directory it cannot write to exits 0',
   'guard 1: a declined resign': 'the confirmation is shown only on a terminal',
   'admin 1: approve or reject declined': 'the confirmation is shown only on a terminal; the refusal without --yes runs',
