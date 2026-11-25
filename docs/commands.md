@@ -116,7 +116,7 @@ This integration newly defends **T-3002** (cross-tenant grant leakage), **T-3003
 | `opena2a status` | What's running, what's protected, what's missing. |
 | `opena2a login` | OAuth 2.0 device flow against AIM Cloud or your self-hosted server. |
 | `opena2a whoami` | Current auth status. |
-| `opena2a skill create <name>` | Scaffold a new secure skill with signing and heartbeat. |
+| `opena2a skill create <name>` | Scaffold a new skill with a heartbeat and an opena2a-guard hash pin (not a signature: `scan` reports it unsigned). |
 | `opena2a train` | Boot DVAA, the deliberately vulnerable AI agent, for security training. |
 
 Full command reference: [opena2a.org/docs](https://opena2a.org/docs).
