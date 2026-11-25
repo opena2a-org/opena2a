@@ -15,6 +15,7 @@
  */
 
 import { wordWrap } from './format.js';
+import { printable } from './printable.js';
 
 /** Every help screen fits a standard 80-column terminal. */
 export const HELP_WIDTH = 80;
@@ -164,10 +165,12 @@ export function isUnknownSubcommand(parent: string, sub: string | undefined): su
 /**
  * The one answer to an unknown subcommand, with or without --help: the
  * word named as unknown and the parent's help on stderr, exit 1. Both
- * `opena2a guard signs` and `opena2a guard signs --help` print it.
+ * `opena2a guard signs` and `opena2a guard signs --help` print it. The
+ * word is echoed with its control characters removed, so no escape
+ * sequence in it reaches the terminal.
  */
 export function printUnknownSubcommand(parent: string, sub: string, parentHelp: () => string): void {
-  process.stderr.write(`Unknown ${parent} subcommand: ${sub}\n\n`);
+  process.stderr.write(`Unknown ${parent} subcommand: ${printable(sub)}\n\n`);
   process.stderr.write(parentHelp());
   process.exitCode = 1;
 }
