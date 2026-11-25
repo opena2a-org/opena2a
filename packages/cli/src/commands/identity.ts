@@ -656,6 +656,10 @@ async function handleTrust(options: IdentityOptions): Promise<number> {
       // Identity module not available or manifest missing
     }
 
+    // With autoSync set at integrate, bring the tools' events into the
+    // audit log before the score is calculated from it.
+    if (hasManifest) await autoSyncToolEvents(aim, targetDir);
+
     const trust = aim.calculateTrust();
 
     if (isJson) {
@@ -780,6 +784,7 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
 
   const isJson = options.format === 'json';
   const limit = options.limit ?? 10;
+  const targetDir = path.resolve(options.dir ?? process.cwd());
 
   // If server is configured, fetch server-side audit logs
   const client = getServerClient(options);
@@ -821,7 +826,7 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
         // Also show local audit events if --verbose
         if (options.verbose) {
           process.stdout.write('\n');
-          return showLocalAudit(mod, limit, isJson);
+          return showLocalAudit(mod, limit, isJson, targetDir);
         }
         return 0;
       }
@@ -833,12 +838,15 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
     }
   }
 
-  return showLocalAudit(mod, limit, isJson);
+  return showLocalAudit(mod, limit, isJson, targetDir);
 }
 
-async function showLocalAudit(mod: typeof import('@opena2a/aim-core'), limit: number, isJson: boolean): Promise<number> {
+async function showLocalAudit(mod: typeof import('@opena2a/aim-core'), limit: number, isJson: boolean, targetDir: string): Promise<number> {
   try {
     const aim = new mod.AIMCore({ agentName: 'default' });
+    // With autoSync set at integrate, bring the tools' events into the
+    // audit log before it is read.
+    await autoSyncToolEvents(aim, targetDir);
     const events = aim.readAuditLog({ limit });
 
     if (isJson) {
@@ -1733,6 +1741,32 @@ function scoreToGrade(score: number): string {
  * event-log chain break, with the commands to inspect the log and start a
  * fresh chain.  Prints nothing when there are none.
  */
+/**
+ * When the project in targetDir was integrated with autoSync set, import the
+ * integrated tools' new events into the AIM audit log, as `identity sync`
+ * does, and record the sync time in the manifest. Returns the import totals,
+ * or null when there is no manifest or autoSync is off. Never throws: a
+ * failed sync leaves the audit log as it was.
+ */
+async function autoSyncToolEvents(
+  aim: Parameters<typeof import('../identity/bridges.js').importAllToolEvents>[0],
+  targetDir: string,
+): Promise<{ imported: number; skipped: number; errors: number; unverified: number } | null> {
+  try {
+    const { readManifest, writeManifest } = await import('../identity/manifest.js');
+    const { importAllToolEvents } = await import('../identity/bridges.js');
+    const manifest = readManifest(targetDir);
+    if (!manifest || !manifest.bridging.autoSync) return null;
+
+    const results = importAllToolEvents(aim, targetDir, manifest.tools);
+    manifest.bridging.lastSyncAt = new Date().toISOString();
+    writeManifest(targetDir, manifest);
+    return results.total;
+  } catch {
+    return null;
+  }
+}
+
 function writeUnverifiedShieldNotice(count: number, indent: string): void {
   if (count === 0) return;
   const subject = count === 1 ? '1 Shield event' : `${count} Shield events`;

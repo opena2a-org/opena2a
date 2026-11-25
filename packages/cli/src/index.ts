@@ -676,7 +676,7 @@ analysis runs and results can be shared with the community.
     .option('--public-key <key>', 'Base64 public key (for verify)')
     .option('--tools <list>', 'Comma-separated tools to enable (attach)')
     .option('--all', 'Enable all detected tools (attach)')
-    .option('--auto-sync', 'Auto-sync events on trust calculation (attach)')
+    .option('--auto-sync', 'Auto-sync tool events on trust calculation and audit read (attach)')
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
       // --help prints help and never runs the subcommand (#132)
       if (answerHelpRequest('identity', subcommand, IDENTITY_HELP, () => cmd.helpInformation(), undefined, valueFlags(cmd))) return;

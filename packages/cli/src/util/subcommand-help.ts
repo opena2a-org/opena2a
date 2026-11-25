@@ -529,7 +529,7 @@ export const IDENTITY_HELP: SubcommandHelpRegistry = {
     options: [
       { flag: '--tools <list>', description: 'Comma-separated: secretless, configguard, arp, hma, shield' },
       { flag: '--all', description: 'Enable every tool' },
-      { flag: '--auto-sync', description: 'Sync tool events whenever the trust score is calculated' },
+      { flag: '--auto-sync', description: 'Sync tool events into the audit log whenever the trust score is calculated or the audit log is read' },
       { flag: '--dir <path>', description: 'Project directory (default: current directory)' },
     ],
     examples: ['opena2a identity integrate', 'opena2a identity integrate --tools shield,hma'],
