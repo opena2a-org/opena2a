@@ -23,15 +23,15 @@ What `npx opena2a-cli init my-agent` prints, trimmed ([full output](docs/capture
 ```
   Findings
   -----------------------------------------------
-  CRITICAL  OpenAI Project Key
-            OpenAI Project Key hardcoded in source. Anyone who can
-            read this file can use it to access the associated
-            account.
-            src/agent.js:1
-            Verify: sed -n '1p' src/agent.js
+  CRITICAL  Anthropic API Key
+            Anthropic API key hardcoded in source. Anyone who reads
+            this file can use your Anthropic account and access Claude
+            models.
+            src/agent.js:4
+            Verify: sed -n '4p' 'my-agent/src/agent.js'
             Fix:    opena2a protect
   ...
-  Security Score: 65 / 100  (project posture: credentials, config, environment)
+  Security Score: 43 / 100  (project posture: credentials, config, environment)
 ```
 
 `init` reads the project and changes nothing. It needs Node.js 20.19 or later, and it exits 1 while a critical finding is open, 0 otherwise.
