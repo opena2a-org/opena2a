@@ -10,6 +10,7 @@
  * file with a stderr warning.
  */
 
+import { exec } from 'node:child_process';
 import { resolveServerUrl } from '../util/server-url.js';
 import { AimClient, AimServerError } from '../util/aim-client.js';
 import { describeProxyRoute } from '../util/env-proxy.js';
@@ -110,9 +111,11 @@ export async function login(options: LoginOptions): Promise<number> {
     return 1;
   }
 
-  // Step 3: Display instructions and open browser
+  // Step 3: Display instructions and open browser. In --json mode stdout
+  // carries exactly one document (the final result), so the progress
+  // document with the code to enter goes to stderr.
   if (isJson) {
-    console.log(JSON.stringify({
+    console.error(JSON.stringify({
       status: 'awaiting_approval',
       userCode: deviceCode.userCode,
       verificationUri: deviceCode.verificationUri,
@@ -273,7 +276,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 function openBrowser(url: string): void {
-  const { exec } = require('node:child_process');
   const cmd = process.platform === 'darwin' ? 'open'
     : process.platform === 'win32' ? 'start'
     : 'xdg-open';
