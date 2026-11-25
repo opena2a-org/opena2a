@@ -619,9 +619,22 @@ describe('review', () => {
 
     const { report, terminal } = await reviewBothFormats(tempDir);
 
-    expect(report.projectType).toBe('Unknown');
-    expect(terminal).not.toContain('This Unknown');
-    expect(terminal).not.toMatch(/Unknown looks safe/);
+    expect(report.projectType).toBe('Project');
+    expect(terminal).not.toContain('Unknown');
+    expect(terminal).not.toContain('This Project');
+  });
+
+  it('names the project type the way init does', async () => {
+    fs.writeFileSync(path.join(tempDir, 'Cargo.toml'), '[package]\nname = "x"\n');
+    fs.writeFileSync(path.join(tempDir, 'Dockerfile'), 'FROM scratch\n');
+    fs.writeFileSync(path.join(tempDir, '.mcp.json'), '{}\n');
+
+    const { report, terminal } = await reviewBothFormats(tempDir);
+
+    expect(report.projectType).toBe('Rust + Docker + MCP server');
+    expect(terminal).toContain('Rust + Docker + MCP server');
+    // The lock file check does not know Cargo.lock, so it raises no finding.
+    expect(report.findings.some((f: { title: string }) => f.title === 'No dependency lock file')).toBe(false);
   });
 
   it('the no-files Credentials tab names every scanned .env file, the other skips, and a command that pastes as-is', async () => {

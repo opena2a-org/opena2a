@@ -35,7 +35,7 @@ interface LocalVerdictFinding {
   file?: string;
   line?: number;
 }
-import { detectProject, type ProjectType } from '../util/detect.js';
+import { detectProject, formatProjectType, GENERIC_PROJECT_LABEL, type ProjectType } from '../util/detect.js';
 import { CREDENTIAL_PATTERNS, scanCredentialsWithCoverage, type CredentialMatch, type CredentialScanResult } from '../util/credential-patterns.js';
 import { maskValue } from '../util/mask-value.js';
 import { redactUrlPasswords } from '../util/redact-url-password.js';
@@ -789,7 +789,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   if (!quiet) {
     try {
       const cliUi = await import('@opena2a/cli-ui');
-      const projectLabel = report.projectType && report.projectType.toLowerCase() !== 'unknown'
+      const projectLabel = report.projectType && report.projectType !== GENERIC_PROJECT_LABEL
         ? report.projectType
         : 'project';
       const categorizable: LocalCategorizableFinding[] = findings.map(f => ({
@@ -2301,18 +2301,6 @@ export function contributionPackage(
     return null;
   }
   return { name, type: 'npm' };
-}
-
-function formatProjectType(project: ReturnType<typeof detectProject>): string {
-  const parts: string[] = [];
-  switch (project.type) {
-    case 'node': parts.push('Node.js'); break;
-    case 'go': parts.push('Go'); break;
-    case 'python': parts.push('Python'); break;
-    default: parts.push('Unknown');
-  }
-  if (project.hasMcp) parts.push('+ MCP server');
-  return parts.join(' ');
 }
 
 // --- Hygiene (reused from init logic) ---

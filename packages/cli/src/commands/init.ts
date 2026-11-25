@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
-import { detectProject, type ProjectInfo, type ProjectType } from '../util/detect.js';
+import { detectProject, formatProjectType, type ProjectType } from '../util/detect.js';
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
 import { ignoreCommand, scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
 import { pathFrom, shellPath, shellWord } from '../util/shell-word.js';
@@ -1229,24 +1229,6 @@ function getContextualTip(
 }
 
 // --- Output ---
-
-function formatProjectType(project: ProjectInfo): string {
-  const primary: Record<ProjectType, string> = {
-    node: 'Node.js',
-    go: 'Go',
-    python: 'Python',
-    rust: 'Rust',
-    java: 'Java',
-    ruby: 'Ruby',
-    docker: 'Docker',
-    generic: 'Project',
-  };
-  const parts = [primary[project.type]];
-  for (const hint of project.frameworkHints) {
-    parts.push(`+ ${hint}`);
-  }
-  return parts.join(' ');
-}
 
 function printReport(report: InitReport, elapsed: string, verbose?: boolean): void {
   const VERSION = getVersion();
