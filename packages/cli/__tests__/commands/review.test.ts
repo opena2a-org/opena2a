@@ -677,6 +677,7 @@ describe('review', () => {
       }],
     };
 
+    const reportPath = path.join(tempHome, 'report.html');
     const origStderr = process.stderr.write;
     process.stderr.write = (() => true) as any;
     let report: any;
@@ -687,16 +688,28 @@ describe('review', () => {
       }));
       report = JSON.parse(output);
       ({ output: terminal } = await captureStdout(() => review({
-        targetDir: tempDir, autoOpen: false, ci: true,
+        targetDir: tempDir, reportPath, autoOpen: false, ci: true,
       })));
     } finally {
       process.stderr.write = origStderr;
     }
     const terminalLine = (label: string) => terminal.split('\n').find(l => l.includes(label)) ?? '';
+    const credentialsTab = renderReportPage(fs.readFileSync(reportPath, 'utf-8'), 'credentials');
 
     expect(report.credentialData.filesScanned).toBe(0);
     expect(report.hmaData.available).toBe(true);
     expect(report.findings.some((f: any) => f.id === 'CRED-001')).toBe(true);
+
+    // The Credentials tab lists the scanner's finding instead of saying no
+    // file was scanned, and keeps the one remediation command.
+    expect(credentialsTab).not.toContain('No files were scanned for credentials');
+    expect(credentialsTab).not.toContain('Your project is clean');
+    expect(credentialsTab).toContain('HackMyAgent, read the project and reported 1 credential finding.');
+    expect(credentialsTab).toContain('Plaintext API Keys');
+    expect(credentialsTab).toContain('CRED-001');
+    expect(credentialsTab).toContain('.env.example:1');
+    expect(credentialsTab).toContain('data-cmd="opena2a protect"');
+    expect(credentialsTab).not.toContain('data-cmd="opena2a review ."');
     // The unread local check carries no weight; HMA's own dimension keeps
     // the finding.
     expect(report.compositeScore).toBe(84);

@@ -1,5 +1,9 @@
 function renderCredentials() {
   var data = report.credentialData;
+  if (data && data.totalFindings === 0 && data.filesScanned === 0) {
+    var scannerFound = scannerCredentialFindings();
+    if (scannerFound.length > 0) return renderScannerCredentials(scannerFound);
+  }
   if (data && data.totalFindings === 0 && data.filesScanned === 0) return '<div class="card"><div class="empty-state">No files were scanned for credentials, so this is not a clean result. The credential check reads source and config files and skips the rest, for example images, archives, documents, lockfiles, dependency and test folders, files over 1 MiB, files it cannot read, and dotfiles other than .env, .env.local, .env.development, .env.production, .env.staging and .env.test. This directory is empty or holds only files the check skips. Run the review from the folder that holds your code:</div>' + cmdBlock('opena2a review .') + '</div>';
   if (!data || data.totalFindings === 0) return '<div class="card"><div class="empty-state">No hardcoded credentials found. Your project is clean.</div></div>';
   var h = '<div class="section-intro">Hardcoded credentials in source code are the #1 cause of security breaches in AI projects. Keys pushed to git are scraped by bots within minutes. Findings below are grouped by credential type.</div>';
@@ -82,6 +86,51 @@ function renderCredentials() {
     }
     h += '</tbody></table></div>';
   }
-  h += '<h2 class="section-title">Remediation</h2><div class="card">' + cmdBlock('opena2a protect') + '<p style="color:var(--muted);font-size:12px;margin-top:8px">Migrate hardcoded credentials to environment variables or encrypted vault.</p></div>';
+  h += credentialRemediation();
+  return h;
+}
+function credentialRemediation() {
+  return '<h2 class="section-title">Remediation</h2><div class="card">' + cmdBlock('opena2a protect') + '<p style="color:var(--muted);font-size:12px;margin-top:8px">Migrate hardcoded credentials to environment variables or encrypted vault.</p></div>';
+}
+// Check-ID prefixes of the bundled scanner's credential findings; the same
+// list as HMA_CREDENTIAL_PREFIXES in commands/review.ts.
+var scannerCredentialPrefixes = ['CRED', 'AST-CRED', 'WEBCRED', 'SEM-CRED', 'AGENT-CRED', 'ENVLEAK', 'CLIPASS', 'DRIFT'];
+function scannerCredentialFindings() {
+  var hma = report.hmaData;
+  if (!hma || !hma.available) return [];
+  var all = hma.allFailedFindings || [];
+  var out = [];
+  for (var i = 0; i < all.length; i++) {
+    var id = String(all[i].checkId || '').toUpperCase();
+    for (var j = 0; j < scannerCredentialPrefixes.length; j++) {
+      var p = scannerCredentialPrefixes[j];
+      if (id === p || id.indexOf(p + '-') === 0) {
+        out.push(all[i]);
+        break;
+      }
+    }
+  }
+  return out;
+}
+// The local check opened no file, but the bundled scanner read the project
+// and flagged credentials: list those instead of calling the directory
+// unscanned.
+function renderScannerCredentials(found) {
+  var n = found.length;
+  var h = '<div class="section-intro">The local credential check opened no file in this directory: it reads source and config files and skips the rest, for example .env.example. The bundled scanner, HackMyAgent, read the project and reported ' + n + ' credential finding' + (n === 1 ? '' : 's') + '. ' + (n === 1 ? 'It is' : 'They are') + ' listed below and on the HMA tab.</div>';
+  h += '<h2 class="section-title">Credential Findings from HackMyAgent (' + n + ')</h2>';
+  for (var i = 0; i < found.length; i++) {
+    var f = found[i];
+    var loc = f.file ? f.file + (f.line != null ? ':' + f.line : '') : '';
+    h += '<div class="cred-card"><div class="cred-card-header"><span class="sev-badge sev-' + esc(f.severity) + '">' + esc(f.severity) + '</span><span class="cred-card-title">' + esc(f.name) + '</span><span style="color:var(--dim);font-size:12px">' + esc(f.checkId) + '</span></div>';
+    if (loc || f.message) {
+      h += '<div style="padding:8px 12px;font-size:11px;color:var(--dim);border-top:1px solid rgba(51,65,85,0.3)">';
+      if (loc) h += esc(loc) + '<br>';
+      if (f.message) h += esc(f.message);
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  h += credentialRemediation();
   return h;
 }
