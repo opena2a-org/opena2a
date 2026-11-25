@@ -3,7 +3,7 @@
 
   Project      acme-agent v2.1.0
   Stack        Node.js + MCP server
-  Directory    /private/tmp/opena2a-quick-start.1uJ6ll/my-agent
+  Directory    /path/to/my-agent
 
   Findings
   -----------------------------------------------

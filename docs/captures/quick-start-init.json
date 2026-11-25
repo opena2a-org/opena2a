@@ -18,7 +18,9 @@
   "exitCode": 1,
   "stream": "stdout; stderr was empty on this run",
   "outputLines": 116,
-  "outputSha256": "2341e1d30150107b501f248ad6f8e2b799b77d9b9c71f0c6e331d99190c88a99",
+  "outputSha256": "0a3b6f6329ea0bdb43884bc0395b135499f5ebf5aa52f95ec4c6fab83c903d3b",
+  "directoryLine": "line 6, the Directory line, is environment-specific: init prints the absolute path of the project it scans, which on the recording machine was a mktemp directory under the system temporary directory. The capture shows it as /path/to/my-agent; that is the only line changed from the run, and outputSha256 is the digest of the capture as kept",
+  "recordedOutputSha256": "2341e1d30150107b501f248ad6f8e2b799b77d9b9c71f0c6e331d99190c88a99",
   "excerptLines": "8-16, then one elision line, then 54",
   "projectFilesAfter": [
     ".claude/settings.json",
