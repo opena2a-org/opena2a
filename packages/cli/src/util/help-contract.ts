@@ -262,7 +262,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   verify: {
     exit: [
       ['0', 'the registry reported no hash mismatch: each hash matched, had no record or could not be looked up, or the package is not installed'],
-      ['1', 'the registry reported that a package entry file hash does not match its record (tamper detected)'],
+      ['1', 'the registry reported that a package entry file hash does not match its record (tamper detected), or an invalid registry URL in --registry-url (one that does not parse, or plain http to a host other than localhost)'],
     ],
     json: 'prints the results as JSON',
     ci: 'prints no heading or progress lines',
