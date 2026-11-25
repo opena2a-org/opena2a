@@ -14,6 +14,10 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const PACKAGES_DIR = path.join(REPO_ROOT, 'packages');
 
+// The id prefixes of the internal roles, used both for their charter rules
+// and for their decision ids.
+const INTERNAL_ROLE_PREFIX = '(?:CA|CCO|CDE|CDO|CDS|CISO|CPO|CRO|CSR|DPO)';
+
 const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   { name: 'internal decision log', pattern: /COUNCIL_LEDGER/ },
   { name: 'internal role tag', pattern: /\bCHIEF-[A-Z]{2,4}\b/ },
@@ -23,7 +27,7 @@ const INTERNAL_REFERENCES: { name: string; pattern: RegExp }[] = [
   // stays allowed; only the rule citation is matched.
   {
     name: 'internal charter rule',
-    pattern: /\b(?:CA|CCO|CDE|CDO|CDS|CISO|CPO|CRO|CSR|DPO)[- ][Rr]ule[- ]?\d+\b/,
+    pattern: new RegExp(`\\b${INTERNAL_ROLE_PREFIX}[- ][Rr]ule[- ]?\\d+\\b`),
   },
   { name: 'private notes file', pattern: /\b(?:feedback|project|reference|user)_[a-z0-9_]+\.md\b/ },
   // A section, mockup, baseline or session of a private planning brief. A
@@ -59,10 +63,14 @@ const PLANNING_FINDING_ID = /(?<![A-Za-z0-9_#\\-])§?F\d{1,2}\b(?![-.]\w)/;
 const PRIVATE_PATH =
   /(?<![A-Za-z0-9_.-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.(?:md|mjs|js|ts|py|sh)\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
 
-// A decision id cited as `[AB-123]` or "per / after AB-123". Matched by that
-// citation shape, not by any `AB-123` token, so public check ids such as
-// `NEMO-009` stay allowed.
-const DECISION_ID_CITATION = /\[[A-Z]{2,4}-\d{3}\]|(?<![A-Za-z0-9_])(?:per|after) [A-Z]{2,4}-\d{3}(?![A-Za-z0-9])/i;
+// A decision id cited as `[AB-123]`, or as "per / after CA-123" with an
+// internal role prefix. Matched by that citation shape, not by any `AB-123`
+// token. Only "per" and "after" ignore case; the id itself must be uppercase,
+// so prose ("hashed per sha-256", "retried after rfc-822") and public check
+// ids ("run after NEMO-009 fires") stay allowed.
+const DECISION_ID_CITATION = new RegExp(
+  `\\[[A-Z]{2,4}-\\d{3}\\]|(?<![A-Za-z0-9_])(?:[Pp][Ee][Rr]|[Aa][Ff][Tt][Ee][Rr]) ${INTERNAL_ROLE_PREFIX}-\\d{3}(?![A-Za-z0-9])`,
+);
 
 // An acceptance criterion of a private plan cited by id: a ticket id followed
 // by `.AC` and a number. A reader cannot resolve it: name the behaviour it
@@ -185,11 +193,22 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(PLANNING_FINDING_ID.test('meter gating (F6)')).toBe(true);
     expect(PLANNING_FINDING_ID.test('git-style misses, §F3')).toBe(true);
     expect(PRIVATE_PATH.test('todo/scripts/own-package-census.mjs')).toBe(true);
+    // Assembled from parts, so that a search of the tree for the id shapes
+    // lists only real citations.
+    const decision = ['CA', '034'].join('-');
+    expect(DECISION_ID_CITATION.test(`after ${decision}`)).toBe(true);
+    expect(DECISION_ID_CITATION.test(`Per ${decision}, each consumer`)).toBe(true);
+    expect(DECISION_ID_CITATION.test(`a rule [${decision}]`)).toBe(true);
+    expect(named('internal charter rule').test(`${['CISO', 'Rule'].join('-')}-11`)).toBe(true);
     // Ordinary prose and public references stay allowed.
     expect(named('planning brief citation').test('a brief pause before retrying')).toBe(false);
     expect(named('review phase label').test('// Phase 3.5: Update AI tool config files')).toBe(false);
     expect(named('private registry file').test("repositoryUrl: 'https://github.com/opena2a-org/opena2a-registry'")).toBe(false);
     expect(PLANNING_FINDING_ID.test('color #F59E0B, key 0xF1, F1-score')).toBe(false);
+    expect(DECISION_ID_CITATION.test('hashed per sha-256')).toBe(false);
+    expect(DECISION_ID_CITATION.test('retried after rfc-822')).toBe(false);
+    expect(DECISION_ID_CITATION.test('run after NEMO-009 fires')).toBe(false);
+    expect(DECISION_ID_CITATION.test(`after ${decision.toLowerCase()}`)).toBe(false);
   });
 });
 
