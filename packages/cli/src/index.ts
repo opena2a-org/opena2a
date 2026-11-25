@@ -18,7 +18,7 @@ import { shouldTryNaturalLanguageFallback } from './natural/known-commands.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
-import { HMA_CHECK_COUNT } from './util/canonical.js';
+import { hmaChecksPhrase } from './util/hma-checks.js';
 import { telemetryHelpLine } from './util/telemetry-help.js';
 import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
@@ -179,7 +179,7 @@ ${rows([
   ['$ opena2a comply', 'Classify content for PII/credentials before it reaches an LLM'],
   ['$ opena2a guard sign', 'Sign config files for tamper detection'],
   ['$ opena2a check express', 'Check npm package against Registry + HMA'],
-  ['$ opena2a scan secure', `Run ${HMA_CHECK_COUNT} security checks on your AI agent`],
+  ['$ opena2a scan secure', `Run ${hmaChecksPhrase('security checks')} on your AI agent`],
   ['$ opena2a skill create', 'Scaffold a secure skill (SKILL.md, heartbeat, tests)'],
   ['$ opena2a guard harden', 'Scan skills for security issues (--fix to auto-fix)'],
   ['$ opena2a harden-skill', 'Harden a skill file (frontmatter, permissions, integrity pin)'],

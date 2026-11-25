@@ -1,5 +1,5 @@
 import { bold, cyan, yellow, gray, dim, green } from '../util/colors.js';
-import { HMA_CHECK_COUNT } from '../util/canonical.js';
+import { hmaCheckCount } from '../util/hma-checks.js';
 import { classifyWithNanoMindDaemon } from './nanomind-classifier.js';
 import { isMutatingCommand } from './intent-map.js';
 import type { NanoMindAttackClass } from './nanomind-types.js';
@@ -120,7 +120,7 @@ export function formatClassifierBlock(
 const SYSTEM_PROMPT = `You are OpenA2A CLI, an AI agent security platform. Given a user's natural language query, suggest the most appropriate CLI command.
 
 Available commands:
-- opena2a scan secure -- Full security scan (${HMA_CHECK_COUNT} checks)
+- opena2a scan secure -- Full security scan${hmaCheckCount() === null ? '' : ` (${hmaCheckCount()} checks)`}
 - opena2a scan attack -- Attack mode (adversarial testing)
 - opena2a protect -- Detect and migrate credentials to vault
 - opena2a secrets init -- Set up credential protection
