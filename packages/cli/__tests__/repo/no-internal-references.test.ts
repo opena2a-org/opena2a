@@ -60,12 +60,13 @@ const PLANNING_FINDING_ID = /(?<![A-Za-z0-9_#\\-])§?F\d{1,2}\b(?![-.]\w)/;
 
 // A planning file or local checkout path that lives outside this repository,
 // e.g. `briefs/<name>.md`, `todo/<date>-<name>.md`, `todo/scripts/<name>.mjs`
+// (any extension: `.cjs`, `.json` and `.yaml` are as private as `.md`)
 // or `~/workspace/...`, or a checkout's local instruction file cited by path
 // (`<repo>/CLAUDE.md`), which is never tracked. A reader cannot open any of
 // them: state the rule instead. A `todo/` or `briefs/` segment inside a URL
 // or a longer path (`.../blob/main/todo/x.md`) is a public file, not a citation.
 const PRIVATE_PATH =
-  /(?<![A-Za-z0-9_./-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.(?:md|mjs|js|ts|py|sh)\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
+  /(?<![A-Za-z0-9_./-])(?:briefs|todo)\/[A-Za-z0-9._/-]+\.[A-Za-z0-9]+\b|~\/workspace\/|(?<![A-Za-z0-9_.-])[A-Za-z0-9_-]+\/CLAUDE\.md\b/;
 
 // A decision id cited as `[AB-123]`, or as "per / after CA-123" with an
 // internal role prefix. Matched by that citation shape, not by any `AB-123`
@@ -200,6 +201,8 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(PLANNING_FINDING_ID.test('git-style misses, §F3')).toBe(true);
     expect(PRIVATE_PATH.test('todo/scripts/own-package-census.mjs')).toBe(true);
     expect(PRIVATE_PATH.test('see todo/2026-01-05-rollout.md')).toBe(true);
+    expect(PRIVATE_PATH.test('todo/scripts/census.cjs')).toBe(true);
+    expect(PRIVATE_PATH.test('briefs/plan.json')).toBe(true);
     // Assembled from parts, so that a search of the tree for the id shapes
     // lists only real citations.
     const decision = ['CA', '034'].join('-');
