@@ -73,7 +73,7 @@ npm install -g opena2a-cli             # installs the opena2a command
 brew install opena2a-org/tap/opena2a   # or with Homebrew
 ```
 
-Requires Node.js 20.19 or later. To check where a release came from, see [Verifying OpenA2A npm packages](docs/verifying-npm-packages.md). To build from a clone, see [From source](CONTRIBUTING.md#from-source).
+Requires Node.js 20.19 or later. To check where a release came from, see [Verifying OpenA2A npm packages](docs/verifying-npm-packages.md). To build from a clone, see [Development Setup](CONTRIBUTING.md#development-setup).
 
 ## Telemetry
 
