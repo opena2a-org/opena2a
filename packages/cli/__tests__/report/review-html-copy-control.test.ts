@@ -234,6 +234,85 @@ function renderAll(): Record<string, string>[] {
   return [renderPages(tampered), renderPages(unsignedNoHma)];
 }
 
+/** `destructive` and `cmdBlock` from the report's own client script. */
+function clientHelpers(): { destructive: (cmd: string) => boolean; cmdBlock: (cmd: string) => string } {
+  const context: Record<string, unknown> = {
+    document: {
+      getElementById: (id: string) => (id === 'report-data' ? { textContent: '{}' } : { addEventListener: () => {} }),
+      querySelectorAll: () => [],
+      querySelector: () => null,
+    },
+    window: { addEventListener: () => {} },
+    navigator: {},
+    setTimeout,
+  };
+  // The evaluated string is the report's own client script from this tree.
+  runInNewContext(readFileSync(join(SRC, 'report', 'review', 'assets', 'client', '00-core.js'), 'utf-8'), context);
+  return context as never;
+}
+
+describe('destructive steps are found in every shell form', () => {
+  const { destructive, cmdBlock } = clientHelpers();
+  const DESTRUCTIVE = [
+    'rm -rf build',
+    'opena2a review .\nrm -rf build',
+    'opena2a review . & rm -rf build',
+    'opena2a review . || rm -rf build',
+    'rm\t-rf\tbuild',
+    '\trm -rf build',
+    'git -C . reset --hard',
+    'git -C /tmp/repo -c core.pager=cat reset --hard HEAD~1',
+    'git --git-dir .git --no-pager reset --hard',
+    'echo $(rm -rf build)',
+    'echo "$(git -C . reset --hard)"',
+    'echo `rm -rf build`',
+    '(rm -rf build)',
+    '{ rm -rf build; }',
+    'env rm -rf build',
+    'env -i PATH=/bin rm -rf build',
+    'FOO=1 rm -rf build',
+    'FOO="a b" rm -rf build',
+    'sudo -u root rm -rf build',
+    '/bin/rm -rf build',
+    './node_modules/.bin/../../bin/rm build',
+    '/usr/bin/git reset --hard',
+    'command rm -rf build',
+    "'command' rm -rf build",
+    '\\rm -rf build',
+    "'rm' -rf build",
+    'builtin command -p rm build',
+    'nohup rm -rf build',
+    'find . -name x | xargs -n 1 rm',
+    'timeout 5 rm -rf build',
+    'if true; then rm -rf build; fi',
+    'git clean -fdx',
+    'git -C . branch -D main',
+    'git -C . stash clear',
+    'git -C . filter-repo --path x --invert-paths',
+    'npm unpublish pkg',
+  ];
+  const SAFE = [
+    'opena2a review .',
+    'git reset --soft HEAD~1',
+    'git -C . status',
+    'echo rm -rf build',
+    'npm install -g hackmyagent',
+    'hackmyagent check "${SKILL_PATH:?set SKILL_PATH to the skill file to inspect}"',
+    'opena2a review . 2>&1',
+  ];
+
+  it.each(DESTRUCTIVE)('%j is destructive and shown without a Copy control', cmd => {
+    expect(destructive(cmd)).toBe(true);
+    const html = cmdBlock(cmd);
+    expect(html).not.toContain('copy-btn');
+    expect(html).toContain('cannot be undone');
+  });
+
+  it.each(SAFE)('%j is not destructive', cmd => {
+    expect(destructive(cmd)).toBe(false);
+  });
+});
+
 describe('review HTML Copy controls', () => {
   const renders = renderAll();
   const allCopies = renders.flatMap(r => PAGES.flatMap(p => copyTexts(r[p])));

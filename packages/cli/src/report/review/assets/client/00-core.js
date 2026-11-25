@@ -201,21 +201,64 @@ function gaugeCircle(score, label) {
 function placeholders(cmd) {
   return String(cmd).match(/<[A-Za-z][A-Za-z0-9_.:-]*>/g) || [];
 }
+/**
+ * Words that run the command after them, each with the single-letter options
+ * of its own that take a separate argument.
+ */
+var COMMAND_PREFIXES = {
+  sudo: 'ugCDhprTU', doas: 'uC', env: 'uCS', command: '', builtin: '', exec: 'a',
+  nohup: '', time: 'fo', nice: 'n', ionice: 'cnp', xargs: 'nIPLsdEa', timeout: 'sk',
+  '!': '', '{': '', if: '', then: '', elif: '', else: '', do: '', while: '', until: ''
+};
+/** git options before the subcommand that take the next word as their value. */
+var GIT_ARG_OPTIONS = ['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env'];
+/**
+ * The words of every simple command in `cmd`, quotes removed. A newline, `;`,
+ * `&`, `|`, a subshell and a `$(...)` or backtick substitution each start a
+ * new command, so a step inside one is read like any other.
+ */
+function simpleCommands(cmd) {
+  return String(cmd).split(/[\r\n;&|()`]+/).map(function(seg) {
+    return (seg.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || []).map(function(w) {
+      return w.replace(/["'\\]/g, '');
+    });
+  });
+}
+/** The command name and its arguments once prefixes such as `env X=1`, `sudo -u u` and `command` are skipped. */
+function commandAndArgs(t) {
+  var i = 0;
+  while (i < t.length) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i])) { i++; continue; }
+    var name = t[i].replace(/^.*\//, '');
+    if (!Object.prototype.hasOwnProperty.call(COMMAND_PREFIXES, name)) break;
+    var takesArg = COMMAND_PREFIXES[name];
+    i++;
+    while (i < t.length && t[i].charAt(0) === '-' && t[i] !== '-') {
+      var opt = t[i++];
+      if (opt === '--') break;
+      if (opt.length === 2 && takesArg.indexOf(opt.charAt(1)) >= 0) i++;
+    }
+    if (name === 'timeout' && /^[0-9.]+[smhd]?$/.test(t[i] || '')) i++;
+    if (name === 'nice' && /^-?[0-9]+$/.test(t[i] || '')) i++;
+  }
+  return { name: (t[i] || '').replace(/^.*\//, ''), args: t.slice(i + 1) };
+}
 function destructive(cmd) {
-  var segs = String(cmd).split(/&&|[|;]+/);
-  for (var i = 0; i < segs.length; i++) {
-    var t = segs[i].trim().split(/ +/);
-    if (t[0] === 'sudo') t.shift();
-    var x = t[0], sub = t[1] || '';
+  var cmds = simpleCommands(cmd);
+  for (var i = 0; i < cmds.length; i++) {
+    var c = commandAndArgs(cmds[i]), x = c.name, a = c.args;
     if (x === 'rm' || x === 'shred' || x === 'dd' || x === 'bfg' || x === 'git-filter-repo' || /^mkfs/.test(x)) return true;
     if (x === 'git') {
+      var j = 0;
+      while (j < a.length && a[j].charAt(0) === '-') j += GIT_ARG_OPTIONS.indexOf(a[j]) >= 0 ? 2 : 1;
+      var sub = a[j] || '', rest = a.slice(j + 1);
       if (sub === 'filter-repo' || sub === 'filter-branch') return true;
-      if (sub === 'reset' && t.indexOf('--hard') > 1) return true;
-      if (sub === 'clean' && t.some(function(a) { return a === '--force' || /^-[a-zA-Z]*f/.test(a); })) return true;
-      if (sub === 'branch' && t.indexOf('-D') > 1) return true;
-      if (sub === 'stash' && (t[2] === 'drop' || t[2] === 'clear')) return true;
+      if (sub === 'reset' && rest.indexOf('--hard') >= 0) return true;
+      if (sub === 'clean' && rest.some(function(w) { return w === '--force' || /^-[a-zA-Z]*f/.test(w); })) return true;
+      if (sub === 'branch' && rest.some(function(w) { return /^-[a-zA-Z]*D/.test(w); })) return true;
+      if (sub === 'stash' && (rest[0] === 'drop' || rest[0] === 'clear')) return true;
     }
-    if (x === 'npm' && sub === 'unpublish') return true;
+    if (x === 'npm' && a[0] === 'unpublish') return true;
   }
   return false;
 }
