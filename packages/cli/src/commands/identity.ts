@@ -1458,7 +1458,8 @@ async function handleAttach(options: IdentityOptions): Promise<number> {
       version: '1',
       agent: { name: id.agentName, agentId: id.agentId, publicKey: id.publicKey, created: id.createdAt },
       tools: enabledTools,
-      bridging: { autoSync: options.autoSync ?? true, lastSyncAt: null as string | null },
+      // --auto-sync / --no-auto-sync set it; without either, keep the saved setting.
+      bridging: { autoSync: options.autoSync ?? existing?.bridging.autoSync ?? true, lastSyncAt: null as string | null },
       registry: { contribute: false, gtin: false, sensorToken: null },
     };
 
