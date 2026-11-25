@@ -30,11 +30,16 @@ const PROVIDER_SHAPES: RegExp[] = [
 ];
 
 // Repo-relative scan population: exactly the detector test files this rule
-// covers. protect.test.ts carries no shapes today but stays in scope so a
-// regression there fails here, not in GitHub's alert queue.
+// covers, plus the test files that carry provider-shaped fixtures for the
+// matcher and the CLI's catalog detection and label classification.
+// protect.test.ts carries no shapes today but stays in scope so a regression
+// there fails here, not in GitHub's alert queue.
 const SCANNED_FILES = [
   'packages/cli/__tests__/util/ai-config.test.ts',
   'packages/cli/__tests__/commands/protect.test.ts',
+  'packages/cli/__tests__/util/credential-catalog-detection.test.ts',
+  'packages/cli/__tests__/util/credential-label-classification.test.ts',
+  'packages/credential-patterns/src/match.test.ts',
   'packages/credential-patterns/src/patterns.test.ts',
 ];
 
@@ -97,6 +102,32 @@ describe('source-literal guard', () => {
       const verdict = guardVerdict([plantedFile]);
       expect(verdict.hits.some(h => h.file === plantedFile)).toBe(true);
       expect(verdict.pass).toBe(false);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a scratch copy of each scanned file with a planted xoxb- or ghp_ literal', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'source-literal-guard-'));
+    try {
+      // Planted values are assembled at plant time so this source stays shape-free.
+      const planted = [
+        ['xox', 'b-1234567890-1234567890-', 'abcdefghijklmnopqrstuvwx'].join(''),
+        ['ghp', '_', 'abcdefghijklmnopqrstuvwxyz0123456789'].join(''),
+      ];
+      for (const rel of SCANNED_FILES) {
+        const original = path.join(repoRoot, rel);
+        for (const [i, value] of planted.entries()) {
+          const plantedFile = path.join(tempDir, `${i}-${path.basename(rel)}`);
+          fs.writeFileSync(
+            plantedFile,
+            fs.readFileSync(original, 'utf8') + `\nconst plantedFixture = '${value}';\n`,
+          );
+          const verdict = guardVerdict([plantedFile]);
+          expect(verdict.pass, `${rel} with planted ${value.slice(0, 4)}`).toBe(false);
+          expect(verdict.hits.every(h => h.file === plantedFile)).toBe(true);
+        }
+      }
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
