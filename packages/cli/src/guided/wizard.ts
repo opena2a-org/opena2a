@@ -1,5 +1,5 @@
 import { bold, cyan, gray, dim } from '../util/colors.js';
-import { HMA_CHECK_COUNT } from '../util/canonical.js';
+import { hmaChecksPhrase } from '../util/hma-checks.js';
 
 interface WizardCategory {
   label: string;
@@ -18,7 +18,7 @@ const CATEGORIES: WizardCategory[] = [
     label: 'Scan & Harden',
     description: 'Find and fix security issues in AI agents',
     commands: [
-      { label: 'Full security scan', command: 'opena2a scan secure', description: `${HMA_CHECK_COUNT} security checks with auto-fix` },
+      { label: 'Full security scan', command: 'opena2a scan secure', description: `${hmaChecksPhrase('security checks')} with auto-fix` },
       { label: 'Attack mode', command: 'opena2a scan attack', description: 'Adversarial testing against your agent' },
       { label: 'OASB-1 control mapping', command: 'opena2a benchmark', description: 'Map the project to OASB-1 controls (evaluates a subset, e.g. 3 of 39 at L1)' },
       { label: 'Credential scan', command: 'opena2a secrets scan', description: 'Find hardcoded secrets in your codebase' },

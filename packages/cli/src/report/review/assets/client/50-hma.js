@@ -47,7 +47,7 @@ function renderHma() {
     }
     return out;
   }
-  var h = '<div class="section-intro">HackMyAgent scanned your project with 204+ security checks across 30 categories. Results below show unique issue types, grouped by check ID.</div>';
+  var h = '<div class="section-intro">HackMyAgent scanned your project. Results below show unique issue types, grouped by check ID.</div>';
   h += '<div class="stats-grid">';
   h += statCard(hma.score + '/' + hma.maxScore, 'HMA Score', scoreColor(hma.score));
   h += statCard(hma.totalChecks, 'Total Checks', 'var(--primary)');

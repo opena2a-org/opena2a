@@ -31,7 +31,7 @@ import {
   type HygieneCheck as HygieneCheckShared,
   type ScoreBreakdown as ScoreBreakdownShared,
 } from '../util/scoring.js';
-import { HMA_CHECK_COUNT } from '../util/canonical.js';
+import { hmaCheckCount, hmaChecksPhrase } from '../util/hma-checks.js';
 
 /**
  * The rerun this command suggests for another directory. The directory is a
@@ -404,7 +404,7 @@ export async function init(options: InitOptions): Promise<number> {
     process.stdout.write(dim('  To set up full Shield protection (11-step orchestration): opena2a shield init') + '\n');
 
     // Deeper analysis hint
-    process.stdout.write(dim(`  For deeper analysis (${HMA_CHECK_COUNT} checks): opena2a scan --deep`) + '\n');
+    process.stdout.write(dim(`  For deeper analysis${hmaCheckCount() === null ? '' : ` (${hmaCheckCount()} checks)`}: opena2a scan --deep`) + '\n');
 
     // Global install hint (only when running via npx)
     if (isRunningViaNpx()) {
@@ -1209,7 +1209,7 @@ function getContextualTip(
 
   if (report.securityScore >= 90) {
     return {
-      text: `Strong baseline. HackMyAgent runs ${HMA_CHECK_COUNT} checks including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.`,
+      text: `Strong baseline. HackMyAgent runs ${hmaChecksPhrase('checks')} including agent-layer attacks, MCP exploitation, and OASB-1 + OASB-2 compliance scoring.`,
       command: 'opena2a secure',
     };
   }
