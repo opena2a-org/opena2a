@@ -7,6 +7,7 @@ import type { AdapterConfig, RunOptions } from './adapters/types.js';
 import { protect } from './commands/protect.js';
 import { isContributeEnabled, getRegistryUrl, submitScanReport, normalizeGovernanceReport, recordScanAndMaybePrompt } from './util/report-submission.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
+import { isPhraseArgument } from './natural/known-commands.js';
 
 export type InputType = 'subcommand' | 'search' | 'context' | 'natural' | 'guided';
 
@@ -50,6 +51,12 @@ export function classifyInput(argv: string[]): ClassifiedInput {
     const joined = argv.join(' ');
     const unquoted = joined.replace(/^["']|["']$/g, '');
     return { type: 'natural', value: unquoted, args: [] };
+  }
+
+  // A quoted phrase after the shell has stripped its quotes: one argument
+  // that contains whitespace (`opena2a "find leaked credentials"`).
+  if (isPhraseArgument(argv)) {
+    return { type: 'natural', value: first.trim(), args: [] };
   }
 
   // Known subcommand

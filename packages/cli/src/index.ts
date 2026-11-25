@@ -14,7 +14,7 @@ import type { NaturalLanguageBlock } from './natural/index.js';
 import { runWizard } from './guided/wizard.js';
 import { ADAPTER_REGISTRY, childEnv } from './adapters/registry.js';
 import { resolveMcpServerArg } from './util/mcp-server-arg.js';
-import { shouldTryNaturalLanguageFallback } from './natural/known-commands.js';
+import { isPhraseArgument, shouldTryNaturalLanguageFallback } from './natural/known-commands.js';
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
@@ -1322,7 +1322,10 @@ Valid actions:
     rawArgs[0].startsWith('~') ||
     rawArgs[0].startsWith('?') ||
     rawArgs[0].startsWith('"') ||
-    rawArgs[0].startsWith("'")
+    rawArgs[0].startsWith("'") ||
+    // The shell strips the quotes from `opena2a "find leaked credentials"`,
+    // leaving one argument with spaces in it: that is a phrase too.
+    isPhraseArgument(rawArgs)
   );
 
   if (isSpecialInput) {
