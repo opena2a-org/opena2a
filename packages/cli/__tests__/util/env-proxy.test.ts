@@ -56,7 +56,6 @@ describe('envProxyFor', () => {
   it('removes user name and password from a proxy URL without a scheme or with a / in the password', () => {
     expect(redactProxyUrl('alice:FAKE-PASS@proxy.corp:8080')).toBe('proxy.corp:8080');
     expect(redactProxyUrl('http://alice:FAKE/PASS@proxy.corp:8080')).toBe('http://proxy.corp:8080');
-    expect(redactProxyUrl('http://alice:1234/FAKE@proxy.corp:8080')).toBe('http://proxy.corp:8080');
     expect(envProxyFor('https://aim.example.com', { HTTPS_PROXY: 'alice:FAKE-PASS@proxy.corp:8080' })?.url)
       .toBe('proxy.corp:8080');
   });
@@ -86,6 +85,16 @@ describe('envProxyFor', () => {
     expect(redactProxyUrl('http://alice:FAKEp@ss@proxy.corp:8080')).toBe('http://proxy.corp:8080');
     // A value `new URL` rejects takes the fallback path, which splits the same way.
     expect(redactProxyUrl('http://alice:FAKEp@ss@proxy corp:8080')).toBe('http://proxy corp:8080');
+  });
+
+  it('keeps the host and the path of an http or https proxy URL whose path holds an @', () => {
+    // `new URL` reads these as http URLs, and the CLI connects to the host it
+    // reads, so the printed URL names that host rather than the text after '@'.
+    expect(redactProxyUrl('http://127.0.0.1:9/p@th')).toBe('http://127.0.0.1:9/p@th');
+    expect(envProxyFor('https://aim.example.com', { HTTPS_PROXY: 'http://127.0.0.1:9/p@th' })?.url)
+      .toBe('http://127.0.0.1:9/p@th');
+    expect(redactProxyUrl('https://alice:FAKEpass@proxy.corp:8443/p@th')).toBe('https://proxy.corp:8443/p@th');
+    expect(redactProxyUrl('http://alice:1234/FAKE@proxy.corp:8080')).toBe('http://alice:1234/FAKE@proxy.corp:8080');
   });
 
   it('honours NO_PROXY exact hosts, domain suffixes, ports and *', () => {
@@ -257,7 +266,10 @@ describe('AimClient behind a proxy', () => {
     it('does not turn on a proxy for the rest of the process', async () => {
       withoutBuiltInSupport();
       expect(routeThroughEnvProxy(`http://${AIM_HOST}:${aimPort}`)?.routing).toBe('cli');
-      await expect(globalThis.fetch(`http://${AIM_HOST}:${aimPort}/health`)).rejects.toThrow();
+      // The request must not reach this suite's proxy. Whether it then fails
+      // depends on the host: a process started with NODE_USE_ENV_PROXY=1 and
+      // a proxy of its own gets that proxy's answer instead of an error.
+      await globalThis.fetch(`http://${AIM_HOST}:${aimPort}/health`).catch(() => undefined);
       expect(proxyLog).toEqual([]);
     });
 
