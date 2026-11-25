@@ -230,7 +230,7 @@ export async function trust(options: TrustOptions): Promise<number> {
 
     if (!result.ok || !result.data) {
       const notFoundMsg = `No trust profile found for ${packageName}. It may not have been discovered yet.`;
-      const registerHint = `To add this package, run: opena2a self-register ${packageName}`;
+      const registerHint = `To add this package, run: opena2a claim ${packageName}`;
       if (isJson) {
         const jsonOut: any = {
           error: 'not_found',
