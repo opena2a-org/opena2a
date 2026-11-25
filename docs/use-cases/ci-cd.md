@@ -66,7 +66,7 @@ jobs:
 
 `--ci` does something different in each command, and each command's `--help` states it under `Automation:`. It does not turn color off: color is off when `NO_COLOR` is set or when stdout is not a terminal, as in a CI log or a `>` redirect. With `--ci`:
 
-- `detect`: never asks before scanning unknown MCP packages, does not open the `--report` file, and does not share the summary; with `--auto-scan` and contributions enabled, each unknown server scan is still shared
+- `detect`: never asks before scanning unknown MCP packages, does not open the `--report` file, and does not share the summary, and does not print the hint to install hackmyagent when `--auto-scan` finds it missing; with `--auto-scan` and contributions enabled, each unknown server scan is still shared
 - `review`: does not open the report in a browser
 - `scan-soul`: no effect
 - `protect`: migrates without prompting (needed when stdin is not a terminal)

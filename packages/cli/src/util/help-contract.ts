@@ -306,7 +306,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['2', 'an unsupported --format'],
     ],
     json: 'prints the result as JSON',
-    ci: 'never asks before scanning unknown MCP packages, does not open the --report file, and does not share the summary; with --auto-scan and contributions enabled, each unknown server scan is still shared',
+    ci: 'never asks before scanning unknown MCP packages, does not open the --report file, and does not share the summary, and does not print the hint to install hackmyagent when --auto-scan finds it missing; with --auto-scan and contributions enabled, each unknown server scan is still shared',
   },
   setup: {
     exit: [
