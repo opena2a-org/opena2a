@@ -62,7 +62,7 @@ export interface AdvisoryCheck {
   checked: boolean;
   /** Why no advisory list was read, in one line; null when one was read. */
   reason: string | null;
-  /** True when OPENA2A_ADVISORIES=off turned the request off. */
+  /** True when OPENA2A_ADVISORIES=off or --no-advisories turned the request off. */
   turnedOff: boolean;
 }
 
@@ -74,6 +74,8 @@ const ADVISORY_TIMEOUT_MS = 5_000;
 
 /** Set to `off` to make `review` and `init` skip the advisory request. */
 export const ADVISORIES_ENV = 'OPENA2A_ADVISORIES';
+/** The `review` and `init` flag that skips the advisory request for one run. */
+export const NO_ADVISORIES_FLAG = '--no-advisories';
 
 /** The result when no advisory list was read. */
 export function advisoriesNotChecked(reason: string | null = null, turnedOff = false): AdvisoryCheck {
@@ -592,15 +594,19 @@ export async function checkAdvisories(
 
 /**
  * The advisory check `review` and `init` run: skipped when
- * OPENA2A_ADVISORIES=off, otherwise read from the Registry `resolveRegistryUrl`
- * names. A configured URL the resolver refuses leaves the advisories not
+ * OPENA2A_ADVISORIES=off or `skip` is true (--no-advisories), otherwise read
+ * from the Registry `resolveRegistryUrl` names. A configured URL the resolver refuses leaves the advisories not
  * checked, with the refusal, named without the URL's user name and
  * password, as the reason.
  */
 export async function readAdvisories(
   dir: string,
   resolveRegistryUrl: () => Promise<string>,
+  skip = false,
 ): Promise<AdvisoryCheck> {
+  if (skip) {
+    return advisoriesNotChecked(`the advisory request is turned off (${NO_ADVISORIES_FLAG})`, true);
+  }
   if (advisoriesTurnedOff()) {
     return advisoriesNotChecked(`the advisory request is turned off (${ADVISORIES_ENV}=off)`, true);
   }

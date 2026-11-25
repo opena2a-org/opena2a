@@ -90,7 +90,7 @@ function renderHygiene() {
     }).join(', ') + '</div>' + (advScope ? '<div style="font-size:12px;color:var(--dim);margin-top:6px">' + esc(advScope) + '</div>' : '') + '</div>';
   } else if (!advChecked) {
     var advReason = advRead && advRead.notCheckedReason ? ' Reason: ' + advRead.notCheckedReason + '.' : '';
-    var advNext = advRead && advRead.turnedOff ? ' Unset OPENA2A_ADVISORIES to check them.' : ' Run the review again when the Registry is reachable.';
+    var advNext = advRead && advRead.turnedOff ? ' Unset OPENA2A_ADVISORIES and drop --no-advisories to check them.' : ' Run the review again when the Registry is reachable.';
     h += '<div class="card" style="font-size:12px;color:var(--dim)">' + esc('Advisories not checked: no advisory list was read from the OpenA2A Registry, so no dependency was compared.' + advReason + advNext) + '</div>';
   } else {
     h += '<div class="card" style="font-size:12px;color:var(--dim)">' + esc((advScope || 'Advisories checked against project dependencies via the OpenA2A Registry.') + ' No matching advisories found.') + '</div>';

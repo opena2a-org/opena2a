@@ -105,6 +105,7 @@ This is **separate** from the community-contribution data the Registry already c
 - **Status:** `opena2a telemetry status`.
 - **Disable per-invocation:** `OPENA2A_TELEMETRY=off opena2a <anything>`.
 - **Disable persistently:** `opena2a telemetry off`.
+- **Skip the advisory request:** `--no-advisories` on `init` and `review`, or `OPENA2A_ADVISORIES=off`. The request names a date and a count and nothing about the project.
 - **Audit every payload:** `OPENA2A_TELEMETRY_DEBUG=print opena2a <anything>` echoes each event to stderr in JSON.
 
 Fire-and-forget with a 2-second timeout — telemetry never blocks the CLI.

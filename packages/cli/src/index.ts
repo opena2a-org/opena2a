@@ -200,7 +200,7 @@ ${rows([
 Telemetry:
 ${para(telemetryHelpLine(tele.status()))}
 ${para('Local scans may contribute to the OpenA2A Registry. Disable: --no-contribute')}
-${para("review and init read the Registry's advisory list, sending no project data. Disable: OPENA2A_ADVISORIES=off")}
+${para("review and init read the Registry's advisory list, sending no project data. Disable: --no-advisories or OPENA2A_ADVISORIES=off")}
 
 Learn more: https://opena2a.org/docs`;
     });
@@ -487,6 +487,7 @@ analysis runs and results can be shared with the community.
     .command('init [directory]')
     .description('Assess your project security posture (read-only scan; use "shield init" for full setup)')
     .option('--dir <path>', 'Target directory')
+    .option('--no-advisories', "Skip the Registry advisory request (also OPENA2A_ADVISORIES=off)")
     .action(async (directory: string | undefined, opts) => {
       const { init } = await import('./commands/init.js');
       const globalOpts = program.opts();
@@ -495,6 +496,7 @@ analysis runs and results can be shared with the community.
         ci: globalOpts.ci,
         format: globalOpts.format,
         verbose: globalOpts.verbose,
+        advisories: opts.advisories,
       });
     });
 
@@ -798,6 +800,7 @@ analysis runs and results can be shared with the community.
     .option('--report <path>', 'Output path for HTML report (also written with --format json)')
     .option('--no-open', 'Do not auto-open report in browser')
     .option('--skip-hma', 'Skip HMA scan even if available')
+    .option('--no-advisories', "Skip the Registry advisory request (also OPENA2A_ADVISORIES=off)")
     .addHelpText('after', `
 Output formats:
   --format text   Summary plus HTML report (default)
@@ -815,6 +818,7 @@ Output formats:
         format: globalOpts.format,
         verbose: globalOpts.verbose,
         quiet: globalOpts.quiet,
+        advisories: opts.advisories,
       });
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });

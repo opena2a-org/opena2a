@@ -286,7 +286,7 @@ const CODE_SPAN_SIGN_STEP = {
  * merely some line.
  */
 const PLANTED: Readonly<Record<string, { readonly text: string; readonly line: number }>> = {
-  'README.md': { text: 'Use npx -y opena2a-cli detect to list agents.', line: 105 },
+  'README.md': { text: 'Use npx -y opena2a-cli detect to list agents.', line: 107 },
   'docs/use-cases/developer.md': {
     text: 'Run npx opena2a-cli review from your project root.',
     line: 311,
@@ -479,7 +479,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     const { fenced, codeSpan, bare } = classify(plant(readWalkedSet()));
 
     expect(bare.map((o) => `${o.file}:${o.line}`)).toEqual([
-      'README.md:105',
+      'README.md:107',
       'docs/use-cases/developer.md:311',
     ]);
     expect(bare).toHaveLength(2);

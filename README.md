@@ -83,6 +83,8 @@ An event holds the tool name and version, the command name (with an error code a
 
 Turn it off for one run with `OPENA2A_TELEMETRY=off`, or for every run with `opena2a telemetry off`. `opena2a telemetry status` shows the current state, and `OPENA2A_TELEMETRY_DEBUG=print` prints each event to stderr. The policy is at [opena2a.org/telemetry](https://opena2a.org/telemetry).
 
+`init` and `review` also read the Registry's list of published advisories with one request, `GET /api/v1/trust/advisories?since=<date 30 days ago>&limit=100`, that waits at most 5 seconds. It names the date and the count and nothing about the project; the dependencies are compared on your machine. `--no-advisories` or `OPENA2A_ADVISORIES=off` skips it, and the advisories show as not checked.
+
 ## Documentation
 
 In this repository:

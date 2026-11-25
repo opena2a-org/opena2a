@@ -357,7 +357,38 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(report.initData.advisoriesChecked).toBe(false);
     expect(report.initData.advisoryRead.turnedOff).toBe(true);
     expect(t).toContain('not checked');
-    expect(t).toContain('Unset OPENA2A_ADVISORIES to check them.');
+    expect(t).toContain('Unset OPENA2A_ADVISORIES and drop --no-advisories to check them.');
+  });
+
+  it('review --no-advisories makes no request and names the flag as the reason', async () => {
+    const reportPath = path.join(tempHome, 'review.html');
+    const { stderr } = await silenced(() => review({
+      targetDir: tempDir,
+      format: 'text',
+      reportPath,
+      autoOpen: false,
+      skipHma: true,
+      ci: true,
+      verbose: true,
+      advisories: false,
+    }));
+    const report = reportData(reportPath);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(report.initData.advisoriesChecked).toBe(false);
+    expect(report.initData.advisoryRead.turnedOff).toBe(true);
+    expect(report.initData.advisoryRead.notCheckedReason).toContain('--no-advisories');
+    expect(stderr).toContain('Advisories not checked: the advisory request is turned off (--no-advisories)');
+    expect(hygieneText(report)).toContain('drop --no-advisories to check them.');
+  });
+
+  it('init --no-advisories makes no request and reports the advisories as not checked', async () => {
+    const { stdout } = await silenced(() => init({ targetDir: tempDir, format: 'json', advisories: false }));
+
+    expect(mockFetch.mock.calls.filter(c => String(c[0]).includes('/api/v1/trust/advisories'))).toEqual([]);
+    const out = JSON.parse(stdout);
+    expect(out.advisories.checked).toBe(false);
+    expect(out.advisories.count).toBe(0);
   });
 
   it('init prints Registry advisory text without its control characters', async () => {
