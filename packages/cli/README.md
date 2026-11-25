@@ -79,10 +79,10 @@ Each command routes to a specialized tool. HackMyAgent, Secretless AI and ai-tru
 
 ## Use Cases
 
-- [Developer using AI coding tools](docs/use-cases/developer.md) — 5 minutes
-- [Security team assessing AI risk](docs/use-cases/security-team.md) — 10 minutes
-- [MCP server author](docs/use-cases/mcp-server-author.md) — 15 minutes
-- [CI/CD pipeline integration](docs/use-cases/ci-cd.md)
+- [Developer using AI coding tools](https://github.com/opena2a-org/opena2a/blob/main/docs/use-cases/developer.md) — 5 minutes
+- [Security team assessing AI risk](https://github.com/opena2a-org/opena2a/blob/main/docs/use-cases/security-team.md) — 10 minutes
+- [MCP server author](https://github.com/opena2a-org/opena2a/blob/main/docs/use-cases/mcp-server-author.md) — 15 minutes
+- [CI/CD pipeline integration](https://github.com/opena2a-org/opena2a/blob/main/docs/use-cases/ci-cd.md)
 
 ## Docs
 
