@@ -141,7 +141,7 @@ This release ships work that merged to `main` after the `0.10.5` tag was cut: th
 - **`opena2a review` Shield phase: gate findings by scan target (closes #109 sub-item 1, PR #112).** SHIELD-INT-001 "Configuration file tampered" surfaced 288 critical occurrences on an empty target because Shield's event log carried state from prior scans of unrelated paths. New `filterEventsToTarget` helper narrows ConfigGuard events to `targetDir` before classification; other event sources (notably ARP) pass through to preserve `/usr/bin/curl` and similar absolute-path detections. 24 deterministic unit tests in `packages/cli/__tests__/shield/findings-path-scoping.test.ts`. Empty-test reproducer: composite 27→72.
 
 ### New Features (carried forward from prior work, first release-tagged here)
-- `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), auto-signing, heartbeat, tests, and GitHub Action template.
+- `create skill [name]` command: secure skill scaffolding with 3 templates (basic, mcp-tool, data-processor), an opena2a-guard hash pin (an integrity hash, not a signature), heartbeat, tests, and GitHub Action template.
 - `guard harden` subcommand: scan skills for security issues via HackMyAgent, with `--fix` and `--dry-run` flags.
 - Docker adapter configurable port mapping for `train` command (full DVAA port range).
 

@@ -2,7 +2,7 @@
  * opena2a create -- Scaffolding command for secure skills and components.
  *
  * Currently supports:
- * - `create skill [name]` -- interactive wizard to scaffold a signed skill
+ * - `create skill [name]` -- interactive wizard to scaffold a hash-pinned skill
  */
 
 import { red, dim } from '../../util/colors.js';
