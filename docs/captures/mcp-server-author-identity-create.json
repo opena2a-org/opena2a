@@ -1,0 +1,34 @@
+{
+  "capture": "mcp-server-author-identity-create.txt",
+  "doc": "docs/use-cases/mcp-server-author.md",
+  "section": "Step 2: Sign Your Server",
+  "command": "npx opena2a-cli identity create --name my-server",
+  "package": "opena2a-cli",
+  "version": "0.10.13",
+  "build": "packages/cli/dist built with npm run build from commit f8623a6",
+  "invocation": "run with a new empty HOME, the build's package reached through a node_modules directory under an _npx directory, and that node_modules/.bin first on PATH, holding the opena2a-cli, hackmyagent and secretless-ai bins as npx sets them up; run from HOME/mcp-server-tools",
+  "setup": "HOME/mcp-server-tools: a git repository holding package.json (@myorg/mcp-server-tools 1.2.0), .gitignore, dist/index.js (a stdio MCP server built on @modelcontextprotocol/sdk) and a .mcp.json configuring my-server (node ./dist/index.js), filesystem, postgres and github, all committed; the captures were taken one after another in the order the guide runs them",
+  "environment": [
+    "CI=true",
+    "TERM=dumb",
+    "LANG=en_US.UTF-8",
+    "OPENA2A_TELEMETRY=off"
+  ],
+  "network": "none: the machine had no network access",
+  "tools": {
+    "node": "v26.13.1",
+    "npm": "11.20.0",
+    "os": "macOS 27.2 arm64"
+  },
+  "capturedAt": "2026-11-25T09:00:13Z",
+  "exitCode": 0,
+  "stream": "stdout; stderr was empty on this run",
+  "outputLines": 5,
+  "outputSha256": "48930c317d5226f05c67cae4b3a655f745156bbf217a1da8f644786a2ee5277b",
+  "docReplacements": [
+    {
+      "from": "/private/tmp/opena2a-mcp.r8Dyvp/home",
+      "to": "/home/dev"
+    }
+  ]
+}

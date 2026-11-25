@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { table } from '../../src/util/format.js';
@@ -23,6 +24,17 @@ import { table } from '../../src/util/format.js';
  *
  * The blocks themselves were produced by running the CLI. What is verified here
  * is the committed text, which is the only half of that a test can see.
+ *
+ * The other "Expected output" blocks -- `identity create`, `harden-soul`,
+ * `scan-soul`, `mcp sign`, `review`, `secretless-ai init` and `hackmyagent
+ * secure` -- were written too: an identity "Stored in .aim/identity.json" where
+ * the CLI prints `~/.opena2a/aim-core`, and a sign summary whose "Users can
+ * verify with" line ran `opena2a-cli verify @myorg/...`, which exits on "too
+ * many arguments". Each is now a run kept under docs/captures, a `.txt` of what
+ * the command printed and a `.json` sidecar of how it was run. For those the
+ * text itself is pinned: the doc block is the capture, byte for byte, after the
+ * path replacements the sidecar lists, and the capture is the file the sidecar's
+ * digest names.
  */
 
 const DEV = 'docs/use-cases/developer.md';
@@ -276,7 +288,239 @@ function selfRegisterTableHeaders(): string[] {
   return [...m[1].matchAll(/'([^']*)'/g)].map((h) => h[1]);
 }
 
+// --- Captures kept under docs/captures --------------------------------------
+
+const CAPTURES_DIR = 'docs/captures';
+
+/** Every capture a use-case guide shows, by the guide that shows it. */
+const FILE_CAPTURES: ReadonlyArray<{ doc: string; name: string }> = [
+  { doc: DEV, name: 'developer-identity-create' },
+  { doc: DEV, name: 'developer-harden-soul' },
+  { doc: DEV, name: 'developer-scan-soul' },
+  { doc: DEV, name: 'developer-secretless-ai-init' },
+  { doc: DEV, name: 'developer-hackmyagent-secure' },
+  { doc: MCP, name: 'mcp-server-author-identity-create' },
+  { doc: MCP, name: 'mcp-server-author-mcp-sign' },
+  { doc: MCP, name: 'mcp-server-author-hackmyagent-secure' },
+  { doc: SEC, name: 'security-team-review' },
+];
+
+interface Sidecar {
+  capture: string;
+  doc: string;
+  command: string;
+  package: string;
+  version: string;
+  capturedAt: string;
+  exitCode: number;
+  outputSha256: string;
+  docReplacements?: { from: string; to: string }[];
+}
+
+function sidecar(name: string): Sidecar {
+  return JSON.parse(read(`${CAPTURES_DIR}/${name}.json`)) as Sidecar;
+}
+
+/**
+ * The version of `pkg` a capture has to come from: the CLI's own version, or,
+ * for a tool the CLI depends on, the exact version packages/cli/package.json
+ * pins. A bump of either without a new capture turns this file red.
+ */
+function expectedVersion(pkg: string): string {
+  if (pkg === 'opena2a-cli') return pinnedVersion();
+  const manifest = JSON.parse(read('packages/cli/package.json')) as { dependencies?: Record<string, string> };
+  const pinned = manifest.dependencies?.[pkg];
+  if (pinned === undefined) throw new Error(`packages/cli/package.json does not depend on ${pkg}`);
+  return pinned;
+}
+
+/** What the doc shows for a capture: its text with the sidecar's replacements made, blank lines at either end dropped. */
+function shownText(captureText: string, replacements: { from: string; to: string }[]): string[] {
+  let text = captureText;
+  for (const { from, to } of replacements) text = text.split(from).join(to);
+  const lines = text.split('\n');
+  while (lines.length > 0 && lines[0].trim() === '') lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+  return lines;
+}
+
+/** README.md, packages/cli/README.md and every markdown file under docs/. */
+function documentedFiles(): string[] {
+  const out = ['README.md', 'packages/cli/README.md'];
+  const walk = (rel: string): void => {
+    for (const entry of fs.readdirSync(path.join(repoRoot(), rel), { withFileTypes: true })) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(child);
+      else if (entry.name.endsWith('.md')) out.push(child);
+    }
+  };
+  walk('docs');
+  return out;
+}
+
+// --- Operand counts --------------------------------------------------------
+
+/** How many operands each literally declared command takes, read from its `.command('name [a] <b>')` line. */
+function declaredOperandCounts(): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const m of read(INDEX_SRC).matchAll(/\.command\('([a-z][\w-]*)((?: [<[][^'>\]]+[>\]])*)'/g)) {
+    const operands = m[2].trim() === '' ? [] : m[2].trim().split(/\s+/);
+    counts.set(m[1], operands.some((o) => o.includes('...')) ? Infinity : operands.length);
+  }
+  return counts;
+}
+
+/** Every option declared with a value (`--name <name>`, `--report [path]`), all its spellings. */
+function valuedOptions(): Set<string> {
+  const valued = new Set<string>();
+  for (const m of read(INDEX_SRC).matchAll(/\.option\('([^']*)'/g)) {
+    if (!/[<[]/.test(m[1])) continue;
+    for (const flag of m[1].match(/--?[\w-]+/g) ?? []) valued.add(flag);
+  }
+  return valued;
+}
+
+/** An `opena2a` invocation: `npx opena2a-cli`, `npx -y opena2a-cli`, or the installed `opena2a`. */
+const OPENA2A_INVOCATION = /(?:npx (?:-y )?opena2a-cli|(?<![\w./@-])opena2a)(?=[ \t])/g;
+
+/** A token that ends the command: a shell operator, a redirection, a comment or a usage synopsis. */
+const ENDS_COMMAND = /^(?:\||&&|;|#|\)|\d*[<>]|\[)/;
+
+/**
+ * The operands an invocation passes after its subcommand, with the values of
+ * value-taking options skipped. Null when the first word is not a declared
+ * command (a natural-language line, `?`, a flag).
+ */
+function operandsPassed(
+  rest: string,
+  counts: Map<string, number>,
+  valued: Set<string>,
+): { command: string; operands: string[] } | null {
+  const words: string[] = [];
+  for (const raw of rest.trim().split(/\s+/)) {
+    if (raw === '') continue;
+    if (ENDS_COMMAND.test(raw)) break;
+    words.push(raw.replace(/^["']+|["']+$/g, ''));
+  }
+  if (words.length === 0 || !counts.has(words[0])) return null;
+  const operands: string[] = [];
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i];
+    if (word.startsWith('-')) {
+      if (valued.has(word) && !word.includes('=')) i++;
+      continue;
+    }
+    operands.push(word);
+  }
+  return { command: words[0], operands };
+}
+
+/**
+ * Every invocation a reader would type: the lines of shell fences, and code
+ * spans in prose and tables. Output fences are skipped: a `Run: opena2a ...
+ * (annotation)` line there is what a command printed, not a command line.
+ */
+function typedInvocations(file: string): { line: number; text: string; rest: string }[] {
+  const out: { line: number; text: string; rest: string }[] = [];
+  let fence: string | null = null;
+  read(file).split('\n').forEach((text, i) => {
+    const f = /^\s*```(.*)$/.exec(text);
+    if (f) {
+      fence = fence === null ? f[1].trim().toLowerCase() : null;
+      return;
+    }
+    for (const m of text.matchAll(OPENA2A_INVOCATION)) {
+      const before = text.slice(0, m.index);
+      const inSpan = (before.split('`').length - 1) % 2 === 1;
+      if (fence !== null ? !SHELL_INFOS.has(fence) : !inSpan) continue;
+      let rest = text.slice(m.index! + m[0].length);
+      if (inSpan) {
+        const close = rest.indexOf('`');
+        if (close !== -1) rest = rest.slice(0, close);
+      }
+      out.push({ line: i + 1, text, rest });
+    }
+  });
+  return out;
+}
+
 describe('docs/use-cases -- the "Expected output" blocks are captures of the pinned build', () => {
+  it('no guide shows an "Expected output" block: each one is a labelled capture', () => {
+    const left: string[] = [];
+    for (const file of documentedFiles()) {
+      read(file).split('\n').forEach((text, i) => {
+        if (/^\s*Expected output\b/i.test(text)) left.push(`${file}:${i + 1}: ${text}`);
+      });
+    }
+    expect(left, 'replace each with a capture under docs/captures, registered in FILE_CAPTURES').toEqual([]);
+  });
+
+  it('every use-case capture under docs/captures is registered here', () => {
+    const onDisk = fs
+      .readdirSync(path.join(repoRoot(), CAPTURES_DIR))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => f.slice(0, -'.json'.length))
+      .filter((name) => DOCS.includes(sidecar(name).doc))
+      .sort();
+    expect(onDisk).toEqual(FILE_CAPTURES.map((c) => c.name).sort());
+  });
+
+  for (const { doc, name } of FILE_CAPTURES) {
+    it(`${doc} shows ${CAPTURES_DIR}/${name}.txt as it was captured`, () => {
+      const meta = sidecar(name);
+      const captured = read(`${CAPTURES_DIR}/${name}.txt`);
+
+      expect(meta.capture).toBe(`${name}.txt`);
+      expect(meta.doc).toBe(doc);
+      expect(meta.outputSha256, `${name}.txt is not the output the sidecar's digest names`).toBe(
+        createHash('sha256').update(captured, 'utf8').digest('hex'),
+      );
+      expect(meta.version, `${name} was captured from ${meta.package} ${meta.version}`).toBe(expectedVersion(meta.package));
+      expect(typeof meta.exitCode).toBe('number');
+      expect(isRealDate(meta.capturedAt.slice(0, 10)), meta.capturedAt).toBe(true);
+      for (const { from } of meta.docReplacements ?? []) {
+        expect(captured, `${name}: a replacement for text the capture does not hold`).toContain(from);
+      }
+
+      // The command line the sidecar names is the one the guide shows, and
+      // exactly one output block answers it.
+      const blocks = outputBlocks(doc).filter((b) => b.invocation.some((l) => l.trim() === meta.command));
+      expect(blocks, `${doc}: expected one output block under \`${meta.command}\``).toHaveLength(1);
+      const block = blocks[0];
+      const at = `${doc}:${block.fenceLine}`;
+
+      const label = `Captured from ${meta.package} v${meta.version} on ${meta.capturedAt.slice(0, 10)} ([capture](../captures/${name}.txt))`;
+      expect(block.label ?? '', `${at}: the label above the fence`).toContain(label);
+
+      const shown = block.body.map((b) => b.text);
+      expect(shown, `${at}: not ${name}.txt as captured`).toEqual(shownText(captured, meta.docReplacements ?? []));
+    });
+  }
+
+  it('no documented opena2a command passes more operands than the command declares', () => {
+    const counts = declaredOperandCounts();
+    const valued = valuedOptions();
+    // Measured against the source first: verify takes no operand, so the
+    // `verify @myorg/mcp-server-tools` line exited on "too many arguments".
+    expect(counts.get('verify')).toBe(0);
+    expect(operandsPassed(' verify @myorg/mcp-server-tools', counts, valued)?.operands).toEqual(['@myorg/mcp-server-tools']);
+    expect(operandsPassed(' review my-agent --report security-review.html --no-open', counts, valued)?.operands).toEqual(['my-agent']);
+    expect(operandsPassed(' find hardcoded credentials', counts, valued)).toBe(null);
+
+    const tooMany: string[] = [];
+    for (const file of documentedFiles()) {
+      for (const { line, text, rest } of typedInvocations(file)) {
+        const parsed = operandsPassed(rest, counts, valued);
+        if (parsed === null) continue;
+        const max = counts.get(parsed.command)!;
+        if (parsed.operands.length > max) {
+          tooMany.push(`${file}:${line}: \`${parsed.command}\` takes ${max} operand(s), given ${parsed.operands.join(' ')}: ${text.trim()}`);
+        }
+      }
+    }
+    expect(tooMany).toEqual([]);
+  });
+
   it('the three detect audits are captures of formatText, not of a header it cannot print', () => {
     const version = pinnedVersion();
     const detectSrc = read(DETECT_SRC);
@@ -467,8 +711,19 @@ describe('docs/use-cases -- the "Expected output" blocks are captures of the pin
     }
 
     // (3) None of the strings that only ever existed in the fabricated blocks.
+    //     A block that is a registered capture is exempt: it is pinned byte for
+    //     byte to a recorded run, and hackmyagent's scan-soul does print
+    //     `Governance Score`, which only detect cannot.
+    const captured = new Set<string>();
+    for (const { doc, name } of FILE_CAPTURES) {
+      const command = sidecar(name).command;
+      for (const block of outputBlocks(doc).filter((b) => b.invocation.some((l) => l.trim() === command))) {
+        for (const { line } of block.body) captured.add(`${doc}:${line}`);
+      }
+    }
     for (const file of WALKED) {
       read(file).split('\n').forEach((text, i) => {
+        if (captured.has(`${file}:${i + 1}`)) return;
         for (const bad of FABRICATIONS) {
           if (text.includes(bad)) violations.push(`${file}:${i + 1} contains "${bad}"`);
         }

@@ -30,7 +30,7 @@ import * as path from 'node:path';
  * there is nothing to import; if it lands later the two may share a walker, but
  * the literal set stays, because the set is what this criterion pins.
  *
- * The corpus is clean today: 59 occurrences over 12 walked files, 54 in fences,
+ * The corpus is clean today: 60 occurrences over 12 walked files, 55 in fences,
  * 5 in code spans, 0 in bare prose. This suite is what keeps it that way.
  */
 
@@ -234,7 +234,7 @@ const FENCE_LINES_PER_FILE: Readonly<Record<string, number>> = {
   'docs/verifying-npm-packages.md': 10,
 };
 
-/** Occurrences per walked file. 59 in total, on 58 lines, in 6 of the 12 files. */
+/** Occurrences per walked file. 60 in total, on 59 lines, in 6 of the 12 files. */
 const OCCURRENCES_PER_FILE: Readonly<Record<string, number>> = {
   'README.md': 5,
   'packages/cli/README.md': 1,
@@ -244,7 +244,7 @@ const OCCURRENCES_PER_FILE: Readonly<Record<string, number>> = {
   'docs/readme-header.md': 0,
   'docs/testing/release-smoke.md': 0,
   'docs/use-cases/ci-cd.md': 28,
-  'docs/use-cases/developer.md': 6,
+  'docs/use-cases/developer.md': 7,
   'docs/use-cases/mcp-server-author.md': 8,
   'docs/use-cases/security-team.md': 11,
   'docs/verifying-npm-packages.md': 0,
@@ -274,14 +274,14 @@ const CODE_SPAN_ROW = {
 /** The fifth code-span occurrence: the sign step in the developer walkthrough (opena2a #319). */
 const CODE_SPAN_SIGN_STEP = {
   file: 'docs/use-cases/developer.md',
-  line: 245,
+  line: 243,
   text: 'The three findings from Step 1 each name their own fix. The broad-permission config is narrowed, and each project MCP server is signed -- `npx opena2a-cli mcp sign filesystem`, then the same for `postgres` and `slack`, which writes one identity file per server to the user store for the project, `~/.opena2a/projects/<key>/mcp-identities/<name>.json`, not into the project. Then run detection again:',
 } as const;
 
 /**
  * The two bare-prose lines the negative case plants. Appended to IN-MEMORY
  * copies — nothing here writes to the tree. Their landing line numbers are
- * fixed by the files' current lengths (README.md 103 lines, developer.md 311),
+ * fixed by the files' current lengths (README.md 103 lines, developer.md 309),
  * and pinning them is what proves the report addresses the right line and not
  * merely some line.
  */
@@ -289,7 +289,7 @@ const PLANTED: Readonly<Record<string, { readonly text: string; readonly line: n
   'README.md': { text: 'Use npx -y opena2a-cli detect to list agents.', line: 105 },
   'docs/use-cases/developer.md': {
     text: 'Run npx opena2a-cli review from your project root.',
-    line: 313,
+    line: 311,
   },
 };
 
@@ -337,7 +337,7 @@ const DISCRIMINATION: ReadonlyArray<{
 ];
 
 /**
- * The 58 occurrence lines, hashed: `file:line:text\n` per line in walk order.
+ * The 59 occurrence lines, hashed: `file:line:text\n` per line in walk order.
  *
  * This is the "moves nothing" pin. Rewording an invocation, moving one to
  * another line, or re-fencing one all change this digest, so a delivery that
@@ -381,9 +381,16 @@ const DISCRIMINATION: ReadonlyArray<{
  * `.opena2a/mcp-identities/<name>.json`, which was no longer true, and now names the user store
  * it writes to. Its `npx opena2a-cli mcp sign filesystem` code span is unchanged, the line did
  * not move, and no other occurrence changed.
+ *
+ * Recomputed again when the use-case guides' "Expected output" blocks were replaced by captures
+ * kept under docs/captures: mcp-server-author.md lost the written sign summary's
+ * `npx opena2a-cli verify @myorg/mcp-server-tools` line, which exits on "too many arguments", and
+ * gained the `npx opena2a-cli mcp audit` next-step line hackmyagent prints in its captured
+ * `secure` output; developer.md gained the same printed line, and its sign step moved from line
+ * 245 to 243 with its text unchanged. Fence lines per file did not change.
  */
 const OCCURRENCE_LINES_SHA256 =
-  'bbc22d6e44d0637b44afd39ad96a84875c88311f2fe7ae4d99b2fca4ed8d971f';
+  '6a8815f82d7975220fb1dfb00b04d0ad8cb672982beb2b05edb409f61641caa9';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];
@@ -395,7 +402,7 @@ function occurrenceLinesDigest(sources: readonly Source[]): string {
   return createHash('sha256').update(rows.join(''), 'utf8').digest('hex');
 }
 
-/** The 59th invocation, in a file with no fence or code-span notion. */
+/** The 61st invocation, in a file with no fence or code-span notion. */
 const UNWALKED_TAPE = { file: 'docs/images/review-demo.tape', line: 28 } as const;
 
 describe('every documented `npx opena2a-cli` invocation sits in a fence or a code span', () => {
@@ -473,13 +480,13 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
 
     expect(bare.map((o) => `${o.file}:${o.line}`)).toEqual([
       'README.md:105',
-      'docs/use-cases/developer.md:313',
+      'docs/use-cases/developer.md:311',
     ]);
     expect(bare).toHaveLength(2);
 
     // Planting bare prose moves neither of the other two classes: the lint
     // found new violations, it did not reclassify existing occurrences.
-    expect(fenced).toHaveLength(54);
+    expect(fenced).toHaveLength(55);
     expect(codeSpan).toHaveLength(5);
   });
 
@@ -505,13 +512,13 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
 
   // --- The census and the two mechanics ----------------------------------
 
-  it('the census: 59 occurrences, 54 fenced, 5 code-span, 0 bare', () => {
+  it('the census: 60 occurrences, 55 fenced, 5 code-span, 0 bare', () => {
     const { fenced, codeSpan, bare } = classify(readWalkedSet());
 
-    expect(fenced).toHaveLength(54);
+    expect(fenced).toHaveLength(55);
     expect(codeSpan).toHaveLength(5);
     expect(bare).toHaveLength(0);
-    expect(fenced.length + codeSpan.length + bare.length).toBe(59);
+    expect(fenced.length + codeSpan.length + bare.length).toBe(60);
 
     const perFile: Record<string, number> = Object.fromEntries(
       WALKED_SET.map((f): [string, number] => [f, 0]),
@@ -520,7 +527,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(perFile).toEqual(OCCURRENCES_PER_FILE);
   });
 
-  it('the code-span occurrences are the README capture label and npx note, the ci-cd.md:513 npx-hangs row (twice) and the developer.md:245 sign step', () => {
+  it('the code-span occurrences are the README capture label and npx note, the ci-cd.md:513 npx-hangs row (twice) and the developer.md:243 sign step', () => {
     const { codeSpan } = classify(readWalkedSet());
     expect(codeSpan).toEqual([
       { file: CODE_SPAN_CAPTURE_LABEL.file, line: CODE_SPAN_CAPTURE_LABEL.line, text: CODE_SPAN_CAPTURE_LABEL.text },
@@ -589,11 +596,11 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
 
   // --- The instrument moves nothing --------------------------------------
 
-  it('the 58 occurrence lines are byte-identical to the base tree', () => {
+  it('the 59 occurrence lines are byte-identical to the base tree', () => {
     const sources = readWalkedSet();
     const rows = lineKeys(sources, (l) => INVOCATION_ONCE.test(l));
 
-    expect(rows).toHaveLength(58);
+    expect(rows).toHaveLength(59);
     expect(
       occurrenceLinesDigest(sources),
       'an existing invocation was reworded, moved or re-fenced — this lint is an instrument, ' +
@@ -616,7 +623,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(walked.filter((f) => f.endsWith('.tape'))).toEqual([]);
   });
 
-  it('docs/images/review-demo.tape carries a 59th invocation and is not walked', () => {
+  it('docs/images/review-demo.tape carries a 61st invocation and is not walked', () => {
     expect(walkedFiles()).not.toContain(UNWALKED_TAPE.file);
 
     // It exists and it does carry one — the exclusion is a decision about a

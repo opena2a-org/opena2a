@@ -159,65 +159,35 @@ No capture of this command is pasted here: its output depends on what the live r
 
 ## Step 5: Full Security Review
 
-Run a comprehensive 6-phase security assessment that combines credential scanning, config integrity, shadow AI detection, behavioral governance, advisory checks, and optional deep scanning.
+Run a 6-phase security assessment: a project scan, credential scanning, config integrity, Shield event analysis, a HackMyAgent scan and shadow AI detection.
 
 ```bash
 npx opena2a-cli review my-agent
 ```
 
-Expected output:
-
+Captured from opena2a-cli v0.10.13 on 2026-11-25 ([capture](../captures/security-team-review.txt)) on a machine with no network access:
 ```
   OpenA2A Security Review
 
-  Project      payments-api v2.1.0
-  Type         Node.js + MCP server
-  Directory    /home/jsmith/payments-api
+  [1/6] Scanning project...           0.2s
+  [2/6] Checking credentials...       0.0s
+  [3/6] Verifying config integrity... 0.0s
+  [4/6] Analyzing shield events...    0.2s
+  [5/6] Running HMA security scan...  not installed
+  [6/6] Detecting shadow AI...        0.0s
 
-  Phase 1: Credential Scan
-  -----------------------------------------------
-  3 hardcoded keys found
-    src/config.ts:12     ANTHROPIC_API_KEY    critical
-    src/config.ts:15     OPENAI_API_KEY       critical
-    src/db.ts:8          DATABASE_URL         high
+  Score: 20/100 -- path to 92 available (+72 credentials)  (composite across 6 dimensions)
+  4 findings (2 critical, 1 high, 0 medium)
 
-  Phase 2: Config Integrity
-  -----------------------------------------------
-  3 config files unsigned
-    CLAUDE.md            not signed
-    .cursorrules         not signed
-    .copilot/config.yml  not signed
+  Surfaces    Node.js + MCP server
+  Checks      6 static · 0 semantic (NanoMind AST) · 0 skipped
+  Categories  credentials (2 critical, 1 high) · 24 others clear
+  Verdict     Not safe to ship. Anthropic API Key + 2 more. Fix before using in production.
 
-  Phase 3: Shadow AI
-  -----------------------------------------------
-  3 agents running, 5 MCP servers configured
-  Governance score: 32 / 100
-
-  Phase 4: Behavioral Governance
-  -----------------------------------------------
-  No SOUL.md found
-  0 / 54 ABGS controls addressed
-
-  Phase 5: Advisory Check
-  -----------------------------------------------
-  1 advisory for installed MCP servers
-    slack MCP: CVE-2026-1234 (medium)
-
-  Phase 6: HMA Deep Scan (optional)
-  -----------------------------------------------
-  Skipped (run with --deep to enable)
-
-  Summary
-  -----------------------------------------------
-  Critical     2    hardcoded API keys
-  High         2    database URL exposed, unsigned configs
-  Medium       3    no governance, MCP advisory, no identity
-  Low          1    no runtime monitoring
-
-  Security Score   30 / 100  -> 85 by running opena2a protect
-
-  Report: security-review.html (opened in browser)
+  Report: /tmp/opena2a-review-1795597213269.html (opened in browser)
 ```
+
+`my-agent` in the capture is the demo project that `docs/vhs/setup-lab.sh` creates, which hardcodes API keys in its source. Review starts HackMyAgent through `npx`, which could not reach the npm registry on that machine, so phase 5 reports it not installed and review printed on stderr that its verdict is provisional; with network access, phase 5 runs it and its findings count toward the score. The process table could not be read there either, so phase 6 saw no running agents.
 
 The HTML dashboard provides an interactive 6-tab view with drill-down into each finding. Each finding includes a description of the issue, a verification command to see it yourself, and a fix command to resolve it.
 

@@ -1,0 +1,5 @@
+Identity created
+  Agent ID:    aim_b3T2ZO_lehMaJvIm
+  Name:        my-project
+  Public Key:  b3T2ZO/lehMaJvIm03FuB9bwisEt9Pmb...
+  Stored in:   /private/tmp/opena2a-dev.Zritov/home/.opena2a/aim-core

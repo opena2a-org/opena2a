@@ -1,0 +1,12 @@
+MCP server signed successfully
+
+  Server:       my-server
+  Transport:    stdio
+  Fingerprint:  3b53a89399afbe6a
+  Config hash:  172667a44852ae7e5dac66540547d7f9...
+  Private key:  /private/tmp/opena2a-mcp.r8Dyvp/home/.opena2a/projects/b5a44bfd8fa58456/mcp-identities/my-server.json
+  This file holds the server's private signing key. It is kept in your user store, outside the project tree.
+
+Tip: To manage signatures automatically across all files, create an agent identity:
+  opena2a identity create --name my-server
+  Then: hackmyagent fix-all --with-aim

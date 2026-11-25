@@ -1,0 +1,34 @@
+{
+  "capture": "developer-identity-create.txt",
+  "doc": "docs/use-cases/developer.md",
+  "section": "Step 2: Register the Project",
+  "command": "npx opena2a-cli identity create --name my-project",
+  "package": "opena2a-cli",
+  "version": "0.10.13",
+  "build": "packages/cli/dist built with npm run build from commit f8623a6",
+  "invocation": "run with a new empty HOME, the build's package reached through a node_modules directory under an _npx directory, and that node_modules/.bin first on PATH, holding the opena2a-cli, hackmyagent and secretless-ai bins as npx sets them up; run from HOME",
+  "setup": "my-agent is the demo lab that docs/vhs/setup-lab.sh creates, with the script's LAB_DIR pointed at HOME/my-agent, and its CLAUDE.md removed and the removal committed, so that the project holds no governance file before Step 3; the captures were taken one after another in the order the guide runs them, each on the tree the one before left",
+  "environment": [
+    "CI=true",
+    "TERM=dumb",
+    "LANG=en_US.UTF-8",
+    "OPENA2A_TELEMETRY=off"
+  ],
+  "network": "none: the machine had no network access",
+  "tools": {
+    "node": "v26.13.1",
+    "npm": "11.20.0",
+    "os": "macOS 27.2 arm64"
+  },
+  "capturedAt": "2026-11-25T08:58:56Z",
+  "exitCode": 0,
+  "stream": "stdout; stderr was empty on this run",
+  "outputLines": 5,
+  "outputSha256": "468a82902a643d377d9145142c0ad96c2eb45ea981f4053eec701b5dd8e0ac5c",
+  "docReplacements": [
+    {
+      "from": "/private/tmp/opena2a-dev.Zritov/home",
+      "to": "/home/dev"
+    }
+  ]
+}
