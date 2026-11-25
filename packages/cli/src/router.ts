@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import { createAdapter } from './adapters/index.js';
 import { childEnv } from './adapters/registry.js';
 import type { AdapterConfig, RunOptions } from './adapters/types.js';
@@ -305,6 +307,19 @@ export async function dispatchCommand(
     });
   }
 
+  // scan + a target that is not a local path → delegate to hackmyagent check.
+  // The scan adapter runs `hackmyagent secure <directory>`, which reads every
+  // argument as a path, so `opena2a scan express` used to exit 1 with
+  // "Directory '.../express' does not exist". A target that exists on disk
+  // still scans as a directory.
+  if (command === 'scan') {
+    const target = scanCheckTarget(args, globalOptions.cwd ?? process.cwd());
+    if (target) {
+      const rest = args[0] === 'secure' ? args.slice(2) : args.slice(1);
+      return spawnHmaCheckFromRouter(target, rest, globalOptions);
+    }
+  }
+
   // check + npm package name → delegate to hackmyagent check
   if (command === 'check' && args.length > 0) {
     const target = args[0];
@@ -527,6 +542,40 @@ export function isLocalPath(target: string): boolean {
   if (target.startsWith('/')) return true;
   if (target.startsWith('~/') || target === '~') return true;
   return false;
+}
+
+/**
+ * Detect a GitHub repository target: a github.com URL or `owner/repo`
+ * shorthand (one slash, no dots in the owner, no scheme). Mirrors
+ * isGitHubTarget in index.ts, which routes `opena2a check`.
+ */
+export function isGitHubRepoTarget(target: string): boolean {
+  if (/^https?:\/\/(www\.)?github\.com\/[^/]+\/[^/]+/.test(target)) return true;
+  if (target.includes(':') || target.includes('.') || target.startsWith('@')
+    || target.startsWith('/') || target.startsWith('~')) return false;
+  const parts = target.split('/');
+  return parts.length === 2
+    && /^[a-zA-Z0-9_-]+$/.test(parts[0])
+    && /^[a-zA-Z0-9._-]+$/.test(parts[1]);
+}
+
+/**
+ * The target `opena2a scan` should hand to `hackmyagent check` instead of
+ * scanning as a directory, or null to scan as before.
+ *
+ * Only the first positional argument is considered (after an explicit
+ * `secure`, which the adapter adds itself). It is routed to check when it is
+ * not a local path form, does not exist relative to `cwd`, and names a
+ * package, GitHub repo, MCP server or skill (`mcp:` / `skill:`).
+ */
+export function scanCheckTarget(args: string[], cwd: string): string | null {
+  if (args.includes('--help') || args.includes('-h')) return null;
+  const target = args[0] === 'secure' ? args[1] : args[0];
+  if (!target || target.startsWith('-')) return null;
+  if (isLocalPath(target)) return null;
+  if (existsSync(resolvePath(cwd, target))) return null;
+  if (isRichTarget(target) || isNpmTarget(target) || isGitHubRepoTarget(target)) return target;
+  return null;
 }
 
 /**
