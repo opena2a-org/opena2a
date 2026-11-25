@@ -537,7 +537,7 @@ describe('guard', () => {
 
     process.stderr.write = origStderr;
     expect(exitCode).toBe(1);
-    expect(stderrChunks.join('')).toContain('Unknown subcommand');
+    expect(stderrChunks.join('')).toContain('Unknown guard subcommand: invalid');
   });
 
   it('sign with no config files returns 0', async () => {

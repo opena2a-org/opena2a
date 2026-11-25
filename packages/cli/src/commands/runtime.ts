@@ -121,7 +121,7 @@ export async function runtime(options: RuntimeOptions): Promise<number> {
     case 'init':
       return runtimeInit(targetDir, options);
     default:
-      process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n\n`));
+      process.stderr.write(red(`Unknown runtime subcommand: ${options.subcommand}\n\n`));
       process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
       process.stderr.write('Subcommands:\n');
       process.stderr.write('  start   Start ARP monitoring\n');
