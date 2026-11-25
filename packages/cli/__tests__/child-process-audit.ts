@@ -345,6 +345,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(env -u <NAME> bash|zsh|dash -c <printed command>) per printed command and ' +
       'shell, with a PATH that holds only stub scripts, one at a time',
   },
+  'adapters/broker-help.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'spawnSync(node dist/index.js broker [start] --help/-h), one at a time',
+  },
   'commands/format-help.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,

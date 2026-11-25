@@ -233,14 +233,19 @@ Learn more: https://opena2a.org/docs`;
         // Handle --help / -h: show adapter info without delegating to Docker/external tools
         if (args.includes('--help') || args.includes('-h')) {
           const pkgLabel = config.packageName ?? config.command ?? config.image ?? config.pythonModule ?? name;
-          process.stdout.write(`Usage: opena2a ${name} [args...]\n\n`);
-          process.stdout.write(`${wordWrap(config.description, HELP_WIDTH, 0)}\n\n`);
+          if (config.ownHelp) {
+            process.stdout.write(`${config.ownHelp}\n\n`);
+          } else {
+            process.stdout.write(`Usage: opena2a ${name} [args...]\n\n`);
+            process.stdout.write(`${wordWrap(config.description, HELP_WIDTH, 0)}\n\n`);
+          }
           const contract = HELP_CONTRACTS[name];
           if (contract) process.stdout.write(`${formatHelpContract(contract)}\n\n`);
           process.stdout.write(`${wordWrap(adapterSourceLine(config.method, pkgLabel), HELP_WIDTH, 0)}\n`);
           process.stdout.write(`See https://opena2a.org/docs for full documentation.\n\n`);
-          // For Docker/Python adapters, don't delegate --help (would launch containers)
-          if (config.method === 'docker' || config.method === 'python') {
+          // For Docker/Python adapters, don't delegate --help (would launch
+          // containers); an adapter with its own help has printed it in full.
+          if (config.method === 'docker' || config.method === 'python' || config.ownHelp) {
             process.exitCode = 0;
             return;
           }
