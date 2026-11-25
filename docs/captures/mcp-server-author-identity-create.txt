@@ -1,0 +1,5 @@
+Identity created
+  Agent ID:    aim_ojjDAaAIzfm8COyv
+  Name:        my-server
+  Public Key:  ojjDAaAIzfm8COyvgG9Jc5/mKFM/ZWZE...
+  Stored in:   /private/tmp/opena2a-mcp.r8Dyvp/home/.opena2a/aim-core

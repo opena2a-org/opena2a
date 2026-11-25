@@ -1,0 +1,6 @@
+
+Governance Score: 100/100 [hardened]
+File: SOUL.md
+Tier: BASIC | Profile: custom
+Controls: 29/29 passing
+

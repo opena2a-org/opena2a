@@ -1,0 +1,29 @@
+{
+  "capture": "mcp-server-author-hackmyagent-secure.txt",
+  "doc": "docs/use-cases/mcp-server-author.md",
+  "section": "Step 3: Run Security Checks",
+  "command": "npx hackmyagent secure",
+  "package": "hackmyagent",
+  "version": "0.30.0",
+  "build": "packages/cli/dist built with npm run build from commit f8623a6",
+  "invocation": "hackmyagent 0.30.0, the version packages/cli/package.json pins, from the repository's node_modules, run with a new empty HOME, the package reached through a node_modules directory under an _npx directory, and that node_modules/.bin first on PATH, holding the opena2a-cli, hackmyagent and secretless-ai bins as npx sets them up; run from HOME/mcp-server-tools",
+  "setup": "HOME/mcp-server-tools: a git repository holding package.json (@myorg/mcp-server-tools 1.2.0), .gitignore, dist/index.js (a stdio MCP server built on @modelcontextprotocol/sdk) and a .mcp.json configuring my-server (node ./dist/index.js), filesystem, postgres and github, all committed; the captures were taken one after another in the order the guide runs them",
+  "environment": [
+    "CI=true",
+    "TERM=dumb",
+    "LANG=en_US.UTF-8",
+    "OPENA2A_TELEMETRY=off"
+  ],
+  "network": "none: the machine had no network access; hackmyagent could not download its analysis model and fell back to vocabulary-based scoring, as its stderr says",
+  "tools": {
+    "node": "v26.13.1",
+    "npm": "11.20.0",
+    "os": "macOS 27.2 arm64"
+  },
+  "capturedAt": "2026-11-25T09:00:17Z",
+  "exitCode": 0,
+  "stream": "stdout; stderr is kept in the stderr field",
+  "stderr": "\nScanning /private/tmp/opena2a-mcp.r8Dyvp/home/mcp-server-tools...\n\nDiscovering assembly components...\nFound 1 assembly components, simulating assembly...\nScanning assembled prompt for lifecycle attacks...\nAssembly scan complete: 0 findings from 1 components\nDownloading security analysis model (5.5MB)...\n  Failed to download tokenizer.json: getaddrinfo ENOTFOUND huggingface.co\nModel download unavailable. Using vocabulary-based scoring.\nNanoMind: 2 artifact(s) compiled, 3 semantic finding(s) added\n",
+  "outputLines": 57,
+  "outputSha256": "66d74a920730ca55ebb39fe7b2c917bb2d3464af898795e80cf2e38105424246"
+}

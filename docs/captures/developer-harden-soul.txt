@@ -1,0 +1,7 @@
+
+Governance written to: SOUL.md
+Sections added: 9
+Controls covered: 72
+
+Run: opena2a scan-soul to verify governance coverage
+

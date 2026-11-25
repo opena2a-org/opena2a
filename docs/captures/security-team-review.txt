@@ -1,0 +1,20 @@
+
+  OpenA2A Security Review
+
+  [1/6] Scanning project...           0.2s
+  [2/6] Checking credentials...       0.0s
+  [3/6] Verifying config integrity... 0.0s
+  [4/6] Analyzing shield events...    0.2s
+  [5/6] Running HMA security scan...  not installed
+  [6/6] Detecting shadow AI...        0.0s
+
+  Score: 20/100 -- path to 92 available (+72 credentials)  (composite across 6 dimensions)
+  4 findings (2 critical, 1 high, 0 medium)
+
+  Surfaces    Node.js + MCP server
+  Checks      6 static · 0 semantic (NanoMind AST) · 0 skipped
+  Categories  credentials (2 critical, 1 high) · 24 others clear
+  Verdict     Not safe to ship. Anthropic API Key + 2 more. Fix before using in production.
+
+  Report: /tmp/opena2a-review-1795597213269.html (opened in browser)
+
