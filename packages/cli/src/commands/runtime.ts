@@ -14,6 +14,7 @@ import { bold, green, yellow, red, dim, gray, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
 import * as yaml from 'js-yaml';
 import { detectProject } from '../util/detect.js';
+import { printable } from '../util/printable.js';
 
 // --- ARP config shape ---
 //
@@ -121,7 +122,7 @@ export async function runtime(options: RuntimeOptions): Promise<number> {
     case 'init':
       return runtimeInit(targetDir, options);
     default:
-      process.stderr.write(red(`Unknown runtime subcommand: ${options.subcommand}\n\n`));
+      process.stderr.write(red(`Unknown runtime subcommand: ${printable(options.subcommand)}\n\n`));
       process.stderr.write('Usage: opena2a runtime <subcommand> [directory]\n\n');
       process.stderr.write('Subcommands:\n');
       process.stderr.write('  start   Start ARP monitoring\n');

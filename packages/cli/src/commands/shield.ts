@@ -87,7 +87,7 @@ export async function shield(options: ShieldOptions): Promise<number> {
     case 'monitor':
       return handleMonitor(options);
     default:
-      process.stderr.write(red(`Unknown shield subcommand: ${options.subcommand}\n\n`));
+      process.stderr.write(red(`Unknown shield subcommand: ${printableText(options.subcommand)}\n\n`));
       process.stderr.write('Usage: opena2a shield <subcommand>\n\n');
       process.stderr.write('Subcommands:\n');
       process.stderr.write('  init       Full environment scan, policy generation, shell hooks\n');
