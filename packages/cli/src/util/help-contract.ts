@@ -105,7 +105,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['5', 'the --grant check failed unexpectedly'],
       ['6', 'the broker answered with a status other than 200, 401 or 403'],
     ],
-    json: 'prints the result as JSON',
+    json: 'prints the result as JSON and skips the confirmation prompt; when stdin is not a terminal, --ci is still needed',
     ci: 'migrates without prompting (needed when stdin is not a terminal)',
   },
   comply: {
@@ -196,7 +196,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['0', 'the subcommand succeeded'],
       ['1', 'an error, not logged in, check denied the capability, verify found an invalid signature, revoke without --ci or --json, or an unknown subcommand'],
     ],
-    json: 'prints JSON; check and verify then exit 0 and report the result in the allowed or valid field',
+    json: 'prints JSON; check and verify then exit 0 and report the result in the allowed or valid field, and revoke proceeds without the confirmation step',
     ci: 'revoke proceeds without the confirmation step',
   },
   shield: {

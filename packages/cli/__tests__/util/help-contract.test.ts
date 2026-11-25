@@ -56,4 +56,16 @@ describe('HELP_CONTRACTS', () => {
       for (const line of out.split('\n')) expect(line.length).toBeLessThanOrEqual(HELP_WIDTH);
     });
   }
+
+  // protect and identity revoke both skip their confirmation under --json, not
+  // only under --ci; the Automation section has to say so (#418).
+  it('protect: --json says it skips the confirmation prompt, and --ci is still needed off a terminal', () => {
+    expect(HELP_CONTRACTS.protect.json).toContain('skips the confirmation prompt');
+    expect(HELP_CONTRACTS.protect.json).toContain('when stdin is not a terminal, --ci is still needed');
+  });
+
+  it('identity: --json says revoke proceeds without the confirmation step, as --ci does', () => {
+    expect(HELP_CONTRACTS.identity.json).toContain('revoke proceeds without the confirmation step');
+    expect(HELP_CONTRACTS.identity.ci).toContain('revoke proceeds without the confirmation step');
+  });
 });
