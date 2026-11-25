@@ -40,17 +40,30 @@ export interface ProxyRoute {
 type Env = Record<string, string | undefined>;
 
 /**
- * Remove user name and password from a proxy URL before it is printed. They
- * run from the scheme, when the value has one, to the last '@': a value
- * without a scheme (user:password@host:port, a form curl accepts) parses
- * with the user name as its scheme, and an unencoded '/', '?' or '#' in a
- * password ends the host part before the '@'.
+ * Remove user name and password from a proxy URL before it is printed. When
+ * `new URL` reads the value as an http:// or https:// URL, that is the URL
+ * the CLI connects to, so it is printed with its user name and password
+ * cleared and its path kept, even when the path holds an '@'. Otherwise the
+ * user name and password run from the scheme, when the value has one, to the
+ * last '@': a value without a scheme (user:password@host:port, a form curl
+ * accepts) parses with the user name as its scheme, and an unencoded '/',
+ * '?' or '#' in a password can leave the value unparseable.
  */
 export function redactProxyUrl(raw: string): string {
   // `new URL` ignores surrounding whitespace, so the scheme test must too, or
   // an `http://` URL with a leading space would miss it and be printed
   // without its scheme.
   const value = raw.trim();
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      parsed.username = '';
+      parsed.password = '';
+      return parsed.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // Not a URL as it stands; split at the last '@' below.
+  }
   const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(value)?.[0] ?? '';
   const rest = value.slice(scheme.length);
   const hostPart = rest.slice(rest.lastIndexOf('@') + 1);
