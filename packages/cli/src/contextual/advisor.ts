@@ -69,7 +69,7 @@ export function getContextualSuggestions(targetDir?: string): Suggestion[] {
   if (lastScan && lastScan.findings.critical === 0 && lastScan.findings.high === 0) {
     suggestions.push({
       command: 'opena2a benchmark',
-      reason: 'Clean scan results -- run a full security benchmark',
+      reason: 'Clean scan results -- map the project to OASB-1 controls',
       priority: 50,
     });
   }

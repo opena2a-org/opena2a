@@ -74,7 +74,7 @@ Each command routes to a specialized tool, installed on first use:
 | `secrets` | [Secretless AI](https://github.com/opena2a-org/secretless-ai) | Credential management for AI coding tools |
 | `comply` | [AIComply](https://github.com/opena2a-org/aicomply) | Inline PII/credential/regulated-data classifier for agent I/O. Python? `pip install aicomply` |
 | `mcp` | MCP Security | Audit, sign, and verify MCP server configurations |
-| `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | 222 attack scenarios, compliance scoring |
+| `benchmark` | [OASB](https://github.com/opena2a-org/open-agent-security-benchmark) | Maps a project directory to OASB-1 controls; evaluates only a subset (3 of 39 at L1) |
 | `train` | [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent) | Vulnerable AI agent for security training |
 
 ## Use Cases
