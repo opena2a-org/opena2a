@@ -8,10 +8,26 @@ function renderHma() {
     var lc = s.trim().toLowerCase();
     return /^(hackmyagent|npx |npm |opena2a |git |curl |mkdir )/.test(lc);
   }
+  /** A fix text as the command its first line opens with, cut at the dash, and
+   *  the prose after it; null when the text does not open with a command. */
+  function splitFix(s) {
+    var text = String(s).trim();
+    var nl = text.indexOf('\n');
+    var first = nl < 0 ? text : text.slice(0, nl);
+    var parts = first.split(/\s+(?:\u2014|\u2013|--)\s+/);
+    var head = parts[0].trim();
+    if (!isCommand(head) || head.indexOf('`') >= 0) return null;
+    var prose = [parts.slice(1).join(' \u2014 ').trim(), nl < 0 ? '' : text.slice(nl + 1).trim()].filter(Boolean).join('\n');
+    return { command: head, prose: prose };
+  }
+  function proseBlock(text) {
+    return '<div style="font-size:12px;color:var(--muted);line-height:1.4;white-space:pre-wrap">' + esc(text) + '</div>';
+  }
   function fixCell(f) {
     if (!f.fix) return '<span style="color:var(--dim);font-size:11px">No fix available</span>';
-    if (isCommand(f.fix)) return cmdBlock(f.fix);
-    var h = '<div style="font-size:12px;color:var(--muted);line-height:1.4">' + esc(f.fix) + '</div>';
+    var split = splitFix(f.fix);
+    if (split) return cmdBlock(split.command) + (split.prose ? '<div style="margin-top:4px">' + proseBlock(split.prose) + '</div>' : '');
+    var h = proseBlock(f.fix.trim());
     if (f.category === 'skill' || f.category === 'supply') {
       h += '<div style="margin-top:4px">' + cmdBlock('hackmyagent check ' + (f.sampleFiles && f.sampleFiles[0] ? shellArg(f.sampleFiles[0].split(':')[0]) : '<skill-path>')) + '</div>';
     }
