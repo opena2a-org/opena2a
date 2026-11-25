@@ -385,7 +385,7 @@ Detection is the @opena2a/aicomply engine. Python? pip install aicomply.
   if (!ADAPTER_REGISTRY['check']) {
     program
       .command('check [target]')
-      .description('Security check for npm packages, GitHub repos, or local directories')
+      .description('Security check for an npm package, MCP server, skill or GitHub repo')
       .option('--nanomind', 'Run AI-assisted analysis on top of static checks (passthrough to HackMyAgent)')
       .option('--rescan', 'Force a fresh scan even if registry has recent data')
       .allowUnknownOption(true)
