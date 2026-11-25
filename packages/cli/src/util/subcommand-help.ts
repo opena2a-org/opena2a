@@ -156,8 +156,11 @@ export const SUBCOMMAND_ROUTES: Readonly<Record<string, ReadonlyArray<string>>> 
  * anything: the subcommand's own block when the registry has one, the
  * parent's help for any other word the handler routes, and for a word it
  * does not route the same answer the handler gives (unknown subcommand,
- * exit 1). Returns false when no help flag is present, so the caller goes
- * on to run the command.
+ * exit 1) for guard, runtime, identity, shield, skill and mcp. `admin`
+ * differs: its handler prints its usage on stdout and exits 0 for an
+ * unknown word, while this prints the unknown-subcommand error on stderr
+ * and exits 1. Returns false when no help flag is present, so the caller
+ * goes on to run the command.
  *
  * Intercepting only registered subcommands let `--help` fall through to the
  * handler for every other word it accepts: `opena2a identity revoke --ci
