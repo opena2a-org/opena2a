@@ -103,7 +103,7 @@ async function main(): Promise<void> {
     .name('opena2a')
     .description('Open-source security platform for AI agents')
     .option('-v, --version', 'Output the version number')
-    .option('--ci', 'CI mode (no interactive prompts, machine-readable output)')
+    .option('--ci', 'CI mode: no interactive prompts (JSON output needs --json, where a command supports it)')
     .option('--quiet', 'Suppress non-essential output')
     .option('--verbose', 'Verbose output')
     .option('--format <type>', 'Output format: text, json, or sarif where a command produces it', 'text')
