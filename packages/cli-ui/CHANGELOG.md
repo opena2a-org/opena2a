@@ -20,9 +20,11 @@
   the three words fell through to the grey `•` of an unknown verdict. The
   printed word is unchanged, so the line reads the same under `NO_COLOR`.
 - `runTelemetryCommand` accepts an optional `getContributorToken`. When a CLI
-  passes it (typically `getContributorToken` from `@opena2a/contribute`), the
-  status block prints `contributor_token:` between `install_id:` and
-  `config:`, and the `status` help line names it. A getter that throws prints
+  passes it (typically `peekContributorToken` from `@opena2a/contribute`, which
+  reads the token without creating its salt), the status block prints
+  `contributor_token:` between `install_id:` and `config:`, and the `status`
+  help line names it. A getter that returns null prints
+  `none (created when a scan is first contributed)`; one that throws prints
   `unavailable` instead of failing the command. A CLI that passes no getter
   prints exactly what it printed before.
 - `TelemetryStatusLike.suppressedBy` accepts `"test-runner"` and

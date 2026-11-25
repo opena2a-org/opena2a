@@ -72,6 +72,7 @@ await contribute.flush();
 | `buildBatch()` | Build a submission batch from the queued events; returns `null` when the queue is empty |
 | `submitBatch(batch, registryUrl?, verbose?)` | Submit a batch to the Registry API. Resolves `true` only when the Registry accepted it; a `null` or empty batch makes no request and resolves `false` |
 | `getContributorToken()` | Get or create the contributor token |
+| `peekContributorToken()` | Get the contributor token without creating it; null if there is none yet |
 
 ## Part of OpenA2A
 

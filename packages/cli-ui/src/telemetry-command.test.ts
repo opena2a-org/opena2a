@@ -279,6 +279,15 @@ describe("runTelemetryCommand", () => {
       expect(out).toContain("  config:");
     });
 
+    it("says there is none yet when the getter finds no token", () => {
+      const out = runTelemetryCommand("status", {
+        ...makeInput(),
+        getContributorToken: () => null,
+      });
+      expect(out).toContain("  contributor_token: none (created when a scan is first contributed)");
+      expect(out).toContain("  config:");
+    });
+
     it("help lists contributor_token under status only when it is shown", () => {
       const withToken = runTelemetryCommand("--help", {
         ...makeInput(),
