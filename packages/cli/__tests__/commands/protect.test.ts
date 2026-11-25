@@ -1,8 +1,48 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { protect } from '../../src/commands/protect.js';
+
+/**
+ * protect stores the credentials it migrates (secretless-ai's SecretStore,
+ * else an export in the shell profile) and writes broker policies under the
+ * home directory. Run it in a throwaway HOME, with `security` and
+ * `secret-tool` stubs that exit 1 first on PATH, so no test reaches the
+ * developer's keychain, vault, shell profile or ~/.secretless-ai.
+ *
+ * Set before the imports above are evaluated: some modules read the home
+ * directory when they load (the broker socket path, secretless-ai's vault).
+ */
+const sandbox = await vi.hoisted(async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-protect-home-'));
+  const home = path.join(root, 'home');
+  const bin = path.join(root, 'bin');
+  fs.mkdirSync(home);
+  fs.mkdirSync(bin);
+  for (const tool of ['security', 'secret-tool']) {
+    fs.writeFileSync(path.join(bin, tool), '#!/bin/sh\nexit 1\n');
+    fs.chmodSync(path.join(bin, tool), 0o755);
+  }
+  const keys = ['HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'PATH'] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  process.env.XDG_CONFIG_HOME = path.join(home, '.config');
+  process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
+  return { root, home, saved };
+});
+
+afterAll(() => {
+  for (const [key, value] of Object.entries(sandbox.saved)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  fs.rmSync(sandbox.root, { recursive: true, force: true });
+});
 
 const mockFetch = vi.fn();
 
@@ -30,6 +70,13 @@ describe('protect command', () => {
   afterEach(() => {
     cleanupDir(tempDir);
     vi.unstubAllGlobals();
+  });
+
+  it('runs in the throwaway HOME with the keychain tools stubbed', () => {
+    expect(os.homedir()).toBe(sandbox.home);
+    const stub = path.join(path.dirname(sandbox.home), 'bin', 'security');
+    expect(process.env.PATH?.split(path.delimiter)[0]).toBe(path.dirname(stub));
+    expect(fs.readFileSync(stub, 'utf-8')).toBe('#!/bin/sh\nexit 1\n');
   });
 
   it('returns 0 when no credentials are found', async () => {
