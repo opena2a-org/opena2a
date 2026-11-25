@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+*.log
+*.tgz
+
+# Secrets and credentials
+.env
+.env.*
+secrets.json
+*.pem
+*.key
+*.p12
