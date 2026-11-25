@@ -921,7 +921,7 @@ describe('review relay refusals on a bound group', () => {
         s.routes[RUNS_ROUTE] = { body: { total_count: 1, workflow_runs: [run(101, 1)] } };
         s.routes[attemptRoute(101, 1)] = { body: { conclusion: 'cancelled' } };
       },
-      error: `Review run 101 at ${H}, attempt 1 of 1, concluded 'cancelled', not success. https://github.com/${REPO}/actions/runs/101`,
+      error: `Review run 101 at ${H}, attempt 1 of 1, concluded 'cancelled', not success. A cancelled run stays listed for this head, so no re-run and no later run on it can pass; push a new commit to the pull request to review a new head. https://github.com/${REPO}/actions/runs/101`,
     },
   ];
 

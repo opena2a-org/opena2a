@@ -6,9 +6,14 @@
 # gate-file-approval.yml runs (byte for byte), and passes only when every
 # pull_request run of pr-review.yml on that pull request's head commit H
 # completed, and every attempt of every such run concluded with success. A
-# review that failed on H and was re-run to success does not pass. M carries
-# H's review verdict only because M changes exactly the files the pull
-# request changes, blob for blob.
+# review that failed on H and was re-run to success does not pass. A
+# cancelled attempt is not success either: pr-review.yml cancels a run in
+# progress when another starts on the same pull request (a reopen does this
+# on an unchanged head), and the cancelled run stays listed for H, so no
+# re-run and no later run on H can pass the merge group. Only a new commit
+# pushed to the pull request, which gives it a new head, is reviewed afresh.
+# M carries H's review verdict only because M changes exactly the files the
+# pull request changes, blob for blob.
 #
 # The verdict is read from the Actions runs API by workflow path, never from a
 # check run by name, so a same-named job elsewhere cannot stand in for it.
@@ -215,7 +220,8 @@ jobs:
           # pr-review.yml by workflow path. Every run must be completed, and
           # every attempt of every run, read one by one, must have concluded
           # with success: a failed attempt re-run to success on the same head
-          # does not pass. Any read that fails also fails the check.
+          # does not pass, and a cancelled attempt fails like any other. Any
+          # read that fails also fails the check.
           H="$bind_head"
           review_path=".github/workflows/pr-review.yml"
           runs=$(gh api "repos/$REPO/actions/workflows/pr-review.yml/runs?head_sha=$H&event=pull_request&per_page=100") || runs=""
@@ -256,6 +262,10 @@ jobs:
               attempt_conclusion=$(printf '%s' "$attempt_read" | jq -r '.conclusion // empty' 2> /dev/null) || attempt_conclusion=""
               if [ -z "$attempt_read" ]; then
                 echo "::error::Review run $run_id at $H, attempt $attempt of $run_attempts, could not be read. $run_url"
+                exit 1
+              fi
+              if [ "$attempt_conclusion" = "cancelled" ]; then
+                echo "::error::Review run $run_id at $H, attempt $attempt of $run_attempts, concluded 'cancelled', not success. A cancelled run stays listed for this head, so no re-run and no later run on it can pass; push a new commit to the pull request to review a new head. $run_url"
                 exit 1
               fi
               if [ "$attempt_conclusion" != "success" ]; then
