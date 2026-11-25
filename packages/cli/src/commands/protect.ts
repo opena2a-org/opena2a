@@ -1752,7 +1752,7 @@ async function aapGate(options: ProtectOptions, targetDir: string): Promise<numb
     }
     if (err instanceof BrokerGrantError) {
       process.stderr.write(red(`AAP broker unreachable: ${sanitizeForTty(err.message)}\n`));
-      process.stderr.write(dim('  Start the broker:  secretless broker start\n'));
+      process.stderr.write(dim('  Start the broker:  secretless-ai broker start\n'));
       return 4;
     }
     process.stderr.write(red(`AAP gate failed unexpectedly: ${sanitizeForTty((err as Error).message)}\n`));

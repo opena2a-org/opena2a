@@ -217,7 +217,7 @@ describe('opena2a protect --grant', () => {
 
     expect(exitCode).toBe(4);
     expect(stderr).toMatch(/AAP broker unreachable/);
-    expect(stderr).toMatch(/secretless broker start/);
+    expect(stderr).toMatch(/secretless-ai broker start/);
   });
 
   it('emits a JSON-shaped denial when --format json is set', async () => {

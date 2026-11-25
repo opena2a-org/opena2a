@@ -302,7 +302,7 @@ export function formatStatus(status: ShieldStatus, format: 'text' | 'json'): str
       'Secretless':          { desc: 'credential protection',    setup: 'opena2a secrets init' },
       'Runtime Guard (ARP)': { desc: 'runtime monitoring',       setup: 'opena2a runtime init' },
       'Browser Guard':       { desc: 'browser extension',        setup: 'Install from opena2a.org' },
-      'ConfigGuard':         { desc: 'config file integrity',    setup: 'opena2a guard init' },
+      'ConfigGuard':         { desc: 'config file integrity',    setup: 'opena2a guard sign' },
       'AIM Core (Identity)': { desc: 'agent identity',           setup: 'opena2a identity init' },
       'HackMyAgent':         { desc: 'security scanning',        setup: 'opena2a secure' },
     };

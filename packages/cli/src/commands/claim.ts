@@ -279,7 +279,7 @@ export async function claim(options: ClaimOptions): Promise<number> {
     if (!isCi && !isJson) spinner.stop();
 
     if (!result.ok || !result.data) {
-      const msg = `No trust profile found. Run \`opena2a self-register ${packageName}\` to add it first.`;
+      const msg = `No trust profile found for ${packageName}. It may not have been discovered yet.`;
       if (isJson) {
         process.stdout.write(JSON.stringify({ error: 'not_found', package: packageName, message: msg }) + '\n');
       } else {
