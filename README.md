@@ -79,7 +79,7 @@ Requires Node.js 20.19 or later. To check where a release came from, see [Verify
 
 Telemetry is on by default. `opena2a` sends usage events to the OpenA2A Registry at `api.oa2a.org`. Each event carries an install ID that identifies the machine, so the data is personal data. [opena2a.org/privacy](https://opena2a.org/privacy) explains how the ID is made.
 
-An event holds the tool name and version, the command name (with an error code appended when the command fails), whether it succeeded, how long it took, the operating system platform, the Node.js major version and the install ID.
+An event holds the tool name and version, the command name (with an error code appended when the command fails), whether it succeeded, an optional reason for that outcome from a fixed list of labels, how long it took, the operating system platform, the Node.js major version and the install ID.
 
 Turn it off for one run with `OPENA2A_TELEMETRY=off`, or for every run with `opena2a telemetry off`. `opena2a telemetry status` shows the current state, and `OPENA2A_TELEMETRY_DEBUG=print` prints each event to stderr. The policy is at [opena2a.org/telemetry](https://opena2a.org/telemetry).
 
