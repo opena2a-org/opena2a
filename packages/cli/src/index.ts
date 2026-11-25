@@ -573,7 +573,7 @@ analysis runs and results can be shared with the community.
     .allowUnknownOption(true)
     .helpOption(false)
     .option('--config <path>', 'Path to ARP config file')
-    .option('--count <n>', 'Number of events to show (tail) [default: 20]')
+    .option('-c, --count <n>', 'Number of events to show (tail) [default: 20]')
     .option('--dir <path>', 'Target directory')
     .option('--force', 'Overwrite existing config (init)')
     .action(async (subcommand: string | undefined, directory: string | undefined, opts, cmd) => {

@@ -373,4 +373,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node dist/index.js <guard|shield|runtime> <unknown word> [--help]) in a scratch ' +
       'HOME and cwd, one at a time (#422)',
   },
+  'commands/runtime-tail-count-alias.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js runtime tail [-c 5 | --count 5] [--format json]) in a scratch ' +
+      'HOME and cwd holding an ARP event log, one at a time',
+  },
 };
