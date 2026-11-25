@@ -1,6 +1,6 @@
 /**
  * Per-subcommand --help support for opena2a subtree commands
- * (guard, shield, identity, runtime, skill, mcp).
+ * (guard, runtime, identity, shield, admin, skill, mcp).
  *
  * Each parent registers as a single Commander command with manual
  * subcommand routing, so Commander's auto-help only knows about the
@@ -8,8 +8,10 @@
  * `guard` parent help instead of `sign`-specific help, a
  * discoverability gap flagged in #132.
  *
- * Each parent's action calls `printSubcommandHelp(parent, sub)` after
- * detecting `--help` / `-h` in the incoming args.
+ * Each parent's action calls `answerHelpRequest(parent, sub, registry, ...)`
+ * first. It answers a `--help` / `-h` request itself and returns true, or
+ * returns false so the action goes on to run the command. Every help screen
+ * fits a standard 80-column terminal (HELP_WIDTH).
  */
 
 import { wordWrap } from './format.js';
