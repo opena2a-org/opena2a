@@ -27,18 +27,15 @@
  * failure in every environment — the failure message names the check, what
  * was missing, and the command that satisfies it where one exists.
  *
- * The clean fixture cases are network-dependent and say so. They are skipped,
- * never passed, with a named reason when a probe of registry.npmjs.org and
- * api.github.com (run once, before the review) finds either unreachable, or
- * when the review child outlives its own timeout on a loaded machine. The
- * own-tarball and poisoned cases have no such exception. Within the clean
- * fixture, `consumer-closure` is also skipped, never passed, when every one of its
- * preconditions is api.github.com refusing this address for its rate limit
- * (an unauthenticated address gets 60 requests an hour; the script sends
- * GH_TOKEN or GITHUB_TOKEN as a Bearer token when either is set, and the refusal
- * quoted in the output is the endpoint's own statement, not a guess from the
- * environment). Any other precondition still fails it, and the own-tarball
- * cases have no such exception.
+ * The clean fixture cases read the registry and say so. They are skipped,
+ * never passed, with a named reason when a probe of registry.npmjs.org (run
+ * once, before the review) finds it unreachable, or when the review child
+ * outlives its own timeout on a loaded machine. The own-tarball and poisoned
+ * cases have no such exception. The clean fixture does NOT read api.github.com:
+ * its review is given `--advisories-file` with a fixture advisory list, so its
+ * `consumer-closure` verdict holds with no token and an exhausted rate limit
+ * (an unauthenticated address gets 60 requests an hour), and any precondition
+ * fails it.
  */
 import { describe, expect, it, type TestContext } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -103,31 +100,6 @@ function preconditionFailure(check: string, out: string): string {
   ].join('\n');
 }
 
-/** api.github.com refusing a read for its rate limit, as the script quotes it. */
-const ADVISORY_RATE_LIMIT = /^advisories endpoint for \S+ returned (403|429): .*rate limit/i;
-/** The empty-feed canary, which refusals on every roster repository also trip. */
-const ADVISORY_EMPTY_FEED = /^the advisories feed returned zero advisories/;
-
-/**
- * The rate-limit refusals behind a consumer-closure precondition, or null
- * when anything else is among its preconditions. The script prints a
- * precondition result's N preconditions right after its
- * `rows: ..., N precondition` summary line; a precondition returned before
- * the rows were examined has no such line and is never a rate limit.
- */
-function advisoryRateLimitRefusals(out: string): string[] | null {
-  const section = out.split('check consumer-closure: precondition')[1]?.split('\ncensus: ')[0] ?? '';
-  const lines = section.split('\n').map((l) => l.trim());
-  const rowsAt = lines.findIndex((l) => /^rows: .*, \d+ precondition$/.test(l));
-  if (rowsAt === -1) return null;
-  const count = Number(/(\d+) precondition$/.exec(lines[rowsAt])![1]);
-  const preconditions = lines.slice(rowsAt + 1, rowsAt + 1 + count);
-  if (count === 0 || preconditions.length !== count) return null;
-  const refusals = preconditions.filter((l) => ADVISORY_RATE_LIMIT.test(l));
-  if (refusals.length === 0) return null;
-  return preconditions.every((l) => ADVISORY_RATE_LIMIT.test(l) || ADVISORY_EMPTY_FEED.test(l)) ? refusals : null;
-}
-
 interface ReviewResult {
   status: number | null;
   /** True when the review child was killed for outliving its timeout. */
@@ -147,14 +119,16 @@ const REVIEW_TIMEOUT_MS = 840_000;
  */
 const TEST_TIMEOUT_MS = REVIEW_TIMEOUT_MS + 120_000;
 
-/** The hosts the clean fixture's review reads: the registry and the advisory feed. */
-const NETWORK_HOSTS = ['https://registry.npmjs.org/', 'https://api.github.com/'];
+/**
+ * The hosts the clean fixture's review reads: the registry only. Its advisories
+ * come from a fixture file, never from api.github.com.
+ */
+const NETWORK_HOSTS = ['https://registry.npmjs.org/'];
 
 /**
- * Why the network the clean fixture needs is not there, or null when both hosts
- * answered. Any HTTP answer counts as reachable (a 403 rate limit is the
- * endpoint talking, and the rate-limit triage below handles it); only a failure
- * to connect is unreachable. Probed once, in a child so the suite's offline
+ * Why the network the clean fixture needs is not there, or null when every host
+ * answered. Any HTTP answer counts as reachable; only a failure to connect is
+ * unreachable. Probed once, in a child so the suite's offline
  * fetch stub does not stand in for the network.
  */
 let networkProbe: string | null | undefined;
@@ -186,7 +160,7 @@ function networkUnreachable(): string | null {
 function cleanResultOrSkip(ctx: TestContext): ReviewResult {
   const down = networkUnreachable();
   if (down) {
-    const note = `network-dependent: the clean fixture's review reads registry.npmjs.org and api.github.com, and cannot reach: ${down}`;
+    const note = `network-dependent: the clean fixture's review reads registry.npmjs.org, and cannot reach: ${down}`;
     console.warn(note);
     ctx.skip(note);
   }
@@ -279,6 +253,40 @@ const CONTROL_CLASS_LINE = `const OPENAI_API_KEY = '${'sk-' + 'proj-' + 'A'.repe
 
 const scratch = mkdtempSync(path.join(tmpdir(), 'release-artifact-review-tests-'));
 
+/** `owner/repo` of the opena2a-cli repository, as its package.json names it. */
+function cliRepo(): string {
+  const url = (JSON.parse(readFileSync(path.join(CLI_DIR, 'package.json'), 'utf8')) as { repository?: { url?: string } })
+    .repository?.url;
+  const m = /github\.com[:/]+([^/\s]+)\/([^/\s#?]+?)(?:\.git)?$/.exec(url ?? '');
+  if (!m) throw new Error(`packages/cli/package.json names no github.com repository ("${url}")`);
+  return `${m[1]}/${m[2]}`;
+}
+
+/**
+ * The clean fixture's advisories, handed to the review with
+ * `--advisories-file` so its consumer-closure verdict needs no api.github.com
+ * read. One published advisory on opena2a-cli whose range the fixture's
+ * version is outside: non-empty, so the empty-feed canary stays quiet, and
+ * matched against the row, so the range comparison runs.
+ */
+function writeCleanAdvisories(): string {
+  const file = path.join(mkdtempSync(path.join(scratch, 'advisories-')), 'advisories.json');
+  const advisories = {
+    [cliRepo()]: [
+      {
+        ghsa_id: 'GHSA-0000-0000-0000',
+        severity: 'high',
+        state: 'published',
+        vulnerabilities: [
+          { package: { ecosystem: 'npm', name: 'opena2a-cli' }, vulnerable_version_range: '>= 0.1.0, < 0.1.5' },
+        ],
+      },
+    ],
+  };
+  writeFileSync(file, JSON.stringify(advisories, null, 2));
+  return file;
+}
+
 /** Memoised heavy runs, so several tests can assert on one invocation. */
 let cleanResult: ReviewResult | undefined;
 function getCleanResult(): ReviewResult {
@@ -289,7 +297,7 @@ function getCleanResult(): ReviewResult {
       manifestExtra: { bin: { opena2a: 'dist/index.js' } },
       files: { 'dist/index.js': WELL_BEHAVED_BIN, 'README.md': '# clean fixture\n' },
     }),
-    ['--advisory-states', 'published']
+    ['--advisory-states', 'published', '--advisories-file', writeCleanAdvisories()]
   );
   return cleanResult;
 }
@@ -657,16 +665,10 @@ describe('release-artifact-review: clean subjects go green', () => {
     'a clean fixture tarball exits 0 with every check pass',
     (ctx) => {
       const r = cleanResultOrSkip(ctx);
+      // The advisories came from the fixture file, not api.github.com.
+      expect(r.out, r.out).toContain('--advisories-file; api.github.com NOT read');
       for (const check of ALL_CHECKS) {
         if (r.census[check] === 'precondition') {
-          // consumer-closure is the last check, so every other one has
-          // already been asserted when this skips.
-          const refusals = check === 'consumer-closure' ? advisoryRateLimitRefusals(r.out) : null;
-          if (refusals) {
-            const note = `network-dependent: api.github.com refused consumer-closure's advisories reads for its rate limit, so the check could not run (refusal${refusals.length === 1 ? '' : 's'} below). Export GH_TOKEN or GITHUB_TOKEN (the script sends either as a Bearer token, which raises the limit from 60 to 5,000 requests an hour), or re-run after the limit resets.`;
-            console.warn(`${note}\n${refusals.join('\n')}`);
-            ctx.skip(note);
-          }
           expect.fail(preconditionFailure(check, r.out));
         }
         expect(r.census[check], `${check} on the clean fixture\n${r.out}`).toBe('pass');
@@ -756,54 +758,4 @@ describe('release-artifact-review: clean subjects go green', () => {
     },
     TEST_TIMEOUT_MS
   );
-});
-
-// ---------------------------------------------------------------------------
-// The clean fixture's one network-dependent skip: what counts as a rate limit.
-// ---------------------------------------------------------------------------
-
-describe('release-artifact-review: rate-limit triage of the clean fixture', () => {
-  const refusal = (repo: string, status = 403, message = "API rate limit exceeded for 192.0.2.1. (But here's the good news: Authenticated requests get a higher rate limit.)") =>
-    `advisories endpoint for ${repo} returned ${status}: {"message":"${message}"}`;
-  const EMPTY_FEED =
-    "the advisories feed returned zero advisories across the roster's repositories — a silently empty feed is indistinguishable from a broken one";
-  /** A consumer-closure section in the script's own layout. */
-  const output = (status: string, preconditions: string[]) =>
-    [
-      `  check consumer-closure: ${status}`,
-      '    advisory-states read: published',
-      `    note: ${refusal('opena2a-org/hackmyagent')} (canary-only repository)`,
-      '    examined opena2a-cli@0.0.0-qgf-clean (opena2a-org/opena2a): clean',
-      '    advisories read: 0 across 0 repositories (states: published)',
-      `    rows: 1 own copy examined, 0 fail, ${preconditions.length} precondition`,
-      ...preconditions.map((p) => `    ${p}`),
-      `census: entry-allowlist=pass consumer-closure=${status}`,
-    ].join('\n');
-
-  it('names the refusals when every precondition is the endpoint refusing for its rate limit', () => {
-    const primary = refusal('opena2a-org/opena2a');
-    const secondary = refusal('opena2a-org/ai-trust', 429, 'You have exceeded a secondary rate limit.');
-    expect(advisoryRateLimitRefusals(output('precondition', [primary, secondary, EMPTY_FEED]))).toEqual([primary, secondary]);
-  });
-
-  it('does not skip when another precondition sits beside the refusals', () => {
-    const deprecation = 'deprecation probe on known-deprecated hackmyagent@0.1.0 returned empty — the deprecation feed is not readable';
-    expect(advisoryRateLimitRefusals(output('precondition', [refusal('opena2a-org/opena2a'), deprecation, EMPTY_FEED]))).toBeNull();
-  });
-
-  it('does not skip a 403 that is not a rate limit, or an empty feed on its own', () => {
-    const denied = refusal('opena2a-org/opena2a', 403, 'Resource not accessible by integration');
-    expect(advisoryRateLimitRefusals(output('precondition', [denied, EMPTY_FEED]))).toBeNull();
-    expect(advisoryRateLimitRefusals(output('precondition', [EMPTY_FEED]))).toBeNull();
-  });
-
-  it('does not skip a precondition returned before the rows were examined, or a check that ran', () => {
-    const early = [
-      '  check consumer-closure: precondition',
-      `    the fresh-install closure did not resolve: ${refusal('opena2a-org/opena2a')}`,
-      'census: consumer-closure=precondition',
-    ].join('\n');
-    expect(advisoryRateLimitRefusals(early)).toBeNull();
-    expect(advisoryRateLimitRefusals(output('pass', []))).toBeNull();
-  });
 });
