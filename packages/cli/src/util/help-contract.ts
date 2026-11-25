@@ -285,7 +285,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   admin: {
     exit: [
       ['0', 'the operation succeeded, or usage was printed as text'],
-      ['1', 'no admin key, an invalid --registry or sensor id, a registry or network error, approve or reject declined or refused without --yes, or a usage error under --json'],
+      ['1', 'no admin key, an invalid --registry or sensor id, a registry or network error, approve or reject declined or refused without --yes, an unknown subcommand, or a usage error under --json'],
     ],
     json: 'prints the result as JSON; approve and reject then need --yes',
     ci: 'approve and reject refuse to run without --yes',

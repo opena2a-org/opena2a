@@ -1107,6 +1107,8 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         args: (s) => ['admin', 'sensors', 'approve', 's-1', '--yes', '--api-key', 'test-admin-key', '--registry', s.url],
         output: /not a valid sensor id/,
       },
+      { when: 'an unknown subcommand', args: ['admin', 'zzz'], output: /Unknown admin subcommand: zzz/ },
+      { when: 'an unknown subcommand', args: ['admin', 'sensors', 'no-such-subcommand'] },
       { when: 'a usage error under --json', args: ['admin', '--json'] },
     ],
   },
