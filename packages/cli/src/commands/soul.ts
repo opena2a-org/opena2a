@@ -15,6 +15,22 @@ export interface SoulOptions {
   strict?: boolean;
 }
 
+/** The agent tiers the hackmyagent SoulScanner knows (its `AgentTier`). */
+export const SOUL_TIERS = ['BASIC', 'TOOL-USING', 'AGENTIC', 'MULTI-AGENT'] as const;
+
+/**
+ * Resolve a --tier value to an engine tier, case-insensitively. An unknown
+ * tier is reported and returns null: the scanner would otherwise accept it
+ * and score against no controls at all (`Controls: 0/0`).
+ */
+function resolveTier(command: string, tier: string | undefined): { tier?: string } | null {
+  if (tier === undefined) return {};
+  const upper = tier.trim().toUpperCase();
+  if ((SOUL_TIERS as readonly string[]).includes(upper)) return { tier: upper };
+  process.stderr.write(`${command}: unknown tier "${tier}". Valid tiers: ${SOUL_TIERS.join(', ')}.\n`);
+  return null;
+}
+
 async function getSoulScanner(): Promise<any> {
   try {
     const hma: any = await import('hackmyagent');
@@ -32,6 +48,8 @@ async function getSoulScanner(): Promise<any> {
 }
 
 export async function scanSoul(options: SoulOptions): Promise<number> {
+  const tier = resolveTier('scan-soul', options.tier);
+  if (!tier) return 1;
   const scanner = await getSoulScanner();
   if (!scanner) return 1;
 
@@ -40,7 +58,7 @@ export async function scanSoul(options: SoulOptions): Promise<number> {
   try {
     const result = await scanner.scanSoul(targetDir, {
       profile: options.profile,
-      tier: options.tier,
+      tier: tier.tier,
       deep: options.deep,
       verbose: options.verbose,
     });
@@ -76,6 +94,8 @@ export async function scanSoul(options: SoulOptions): Promise<number> {
 }
 
 export async function hardenSoul(options: SoulOptions): Promise<number> {
+  const tier = resolveTier('harden-soul', options.tier);
+  if (!tier) return 1;
   const scanner = await getSoulScanner();
   if (!scanner) return 1;
 
@@ -84,7 +104,7 @@ export async function hardenSoul(options: SoulOptions): Promise<number> {
   try {
     const result = await scanner.hardenSoul(targetDir, {
       profile: options.profile,
-      tier: options.tier,
+      tier: tier.tier,
       dryRun: options.dryRun,
       verbose: options.verbose,
     });

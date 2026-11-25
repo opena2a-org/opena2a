@@ -220,7 +220,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   'scan-soul': {
     exit: [
       ['0', 'the governance score is 60 or higher (with --strict, also no critical control missing)'],
-      ['1', 'the score is below 60, a critical control is missing under --strict, the scanner is unavailable, or the scan failed'],
+      ['1', 'the score is below 60, a critical control is missing under --strict, --tier is not a known tier, the scanner is unavailable, or the scan failed'],
     ],
     json: 'prints the scan result as JSON',
     ci: 'no effect',
@@ -228,7 +228,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   'harden-soul': {
     exit: [
       ['0', 'the governance file was written, or previewed with --dry-run; a directory it cannot write to also exits 0 and reports 0 controls covered'],
-      ['1', 'the scanner is unavailable, or generation failed'],
+      ['1', '--tier is not a known tier, the scanner is unavailable, or generation failed'],
     ],
     json: 'prints the result as JSON',
     ci: 'no effect',
