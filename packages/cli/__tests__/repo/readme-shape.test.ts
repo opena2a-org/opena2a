@@ -50,7 +50,7 @@ const INSTALL_ID_SENTENCE =
 
 /** Each passage that left the README, by the heading it carries at its new path. */
 const MOVED: ReadonlyArray<readonly [heading: string, destination: string]> = [
-  ['From source', 'CONTRIBUTING.md'],
+  ['Development Setup', 'CONTRIBUTING.md'],
   ['Verifying what was installed', 'docs/verifying-npm-packages.md'],
   ['Assess', 'docs/commands.md'],
   ['Protect', 'docs/commands.md'],
@@ -417,6 +417,31 @@ describe('each passage that left the README is at its new path', () => {
     for (const destination of new Set(MOVED.map(([, d]) => d))) {
       expect(readme, destination).toContain(`](${destination}`);
     }
+  });
+});
+
+describe('CONTRIBUTING gives the setup steps once', () => {
+  const contributing = read('CONTRIBUTING.md');
+  /** Command lines inside fenced blocks, comments dropped. */
+  const commands = (markdown: string): string[] =>
+    blocks(markdown)
+      .filter((b) => FENCE.test(b.split('\n')[0]))
+      .flatMap((b) => b.split('\n').slice(1, -1))
+      .map((l) => l.replace(/#.*$/, '').trim())
+      .filter(Boolean);
+
+  it('has one setup section, Development Setup, and no From source section beside it', () => {
+    const titles = h2Titles(contributing);
+    expect(titles).toContain('Development Setup');
+    expect(titles).not.toContain('From source');
+  });
+
+  it('shows the clone, install and build steps once', () => {
+    const lines = commands(contributing);
+    expect(lines.filter((l) => l.startsWith('git clone ')), 'git clone').toHaveLength(1);
+    expect(lines.filter((l) => l === 'npm install'), 'npm install').toHaveLength(1);
+    const setup = commands(h2Section(contributing, 'Development Setup'));
+    expect(setup.filter((l) => /^(npm run build|npx turbo( run)? build)$/.test(l)), 'build').toHaveLength(1);
   });
 });
 

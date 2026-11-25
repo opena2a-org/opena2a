@@ -36,24 +36,7 @@ packages/
 
 ## Development Setup
 
-```bash
-# Clone the repository
-git clone https://github.com/opena2a-org/opena2a.git
-cd opena2a
-
-# Install dependencies
-npm install
-
-# Build all packages
-npx turbo build
-
-# Run the CLI locally
-node packages/cli/dist/index.js --help
-```
-
-## From source
-
-This repo is a TypeScript turborepo. Clone and build if you want to inspect the source, contribute, or run an unreleased version.
+This repo is a TypeScript turborepo. Clone and build it to inspect the source, contribute, or run an unreleased version.
 
 ```bash
 git clone https://github.com/opena2a-org/opena2a.git
@@ -61,7 +44,7 @@ cd opena2a
 git verify-tag $(git describe --tags --abbrev=0)   # verify the latest release tag
 npm install
 npm run build                                      # builds all workspaces via turbo
-./packages/cli/dist/index.js review                # run the freshly-built binary
+./packages/cli/dist/index.js --help                # run the freshly-built binary
 
 # Or link it globally for the current shell:
 cd packages/cli && npm link
