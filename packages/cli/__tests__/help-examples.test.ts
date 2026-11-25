@@ -1,6 +1,8 @@
 /**
- * Every command a nested --help prints under Examples runs as shown, and
- * --help never runs the command it was asked about.
+ * Every command a nested --help prints under Examples runs as shown, except
+ * the two in NOT_RUN (`opena2a identity connect localhost:8080 --api-key <key>`
+ * and `opena2a runtime start`), and --help never runs the command it was
+ * asked about.
  *
  * The `opena2a <parent> <sub> --help` entries were written apart from the
  * handlers and drifted: `identity log --limit 100` answered "Missing required
@@ -29,7 +31,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -60,7 +62,10 @@ const SAMPLES: Record<string, string> = {
 
 /**
  * Examples that are parsed but not run, with the reason. Listed so a new one
- * is a visible diff, not a silent skip.
+ * is a visible diff, not a silent skip. There are two: identity connect, which
+ * registers on a real AIM server, and runtime start, which runs until stopped.
+ * The comment above the registries in subcommand-help.ts names each of them;
+ * a test below keeps the two in step.
  */
 const NOT_RUN: Record<string, string> = {
   'opena2a identity connect localhost:8080 --api-key <key>': 'registers on the AIM server it names',
@@ -354,6 +359,19 @@ describe('the usage-error check', () => {
   it('every example that is not run is still a registered example', () => {
     const all = new Set(PARENTS.flatMap(([, r]) => Object.values(r).flatMap((h) => h.examples ?? [])));
     expect(Object.keys({ ...NOT_RUN, ...LONG_RUNNING }).filter((ex) => !all.has(ex))).toEqual([]);
+  });
+
+  it('the registry comment in subcommand-help.ts names every example that is not run', () => {
+    const source = readFileSync(resolve(__dirname, '../src/util/subcommand-help.ts'), 'utf-8');
+    const start = source.indexOf('// Every example in these registries runs as shown');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const lines = source.slice(start).split('\n');
+    const end = lines.findIndex((line) => !line.startsWith('//'));
+    const comment = lines
+      .slice(0, end)
+      .map((line) => line.replace(/^\/\/\s*/, ''))
+      .join('\n');
+    expect(Object.keys(NOT_RUN).filter((ex) => !comment.includes(ex))).toEqual([]);
   });
 });
 

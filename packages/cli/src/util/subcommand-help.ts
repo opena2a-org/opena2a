@@ -193,6 +193,11 @@ export function answerHelpRequest(
 
 // Every example in these registries runs as shown: __tests__/help-examples.test.ts
 // runs each one from the build and fails on the handler's usage-error path.
+// Two are parsed but not run (NOT_RUN in that test):
+//   opena2a identity connect localhost:8080 --api-key <key>
+//     (registers on the AIM server it names)
+//   opena2a runtime start
+//     (runs until stopped and starts the ARP monitors on this machine)
 
 export const GUARD_HELP: SubcommandHelpRegistry = {
   sign: {
