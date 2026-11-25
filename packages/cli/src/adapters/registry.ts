@@ -335,6 +335,32 @@ export const ADAPTER_REGISTRY: Record<string, AdapterConfig> = {
     packageName: 'secretless-ai',
     subcommand: 'broker',
     description: 'Identity-aware credential broker daemon',
+    // secretless-ai answers `broker --help` with its top-level help (every
+    // `secretless-ai ...` verb, rebranded to `opena2a secrets ...`), so the
+    // broker's usage is printed here. Mirrors secretless-ai's own
+    // `runBroker` usage block (dist/commands/broker.js).
+    ownHelp: [
+      'Usage: opena2a broker <start|stop|status> [options]',
+      '',
+      'Identity-aware credential broker daemon',
+      '',
+      'Commands:',
+      '  start    Start the credential broker daemon (foreground)',
+      '  stop     Stop the running broker daemon',
+      '  status   Show broker daemon status',
+      '',
+      'Start options:',
+      '  --aim-url <url>        AIM server URL for identity verification',
+      '  --aim-token <token>    Bearer token for AIM auth (or env SECRETLESS_AIM_TOKEN)',
+      '  --port <port>          HTTP port (default: 19421)',
+      '  --policy-file <path>   Policy file path',
+      '',
+      'Examples:',
+      '  opena2a broker start',
+      '  opena2a broker start --port 19422',
+      '  opena2a broker status',
+      '  opena2a broker stop',
+    ].join('\n'),
     ...CHILD_ENV_CONTRACTS['secretless-ai'],
   },
   // dlp is not yet implemented in secretless-ai; removed to avoid confusing errors

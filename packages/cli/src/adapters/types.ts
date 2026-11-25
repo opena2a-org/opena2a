@@ -13,6 +13,14 @@ export interface AdapterConfig {
   pythonModule?: string;
   /** Subcommand to prepend to args (e.g. broker/dlp share secretless-ai but differ by subcommand) */
   subcommand?: string;
+  /**
+   * The usage text `opena2a <name> --help` prints itself, in place of the
+   * generic `Usage: opena2a <name> [args...]` line, without passing --help to
+   * the bundled tool. For a tool that answers `<subcommand> --help` with its
+   * own top-level help instead of the subcommand's (secretless-ai prints its
+   * whole `secretless-ai ...` usage for `broker --help`).
+   */
+  ownHelp?: string;
   /** Port mappings for docker() adapters (e.g. ['3001-3008:3001-3008']) */
   ports?: string[];
   /** Description shown in help text */
