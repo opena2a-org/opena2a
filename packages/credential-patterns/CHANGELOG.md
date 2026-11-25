@@ -2,7 +2,7 @@
 
 All notable changes to `@opena2a/credential-patterns` will be documented in this file.
 
-## Unreleased
+## 0.1.4 — 2026-11-25
 
 ### The PyPI rule matches only tokens that carry the pypi.org or test.pypi.org prefix
 
