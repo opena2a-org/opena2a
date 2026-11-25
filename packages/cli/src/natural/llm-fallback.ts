@@ -126,7 +126,7 @@ Available commands:
 - opena2a secrets init -- Set up credential protection
 - opena2a secrets scan -- Find hardcoded credentials
 - opena2a runtime start -- Runtime monitoring (process/network/filesystem)
-- opena2a benchmark -- OASB security benchmark (222 scenarios)
+- opena2a benchmark -- Map a project directory to OASB-1 controls (evaluates a subset, e.g. 3 of 39 at L1)
 - opena2a registry check <pkg> -- Trust registry lookup
 - opena2a train -- Launch DVAA training environment
 - opena2a crypto scan -- Cryptographic inventory / PQC readiness

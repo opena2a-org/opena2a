@@ -20,7 +20,7 @@ const CATEGORIES: WizardCategory[] = [
     commands: [
       { label: 'Full security scan', command: 'opena2a scan secure', description: `${HMA_CHECK_COUNT} security checks with auto-fix` },
       { label: 'Attack mode', command: 'opena2a scan attack', description: 'Adversarial testing against your agent' },
-      { label: 'Security benchmark', command: 'opena2a benchmark', description: 'OASB benchmark (222 standardized attack scenarios)' },
+      { label: 'OASB-1 control mapping', command: 'opena2a benchmark', description: 'Map the project to OASB-1 controls (evaluates a subset, e.g. 3 of 39 at L1)' },
       { label: 'Credential scan', command: 'opena2a secrets scan', description: 'Find hardcoded secrets in your codebase' },
     ],
   },

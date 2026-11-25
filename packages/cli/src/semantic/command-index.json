@@ -65,7 +65,7 @@
   {
     "id": "benchmark",
     "path": "opena2a benchmark",
-    "description": "Run OASB security benchmark with 222 attack scenarios",
+    "description": "Map a project directory to OASB-1 controls, evaluating a subset of them",
     "tags": ["benchmark", "oasb", "compliance", "score", "assessment"],
     "synonyms": ["assess", "grade", "score", "evaluate"],
     "domains": ["compliance", "owasp", "mitre"],

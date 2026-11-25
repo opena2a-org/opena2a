@@ -44,13 +44,13 @@ opena2a identity create --name X
 
 Give your agent a cryptographic identity and local audit log, no server. Bundled in `opena2a-cli`. [Post-incident review](post-incident-review.md) shows how to read the log back.
 
-## Run the OASB benchmark
+## Map a project to OASB-1 controls
 
 ```bash
 opena2a benchmark
 ```
 
-Uses OASB internally.
+Maps a project directory, the current one by default, to the OASB-1 controls of a level (`--level L1`, the default, or `L2`, `L3`) and evaluates only the controls its checks cover: today the three credential controls, so 3 of the 39 at L1. Every other control is reported as not evaluated and never counted as passing, so the rating is `Partial` at best until coverage is complete. It runs no attack scenarios.
 
 ## Command reference
 
@@ -67,7 +67,7 @@ Three job categories: assess, protect, operate. Run any with `--help` for full f
 | `opena2a check <target>` | Pre-install trust check. Queries the OpenA2A Registry and runs HMA locally. |
 | `opena2a scan-soul <path>` | Governance controls across every ABGS domain, profile-aware. |
 | `opena2a trust <pkg>` | Read-only Registry lookup for an npm or PyPI package. |
-| `opena2a benchmark` | Run the OASB benchmark against your security tool. |
+| `opena2a benchmark` | Map a project directory to OASB-1 controls. Evaluates only a subset (3 of 39 at L1); the rest are reported as not evaluated. |
 
 ### Protect
 

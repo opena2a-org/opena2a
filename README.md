@@ -54,7 +54,7 @@ Each line links to the section for that job.
 - [Run a command with injected credentials](docs/commands.md#run-a-command-with-injected-credentials): `opena2a secrets run --only KEY -- <cmd>`
 - [Look up a package's trust profile](docs/commands.md#look-up-a-packages-trust-profile): `opena2a trust <pkg>`
 - [Give an agent an identity](docs/commands.md#give-an-agent-an-identity): `opena2a identity create --name X`
-- [Run the OASB benchmark](docs/commands.md#run-the-oasb-benchmark): `opena2a benchmark`
+- [Map a project to OASB-1 controls](docs/commands.md#map-a-project-to-oasb-1-controls): `opena2a benchmark`
 
 ## Built-in help
 

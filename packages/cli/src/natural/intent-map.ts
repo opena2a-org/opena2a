@@ -141,7 +141,7 @@ export const INTENT_MAPPINGS: readonly IntentMapping[] = [
       /\bsecurity\s+(score|grade|rating)\b/i,
     ],
     command: 'opena2a benchmark',
-    description: 'Run OASB security benchmark',
+    description: 'Map the project to OASB-1 controls (evaluates a subset)',
   },
 
   // Registry/trust intents

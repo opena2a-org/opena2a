@@ -886,10 +886,10 @@ Output formats:
       printFooter({ ci: globalOpts.ci, json: globalOpts.format === 'json' });
     });
 
-  // Benchmark command (OASB security benchmark, uses hackmyagent programmatic API)
+  // Benchmark command (maps a directory to OASB-1 controls, uses hackmyagent programmatic API)
   program
     .command('benchmark [directory]')
-    .description('Run OASB security benchmark against AI agent')
+    .description('Map a project directory to OASB-1 controls; evaluates only a subset (e.g. 3 of 39 at L1)')
     .option('--dir <path>', 'Target directory')
     .option('--level <level>', 'Benchmark level: L1, L2, L3', 'L1')
     .action(async (directory: string | undefined, opts) => {
