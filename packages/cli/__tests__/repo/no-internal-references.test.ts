@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
