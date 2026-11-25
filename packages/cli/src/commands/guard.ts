@@ -171,7 +171,7 @@ export async function guard(options: GuardOptions): Promise<number> {
       });
     }
     default:
-      process.stderr.write(red(`Unknown subcommand: ${options.subcommand}\n\n`));
+      process.stderr.write(red(`Unknown guard subcommand: ${options.subcommand}\n\n`));
       process.stderr.write('Usage: opena2a guard <subcommand> [directory]\n\n');
       process.stderr.write('Subcommands:\n');
       process.stderr.write('  sign       Sign config files for integrity verification\n');

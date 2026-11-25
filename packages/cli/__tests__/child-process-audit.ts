@@ -366,4 +366,11 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'scratch HOME, then spawnSync(env -i node dist/index.js shield report [--format json | --report ' +
       '<file>]) from an empty working directory, inside sandbox-exec on macOS, one at a time',
   },
+  'unknown-subcommand.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js <guard|shield|runtime> <unknown word> [--help]) in a scratch ' +
+      'HOME and cwd, one at a time (#422)',
+  },
 };

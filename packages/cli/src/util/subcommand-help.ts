@@ -154,6 +154,25 @@ export const SUBCOMMAND_ROUTES: Readonly<Record<string, ReadonlyArray<string>>> 
 };
 
 /**
+ * True when `sub` is a word, not an option, that the parent's handler does
+ * not route: a typo such as `guard signs`.
+ */
+export function isUnknownSubcommand(parent: string, sub: string | undefined): sub is string {
+  return !!sub && !sub.startsWith('-') && !(SUBCOMMAND_ROUTES[parent] ?? []).includes(sub);
+}
+
+/**
+ * The one answer to an unknown subcommand, with or without --help: the
+ * word named as unknown and the parent's help on stderr, exit 1. Both
+ * `opena2a guard signs` and `opena2a guard signs --help` print it.
+ */
+export function printUnknownSubcommand(parent: string, sub: string, parentHelp: () => string): void {
+  process.stderr.write(`Unknown ${parent} subcommand: ${sub}\n\n`);
+  process.stderr.write(parentHelp());
+  process.exitCode = 1;
+}
+
+/**
  * Answer a help request for `opena2a <parent> [sub]` without running
  * anything: the subcommand's own block when the registry has one, the
  * parent's help for any other word the handler routes, and for a word it
@@ -179,10 +198,8 @@ export function answerHelpRequest(
   if (!isHelpRequest(args, valueFlagList)) return false;
   if (sub && printSubcommandHelp(parent, sub, registry)) return true;
   // A typo such as `guard signs --help` must not read as a valid command.
-  if (sub && !sub.startsWith('-') && !(SUBCOMMAND_ROUTES[parent] ?? []).includes(sub)) {
-    process.stderr.write(`Unknown ${parent} subcommand: ${sub}\n\n`);
-    process.stderr.write(parentHelp());
-    process.exitCode = 1;
+  if (isUnknownSubcommand(parent, sub)) {
+    printUnknownSubcommand(parent, sub, parentHelp);
     return true;
   }
   process.stdout.write(parentHelp());

@@ -25,6 +25,8 @@ import { wordWrap } from './util/format.js';
 import { HELP_CONTRACTS, formatHelpContract } from './util/help-contract.js';
 import {
   answerHelpRequest,
+  isUnknownSubcommand,
+  printUnknownSubcommand,
   HELP_WIDTH,
   helpRow,
   GUARD_HELP,
@@ -528,17 +530,17 @@ analysis runs and results can be shared with the community.
         process.exitCode = 1;
         return;
       }
+      // A typo such as `guard signs` prints what `guard signs --help` prints.
+      if (isUnknownSubcommand('guard', helpSub)) {
+        printUnknownSubcommand('guard', helpSub, () => cmd.helpInformation());
+        return;
+      }
       // If the "subcommand" looks like a directory path, treat it as a directory and default to "status"
       let resolvedSub = subcommand;
       let dirOverride: string | undefined;
-      if (!validSubs.includes(subcommand)) {
-        // Check if it's a path (starts with /, ./, ../, is ".", or contains path separators)
-        if (isPath(subcommand)) {
-          dirOverride = subcommand;
-          resolvedSub = 'status';
-        } else {
-          // Not a valid subcommand and not a path -- let guard() handle the error
-        }
+      if (!validSubs.includes(subcommand) && isPath(subcommand)) {
+        dirOverride = subcommand;
+        resolvedSub = 'status';
       }
       const { guard } = await import('./commands/guard.js');
       const globalOpts = program.opts();
@@ -585,6 +587,11 @@ analysis runs and results can be shared with the community.
         process.stderr.write('  tail    Read last N events from event log\n');
         process.stderr.write('  init    Auto-generate arp.yaml from detected project type\n');
         process.exitCode = 1;
+        return;
+      }
+      // A typo such as `runtime stat` prints what `runtime stat --help` prints.
+      if (isUnknownSubcommand('runtime', subcommand)) {
+        printUnknownSubcommand('runtime', subcommand, () => cmd.helpInformation());
         return;
       }
       const { runtime } = await import('./commands/runtime.js');
@@ -757,6 +764,11 @@ analysis runs and results can be shared with the community.
         process.stderr.write('  explain    LLM-powered anomaly explanations for events\n');
         process.stderr.write('  triage     LLM-powered incident classification and response\n');
         process.exitCode = 1;
+        return;
+      }
+      // A typo such as `shield stats` prints what `shield stats --help` prints.
+      if (isUnknownSubcommand('shield', subcommand)) {
+        printUnknownSubcommand('shield', subcommand, () => cmd.helpInformation());
         return;
       }
       const { shield } = await import('./commands/shield.js');
