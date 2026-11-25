@@ -820,7 +820,7 @@ Output formats:
     .description('Scan governance file for behavioral safety coverage (ABGS)')
     .option('--dir <path>', 'Target directory')
     .option('--profile <name>', 'Agent profile (conversational, code-assistant, tool-agent, autonomous, orchestrator)')
-    .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
+    .option('--tier <level>', 'Force tier (BASIC|TOOL-USING|AGENTIC|MULTI-AGENT)')
     .option('--deep', 'Enable LLM-assisted deep analysis')
     .option('--strict', 'Fail if any critical SOUL control is missing (SOUL-IH-003, SOUL-HB-001)')
     .option('--explain', 'Print the 9-domain governance model (concept explainer) and exit')
@@ -851,7 +851,7 @@ Output formats:
     .description('Generate or improve governance file with ABGS templates')
     .option('--dir <path>', 'Target directory')
     .option('--profile <name>', 'Agent profile (conversational, code-assistant, tool-agent, autonomous, orchestrator)')
-    .option('--tier <level>', 'Force tier (BASIC|STANDARD|AGENTIC)')
+    .option('--tier <level>', 'Force tier (BASIC|TOOL-USING|AGENTIC|MULTI-AGENT)')
     .option('--dry-run', 'Show what would be generated without writing')
     .action(async (directory: string | undefined, opts) => {
       const { hardenSoul } = await import('./commands/soul.js');
