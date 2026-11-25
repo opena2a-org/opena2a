@@ -72,6 +72,21 @@ export function looksLikeCommandInvocation(args: readonly string[]): boolean {
 }
 
 /**
+ * True when argv is one argument holding a multi-word phrase. The shell
+ * strips the quotes from `opena2a "find leaked credentials"`, so the program
+ * sees `['find leaked credentials']`, not a token starting with `"`. No
+ * command name or file path a user types contains whitespace in the first
+ * position, so such an argument is a phrase for the natural-language matcher
+ * rather than an unknown command. A leading flag is left to Commander.
+ */
+export function isPhraseArgument(args: readonly string[]): boolean {
+  if (args.length !== 1) return false;
+  const arg = args[0].trim();
+  if (arg === '' || arg.startsWith('-')) return false;
+  return /\s/.test(arg);
+}
+
+/**
  * Whether the unquoted multi-word NL fallback in `index.ts` may try `args`:
  * two or more tokens, the first neither a flag nor a registered command, and
  * the whole not shaped like a command invocation.
