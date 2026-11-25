@@ -98,7 +98,8 @@ export function isNoProxyHost(hostname: string, port: string, env: Env = process
 /**
  * The proxy the environment names for a request to `target`, or null when no
  * proxy variable is set for its scheme or NO_PROXY exempts the host.
- * Lower-case variables win, as in curl and Node's built-in support.
+ * Lower-case variables win, as in curl and Node's built-in support. A value
+ * that is empty after trimming counts as unset.
  */
 export function envProxyFor(target: string | URL, env: Env = process.env): EnvProxy | null {
   let url: URL;
@@ -110,7 +111,7 @@ export function envProxyFor(target: string | URL, env: Env = process.env): EnvPr
   const names = url.protocol === 'https:' ? ['https_proxy', 'HTTPS_PROXY']
     : url.protocol === 'http:' ? ['http_proxy', 'HTTP_PROXY']
     : [];
-  const variable = names.find((n) => env[n]);
+  const variable = names.find((n) => env[n]?.trim());
   if (!variable) return null;
   const port = url.port || (url.protocol === 'https:' ? '443' : '80');
   if (isNoProxyHost(url.hostname, port, env)) return null;
