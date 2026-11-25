@@ -1194,6 +1194,48 @@ export function installedPackageDir(nodeModulesDir: string, packageName: string)
   }
 }
 
+/**
+ * The name and version a scanned package directory declares in its
+ * package.json, or null when the directory is not the installed copy of
+ * `expectedName`: the file is missing, unreadable or not JSON, its `name` is
+ * not a string of the npm package name form, or it differs from
+ * `expectedName`, the package the server's launch command runs and the lookup
+ * used. A contribution is named from this record, so a scan is sent only under
+ * the name the scanned directory itself declares. The version is kept only
+ * when it is a non-empty string of at most 256 characters with no control
+ * character; otherwise it is left out, never guessed.
+ *
+ * @internal Exported for its tests; detect reaches it through scanUnknownAssets.
+ */
+export function installedPackageRecord(dir: string, expectedName: string): { name: string; version?: string } | null {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
+  } catch {
+    // No readable package.json: the directory declares no package.
+    return null;
+  }
+  if (!manifest || typeof manifest !== 'object') return null;
+  const { name, version } = manifest as { name?: unknown; version?: unknown };
+  if (typeof name !== 'string' || !hasNpmPackageNameForm(name) || name !== expectedName) return null;
+  if (typeof version === 'string' && version !== '' && version.length <= 256 && !CONTROL_CHARACTER.test(version)) {
+    return { name, version };
+  }
+  return { name };
+}
+
+/**
+ * The version of the scanner that produced `scanResult`: the one the result
+ * reports, else the one the hackmyagent module exports, or null when neither
+ * is a non-empty string. A report is not sent under a version nobody stated.
+ */
+function scannerVersionOf(scanResult: { scannerVersion?: unknown }, moduleVersion: unknown): string | null {
+  for (const candidate of [scanResult.scannerVersion, moduleVersion]) {
+    if (typeof candidate === 'string' && candidate.trim() !== '' && !CONTROL_CHARACTER.test(candidate)) return candidate.trim();
+  }
+  return null;
+}
+
 /** Whether `child` is a proper descendant of `parent`, both resolved paths. */
 function isUnder(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
@@ -1213,9 +1255,15 @@ async function scanUnknownAssets(
 
   // Try to import HMA
   let HardeningScanner: any;
+  let hmaVersion: unknown;
   try {
     const hma = await import('hackmyagent') as any;
     HardeningScanner = hma.HardeningScanner ?? hma.default?.HardeningScanner;
+    try {
+      hmaVersion = hma.VERSION ?? hma.default?.VERSION;
+    } catch {
+      // A module without a VERSION export: the version is the scan result's, or unknown.
+    }
   } catch {
     // HMA not installed -- caller handles the fallback message
     return results;
@@ -1267,15 +1315,24 @@ async function scanUnknownAssets(
       // scanned. A server that runs no npm package, or whose package is not
       // installed here, was scanned in the project directory and is not sent:
       // that scan describes the project, and its config key names no package.
-      if (contributeEnabled && registryUrl && server.registryName && packageDir) {
+      // The record is named from the scanned directory's own package.json,
+      // which must declare the package the launch command runs, and carries
+      // the version it declares and the version of the scanner that ran; a
+      // scan for which either name or scanner version is unknown is not sent.
+      const record = contributeEnabled && registryUrl && server.registryName && packageDir
+        ? installedPackageRecord(targetDir, server.registryName)
+        : null;
+      const scannerVersion = record ? scannerVersionOf(scanResult, hmaVersion) : null;
+      if (record && scannerVersion) {
         try {
           const { submitScanReport } = await import('../util/report-submission.js');
           const report = {
-            packageName: server.registryName,
+            packageName: record.name,
+            ...(record.version ? { packageVersion: record.version } : {}),
             packageType: 'mcp_server',
             ecosystem: 'npm',
             scannerName: 'HackMyAgent',
-            scannerVersion: scanResult.scannerVersion ?? '1.0.0',
+            scannerVersion,
             overallScore: score,
             scanDurationMs: scanResult.scanDurationMs ?? 0,
             criticalCount,
