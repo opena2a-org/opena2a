@@ -1,7 +1,8 @@
 /**
  * Audit of every packages/cli test file that spawns child processes:
  * each file under __tests__ with a static
- * `import ... from 'node:child_process'`, its spawn shape and the maximum
+ * `import ... from 'node:child_process'` (or from the bare 'child_process'
+ * specifier, which loads the same module), its spawn shape and the maximum
  * number of children it holds live at once. The test beside this file
  * enumerates those imports from the tree and fails when a file that imports
  * the module is missing here (or listed here without the import), so this
@@ -273,6 +274,16 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'HOME, then spawnSync(bash -o pipefail -c <documented jq example>) per example (bash runs ' +
       'the opena2a stub and jq as its own children) and spawnSync(jq --version | jq -s -c .), ' +
       'one at a time (#432)',
+  },
+  'repo/no-internal-references.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'execFileSync(git ls-files -z) once, to list the tracked files it reads (#467)',
+  },
+  'repo/registry-texts-and-telemetry-claims.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns: 'execFileSync(git ls-files -z -- <public text paths>) once, to list the files it reads (#467)',
   },
   'repo/merge-group-workflows.test.ts': {
     shape: 'sync',

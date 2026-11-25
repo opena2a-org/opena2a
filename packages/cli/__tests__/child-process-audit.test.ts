@@ -1,7 +1,8 @@
 /**
  * Keeps child-process-audit.ts complete: enumerates every test
  * file under __tests__ whose source statically imports node:child_process
- * and fails when the audit and the tree disagree in either direction. Files
+ * (or the bare 'child_process' specifier, which loads the same module) and
+ * fails when the audit and the tree disagree in either direction. Files
  * that only `vi.mock('node:child_process', ...)` (or `await import(...)` the
  * mocked module) spawn nothing real and are correctly not enumerated: the
  * discriminator is a static `import ... from 'node:child_process'`.
@@ -22,7 +23,7 @@ import { CHILD_PROCESS_AUDIT } from './child-process-audit.js';
 
 const TESTS_ROOT = __dirname;
 
-const STATIC_IMPORT = /^import\s[^;]*?from\s+['"]node:child_process['"]/m;
+const STATIC_IMPORT = /^import\s[^;]*?from\s+['"](?:node:)?child_process['"]/m;
 
 /** The audited file itself, read as text — never a fixture copy of it. */
 const AUDIT_SOURCE = path.join(TESTS_ROOT, 'child-process-audit.ts');
@@ -152,7 +153,7 @@ describe('child-process spawn audit', () => {
     const ceiling = testcaseSource(source, 'records the ceiling');
 
     const parts: [string, string, string][] = [
-      ['the preamble', preamble, `const STATIC_IMPORT = /^import\\s[^;]*?from\\s+['"]node:child_process['"]/m;`],
+      ['the preamble', preamble, `const STATIC_IMPORT = /^import\\s[^;]*?from\\s+['"](?:node:)?child_process['"]/m;`],
       ['the enumeration testcase', enumeration, 'listTestFiles(TESTS_ROOT)'],
       ['the enumeration testcase', enumeration, `STATIC_IMPORT.test(fs.readFileSync(file, 'utf-8'))`],
       ['the enumeration testcase', enumeration, 'expect(importers).toEqual(Object.keys(CHILD_PROCESS_AUDIT).sort());'],
