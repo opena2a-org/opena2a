@@ -252,7 +252,7 @@ const FLOOR_DOCS: Array<{ file: string; manifest: string }> = [
 ];
 
 // "Node.js 20.19 or later", "Node.js >= 20.19", "Node.js 20.19+".
-const FLOOR_STATEMENT = /Node\.js\s*(?:>=\s*(\d+(?:\.\d+){0,2})|(\d+(?:\.\d+){0,2})(?:\+|\s+or\s+later))/g;
+const FLOOR_STATEMENT = /Node(?:\.js)?\s*(?:>=\s*(\d+(?:\.\d+){0,2})|(\d+(?:\.\d+){0,2})(?:\+|\s+or\s+later))/g;
 
 // A CI runtime a doc tells the reader to use. A partial version floats to
 // the newest release under it, as setup-node and the image tags do.
