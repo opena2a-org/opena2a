@@ -67,6 +67,8 @@ export interface ReviewOptions {
   verbose?: boolean;
   /** The global `--quiet`: keep the result, drop progress and commentary. */
   quiet?: boolean;
+  /** False skips the Registry advisory request (--no-advisories). */
+  advisories?: boolean;
 }
 
 /** Output formats review produces, as `review --help` names them (index.ts).
@@ -465,7 +467,9 @@ export async function review(options: ReviewOptions): Promise<number> {
   // One credential walk per review: Phase 1 scores what it found and Phase 2
   // reports it, so the tree is read once, not once per phase.
   const credentialScan = await scanCredentialsWithCoverage(targetDir);
-  const initData = await runInitPhase(targetDir, credentialScan.matches, credentialScan.filesScanned);
+  const initData = await runInitPhase(
+    targetDir, credentialScan.matches, credentialScan.filesScanned, options.advisories === false,
+  );
   const phase1Ms = Date.now() - phase1Start;
   const phase1Status = initData.trustScore >= 80 ? 'pass' : initData.trustScore >= 50 ? 'warn' : 'fail';
   phases.push({
@@ -944,6 +948,7 @@ async function runInitPhase(
   targetDir: string,
   credentialMatches: CredentialMatch[],
   credentialFilesScanned: number,
+  skipAdvisories = false,
 ): Promise<InitPhaseData> {
   const project = detectProject(targetDir);
 
@@ -952,7 +957,7 @@ async function runInitPhase(
 
   // Best-effort: a configured Registry URL that fails validation leaves the
   // advisories not checked, with the refusal as the reason.
-  const advisoryCheck = await readAdvisories(targetDir, getRegistryUrl);
+  const advisoryCheck = await readAdvisories(targetDir, getRegistryUrl, skipAdvisories);
 
   const shieldStatus = getShieldStatus(targetDir);
   const activeTools = shieldStatus.tools.filter(p => p.active).length;

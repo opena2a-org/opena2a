@@ -48,6 +48,8 @@ export interface InitOptions {
   ci?: boolean;
   format?: 'text' | 'json';
   verbose?: boolean;
+  /** False skips the Registry advisory request (--no-advisories). */
+  advisories?: boolean;
 }
 
 // HygieneCheck and ScoreBreakdown imported from util/scoring.ts
@@ -202,7 +204,7 @@ export async function init(options: InitOptions): Promise<number> {
   // 4. Check advisories (non-blocking). A configured Registry URL that fails
   // validation leaves the advisories not checked, with the refusal as the
   // reason.
-  const advisoryCheck = await readAdvisories(targetDir, getRegistryUrl);
+  const advisoryCheck = await readAdvisories(targetDir, getRegistryUrl, options.advisories === false);
 
   // 5. HMA integration (optional dynamic import)
   if (isTTY) spinner.update('Scanning shell environment...');
