@@ -191,15 +191,15 @@ describe('shipped sources and package docs cite no internal references', () => {
     expect(named('internal environment name').test(`(${['fleet', 'lane'].join('-')} census)`)).toBe(true);
     expect(named('review phase label').test('is allowlisted (Phase 4.5 fix)')).toBe(true);
     expect(named('review phase label').test('config bonus (#116/Phase4.5)')).toBe(true);
-    expect(named('private registry file').test('opena2a-registry/docs/telemetry-spec.md')).toBe(true);
-    expect(named('private registry file').test('stored by migration 223')).toBe(true);
-    expect(named('private registry file').test('opena2a-registry/pkg/atcverify')).toBe(true);
+    expect(named('private registry file').test('opena2a-registry/docs/example-spec.md')).toBe(true);
+    expect(named('private registry file').test('stored by migration 101')).toBe(true);
+    expect(named('private registry file').test('opena2a-registry/pkg/examplepkg')).toBe(true);
     expect(
-      named('private registry file').test('github.com/opena2a-org/opena2a-registry/tree/main/pkg/atcverify'),
+      named('private registry file').test('github.com/opena2a-org/opena2a-registry/tree/main/pkg/examplepkg'),
     ).toBe(true);
     expect(PLANNING_FINDING_ID.test('meter gating (F6)')).toBe(true);
     expect(PLANNING_FINDING_ID.test('git-style misses, §F3')).toBe(true);
-    expect(PRIVATE_PATH.test('todo/scripts/own-package-census.mjs')).toBe(true);
+    expect(PRIVATE_PATH.test('todo/scripts/example-census.mjs')).toBe(true);
     expect(PRIVATE_PATH.test('see todo/2026-01-05-rollout.md')).toBe(true);
     expect(PRIVATE_PATH.test('todo/scripts/census.cjs')).toBe(true);
     expect(PRIVATE_PATH.test('briefs/plan.json')).toBe(true);
