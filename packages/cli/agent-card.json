@@ -1,0 +1,7 @@
+{
+  "name": "opena2a-cli",
+  "description": "Unified CLI for the OpenA2A security platform. A local command-line tool: it exposes no network identity and accepts no agent-to-agent calls.",
+  "authentication": {
+    "type": "none"
+  }
+}
