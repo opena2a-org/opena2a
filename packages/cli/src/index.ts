@@ -22,7 +22,7 @@ import { hmaChecksPhrase } from './util/hma-checks.js';
 import { telemetryHelpLine } from './util/telemetry-help.js';
 import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
-import { HELP_CONTRACTS, formatHelpContract } from './util/help-contract.js';
+import { HELP_CONTRACTS, adapterSourceLine, formatHelpContract } from './util/help-contract.js';
 import {
   answerHelpRequest,
   isUnknownSubcommand,
@@ -237,7 +237,7 @@ Learn more: https://opena2a.org/docs`;
           process.stdout.write(`${wordWrap(config.description, HELP_WIDTH, 0)}\n\n`);
           const contract = HELP_CONTRACTS[name];
           if (contract) process.stdout.write(`${formatHelpContract(contract)}\n\n`);
-          process.stdout.write(`This command runs the bundled ${pkgLabel} engine.\n`);
+          process.stdout.write(`${wordWrap(adapterSourceLine(config.method, pkgLabel), HELP_WIDTH, 0)}\n`);
           process.stdout.write(`See https://opena2a.org/docs for full documentation.\n\n`);
           // For Docker/Python adapters, don't delegate --help (would launch containers)
           if (config.method === 'docker' || config.method === 'python') {
