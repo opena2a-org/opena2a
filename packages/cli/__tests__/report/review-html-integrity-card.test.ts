@@ -105,6 +105,10 @@ describe('review HTML Integrity card', () => {
     }
   });
 
+  it('prints the not-checked status as "Not checked" in the muted colour, not red', () => {
+    expect(integrityCard(renderShieldPage(report('not-checked')))).toEqual({ value: 'Not checked', color: 'var(--muted)' });
+  });
+
   it('prints a status the report carries as carried', () => {
     expect(integrityCard(renderShieldPage(report('healthy')))).toEqual({ value: 'healthy', color: 'var(--green)' });
     for (const status of ['degraded', 'compromised', 'lockdown']) {
