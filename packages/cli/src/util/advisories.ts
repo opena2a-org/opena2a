@@ -27,7 +27,7 @@ interface OSVAffected {
   };
   ranges?: {
     type: string;
-    events: { introduced?: string; fixed?: string }[];
+    events: { introduced?: string; fixed?: string; last_affected?: string }[];
   }[];
 }
 
@@ -212,6 +212,7 @@ function readableAdvisories(list: unknown[]): Advisory[] {
           events: objectsIn(r.events).map(e => ({
             ...(typeof e.introduced === 'string' ? { introduced: e.introduced } : {}),
             ...(typeof e.fixed === 'string' ? { fixed: e.fixed } : {}),
+            ...(typeof e.last_affected === 'string' ? { last_affected: e.last_affected } : {}),
           })),
         })),
       };
@@ -327,8 +328,20 @@ async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryRes
 
 // --- Package detection ---
 
-function detectProjectPackages(dir: string): string[] {
-  const packages: string[] = [];
+/** A dependency the project declares: its name, the OSV ecosystem of the
+ *  manifest that declares it, and its version when the manifest pins one
+ *  exact version (null when it names a range or no version). */
+interface ProjectDependency {
+  name: string;
+  ecosystem: 'npm' | 'Go' | 'PyPI';
+  version: string | null;
+}
+
+/** An npm version spec that names one exact version. */
+const NPM_EXACT_VERSION = /^=?\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
+
+function detectProjectPackages(dir: string): ProjectDependency[] {
+  const packages: ProjectDependency[] = [];
 
   // Read package.json dependencies
   const pkgPath = path.join(dir, 'package.json');
@@ -340,7 +353,10 @@ function detectProjectPackages(dir: string): string[] {
         ...pkg.devDependencies,
         ...pkg.optionalDependencies,
       };
-      packages.push(...Object.keys(deps ?? {}));
+      for (const [name, spec] of Object.entries(deps ?? {})) {
+        const exact = typeof spec === 'string' ? NPM_EXACT_VERSION.exec(spec.trim()) : null;
+        packages.push({ name, ecosystem: 'npm', version: exact ? exact[1] : null });
+      }
     } catch {
       // Invalid package.json
     }
@@ -355,8 +371,8 @@ function detectProjectPackages(dir: string): string[] {
       if (requireBlock) {
         const lines = requireBlock[1].split('\n');
         for (const line of lines) {
-          const match = line.trim().match(/^(\S+)\s/);
-          if (match) packages.push(match[1]);
+          const match = line.trim().match(/^(\S+)\s+(\S+)?/);
+          if (match) packages.push({ name: match[1], ecosystem: 'Go', version: match[2] ?? null });
         }
       }
     } catch {
@@ -370,10 +386,13 @@ function detectProjectPackages(dir: string): string[] {
     try {
       const content = fs.readFileSync(reqPath, 'utf-8');
       for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('#')) {
-          const name = trimmed.split(/[=<>!~]/)[0].trim();
-          if (name) packages.push(name);
+        // An environment marker follows `;`, an inline comment ` #`.
+        const trimmed = line.replace(/\s+#.*$/, '').split(';')[0].trim();
+        // Lines starting with `-` are pip options (-r, -e, --index-url).
+        if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('-')) {
+          const name = trimmed.split(/[=<>!~[\s]/)[0].trim();
+          const exact = /^[^=<>!~]*===?\s*([^\s,*]+)$/.exec(trimmed);
+          if (name) packages.push({ name, ecosystem: 'PyPI', version: exact ? exact[1] : null });
         }
       }
     } catch {
@@ -382,6 +401,126 @@ function detectProjectPackages(dir: string): string[] {
   }
 
   return packages;
+}
+
+// --- Matching ---
+
+/** A package name as its ecosystem compares it: PyPI names are compared
+ *  case-insensitively with `-`, `_` and `.` alike (PEP 503). */
+function comparableName(name: string, ecosystem: string): string {
+  return ecosystem.toLowerCase() === 'pypi' ? name.toLowerCase().replace(/[-_.]+/g, '-') : name;
+}
+
+interface ParsedVersion {
+  release: number[];
+  /** -1 for a pre-release, 0 for a release, 1 for a post-release. */
+  rank: number;
+  /** The pre-release or post-release text, compared when the rest is equal. */
+  suffix: string;
+}
+
+/** A version as numbers and a suffix: semver, Go (`v1.2.3`, pseudo-versions)
+ *  and the common PEP 440 forms; null when it does not start with a number. */
+function parseVersion(version: string): ParsedVersion | null {
+  const match = /^v?(\d+(?:\.\d+)*)(.*)$/i.exec(version.trim());
+  if (!match) return null;
+  const release = match[1].split('.').map(Number);
+  // Build metadata (`+build`, Go's `+incompatible`) does not order versions.
+  const suffix = match[2].replace(/\+.*$/, '');
+  if (!suffix) return { release, rank: 0, suffix: '' };
+  if (/^[-_.]?(post|rev|r)(?![a-z])/i.test(suffix)) return { release, rank: 1, suffix: suffix.toLowerCase() };
+  return { release, rank: -1, suffix: suffix.replace(/^[-_.]/, '').toLowerCase() };
+}
+
+function compareSuffix(a: string, b: string): number {
+  const as = a.split(/[.-]/);
+  const bs = b.split(/[.-]/);
+  for (let i = 0; i < Math.max(as.length, bs.length); i++) {
+    if (as[i] === undefined) return -1;
+    if (bs[i] === undefined) return 1;
+    const an = /^\d+$/.test(as[i]) ? Number(as[i]) : NaN;
+    const bn = /^\d+$/.test(bs[i]) ? Number(bs[i]) : NaN;
+    if (!Number.isNaN(an) && !Number.isNaN(bn)) {
+      if (an !== bn) return an < bn ? -1 : 1;
+    } else if (as[i] !== bs[i]) {
+      return as[i] < bs[i] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+function compareVersions(a: ParsedVersion, b: ParsedVersion): number {
+  for (let i = 0; i < Math.max(a.release.length, b.release.length); i++) {
+    const x = a.release[i] ?? 0;
+    const y = b.release[i] ?? 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
+  return a.rank === 0 ? 0 : compareSuffix(a.suffix, b.suffix);
+}
+
+/**
+ * Whether `version` falls in one OSV range, evaluated as the OSV schema
+ * describes: events in version order, `introduced` opening, `fixed` and
+ * `last_affected` closing. null when an event's version cannot be read, so
+ * the range cannot say.
+ */
+function inRange(version: ParsedVersion, events: { introduced?: string; fixed?: string; last_affected?: string }[]): boolean | null {
+  const parsed: { kind: 'introduced' | 'fixed' | 'last_affected'; at: ParsedVersion }[] = [];
+  for (const event of events) {
+    for (const kind of ['introduced', 'fixed', 'last_affected'] as const) {
+      const v = event[kind];
+      if (v === undefined) continue;
+      const at = parseVersion(v);
+      if (!at) return null;
+      parsed.push({ kind, at });
+    }
+  }
+  if (parsed.length === 0) return null;
+  // A range without an `introduced` event is read as introduced at 0.
+  if (!parsed.some(e => e.kind === 'introduced')) parsed.push({ kind: 'introduced', at: { release: [0], rank: 0, suffix: '' } });
+  parsed.sort((x, y) => compareVersions(x.at, y.at));
+  let affected = false;
+  for (const e of parsed) {
+    const cmp = compareVersions(version, e.at);
+    if (e.kind === 'introduced' && cmp >= 0) affected = true;
+    else if (e.kind === 'fixed' && cmp >= 0) affected = false;
+    else if (e.kind === 'last_affected' && cmp > 0) affected = false;
+  }
+  return affected;
+}
+
+/**
+ * Whether an affected entry's ranges include the dependency's version. When
+ * the version is not one exact version, or no range can be evaluated (none
+ * given, only GIT ranges, a version that cannot be read), the entry is taken
+ * to include it: the check cannot rule the dependency out.
+ */
+function versionAffected(version: string | null, ranges: OSVAffected['ranges']): boolean {
+  if (version === null) return true;
+  const v = parseVersion(version);
+  if (!v) return true;
+  const usable = (ranges ?? []).filter(r => r.type.toUpperCase() !== 'GIT');
+  if (usable.length === 0) return true;
+  return usable.some(r => inRange(v, r.events ?? []) !== false);
+}
+
+/**
+ * The dependency an affected entry names, or null. The names must match and,
+ * when the entry names an ecosystem, so must the ecosystem, so an npm
+ * advisory does not flag a PyPI requirement of the same name; the
+ * dependency's version must then fall in the entry's ranges.
+ */
+function affectedDependency(affected: OSVAffected, dependencies: ProjectDependency[]): ProjectDependency | null {
+  const name = affected.package?.name;
+  if (!name) return null;
+  const ecosystem = (affected.package?.ecosystem ?? '').trim().toLowerCase();
+  for (const dep of dependencies) {
+    if (ecosystem && ecosystem !== dep.ecosystem.toLowerCase()) continue;
+    if (comparableName(name, dep.ecosystem) !== comparableName(dep.name, dep.ecosystem)) continue;
+    if (versionAffected(dep.version, affected.ranges)) return dep;
+  }
+  return null;
 }
 
 // --- Main check ---
@@ -421,14 +560,15 @@ export async function checkAdvisories(
   }
 
   // Match advisories against project packages
-  const projectPackages = new Set(detectProjectPackages(dir));
+  const projectPackages = detectProjectPackages(dir);
   const matched: Advisory[] = [];
   const matchedNames: string[] = [];
 
   for (const advisory of data.advisories) {
     for (const affected of advisory.affected ?? []) {
-      const pkgName = affected.package?.name;
-      if (pkgName && projectPackages.has(pkgName)) {
+      // The advisory's name for the package, which the report compares.
+      const pkgName = affected.package.name;
+      if (affectedDependency(affected, projectPackages)) {
         matched.push(advisory);
         if (!matchedNames.includes(pkgName)) {
           matchedNames.push(pkgName);
