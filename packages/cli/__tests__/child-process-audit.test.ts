@@ -10,8 +10,8 @@
  * it is read as TEXT here, and a cardinal in the same sentence as the set the
  * table enumerates fails. A count in prose is checked by nobody — the one that
  * used to sit there was wrong on main while every assertion below stayed green
- * — and it has to be rewritten by every delivery that changes the set, which
- * is what made two of them collide. The symmetric assertion is the half that
+ * — and it has to be rewritten by every change to the set, which is what made
+ * two of them collide. The symmetric assertion is the half that
  * works, so the last test in this file re-derives it and pins the pieces it
  * is made of.
  */
@@ -102,7 +102,7 @@ describe('child-process spawn audit', () => {
   // The table above is bound to the tree and cannot rot. A docstring sentence
   // giving the size of that table is bound to nothing: the one that used to be
   // there was wrong on main and nothing went red. It also had to be rewritten
-  // by every delivery that changed the set, which is how two of them came to
+  // by every change to the set, which is how two of them came to
   // collide on a file whose rows merge cleanly. So: no cardinal beside the
   // name of the set. Nothing here asserts how many entries the table holds —
   // that number is written down nowhere, which is the point.
@@ -119,12 +119,13 @@ describe('child-process spawn audit', () => {
     ).toEqual([]);
   });
 
-  // Nothing in this delivery weakens the assertion above. It still enumerates
-  // the tree, still compares both ways for equality, still reads the ceiling
-  // out of concurrent-write.test.ts — pinned here as source, since a test
-  // cannot observe its own history. The equality is re-derived at the
-  // delivered commit, where this contract's own new spawning file is one of
-  // the entries, and neither side is compared to a number written anywhere.
+  // The no-count rule above must not weaken the symmetric assertion. That
+  // assertion still enumerates the tree, still compares both ways for
+  // equality, still reads the ceiling out of concurrent-write.test.ts —
+  // pinned here as source, since a test cannot observe its own history. The
+  // equality is re-derived on the current tree, where the merge test's own
+  // spawning file is one of the entries, and neither side is compared to a
+  // number written anywhere.
   it('the symmetric assertion still binds the table to the tree, both ways', () => {
     const importers = listTestFiles(TESTS_ROOT)
       .filter(file => STATIC_IMPORT.test(fs.readFileSync(file, 'utf-8')))
@@ -141,7 +142,7 @@ describe('child-process spawn audit', () => {
       'is audited but no longer imports node:child_process (moved, renamed or stopped spawning)',
     ).toEqual([]);
     expect(importers).toEqual(audited);
-    // The merge cell this contract adds spawns git, so it audits itself.
+    // The merge test spawns git, so the audit lists it like any other spawner.
     expect(importers).toContain('child-process-audit-merge.test.ts');
 
     const source = fs.readFileSync(THIS_SOURCE, 'utf-8');

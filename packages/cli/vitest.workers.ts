@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 // cap (a developer machine, a GitHub runner) this resolves to vitest's default and changes
 // nothing.
 //
-// Measured 2026-09-05 in the fleet lane (--pids-limit 512, 16 CPUs) with a 0.5 s per-process
-// census at the peak, before the fan-out bound, across runs with 16, 13, 9, 3, 2 and 1
-// workers: peaks 500, 486, 484, 413, 409 and 396. The tasks are mostly not the workers.
+// Measured 2026-09-05 in a container capped at 512 processes (--pids-limit 512) on 16 CPUs,
+// with a 0.5 s per-process census at the peak, before the fan-out bound, across runs with 16,
+// 13, 9, 3, 2 and 1 workers: peaks 500, 486, 484, 413, 409 and 396. The tasks are mostly not the workers.
 // Fixed cost about 172: the vitest main process and its parents about 60 plus an esbuild
 // service pool of 16 processes at about 7 threads each, present at every worker count.
 //
@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 // per the node child each tsx runs the CLI in), so the worst case is
 // 7 + (2 x 4) x 11 = 95 tasks per worker, re-derived from the same per-process figures the
 // unbounded 183 (7 + 16 x 11) was measured from. max(1, min(cpus, (512 - 172 - 64) / 95)) = 2
-// in that lane: the bound gives a worker back where the unbounded fan-out left 1 of 16.
+// in that container: the bound gives a worker back where the unbounded fan-out left 1 of 16.
 // Confirm with this census loop whenever these constants change:
 //   while :; do cat /sys/fs/cgroup/pids.current; sleep 0.5; done
 // during one full `npx vitest run` in packages/cli; the peak must stay at least
