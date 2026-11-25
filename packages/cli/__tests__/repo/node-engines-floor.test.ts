@@ -11,6 +11,10 @@ import * as path from 'path';
 // require Node 20.19 or 20. This test walks each workspace's runtime
 // dependency tree in package-lock.json, as `npm ls --omit=dev --all` does,
 // and compares every `engines.node` range it finds with the declared floor.
+// Contributors also install the devDependencies of the root and of every
+// workspace (eslint, typescript, turbo, vitest, tsx). Several of those skip
+// Node.js releases above the floor, so CONTRIBUTING.md states the range of
+// releases to develop on, and the development tree is checked against it.
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
@@ -31,6 +35,7 @@ interface LockEntry {
   resolved?: string;
   engines?: { node?: string };
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
@@ -118,9 +123,23 @@ function parseRange(range: string): Interval[] {
 
 /** True when every version from `floor` upward lies inside `range`. */
 function admitsEverythingFrom(floor: Version, range: string): boolean {
+  return admitsInterval({ lo: floor, loInc: true, hi: null, hiInc: false }, range);
+}
+
+/** True when every version `inner` admits lies inside `range`. */
+function admitsEveryVersionOf(inner: string, range: string): boolean {
+  return parseRange(inner).every(iv => admitsInterval(iv, range));
+}
+
+/** True when every version in `span` lies inside `range`. */
+function admitsInterval(span: Interval, range: string): boolean {
   const intervals = parseRange(range);
-  let at = floor;
-  let atInc = true;
+  let at = span.lo;
+  let atInc = span.loInc;
+  if (span.hi !== null) {
+    const c = cmp(at, span.hi);
+    if (c > 0 || (c === 0 && !(atInc && span.hiInc))) return true;
+  }
   for (let guard = 0; guard <= intervals.length; guard++) {
     const next = intervals.find(iv => {
       const lo = cmp(iv.lo, at);
@@ -132,6 +151,10 @@ function admitsEverythingFrom(floor: Version, range: string): boolean {
     });
     if (!next) return false;
     if (next.hi === null) return true;
+    if (span.hi !== null) {
+      const c = cmp(next.hi, span.hi);
+      if (c > 0 || (c === 0 && (next.hiInc || !span.hiInc))) return true;
+    }
     at = next.hi;
     atInc = !next.hiInc;
   }
@@ -155,8 +178,13 @@ function resolveDep(from: string, name: string): string | null {
   return null;
 }
 
-/** Every lock entry installed at runtime under `start`, and any required dependency that did not resolve. */
-function runtimeClosure(start: string): { keys: Set<string>; missing: string[] } {
+/**
+ * Every lock entry installed at runtime under `start`, and any required
+ * dependency that did not resolve. With `withDev`, the devDependencies of
+ * `start` itself are installed too, as `npm install` does for the root and
+ * each workspace; devDependencies of installed packages are never installed.
+ */
+function runtimeClosure(start: string, withDev = false): { keys: Set<string>; missing: string[] } {
   const keys = new Set<string>([start]);
   const missing: string[] = [];
   const queue = [start];
@@ -166,6 +194,9 @@ function runtimeClosure(start: string): { keys: Set<string>; missing: string[] }
     const optionalPeers = entry.peerDependenciesMeta ?? {};
     const wanted: Array<[string, boolean]> = [
       ...Object.keys(entry.dependencies ?? {}).map(n => [n, true] as [string, boolean]),
+      ...(withDev && key === start
+        ? Object.keys(entry.devDependencies ?? {}).map(n => [n, true] as [string, boolean])
+        : []),
       ...Object.keys(entry.optionalDependencies ?? {}).map(n => [n, false] as [string, boolean]),
       ...Object.keys(entry.peerDependencies ?? {}).map(
         n => [n, !optionalPeers[n]?.optional] as [string, boolean],
@@ -195,21 +226,24 @@ function label(key: string): string {
 
 const WORKSPACES = Object.keys(lock.packages).filter(k => /^packages\/[^/]+$/.test(k));
 
+/** Every workspace's tree together, with or without the devDependencies of the root and each workspace. */
+function workspaceTree(withDev: boolean): ReturnType<typeof runtimeClosure> {
+  const keys = new Set<string>();
+  const missing: string[] = [];
+  for (const start of withDev ? ['', ...WORKSPACES] : WORKSPACES) {
+    const c = runtimeClosure(start, withDev);
+    c.keys.forEach(k => keys.add(k));
+    missing.push(...c.missing);
+  }
+  return { keys, missing };
+}
+
 // The workspace root declares the floor for working in this repository; its
 // runtime tree is every workspace's runtime tree.
 const SUBJECTS: Array<{ rel: string; closure: () => ReturnType<typeof runtimeClosure> }> = [
   {
     rel: '.',
-    closure: () => {
-      const keys = new Set<string>();
-      const missing: string[] = [];
-      for (const ws of WORKSPACES) {
-        const c = runtimeClosure(ws);
-        c.keys.forEach(k => keys.add(k));
-        missing.push(...c.missing);
-      }
-      return { keys, missing };
-    },
+    closure: () => workspaceTree(false),
   },
   ...WORKSPACES.filter(ws => readManifest(ws).engines?.node).map(ws => ({
     rel: ws,
@@ -238,6 +272,46 @@ describe('engines.node admits only Node versions the runtime dependency tree adm
       expect([...excluded].sort()).toEqual([]);
     });
   }
+});
+
+// "Development: Node.js `^20.19.0 || ^22.13.0 || >=24`".
+const DEV_RANGE_STATEMENT = /Development:\s*Node\.js\s*`([^`]+)`/g;
+
+describe('CONTRIBUTING.md states the Node.js releases the development tree admits', () => {
+  const stated = [...fs.readFileSync(path.join(REPO_ROOT, 'CONTRIBUTING.md'), 'utf-8').matchAll(DEV_RANGE_STATEMENT)]
+    .map(m => m[1]);
+
+  it('states one development range', () => {
+    expect(stated).toHaveLength(1);
+  });
+
+  it('the development range lies within the floor of the workspace root', () => {
+    const floor = declaredFloor(readManifest('.').engines!.node!);
+    expect(admitsEveryVersionOf(stated[0], `>=${floor.join('.')}`)).toBe(true);
+  });
+
+  it('the development tree walks the devDependencies of the root and every workspace', () => {
+    const { keys } = workspaceTree(true);
+    const devNames = ['', ...WORKSPACES].flatMap(ws => Object.keys(lock.packages[ws].devDependencies ?? {}));
+    expect(devNames).toEqual(expect.arrayContaining(['eslint', 'typescript', 'turbo', 'vitest']));
+    const unwalked = devNames.filter(
+      n => ![...keys].some(k => k === `node_modules/${n}` || k.endsWith(`/node_modules/${n}`)),
+    );
+    expect(unwalked).toEqual([]);
+  });
+
+  it('every package in the development tree admits every release of that range', () => {
+    const { keys, missing } = workspaceTree(true);
+    expect(missing).toEqual([]);
+    const excluded = new Set<string>();
+    for (const key of keys) {
+      const range = lock.packages[key].engines?.node;
+      if (range && !admitsEveryVersionOf(stated[0], range)) {
+        excluded.add(`${label(key)} requires node ${range}`);
+      }
+    }
+    expect([...excluded].sort()).toEqual([]);
+  });
 });
 
 /** Files that tell a reader which Node.js to install, and the manifest whose floor they state. */
@@ -321,6 +395,21 @@ describe('the range reader', () => {
     ['>=16 <22', [20, 19, 0], false],
   ] as Array<[string, Version, boolean]>)('%s admits every version from %j: %s', (range, floor, expected) => {
     expect(admitsEverythingFrom(floor, range)).toBe(expected);
+  });
+
+  it.each([
+    ['^20.19.0 || ^22.13.0 || >=24', '^20.19.0 || ^22.13.0 || >=24.0.0', true],
+    ['^20.19.0 || ^22.13.0 || >=24', '^20.19.0 || >=22.12.0', true],
+    ['^20.19.0 || ^22.13.0 || >=24', '^20.0.0 || ^22.0.0 || >=24.0.0', true],
+    ['^20.19.0 || ^22.13.0 || >=24', '18 || 20 || >=22', true],
+    ['^20.19.0 || ^22.13.0 || >=24', '>=20.19.0', true],
+    ['^20.19.0 || ^22.13.0 || >=24', '^20.19.0 || ^22.14.0 || >=24', false],
+    ['^20.19.0 || ^22.13.0 || >=24', '^20.19.0 || >=24', false],
+    ['>=20.19.0', '^20.19.0 || >=22.12.0', false],
+    ['^20.19.0', '>=20.19.0 <21', true],
+    ['^20.19.0', '>=20.19.0 <20.20', false],
+  ])('every version of %s lies in %s: %s', (inner, range, expected) => {
+    expect(admitsEveryVersionOf(inner, range)).toBe(expected);
   });
 
   it('refuses a form it does not read instead of passing it', () => {
