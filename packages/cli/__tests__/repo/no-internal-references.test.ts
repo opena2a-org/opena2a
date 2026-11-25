@@ -222,16 +222,55 @@ const GUARD_FILES = new Set([
 ]);
 const BINARY_EXT = /\.(gif|png|jpe?g|ico|woff2?|tgz|gz|zip)$/i;
 
-function trackedFiles(): string[] {
+// A source archive (a release tarball, a GitHub "Download ZIP") has no `.git`,
+// so `git ls-files` cannot list the tracked files. The checks then walk the
+// directory instead, skipping what the repository's .gitignore files exclude.
+const HAS_GIT = fs.existsSync(path.join(REPO_ROOT, '.git'));
+const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', '.turbo', 'coverage']);
+const IGNORED_FILE =
+  /^(?:\.DS_Store|\.env|\.env\..*|secrets\.json|\.pre-push-review-passed)$|\.(?:tsbuildinfo|log|pem|key|p12|tgz)$/;
+
+function walkRepo(dir: string, out: string[]): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!IGNORED_DIRS.has(entry.name)) walkRepo(full, out);
+    } else if (entry.isFile() && !IGNORED_FILE.test(entry.name)) {
+      out.push(path.relative(REPO_ROOT, full).split(path.sep).join('/'));
+    }
+  }
+}
+
+function walkedFiles(): string[] {
+  const out: string[] = [];
+  walkRepo(REPO_ROOT, out);
+  return out;
+}
+
+function gitFiles(): string[] {
   const out = execFileSync('git', ['ls-files', '-z'], { cwd: REPO_ROOT, encoding: 'utf-8' });
-  return out
-    .split('\0')
-    .filter((f) => f && !BINARY_EXT.test(f) && !GUARD_FILES.has(f))
-    .filter((f) => fs.existsSync(path.join(REPO_ROOT, f)));
+  return out.split('\0').filter((f) => f && fs.existsSync(path.join(REPO_ROOT, f)));
+}
+
+function trackedFiles(): string[] {
+  if (!HAS_GIT) {
+    console.warn(
+      `no-internal-references: ${REPO_ROOT} has no .git, so the tracked-file checks walk the directory instead of using git ls-files`,
+    );
+  }
+  return (HAS_GIT ? gitFiles() : walkedFiles()).filter((f) => !BINARY_EXT.test(f) && !GUARD_FILES.has(f));
 }
 
 describe('tracked repository files cite no internal references', () => {
   const files = trackedFiles();
+
+  it.runIf(HAS_GIT)('the directory walk used without .git covers every tracked file', () => {
+    // The fallback must not narrow the checks: every file git tracks is one
+    // the walk would read from a source archive.
+    const walked = new Set(walkedFiles());
+    const missed = gitFiles().filter((f) => !walked.has(f));
+    expect(missed, `the walk skips tracked files:\n${missed.join('\n')}`).toEqual([]);
+  });
 
   it('lists every tracked file, tests and scripts included', () => {
     expect(files).toContain('README.md');
