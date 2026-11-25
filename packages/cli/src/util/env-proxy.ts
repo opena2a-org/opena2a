@@ -221,9 +221,21 @@ function connectToProxy(proxy: URL): net.Socket {
     : net.connect({ host, port });
 }
 
+/**
+ * The Proxy-Authorization header for the user name and password in the proxy
+ * URL. They are percent-encoded there; a '%' not followed by two hex digits
+ * cannot be decoded, and the error says so without repeating either value.
+ */
 function proxyAuthorization(proxy: URL): Record<string, string> {
   if (!proxy.username && !proxy.password) return {};
-  const credentials = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+  let credentials: string;
+  try {
+    credentials = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+  } catch {
+    throw new Error(
+      'the proxy user name or password is not valid percent-encoding; write a % in it as %25',
+    );
+  }
   return { 'proxy-authorization': `Basic ${Buffer.from(credentials).toString('base64')}` };
 }
 
@@ -250,6 +262,12 @@ function fetchThroughProxy(target: URL, proxy: URL, init: RequestInit): Promise<
   }
   if (body !== undefined) headers['content-length'] = String(Buffer.byteLength(body));
   const signal = init.signal ?? undefined;
+  let authorization: Record<string, string>;
+  try {
+    authorization = proxyAuthorization(proxy);
+  } catch (cause) {
+    return Promise.reject(new TypeError('fetch failed', { cause }));
+  }
 
   return new Promise<Response>((resolve, reject) => {
     const sockets: Array<{ destroy(): unknown }> = [];
@@ -310,7 +328,7 @@ function fetchThroughProxy(target: URL, proxy: URL, init: RequestInit): Promise<
       // Absolute-form request: the proxy forwards it to the target.
       send({
         path: target.href,
-        headers: { ...headers, host: target.host, ...proxyAuthorization(proxy) },
+        headers: { ...headers, host: target.host, ...authorization },
         createConnection: () => track(connectToProxy(proxy)),
       }, http);
       return;
@@ -320,7 +338,7 @@ function fetchThroughProxy(target: URL, proxy: URL, init: RequestInit): Promise<
     const tunnel = http.request({
       method: 'CONNECT',
       path: authority,
-      headers: { host: authority, ...proxyAuthorization(proxy) },
+      headers: { host: authority, ...authorization },
       createConnection: () => track(connectToProxy(proxy)),
     });
     const refused = (res: http.IncomingMessage): void => {

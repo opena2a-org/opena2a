@@ -257,7 +257,13 @@ describe('AimClient behind a proxy', () => {
     it('does not turn on a proxy for the rest of the process', async () => {
       withoutBuiltInSupport();
       expect(routeThroughEnvProxy(`http://${AIM_HOST}:${aimPort}`)?.routing).toBe('cli');
-      await expect(globalThis.fetch(`http://${AIM_HOST}:${aimPort}/health`)).rejects.toThrow();
+      // A runtime started with NODE_USE_ENV_PROXY=1 and a proxy of its own in
+      // the environment sends this through that proxy, which may answer with
+      // a refusal instead of an error. Either way AIM must not answer, and
+      // the local proxy must not see the request.
+      const status = await globalThis.fetch(`http://${AIM_HOST}:${aimPort}/health`)
+        .then((res) => res.status, () => null);
+      expect(status).not.toBe(200);
       expect(proxyLog).toEqual([]);
     });
 
@@ -300,6 +306,24 @@ describe('AimClient behind a proxy', () => {
       expect(proxyAuth).toEqual([expected, expected]);
       expect((err as AimServerError).message).toContain(proxyUrl);
       expect((err as AimServerError).message).not.toMatch(/alice|FAKEpass/);
+    });
+
+    it('reports a proxy password that is not valid percent-encoding, without printing it', async () => {
+      withoutBuiltInSupport();
+      const withBadCreds = proxyUrl.replace('http://', 'http://alice:FAKEpa%zz@');
+      vi.stubEnv('HTTP_PROXY', withBadCreds);
+      vi.stubEnv('HTTPS_PROXY', withBadCreds);
+
+      for (const target of [`http://${AIM_HOST}:${aimPort}`, `https://${AIM_HOST}`]) {
+        const err = await new AimClient(target, { timeoutMs: 5000 }).health().then(() => null, (e: unknown) => e);
+        expect(err).toBeInstanceOf(AimServerError);
+        const message = (err as AimServerError).message;
+        expect(message).toMatch(/proxy user name or password is not valid percent-encoding/);
+        expect(message).not.toMatch(/URI malformed/);
+        expect(message).toContain(proxyUrl);
+        expect(message).not.toMatch(/alice|FAKEpa/);
+      }
+      expect(proxyLog).toEqual([]);
     });
 
     it('times out and names the proxy when the proxy never answers', async () => {
