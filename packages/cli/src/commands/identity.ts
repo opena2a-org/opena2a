@@ -2276,7 +2276,10 @@ async function handleSuspend(options: IdentityOptions): Promise<number> {
     const resp = await authedClient.suspendAgent(agentId);
 
     if (isJson) {
-      process.stdout.write(JSON.stringify({ action: 'suspended', agentId, ...resp }, null, 2) + '\n');
+      // The CLI's own keys come last, so a server member of the same name
+      // cannot replace them; a body that is not an object adds nothing.
+      const serverFields = resp && typeof resp === 'object' && !Array.isArray(resp) ? resp : {};
+      process.stdout.write(JSON.stringify({ ...serverFields, action: 'suspended', agentId }, null, 2) + '\n');
       return 0;
     }
 
@@ -2311,7 +2314,10 @@ async function handleReactivate(options: IdentityOptions): Promise<number> {
     const resp = await authedClient.reactivateAgent(agentId);
 
     if (isJson) {
-      process.stdout.write(JSON.stringify({ action: 'reactivated', agentId, ...resp }, null, 2) + '\n');
+      // The CLI's own keys come last, so a server member of the same name
+      // cannot replace them; a body that is not an object adds nothing.
+      const serverFields = resp && typeof resp === 'object' && !Array.isArray(resp) ? resp : {};
+      process.stdout.write(JSON.stringify({ ...serverFields, action: 'reactivated', agentId }, null, 2) + '\n');
       return 0;
     }
 
