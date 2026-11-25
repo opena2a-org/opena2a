@@ -276,7 +276,25 @@ describe('the docs state the Node.js floor the manifests declare', () => {
       expect(stated.map(v => parseVersion(v).v.join('.'))).toEqual(stated.map(() => floor.join('.')));
     });
 
-    it(`${file} runs CI on a Node.js release at or above that floor`, () => {
+  }
+});
+
+/** Files that set a CI runtime a reader copies: the docs above and the shipped examples. */
+const CI_RUNTIME_FILES: Array<{ file: string; manifest: string }> = [
+  ...FLOOR_DOCS,
+  ...fs
+    .readdirSync(path.join(REPO_ROOT, 'packages', 'cli', 'examples'))
+    .filter(f => /\.(ya?ml|md)$/.test(f))
+    .map(f => ({ file: `packages/cli/examples/${f}`, manifest: 'packages/cli' })),
+];
+
+describe('the docs and examples run CI on a Node.js release the manifests admit', () => {
+  it('covers the examples directory', () => {
+    expect(CI_RUNTIME_FILES.map(f => f.file)).toContain('packages/cli/examples/github-actions-shield.yml');
+  });
+
+  for (const { file, manifest } of CI_RUNTIME_FILES) {
+    it(`${file} runs CI on a Node.js release at or above the floor of ${manifest === '.' ? 'the workspace root' : manifest}`, () => {
       const floor = declaredFloor(readManifest(manifest).engines!.node!);
       const text = fs.readFileSync(path.join(REPO_ROOT, file), 'utf-8');
       const below = [...text.matchAll(CI_RUNTIME)]
