@@ -269,6 +269,25 @@ describe('mcp-audit', () => {
       expect(output).toContain('No MCP server configurations found');
     });
 
+    it('keeps the no-config Next Steps within 80 columns', async () => {
+      const { output } = await captureStdout(() =>
+        mcpCommand({
+          subcommand: 'audit',
+          targetDir: tempDir,
+          ci: true,
+          format: 'text',
+        }),
+      );
+
+      const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
+      const nextSteps = plain.slice(plain.indexOf('Next Steps'));
+      expect(nextSteps).toContain('~/.cursor/mcp.json');
+      expect(nextSteps).toContain('~/.claude/mcp.json');
+      for (const line of nextSteps.split('\n')) {
+        expect(line.length, line).toBeLessThanOrEqual(80);
+      }
+    });
+
     it('discovers project-local mcp.json', async () => {
       const config = {
         mcpServers: {

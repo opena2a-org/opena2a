@@ -467,7 +467,8 @@ function usage(isJson: boolean): number {
   const lines = [
     'Usage: opena2a admin sensors <subcommand>',
     '',
-    '  list-pending            List enrollments awaiting approval (alias: pending, ls)',
+    '  list-pending            List enrollments awaiting approval',
+    '                          (alias: pending, ls)',
     '  approve <sensorId>      Promote a pending enrollment to a verified sensor',
     '  reject  <sensorId>      Reject (revoke) a pending enrollment',
     '',

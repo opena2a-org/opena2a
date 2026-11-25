@@ -270,6 +270,15 @@ describe('admin -- usage', () => {
     expect(out).toMatch(/Usage: opena2a admin sensors/);
   });
 
+  it('keeps every usage line within 80 columns', async () => {
+    const { out } = await captureStdout(() =>
+      admin({ subcommand: 'sensors', args: ['frobnicate'], apiKey: 'k' }));
+    expect(out).toContain('(alias: pending, ls)');
+    for (const line of out.split('\n')) {
+      expect(line.length, line).toBeLessThanOrEqual(80);
+    }
+  });
+
   it('accepts the bare `admin <verb>` shorthand (no `sensors` group word)', async () => {
     vi.spyOn(_internals, 'listPending').mockResolvedValue({ ok: true, status: 200, data: { pending: [], count: 0 } });
     const { exitCode, out } = await captureStdout(() =>

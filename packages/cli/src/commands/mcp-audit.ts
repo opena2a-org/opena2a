@@ -346,7 +346,8 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
     }
     process.stdout.write('\n');
     process.stdout.write(bold('Next Steps') + '\n');
-    process.stdout.write(`  ${cyan('Add MCP servers:')}  Edit ${dim('~/.cursor/mcp.json')} or ${dim('~/.claude/mcp.json')} to register servers\n`);
+    process.stdout.write(`  ${cyan('Add MCP servers:')}    Register servers in ${dim('~/.cursor/mcp.json')}\n`);
+    process.stdout.write(`                      or ${dim('~/.claude/mcp.json')}\n`);
     process.stdout.write(`  ${cyan('Full command list:')}  opena2a --help\n`);
     return 0;
   }
