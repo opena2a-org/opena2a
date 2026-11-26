@@ -133,6 +133,18 @@ async function refusedTarget(dir: string): Promise<{ shown: string; operand: str
 }
 
 /**
+ * The target as the operand of a suggested command, so the command runs as
+ * printed. A plain path stays bare; any other is shell-quoted. A path holding
+ * a character that `hasDisplayHazard` flags cannot be printed raw, and no
+ * rendering of it is safe to paste, so it prints as the `<dir>` placeholder.
+ */
+async function commandOperand(dir: string): Promise<string> {
+  const { hasDisplayHazard } = await import('@opena2a/cli-ui');
+  if (hasDisplayHazard(dir)) return '<dir>';
+  return /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/.test(dir) ? dir : shellWord(dir);
+}
+
+/**
  * Why a target cannot be scanned, or null when it can.
  *
  * The HardeningScanner resolves on a missing directory rather than throwing,
@@ -394,13 +406,15 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
       categories,
     };
 
+    const { escapePathForDisplay, escapeJsonDisplayHazards } = await import('@opena2a/cli-ui');
     if (options.format === 'json') {
-      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      process.stdout.write(escapeJsonDisplayHazards(JSON.stringify(result, null, 2)) + '\n');
     } else {
       const total = score.evaluated.length + score.notEvaluated.length;
       process.stdout.write(`\n  OASB-1 Security Benchmark\n`);
       process.stdout.write(`  ${'-'.repeat(40)}\n`);
-      process.stdout.write(`  Target:     ${targetDir}\n`);
+      process.stdout.write(`  Target:     ${escapePathForDisplay(targetDir)}\n`);
+      const operand = await commandOperand(targetDir);
       process.stdout.write(`  Level:      ${level}\n`);
       process.stdout.write(`  Rating:     ${rating}\n`);
       if (reason) process.stdout.write(`              ${reason}\n`);
@@ -472,17 +486,17 @@ export async function benchmark(options: BenchmarkOptions): Promise<number> {
         for (const cat of failingCats) {
           process.stdout.write(`    - ${cat.name}: ${cat.failing.join(', ')}\n`);
         }
-        process.stdout.write(`\n  Fix credentials:  opena2a protect ${targetDir}\n`);
+        process.stdout.write(`\n  Fix credentials:  opena2a protect ${operand}\n`);
       }
       if (unmappedCredentialFindings.length > 0) {
         const ids = unmappedCredentialFindings.map(f => `${f.id} (${f.severity})`).join(', ');
         process.stdout.write(`  Counted under CRED-002 (no OASB control of their own): ${ids}\n`);
       }
       if (score.notEvaluated.length > 0) {
-        process.stdout.write(`  Deeper analysis (evaluates more controls):  opena2a scan ${targetDir} --deep\n`);
+        process.stdout.write(`  Deeper analysis (evaluates more controls):  opena2a scan ${operand} --deep\n`);
       }
       if (!options.verbose) {
-        process.stdout.write(`  Per-category breakdown:  opena2a benchmark ${targetDir} --verbose\n`);
+        process.stdout.write(`  Per-category breakdown:  opena2a benchmark ${operand} --verbose\n`);
       }
       process.stdout.write('\n');
     }
