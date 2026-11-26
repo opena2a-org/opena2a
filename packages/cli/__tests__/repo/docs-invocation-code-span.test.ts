@@ -388,9 +388,14 @@ const DISCRIMINATION: ReadonlyArray<{
  * gained the `npx opena2a-cli mcp audit` next-step line hackmyagent prints in its captured
  * `secure` output; developer.md gained the same printed line, and its sign step moved from line
  * 245 to 243 with its text unchanged. Fence lines per file did not change.
+ *
+ * Recomputed again when the `mcp audit` sample in mcp-server-author.md took the Next Steps the
+ * CLI prints, a label line over an indented command, in place of two command-and-description
+ * rows: the block grew two lines, every mcp-server-author.md occurrence after it moved down two
+ * lines with its text unchanged, and no other file changed. Fence lines per file did not change.
  */
 const OCCURRENCE_LINES_SHA256 =
-  '6a8815f82d7975220fb1dfb00b04d0ad8cb672982beb2b05edb409f61641caa9';
+  '068b9d39fc2155927be8331364feac448f25a99199c6577d865eeb232d6aee9c';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];
