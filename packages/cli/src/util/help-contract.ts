@@ -136,10 +136,10 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   publish: {
     exit: [
-      ['engine', 'the exit status of ai-trust check, passed through unchanged'],
-      ['1', 'ai-trust is not installed or could not start'],
+      ['engine', 'the exit status of ai-trust check, passed through unchanged; with no name, the package named in ./package.json is checked'],
+      ['1', 'no name was given and no package.json in the current directory names a package, or ai-trust is not installed or could not start'],
     ],
-    json: 'passed to ai-trust check as --json',
+    json: 'passed to ai-trust check as --json; a missing name prints an error object',
     ci: 'not passed to ai-trust check; only skips the prompt to share scan results',
   },
   init: {

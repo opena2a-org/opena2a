@@ -450,12 +450,31 @@ analysis runs and results can be shared with the community.
   // Publish intent command
   if (!ADAPTER_REGISTRY['publish']) {
     program
-      .command('publish [name]')
+      .command('publish')
+      .argument('[name]', 'package to check (default: the name in ./package.json; required when there is none)')
       .description('Verify package trust score before publishing')
       .allowUnknownOption(true)
       .action(async (name: string | undefined, _opts: unknown, cmd: { args?: string[] }) => {
-        const args = [...(name ? [name] : []), ...(cmd.args ?? [])];
         const globalOpts = program.opts();
+        if (!name) {
+          const { readLocalPackageName } = await import('./util/local-package-name.js');
+          const local = readLocalPackageName();
+          if (!local) {
+            const msg = 'No package name given and no package.json with a name in the current directory.';
+            if (globalOpts.format === 'json') {
+              process.stdout.write(`${JSON.stringify({ error: msg })}\n`);
+            } else {
+              process.stderr.write(`${msg}\nUsage: opena2a publish <name>\n`);
+            }
+            process.exitCode = 1;
+            return;
+          }
+          if (!globalOpts.quiet) {
+            process.stderr.write(gray(`Using the package name from package.json: ${local}\n`));
+          }
+          name = local;
+        }
+        const args = [name, ...(cmd.args ?? []).filter((a) => a !== name)];
         const exitCode = await dispatchCommand('publish', args, {
           verbose: globalOpts.verbose,
           quiet: globalOpts.quiet,
