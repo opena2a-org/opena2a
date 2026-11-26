@@ -12,6 +12,19 @@ opena2a init
 
 Run one command and get a security assessment of your project. `opena2a init` is the front door; there is no standalone tool to install for it.
 
+### What init writes
+
+`init` changes nothing in the project it reads. It writes outside it, under the home directory of the account that runs it:
+
+- Every run appends to the Shield event log `~/.opena2a/shield/events.jsonl`, and the first run creates it. When that file is over 10 MB, it is first renamed to `~/.opena2a/shield/events-<time>.jsonl`. A lock file, `~/.opena2a/shield/events.lock`, exists only while an event is written.
+- When it reads the advisory list from the Registry, it stores the list in `~/.opena2a/cache/advisories.json`. It does not read the list with `--no-advisories` or `OPENA2A_ADVISORIES=off`, or when that file already holds the list from the last 5 minutes.
+- While usage telemetry is on and no install ID is stored yet (or the file has no `enabled` field), it writes `~/.config/opena2a/telemetry.json` with an install ID. When `XDG_CONFIG_HOME` is set, the file is `$XDG_CONFIG_HOME/opena2a/telemetry.json` instead. While telemetry is off, for any reason, it removes a stored install ID: it deletes the file, or rewrites it as `{"enabled": false}` when the file also holds `"enabled": false`.
+- When a `secretless-ai` program is on PATH, `init` runs `secretless-ai --version`; `npx` puts the copy that `opena2a-cli` depends on there. That version (0.23.0) writes the same telemetry file with an install ID whenever the file holds none, even while telemetry is off, so with telemetry off the file holds an install ID after the run.
+
+While it runs, `init` also makes an empty folder, `$TMPDIR/opena2a-shield-status-...`, in the system temporary directory, and removes it before it ends.
+
+The init entry of the command index (`packages/cli/src/semantic/command-index.json`) lists these files with their conditions, and `packages/cli/__tests__/commands/init-home-writes.test.ts` runs `init` to hold the list to the code.
+
 ## Check a package, MCP server, skill or repo
 
 ```bash

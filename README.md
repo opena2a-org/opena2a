@@ -34,7 +34,7 @@ What `npx opena2a-cli init my-agent` prints, trimmed ([full output](docs/capture
   Security Score: 43 / 100  (project posture: credentials, config, environment)
 ```
 
-`init` reads the project and changes nothing in the project. It needs Node.js 20.19 or later, and it exits 1 while a critical finding is open, 0 otherwise.
+`init` changes nothing in the project. Under the home directory it appends to the Shield event log `~/.opena2a/shield/events.jsonl`, caches the advisory list and, depending on telemetry, writes or deletes `~/.config/opena2a/telemetry.json`: [what init writes](docs/commands.md#what-init-writes) lists each file and its condition. It needs Node.js 20.19 or later, and exits 1 while a critical finding is open, 0 otherwise.
 
 Then apply the fixes and build the full report:
 
