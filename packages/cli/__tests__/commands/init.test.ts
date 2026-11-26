@@ -483,9 +483,9 @@ describe('init', () => {
     expect(protectAction).toBeDefined();
   });
 
-  it('text output uses -N deduction format (not +N recoverable)', async () => {
+  it('text output keeps -N deduction format for configuration', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
-    // No .gitignore -- triggers configuration deduction
+    // No .gitignore -- triggers configuration deduction, no credentials
     const { output } = await captureStdout(() => init({
       targetDir: tempDir,
     }));
@@ -493,6 +493,30 @@ describe('init', () => {
     expect(output).not.toContain('recoverable');
     // Should contain deduction indicators
     expect(output).toContain('Recommendations');
+  });
+
+  it('text output frames credential deductions as +N recoverable (#500)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n.env\n');
+    const fakeKey = 'sk-ant-api03-' + 'A'.repeat(85);
+    fs.writeFileSync(path.join(tempDir, 'config.js'), `const key = "${fakeKey}";\n`);
+
+    const { output: jsonOut } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+    const deduction = JSON.parse(jsonOut).scoreBreakdown.credentials.deduction;
+    expect(deduction).toBeGreaterThan(0);
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+    }));
+    // eslint-disable-next-line no-control-regex
+    const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
+    const credLine = plain.split('\n').find(l => /^\s*Credentials\s/.test(l));
+    expect(credLine).toBeDefined();
+    expect(credLine).toContain(`+${deduction} recoverable`);
+    expect(credLine).not.toMatch(new RegExp(`-${deduction}\\b`));
   });
 
   // Regression: audit-wave-1 bug B — ENOENT must print Next Steps with

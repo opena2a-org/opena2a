@@ -1365,9 +1365,10 @@ function printReport(report: InitReport, elapsed: string, verbose?: boolean): vo
   );
   process.stdout.write('\n');
 
-  // Breakdown as factual deductions
+  // Breakdown. Credentials are framed as points to win back (#500): every
+  // credential deduction maps to a finding that `opena2a protect` resolves.
   if (breakdown.credentials.deduction > 0) {
-    process.stdout.write(`  ${dim('Credentials')}    ${red(`-${breakdown.credentials.deduction}`)}  ${dim(breakdown.credentials.detail)}\n`);
+    process.stdout.write(`  ${dim('Credentials')}    ${green(`+${breakdown.credentials.deduction} recoverable`)}  ${dim(breakdown.credentials.detail)}\n`);
   }
   if (breakdown.environment.deduction > 0) {
     process.stdout.write(`  ${dim('Environment')}    ${red(`-${breakdown.environment.deduction}`)}  ${dim(breakdown.environment.detail)}\n`);
