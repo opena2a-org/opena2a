@@ -360,7 +360,9 @@ describe('review HTML Copy controls', () => {
     for (const cmd of withOperand) expect(allCopies, cmd).toContain(cmd);
   });
 
-  it('a history rewrite is shown in words without a Copy control', () => {
+  it('a history rewrite in the catalog is shown in words without a Copy control', () => {
+    // The catalog holds no rewrite today, so this loop may be empty; the
+    // sample reports in the next block are what keep the rule covered.
     const rewrites = Object.values(FINDING_CATALOG).map(f => f.remediation).filter(r => /filter-repo/.test(r));
     for (const cmd of rewrites) {
       const w = allWithheld.find(x => x.cmd === cmd);
@@ -452,5 +454,127 @@ describe('review HTML Copy controls', () => {
       const shown = allCopies.includes(cmd) || allWithheld.some(w => w.cmd === cmd);
       expect(shown, `literal ${arg} reached a rendered page`).toBe(true);
     }
+  });
+});
+
+// Sample reports that place a destructive step on a page. The scanners'
+// fix text is free text, so each surface that shows a command is fed these
+// directly rather than relying on what the catalog holds today.
+describe('review HTML destructive steps', () => {
+  const DESTRUCTIVE = [
+    'git filter-repo --path .env --invert-paths',
+    'git filter-branch --tree-filter "rm -f .env" HEAD',
+    'git-filter-repo --force',
+    'bfg --delete-files .env',
+    'rm -rf node_modules',
+    'sudo rm -rf /var/tmp/cache',
+    'shred -u .env',
+    'dd if=/dev/zero of=/dev/sdb',
+    'mkfs.ext4 /dev/sdb1',
+    'git reset --hard HEAD~3',
+    'git clean -fdx',
+    'git clean --force -d',
+    'git branch -D old-work',
+    'git stash drop',
+    'git stash clear',
+    'npm unpublish left-pad@1.0.0',
+    // A destructive step anywhere in a chain withholds the whole chain.
+    'git status && git filter-repo --path .env --invert-paths',
+    'git fetch; git reset --hard origin/main',
+    'git log | rm -rf build',
+    // A placeholder as well: the destructive reason is the one shown.
+    'git filter-repo --path <secret-file> --invert-paths',
+  ];
+
+  const SAFE = [
+    'git status',
+    'git branch -d merged-work',
+    'git branch --list',
+    'git clean -n',
+    'git reset --soft HEAD~1',
+    'git stash list',
+    'npm install -g hackmyagent',
+    'git log --oneline',
+  ];
+
+  function reportWith(commands: string[]): ReviewReport {
+    const report = baseReport();
+    report.shieldData!.classifiedFindings = commands.map((remediation, i) => ({
+      finding: { ...Object.values(FINDING_CATALOG)[0], id: `SAMPLE-${i}`, remediation },
+      count: 1, firstSeen: '', lastSeen: '', examples: [],
+    })) as never;
+    const hma = commands.map((fix, i) => ({
+      checkId: `SAMPLE-${i}`, name: 'n', description: 'd', category: 'git', severity: 'high', count: 1, fix,
+    }));
+    (report.hmaData as never as { topFindings: unknown[]; allFailedFindings: unknown[] }).topFindings = hma;
+    (report.hmaData as never as { topFindings: unknown[]; allFailedFindings: unknown[] }).allFailedFindings = hma;
+    report.detectData!.findings = commands.map((remediation, i) => ({
+      severity: 'high', title: `finding ${i}`, whyItMatters: 'w', remediation,
+    })) as never;
+    return report;
+  }
+
+  // The page each surface draws its command on. The HMA page draws a fix as
+  // a command only when it starts like one, which `isCommand` decides.
+  const SURFACES = [
+    { name: 'Shield finding', page: 'shield' },
+    { name: 'shadow AI finding', page: 'shadowai' },
+  ] as const;
+
+  it('a destructive step is shown without a Copy control, with why', () => {
+    const pages = renderPages(reportWith(DESTRUCTIVE));
+    for (const { name, page } of SURFACES) {
+      const copies = copyTexts(pages[page]);
+      const shown = withheld(pages[page]);
+      for (const cmd of DESTRUCTIVE) {
+        expect(copies, `${name}: "${cmd}" sits behind Copy`).not.toContain(cmd);
+        const w = shown.find(x => x.cmd === cmd);
+        expect(w, `${name}: "${cmd}" is still on the page`).toBeDefined();
+        expect(w!.note).toMatch(/cannot be undone/);
+        expect(w!.note).toMatch(/only after you have read it/);
+      }
+    }
+  });
+
+  it('a destructive Fix in the HMA table is shown without a Copy control', () => {
+    const pages = renderPages(reportWith(DESTRUCTIVE));
+    // Only a fix that starts like a command is drawn as one; the rest is prose.
+    const asCommands = DESTRUCTIVE.filter(c => /^(git |npm )/.test(c));
+    expect(asCommands.length).toBeGreaterThan(5);
+    const copies = copyTexts(pages.hma);
+    const shown = withheld(pages.hma);
+    for (const cmd of asCommands) {
+      expect(copies, `"${cmd}" sits behind Copy`).not.toContain(cmd);
+      const w = shown.find(x => x.cmd === cmd);
+      expect(w, `"${cmd}" is still on the page`).toBeDefined();
+      expect(w!.note).toMatch(/cannot be undone/);
+    }
+  });
+
+  it('a history rewrite is never copyable, whatever its position', () => {
+    const pages = renderPages(reportWith(DESTRUCTIVE));
+    for (const page of PAGES) {
+      expect(copyTexts(pages[page]).filter(c => /filter-(repo|branch)/.test(c))).toEqual([]);
+    }
+  });
+
+  it('a read-only or recoverable step keeps its Copy control', () => {
+    const pages = renderPages(reportWith(SAFE));
+    for (const { name, page } of SURFACES) {
+      const copies = copyTexts(pages[page]);
+      for (const cmd of SAFE) {
+        expect(copies, `${name}: "${cmd}" lost its Copy control`).toContain(cmd);
+      }
+      expect(withheld(pages[page]).filter(w => SAFE.includes(w.cmd))).toEqual([]);
+    }
+  });
+
+  it('every sample agrees with the independent rule', () => {
+    // Guards the lists above: the test's own rule must call each sample
+    // destructive (or placeholder) and each safe step copyable.
+    for (const cmd of DESTRUCTIVE.filter(c => /^(git|rm|bfg|shred)/.test(c) && !/clean|branch -D|stash/.test(c))) {
+      expect(whyNotCopyable(cmd), cmd).not.toBeNull();
+    }
+    for (const cmd of SAFE) expect(whyNotCopyable(cmd), cmd).toBeNull();
   });
 });
