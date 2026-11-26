@@ -8,6 +8,7 @@ import {
   loadServerConfig,
   saveServerConfig,
   removeServerConfig,
+  type AimCredential,
   type ServerConfig,
 } from '../util/aim-client.js';
 import { authFor, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
@@ -152,8 +153,13 @@ export async function identity(options: IdentityOptions): Promise<number> {
 
     const serverCommands = ['init', 'create', 'list', 'show', 'trust', 'tag', 'mcp', 'activity', 'policy', 'suspend', 'reactivate', 'revoke'];
     if (!serverCommands.includes(options.subcommand)) {
-      process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". Operating in local mode.`) + '\n\n');
       options.server = undefined;
+      // audit still reads the stored connection's server; say which one.
+      const connected = options.subcommand === 'audit' ? auditServer(options) : undefined;
+      const instead = connected
+        ? `Reading the audit log from the connected AIM server ${connected.client.serverUrl} instead.`
+        : 'Operating in local mode.';
+      process.stderr.write(yellow(`Warning: --server is not supported for "identity ${options.subcommand}". ${instead}`) + '\n\n');
     }
   }
 
@@ -259,6 +265,19 @@ function signedInToServer(options: IdentityOptions): { serverUrl?: string; clien
   if (!serverUrl) return {};
   const { token, agentId } = authFor(serverUrl, options);
   return { serverUrl, client: token ? new AimClient(serverUrl, { accessToken: token }) : undefined, agentId };
+}
+
+/**
+ * The server identity audit reads its log from: the stored one, when an agent
+ * is connected to it and a sign-in is stored for it. Without one, audit shows
+ * the local log only.
+ */
+function auditServer(options: IdentityOptions): { client: AimClient; agentId: string; credential: AimCredential } | undefined {
+  const client = getServerClient(options);
+  if (!client) return undefined;
+  const { token, apiKey, agentId } = authFor(client.serverUrl, options);
+  const credential = token ?? (apiKey ? { apiKey } : undefined);
+  return agentId && credential ? { client, agentId, credential } : undefined;
 }
 
 function writeNotLoggedIn(serverUrl: string | undefined): void {
@@ -792,49 +811,45 @@ async function handleAudit(options: IdentityOptions): Promise<number> {
   const targetDir = path.resolve(options.dir ?? process.cwd());
 
   // If server is configured, fetch server-side audit logs
-  const client = getServerClient(options);
-  const { token, apiKey, agentId } = client ? authFor(client.serverUrl, options) : {};
+  const server = auditServer(options);
 
-  if (client && agentId) {
+  if (server) {
+    const { client, agentId, credential } = server;
     try {
-      const credential = token ?? (apiKey ? { apiKey } : undefined);
+      const resp = await client.getAuditLogs(credential, agentId, { pageSize: limit });
 
-      if (credential) {
-        const resp = await client.getAuditLogs(credential, agentId, { pageSize: limit });
-
-        if (isJson) {
-          process.stdout.write(JSON.stringify({
-            source: 'server',
-            serverUrl: client.serverUrl,
-            total: resp.total,
-            auditLogs: resp.auditLogs,
-          }, null, 2) + '\n');
-          return 0;
-        }
-
-        process.stdout.write(bold(`Server Audit Log (${resp.auditLogs.length} of ${resp.total})`) + '\n');
-        process.stdout.write(dim(`  Server: ${client.serverUrl}`) + '\n');
-        process.stdout.write(gray('-'.repeat(70)) + '\n');
-
-        if (resp.auditLogs.length === 0) {
-          process.stdout.write(dim('  No server audit events recorded yet.') + '\n');
-        } else {
-          for (const e of resp.auditLogs) {
-            const ts = (e.createdAt ?? e.timestamp ?? '').slice(0, 19).replace('T', ' ');
-            const resource = e.resource ?? (e.resourceType ? `${e.resourceType}:${(e.resourceId ?? '').slice(0, 8)}` : '');
-            const details = e.details ?? (e.metadata?.action ? `[${e.metadata.action}]` : '');
-            process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${resource.padEnd(20)} ${dim(details)}\n`);
-          }
-        }
-        process.stdout.write(gray('-'.repeat(70)) + '\n');
-
-        // Also show local audit events if --verbose
-        if (options.verbose) {
-          process.stdout.write('\n');
-          return showLocalAudit(mod, limit, isJson, targetDir);
-        }
+      if (isJson) {
+        process.stdout.write(JSON.stringify({
+          source: 'server',
+          serverUrl: client.serverUrl,
+          total: resp.total,
+          auditLogs: resp.auditLogs,
+        }, null, 2) + '\n');
         return 0;
       }
+
+      process.stdout.write(bold(`Server Audit Log (${resp.auditLogs.length} of ${resp.total})`) + '\n');
+      process.stdout.write(dim(`  Server: ${client.serverUrl}`) + '\n');
+      process.stdout.write(gray('-'.repeat(70)) + '\n');
+
+      if (resp.auditLogs.length === 0) {
+        process.stdout.write(dim('  No server audit events recorded yet.') + '\n');
+      } else {
+        for (const e of resp.auditLogs) {
+          const ts = (e.createdAt ?? e.timestamp ?? '').slice(0, 19).replace('T', ' ');
+          const resource = e.resource ?? (e.resourceType ? `${e.resourceType}:${(e.resourceId ?? '').slice(0, 8)}` : '');
+          const details = e.details ?? (e.metadata?.action ? `[${e.metadata.action}]` : '');
+          process.stdout.write(`  ${dim(ts)}  ${(e.action ?? '').padEnd(16)} ${resource.padEnd(20)} ${dim(details)}\n`);
+        }
+      }
+      process.stdout.write(gray('-'.repeat(70)) + '\n');
+
+      // Also show local audit events if --verbose
+      if (options.verbose) {
+        process.stdout.write('\n');
+        return showLocalAudit(mod, limit, isJson, targetDir);
+      }
+      return 0;
     } catch (err) {
       if (!isJson) {
         process.stderr.write(yellow(`Warning: Could not fetch server audit logs: ${formatServerError(err)}`) + '\n');
