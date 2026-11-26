@@ -339,24 +339,7 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   }
 
   const signatures = store?.signatures ?? [];
-  const results: GuardResult[] = [];
-  for (const sig of signatures) {
-    const fullPath = path.join(targetDir, sig.filePath);
-    if (!fs.existsSync(fullPath)) { results.push({ filePath: sig.filePath, status: 'missing', expectedHash: sig.hash }); continue; }
-    const content = fs.readFileSync(fullPath);
-    const currentHash = 'sha256:' + createHash('sha256').update(content).digest('hex');
-    if (currentHash === sig.hash) { results.push({ filePath: sig.filePath, status: 'pass', currentHash }); }
-    else {
-      const diff = computeFileDiff(fullPath, sig, content);
-      results.push({ filePath: sig.filePath, status: 'tampered', currentHash, expectedHash: sig.hash, diff });
-    }
-  }
-
-  const signedPaths = new Set(signatures.map(s => s.filePath));
-  for (const relPath of resolveFiles(targetDir)) {
-    if (!signedPaths.has(relPath)) { results.push({ filePath: relPath, status: 'unsigned' }); }
-  }
-
+  const results = checkSignatures(targetDir, signatures);
   const report = buildReport('verify', targetDir, results, signatures.length);
   const tamperedFiles = results.filter(r => r.status === 'tampered' || r.status === 'missing');
 
@@ -450,20 +433,11 @@ async function guardStatus(targetDir: string, options: GuardOptions): Promise<nu
   const isJson = options.format === 'json';
   const store = loadStore(targetDir);
   const signedCount = store?.signatures.length ?? 0;
-  const allConfigFiles = resolveFiles(targetDir);
-  const signedPaths = new Set(store?.signatures.map(s => s.filePath) ?? []);
-  const unsignedCount = allConfigFiles.filter(f => !signedPaths.has(f)).length;
-
-  let tamperedCount = 0;
-  if (store) {
-    for (const sig of store.signatures) {
-      const fullPath = path.join(targetDir, sig.filePath);
-      if (!fs.existsSync(fullPath)) { tamperedCount++; continue; }
-      const content = fs.readFileSync(fullPath);
-      const currentHash = 'sha256:' + createHash('sha256').update(content).digest('hex');
-      if (currentHash !== sig.hash) tamperedCount++;
-    }
-  }
+  // The same check `guard verify` runs, so the two commands report the same counts.
+  const report = buildReport('status', targetDir, checkSignatures(targetDir, store?.signatures ?? []), signedCount);
+  const unsignedCount = report.unsigned;
+  const tamperedCount = report.tampered;
+  const missingCount = report.missing;
 
   // Skill and heartbeat counts for status
   let skillCount = 0;
@@ -474,7 +448,7 @@ async function guardStatus(targetDir: string, options: GuardOptions): Promise<nu
     if (options.heartbeats) heartbeatCount = sigInternals.findFiles(targetDir, sigInternals.HEARTBEAT_PATTERNS).length;
   }
 
-  const statusReport: Record<string, unknown> = { signed: signedCount, unsigned: unsignedCount, tampered: tamperedCount, lastUpdated: store?.updatedAt ?? null };
+  const statusReport: Record<string, unknown> = { signed: signedCount, unsigned: unsignedCount, tampered: tamperedCount, missing: missingCount, lastUpdated: store?.updatedAt ?? null };
   if (skillCount > 0) statusReport.skills = skillCount;
   if (heartbeatCount > 0) statusReport.heartbeats = heartbeatCount;
 
@@ -485,12 +459,14 @@ async function guardStatus(targetDir: string, options: GuardOptions): Promise<nu
     process.stdout.write(`  Signed:      ${green(String(signedCount))}\n`);
     process.stdout.write(`  Unsigned:    ${unsignedCount > 0 ? yellow(String(unsignedCount)) : dim('0')}\n`);
     process.stdout.write(`  Tampered:    ${tamperedCount > 0 ? red(String(tamperedCount)) : dim('0')}\n`);
+    process.stdout.write(`  Missing:     ${missingCount > 0 ? red(String(missingCount)) : dim('0')}\n`);
     if (skillCount > 0) process.stdout.write(`  Skills:      ${green(String(skillCount))}\n`);
     if (heartbeatCount > 0) process.stdout.write(`  Heartbeats:  ${green(String(heartbeatCount))}\n`);
     if (store?.updatedAt) { process.stdout.write(dim(`  Last signed: ${store.updatedAt}\n`)); }
     process.stdout.write(gray('-'.repeat(40)) + '\n');
+    if (tamperedCount > 0 || missingCount > 0) { process.stdout.write(dim('  fix: run `opena2a guard verify` to see each file and how to fix it') + '\n'); }
   }
-  return tamperedCount > 0 ? 1 : 0;
+  return (tamperedCount > 0 || missingCount > 0) ? 1 : 0;
 }
 
 // --- Watch ---
@@ -593,6 +569,7 @@ async function handleFileChange(targetDir: string, sig: ConfigSignature, isJson:
       if (changes.length > 0) process.stdout.write(dim(` (${changes.join(', ')})`));
     }
     process.stdout.write('\n');
+    process.stdout.write(dim(`          ${TAMPERED_FIX}`) + '\n');
   }
   await emitEvent('config.tampered', 'guard.watch', fullPath, enforce ? 'high' : 'medium', enforce ? 'blocked' : 'monitored', { currentHash, expectedHash: sig.hash, diff });
 }
@@ -815,6 +792,30 @@ function changedSignedFiles(targetDir: string, signatures: ConfigSignature[]): {
   return changed;
 }
 
+/** Check each signed file against its stored hash, then list the guarded files the store does not cover. */
+function checkSignatures(targetDir: string, signatures: ConfigSignature[]): GuardResult[] {
+  const results: GuardResult[] = [];
+  for (const sig of signatures) {
+    const fullPath = path.join(targetDir, sig.filePath);
+    if (!fs.existsSync(fullPath)) { results.push({ filePath: sig.filePath, status: 'missing', expectedHash: sig.hash }); continue; }
+    const content = fs.readFileSync(fullPath);
+    const currentHash = 'sha256:' + createHash('sha256').update(content).digest('hex');
+    if (currentHash === sig.hash) { results.push({ filePath: sig.filePath, status: 'pass', currentHash }); }
+    else {
+      const diff = computeFileDiff(fullPath, sig, content);
+      results.push({ filePath: sig.filePath, status: 'tampered', currentHash, expectedHash: sig.hash, diff });
+    }
+  }
+  const signedPaths = new Set(signatures.map(s => s.filePath));
+  for (const relPath of resolveFiles(targetDir)) {
+    if (!signedPaths.has(relPath)) { results.push({ filePath: relPath, status: 'unsigned' }); }
+  }
+  return results;
+}
+
+/** The fix line printed under every TAMPERED row. */
+const TAMPERED_FIX = 'fix: inspect with `opena2a guard diff`; if the change is intended run `opena2a guard resign`, otherwise restore the file';
+
 function buildReport(subcommand: string, targetDir: string, results: GuardResult[], totalSigned: number): GuardReport {
   return { subcommand, directory: targetDir, results,
     passed: results.filter(r => r.status === 'pass').length, tampered: results.filter(r => r.status === 'tampered').length,
@@ -838,6 +839,9 @@ function printVerifyReport(report: GuardReport, enforce?: boolean): void {
     process.stdout.write(`  ${result.filePath.padEnd(28)} ${statusLabel.padEnd(20)} ${hashDisplay}\n`);
     if (result.status === 'missing') {
       process.stdout.write(`  ${' '.repeat(28)} ${dim('fix: restore the file, or run `opena2a guard sign` to rebuild the store from the files present')}\n`);
+    }
+    if (result.status === 'tampered') {
+      process.stdout.write(`  ${' '.repeat(28)} ${dim(TAMPERED_FIX)}\n`);
     }
     if (result.status === 'tampered' && result.expectedHash) { process.stdout.write(`  ${' '.repeat(28)} ${dim('expected: ' + result.expectedHash.slice(0, 23) + '...')}\n`); }
     if (result.status === 'tampered' && result.diff) {

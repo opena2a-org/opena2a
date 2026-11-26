@@ -448,6 +448,49 @@ describe('guard', () => {
     expect(output).toContain('QUARANTINE');
   });
 
+  it('status and verify report the same counts for tampered, missing and unsigned files', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
+    fs.writeFileSync(path.join(tempDir, 'tsconfig.json'), '{}');
+    fs.writeFileSync(path.join(tempDir, 'Dockerfile'), 'FROM node');
+    await guard({ subcommand: 'sign', targetDir: tempDir, files: ['package.json', 'tsconfig.json'], format: 'json' });
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"tampered"}');
+    fs.rmSync(path.join(tempDir, 'tsconfig.json'));
+
+    const status = await captureStdout(() => guard({ subcommand: 'status', targetDir: tempDir, format: 'json' }));
+    const verify = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, format: 'json' }));
+    const s = JSON.parse(status.output);
+    const v = JSON.parse(verify.output);
+    expect({ tampered: s.tampered, missing: s.missing, unsigned: s.unsigned, signed: s.signed })
+      .toEqual({ tampered: v.tampered, missing: v.missing, unsigned: v.unsigned, signed: v.totalSigned });
+    expect(s).toMatchObject({ tampered: 1, missing: 1, unsigned: 1, signed: 2 });
+    expect(status.exitCode).toBe(1);
+    expect(verify.exitCode).toBe(1);
+
+    const text = await captureStdout(() => guard({ subcommand: 'status', targetDir: tempDir, format: 'text' }));
+    expect(text.output).toMatch(/Tampered:\s+\S*1/);
+    expect(text.output).toMatch(/Missing:\s+\S*1/);
+    expect(text.output).toContain('fix: run `opena2a guard verify`');
+  });
+
+  it('every TAMPERED row in verify text output has a fix line', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
+    fs.writeFileSync(path.join(tempDir, 'tsconfig.json'), '{}');
+    fs.writeFileSync(path.join(tempDir, 'Dockerfile'), 'FROM node');
+    await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"tampered"}');
+    fs.writeFileSync(path.join(tempDir, 'Dockerfile'), 'FROM alpine');
+
+    const { exitCode, output } = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, format: 'text' }));
+    expect(exitCode).toBe(1);
+    const lines = output.split('\n');
+    const rows = lines.map((l, i) => ({ l, i })).filter(({ l }) => l.includes('TAMPERED'));
+    expect(rows).toHaveLength(2);
+    for (const { i } of rows) {
+      expect(lines[i + 1]).toContain('fix: inspect with `opena2a guard diff`');
+      expect(lines[i + 1]).toContain('`opena2a guard resign`');
+    }
+  });
+
   it('status text format shows header', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{}');
     await guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' });
