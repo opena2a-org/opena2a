@@ -68,6 +68,17 @@ describe('HELP_CONTRACTS', () => {
     expect(HELP_CONTRACTS.identity.json).toContain('revoke proceeds without the confirmation step');
     expect(HELP_CONTRACTS.identity.ci).toContain('revoke proceeds without the confirmation step');
   });
+
+  // An unscannable benchmark target exits 2 (#507); the help listed only 0 and 1.
+  it('benchmark: lists exit codes 0, 1 and 2, with 2 for a target that could not be scanned', () => {
+    const exit = HELP_CONTRACTS.benchmark.exit;
+    expect(exit.map(([code]) => code)).toEqual(['0', '1', '2']);
+    expect(Object.fromEntries(exit)['2']).toBe(
+      'the target does not exist, is not a directory or could not be read; nothing was scanned',
+    );
+    const out = formatHelpContract(HELP_CONTRACTS.benchmark);
+    expect(out).toMatch(/^ {2}2 {2}the target does not exist/m);
+  });
 });
 
 describe('adapterSourceLine', () => {
