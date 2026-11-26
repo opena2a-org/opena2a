@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { ARP_EVENTS_FILE, formatAge, lastEventTime, liveMonitorPid } from './arp-monitor.js';
 import { execFileSync } from 'node:child_process';
 import { type ShieldStatus, type ToolStatus, type PolicyMode, type ShieldIntegrityStatus, SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 import { runIntegrityChecks } from './integrity.js';
@@ -38,7 +39,7 @@ function helperVersion(name: 'secretless-ai' | 'hackmyagent', workDir: EmptyWork
   }
 }
 
-function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
+function detectTool(name: string, workDir: EmptyWorkDir, baseDir: string = process.cwd()): ToolStatus {
   switch (name) {
     case 'Secretless': {
       const version = helperVersion('secretless-ai', workDir);
@@ -67,16 +68,30 @@ function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
     }
 
     case 'ARP': {
-      const configExists = existsSync(join(process.cwd(), '.arp.yaml')) ||
-        existsSync(join(process.cwd(), 'arp.yaml'));
-      const eventsPath = join(process.cwd(), '.opena2a', 'arp', 'events.jsonl');
-      const hasEvents = existsSync(eventsPath);
+      const configExists = existsSync(join(baseDir, '.arp.yaml')) ||
+        existsSync(join(baseDir, 'arp.yaml'));
+      // Monitoring is claimed only from the witness a running monitor
+      // writes, naming a live process. An events file outlives the monitor
+      // that wrote it, so on its own it reports the past, with its age.
+      const monitorPid = liveMonitorPid(baseDir);
+      const eventsPath = join(baseDir, ARP_EVENTS_FILE);
+      let keyMetric: string;
+      if (monitorPid !== null) {
+        keyMetric = 'monitoring';
+      } else if (existsSync(eventsPath)) {
+        const last = lastEventTime(eventsPath);
+        keyMetric = last
+          ? `events recorded, no monitor running (last event ${formatAge(Date.now() - last.getTime())} ago)`
+          : 'events recorded, no monitor running';
+      } else {
+        keyMetric = configExists ? 'configured' : 'not configured';
+      }
       return {
         name: 'Runtime Guard (ARP)',
-        installed: configExists,
-        active: hasEvents,
+        installed: configExists || monitorPid !== null,
+        active: monitorPid !== null,
         version: null,
-        keyMetric: hasEvents ? 'monitoring' : configExists ? 'configured' : 'not configured',
+        keyMetric,
       };
     }
 
@@ -169,7 +184,7 @@ export function getShieldStatus(targetDir?: string): ShieldStatus {
   const tools: ToolStatus[] = withEmptyWorkDir('opena2a-shield-status-', (workDir) => [
     detectTool('Secretless', workDir),
     detectTool('AIM Core', workDir),
-    detectTool('ARP', workDir),
+    detectTool('ARP', workDir, resolve(targetDir ?? process.cwd())),
     detectTool('Browser Guard', workDir),
     detectTool('HMA', workDir),
     detectTool('Registry', workDir),

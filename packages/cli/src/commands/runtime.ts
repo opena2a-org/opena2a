@@ -14,6 +14,7 @@ import { bold, green, yellow, red, dim, gray, cyan } from '../util/colors.js';
 import { severityColor } from '../util/format.js';
 import * as yaml from 'js-yaml';
 import { detectProject } from '../util/detect.js';
+import { removeMonitorWitness, writeMonitorWitness } from '../shield/arp-monitor.js';
 
 // --- ARP config shape ---
 //
@@ -185,6 +186,12 @@ async function runtimeStart(targetDir: string, options: RuntimeOptions): Promise
     const instance = new ARPClass(configPath);
     await instance.start();
 
+    // The witness `shield status` reads to report a live monitor; removed
+    // when this process stops monitoring or exits.
+    writeMonitorWitness(targetDir);
+    const dropWitness = () => removeMonitorWitness(targetDir);
+    process.once('exit', dropWitness);
+
     const status = instance.getStatus();
     const monitorCount = status.monitors?.length ?? 0;
 
@@ -209,6 +216,7 @@ async function runtimeStart(targetDir: string, options: RuntimeOptions): Promise
           process.stdout.write('\n' + dim('Stopping ARP monitoring...\n'));
         }
         await instance.stop();
+        dropWitness();
         if (!isJson) {
           process.stdout.write(green('ARP monitoring stopped.\n'));
         }
