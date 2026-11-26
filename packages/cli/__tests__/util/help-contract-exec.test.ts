@@ -417,18 +417,38 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
     }],
   },
   publish: {
-    engine: [{
-      when: 'the exit status of ai-trust check, passed through unchanged',
-      args: ['publish', 'demo-pkg'],
-      setup: aiTrust,
-      status: ENGINE_STATUS,
-    }],
-    '1': [{
-      when: 'ai-trust is not installed or could not start',
-      args: ['publish', 'demo-pkg'],
-      barePath: true,
-      output: /registry is not installed/,
-    }],
+    engine: [
+      {
+        when: 'the exit status of ai-trust check, passed through unchanged',
+        args: ['publish', 'demo-pkg'],
+        setup: aiTrust,
+        status: ENGINE_STATUS,
+      },
+      {
+        when: 'with no name, the package named in ./package.json is checked',
+        args: ['publish'],
+        setup: (s) => {
+          put(s, 'package.json', '{"name":"local-pkg"}\n');
+          tool(s, 'ai-trust', `[ "$2" = local-pkg ] && exit ${ENGINE_STATUS}\nexit 1`);
+        },
+        status: ENGINE_STATUS,
+        output: /package name from package\.json: local-pkg/,
+      },
+    ],
+    '1': [
+      {
+        when: 'no name was given and no package.json in the current directory names a package',
+        args: ['publish'],
+        setup: aiTrust,
+        output: /Usage: opena2a publish <name>/,
+      },
+      {
+        when: 'ai-trust is not installed or could not start',
+        args: ['publish', 'demo-pkg'],
+        barePath: true,
+        output: /registry is not installed/,
+      },
+    ],
   },
   train: {
     engine: [{
