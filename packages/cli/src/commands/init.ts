@@ -43,10 +43,13 @@ const INIT_PROJECT_DIR_COMMAND =
 
 // --- Types ---
 
+/** Output formats init produces; any other --format exits 2. */
+export const INIT_FORMATS = ['text', 'json'] as const;
+
 export interface InitOptions {
   targetDir?: string;
   ci?: boolean;
-  format?: 'text' | 'json';
+  format?: string;
   verbose?: boolean;
   /** False skips the Registry advisory request (--no-advisories). */
   advisories?: boolean;
@@ -121,6 +124,18 @@ interface InitReport {
 // --- Core ---
 
 export async function init(options: InitOptions): Promise<number> {
+  // Refuse an output format init cannot produce before scanning anything.
+  // The global `--format` advertises `sarif`, and it used to fall through to
+  // the text assessment, so a consumer got neither that format nor an error.
+  // Exit 2 is the command-error code, as `detect` and `review` use for it.
+  const format = options.format ?? 'text';
+  if (!(INIT_FORMATS as readonly string[]).includes(format)) {
+    const shown = format.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
+    process.stderr.write(red(`opena2a init does not support --format ${shown}.\n`));
+    process.stderr.write(dim('  Supported: --format text (assessment summary) or --format json (report on stdout).\n'));
+    return 2;
+  }
+
   const targetDir = path.resolve(options.targetDir ?? process.cwd());
 
   if (!fs.existsSync(targetDir)) {

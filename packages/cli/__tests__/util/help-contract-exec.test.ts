@@ -637,6 +637,7 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
       { when: 'a critical next step was found', args: ['init', '--ci'], setup: hardcodedCredential },
       { when: 'the directory does not exist', args: (s) => ['init', join(s.project, 'missing')] },
     ],
+    '2': [{ when: 'an unsupported --format', args: ['init', '--ci', '--format', 'bogus'] }],
   },
   guard: {
     '0': [

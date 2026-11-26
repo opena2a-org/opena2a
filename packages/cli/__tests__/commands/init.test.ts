@@ -481,6 +481,27 @@ describe('init', () => {
     expect(stderr).toContain('opena2a init --help');
   });
 
+  it('--format bogus is refused with exit 2 before anything is printed on stdout', async () => {
+    let stderr = '';
+    const { exitCode, output } = await captureStdout(async () => {
+      const r = await captureStderr(() => init({ targetDir: tempDir, format: 'bogus' }));
+      stderr = r.stderr;
+      return r.exitCode;
+    });
+    expect(exitCode).toBe(2);
+    expect(output).toBe('');
+    expect(stderr).toContain('--format bogus');
+    expect(stderr).toContain('text');
+    expect(stderr).toContain('json');
+  });
+
+  it('strips control characters from an unsupported --format value it echoes', async () => {
+    const { exitCode, stderr } = await captureStderr(() => init({ targetDir: tempDir, format: 'sa\x1b[31mrif\nx' }));
+    expect(exitCode).toBe(2);
+    expect(stderr).not.toContain('\x1b[31m');
+    expect(stderr).toContain('--format sa[31mrifx.');
+  });
+
   it('json-mode ENOENT emits structured error object (audit B)', async () => {
     const missing = '/tmp/opena2a-init-enoent-json-' + Date.now();
     const { output, exitCode } = await captureStdout(() => init({
