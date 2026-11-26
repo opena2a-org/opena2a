@@ -947,7 +947,7 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
     '1': [
       { when: 'the score is below 60', args: ['scan-soul'] },
       { when: 'a critical control is missing under --strict', args: ['scan-soul', '--strict'], output: /\[strict\] Failed/ },
-      { when: 'the scan failed', args: (s) => ['scan-soul', join(s.project, 'missing')] },
+      { when: 'the scan failed', args: (s) => ['scan-soul', join(s.project, 'missing')], output: /Directory not found/ },
       { when: 'the scanner is unavailable', args: ['scan-soul'], hide: ['hackmyagent'], output: /hackmyagent is not installed/ },
     ],
   },

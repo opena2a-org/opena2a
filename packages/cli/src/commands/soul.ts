@@ -3,6 +3,8 @@
  * Uses hackmyagent's SoulScanner programmatic API directly.
  */
 
+import * as fs from 'node:fs';
+
 export interface SoulOptions {
   targetDir?: string;
   ci?: boolean;
@@ -50,10 +52,15 @@ async function getSoulScanner(): Promise<any> {
 export async function scanSoul(options: SoulOptions): Promise<number> {
   const tier = resolveTier('scan-soul', options.tier);
   if (!tier) return 1;
-  const scanner = await getSoulScanner();
-  if (!scanner) return 1;
 
   const targetDir = options.targetDir ?? process.cwd();
+  if (!fs.existsSync(targetDir)) {
+    process.stderr.write(`Directory not found: ${targetDir}\n`);
+    return 1;
+  }
+
+  const scanner = await getSoulScanner();
+  if (!scanner) return 1;
 
   try {
     const result = await scanner.scanSoul(targetDir, {
