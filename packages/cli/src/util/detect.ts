@@ -126,3 +126,26 @@ export function detectProject(dir: string): ProjectInfo {
 
   return info;
 }
+
+/** The label a project with no recognised language or Docker marker gets. */
+export const GENERIC_PROJECT_LABEL = 'Project';
+
+const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
+  node: 'Node.js',
+  go: 'Go',
+  python: 'Python',
+  rust: 'Rust',
+  java: 'Java',
+  ruby: 'Ruby',
+  docker: 'Docker',
+  generic: GENERIC_PROJECT_LABEL,
+};
+
+/**
+ * The project type as printed to the user: the primary type, then each
+ * framework hint ("Node.js + Docker + MCP server"). init and review both
+ * print this, so the two commands name a tree the same way.
+ */
+export function formatProjectType(project: Pick<ProjectInfo, 'type' | 'frameworkHints'>): string {
+  return [PROJECT_TYPE_LABELS[project.type], ...project.frameworkHints.map(hint => `+ ${hint}`)].join(' ');
+}

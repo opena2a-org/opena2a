@@ -511,8 +511,11 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       effect: ruleEffect,
     }));
   }
-  if (warns('Lock file') && !initData.projectType.startsWith('Unknown')) {
-    const node = initData.projectType.startsWith('Node.js');
+  // The Lock file check knows the lock files of Node.js, Go and Python only;
+  // for any other stack "none found" says nothing about the tree.
+  const primaryType = initData.projectType.split(' + ')[0];
+  if (warns('Lock file') && ['Node.js', 'Go', 'Python'].includes(primaryType)) {
+    const node = primaryType === 'Node.js';
     drafts.push(draft({
       title: 'No dependency lock file',
       severity: 'low',

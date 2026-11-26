@@ -273,6 +273,19 @@ describe('init', () => {
     expect(report.projectType).not.toContain('Unknown');
   });
 
+  it('names the project type the way review does', async () => {
+    fs.writeFileSync(path.join(tempDir, 'Cargo.toml'), '[package]\nname = "x"\n');
+    fs.writeFileSync(path.join(tempDir, 'Dockerfile'), 'FROM scratch\n');
+    fs.writeFileSync(path.join(tempDir, '.mcp.json'), '{}\n');
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    expect(JSON.parse(output).projectType).toBe('Rust + Docker + MCP server');
+  });
+
   it('includes score breakdown in report', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     // No .gitignore, no lock file -- configuration penalties
