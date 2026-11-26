@@ -68,7 +68,8 @@ test('a severity named "constructor" is counted as its own severity', () => {
 
 test('a source named "constructor" is printed as itself and is not given a tab', () => {
   const t = overviewText(report([finding('aa000001', 'high', 'hma'), finding('aa000002', 'low', 'constructor')], ['aa000001']));
-  assert.match(t, /Not ready to ship: 1 high finding\./);
+  // Score 80 and no critical: the terminal Verdict's "Good overall" (#552).
+  assert.match(t, /Good overall: 1 high and 1 low findings to harden\./);
   assert.match(t, /1 more finding: ?$/);
   assert.doesNotMatch(t, INHERITED);
   const own = overviewText(report([finding('aa000002', 'low', 'constructor')], ['aa000002']));

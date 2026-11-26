@@ -113,6 +113,23 @@ function hygieneText(report: object): string {
   return pages['page-hygiene'].innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** The Overview's verdict heading, rendered by the report's own client script. */
+function overviewVerdict(report: object): string {
+  const pages: Record<string, { innerHTML: string; querySelectorAll: () => never[] }> = {};
+  const document = {
+    getElementById(id: string) {
+      if (id === 'report-data') return { textContent: JSON.stringify(report) };
+      if (id === 'main-nav') return { addEventListener() {} };
+      return (pages[id] ??= { innerHTML: '', querySelectorAll: () => [] });
+    },
+    querySelectorAll: () => [],
+  };
+  runInNewContext(assembleReviewClientScript(), { document, window: { addEventListener() {} } });
+  const m = pages['page-overview'].innerHTML.match(/<h2 class="sum-verdict"[^>]*>([^<]*)<\/h2>/);
+  if (!m) throw new Error('Overview verdict not found');
+  return m[1];
+}
+
 describe('advisory check in review and init (#420)', () => {
   let tempDir: string;
   let tempHome: string;
@@ -279,6 +296,21 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(advisoryFinding(report).severity).toBe('high');
     expect(stdout).toContain(`${report.reportFindings.length} findings (0 critical, 1 high, 0 medium, ${lowCount(report)} low)`);
     expect(stdout).not.toContain('No security issues detected');
+  });
+
+  // Regression (#552): the terminal Verdict said "Good overall" for one high
+  // advisory while the report's Overview said "Not ready to ship". The score
+  // does not weigh an advisory, so it may not soften one.
+  it('the terminal Verdict and the report Overview point the same way for a high advisory', async () => {
+    mockFetch.mockResolvedValue(listResponse([ADVISORY]));
+
+    const { report, stdout } = await runReview();
+    const verdictLine = stdout.split('\n').find(l => /^\s*Verdict\s/.test(l)) ?? '';
+
+    expect(report.compositeScore).toBeGreaterThanOrEqual(80);
+    expect(verdictLine).toContain('Not safe as-is.');
+    expect(verdictLine).not.toContain('Good overall');
+    expect(overviewVerdict(report)).toBe('Not ready to ship: 1 high finding.');
   });
 
   it('a matched advisory that names a fixed version gets the install and verify commands', async () => {
