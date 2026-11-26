@@ -34,8 +34,7 @@
  * straight through (#269). Other HMA verbs (harden-soul, trust, detect, ...)
  * have opena2a commands whose semantics may differ, so we do not claim them:
  * `opena2a harden-soul` calls the programmatic API, which takes no backup
- * before it writes and exits 0 when the write is refused, where
- * `hackmyagent harden-soul` backs up first and exits 1.
+ * before it writes, where `hackmyagent harden-soul` backs up first.
  */
 const HMA_VERBS = ['secure', 'scan', 'check', 'rollback', 'fix-all', 'nanomind'] as const;
 

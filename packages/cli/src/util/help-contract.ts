@@ -227,8 +227,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   'harden-soul': {
     exit: [
-      ['0', 'the governance file was written, or previewed with --dry-run; a directory it cannot write to also exits 0 and reports 0 controls covered'],
-      ['1', '--tier is not a known tier, the scanner is unavailable, or generation failed'],
+      ['0', 'the governance file was written, or previewed with --dry-run'],
+      ['1', '--tier is not a known tier, the scanner is unavailable, generation failed, or the write was refused (an unwritable directory or file); the file is unchanged'],
     ],
     json: 'prints the result as JSON',
     ci: 'no effect',

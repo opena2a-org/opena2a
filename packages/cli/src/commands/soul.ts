@@ -4,6 +4,9 @@
  */
 
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { printable } from '../util/printable.js';
+import { shellPath } from '../util/shell-word.js';
 
 export interface SoulOptions {
   targetDir?: string;
@@ -119,10 +122,12 @@ export async function hardenSoul(options: SoulOptions): Promise<number> {
     if (options.format === 'json') {
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } else {
-      formatHardenResult(result, options.verbose ?? false);
+      formatHardenResult(result, options.verbose ?? false, targetDir);
     }
 
-    return 0;
+    // A refused write left the governance file unchanged: exit non-zero so a
+    // script never reads "governance is hardened" from this run.
+    return result?.writeRefused ? 1 : 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`harden-soul failed: ${message}\n`);
@@ -288,7 +293,34 @@ function formatScanResult(result: any, verbose: boolean, strict = false): void {
   process.stdout.write('\n');
 }
 
-function formatHardenResult(result: any, verbose: boolean): void {
+/**
+ * Report a governance write hackmyagent refused (an unwritable directory or
+ * file, or a path that leaves the scanned tree). Nothing was written, so
+ * nothing may read as though it was.
+ */
+function formatWriteRefused(refused: { path?: unknown; reason?: unknown }, targetDir: string): void {
+  const rel = typeof refused.path === 'string' && refused.path ? refused.path : 'SOUL.md';
+  const reason = typeof refused.reason === 'string' && refused.reason ? refused.reason : 'the write was refused';
+  const file = path.resolve(targetDir, rel);
+  const permission = /\b(EACCES|EPERM|EROFS)\b|permission denied|read-only/i.test(reason);
+  const dir = shellPath(targetDir);
+  process.stderr.write(`\nharden-soul did NOT write ${printable(rel)}: ${printable(reason)}\n`);
+  process.stderr.write('  The file is unchanged; no governance was added.\n');
+  process.stderr.write(`  Verify:  ls -ld ${dir}\n`);
+  if (permission) {
+    const target = fs.existsSync(file) ? shellPath(file) : dir;
+    process.stderr.write(`  Fix:     chmod u+w ${target} && opena2a harden-soul ${dir}\n\n`);
+  } else {
+    process.stderr.write(`  Fix:     replace ${shellPath(file)} with a regular file inside ${dir}, then run opena2a harden-soul ${dir}\n\n`);
+  }
+}
+
+function formatHardenResult(result: any, verbose: boolean, targetDir: string): void {
+  if (result.writeRefused) {
+    formatWriteRefused(result.writeRefused, targetDir);
+    return;
+  }
+
   const file = result.file ?? result.governanceFile ?? 'SOUL.md';
   const sectionsAdded = result.sectionsAdded ?? [];
   const controlsAdded = result.controlsAdded ?? 0;
