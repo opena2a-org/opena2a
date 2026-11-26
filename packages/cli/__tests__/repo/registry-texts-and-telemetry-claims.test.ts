@@ -33,7 +33,7 @@ function occurrences(haystack: string, needle: string): number {
 /** The advisories module header. */
 const ADVISORIES_HEADER = 'Called during `opena2a init` and `opena2a review` to show the advisories the Registry has published for packages in the project.';
 /** The reason given for `opena2a config contribute on`. */
-const CONTRIBUTE_REASON = 'Share scans with the OpenA2A Registry: summaries are counted in its public statistics, and `detect` also sends its findings';
+const CONTRIBUTE_REASON = 'Share scans with the OpenA2A Registry: summaries are counted in its public statistics, and `detect`, `review`, `identity` and the JSON output of `scan`, `benchmark` and `scan-soul` also send their findings';
 /** The doc comment on the check block's count of shared scans. */
 const SHARED_SCANS_DOC = 'Number of shared scans the Registry counts for the package in the last 90 days; absent when they carry fewer than three distinct contributor tokens. The Registry does not verify them.';
 /** The README clause on what the contribution flow becomes. */
@@ -44,7 +44,7 @@ const COUNT_CLAUSE = 'and the number of shared scans counted for it in the last 
 /** Byte length and the first 8 hex digits of the SHA-256 of each text, as ruled. */
 const RULED: ReadonlyArray<readonly [text: string, bytes: number, sha256Prefix: string]> = [
   [ADVISORIES_HEADER, 128, '7ca42a73'],
-  [CONTRIBUTE_REASON, 123, '5b2005d7'],
+  [CONTRIBUTE_REASON, 205, 'a7cb75d8'],
   [SHARED_SCANS_DOC, 183, '299be7bd'],
   [CONTRIBUTION_FLOW, 35, 'ba174d05'],
   [COUNT_CLAUSE, 101, 'e2768677'],
@@ -53,7 +53,7 @@ const RULED: ReadonlyArray<readonly [text: string, bytes: number, sha256Prefix: 
 /** The runtime channel's config comment. */
 const RUNTIME_COMMENT = 'Opt-in: send ARP runtime anomaly events to the Registry (POST /v1/telemetry/runtime)';
 /** The `--contribute` option's help. */
-const CONTRIBUTE_HELP = "Share this scan's summary with the OpenA2A Registry";
+const CONTRIBUTE_HELP = "Share this scan with the OpenA2A Registry: its summary, and its findings where the command sends them (detect, review, identity, scan/benchmark/scan-soul with --json)";
 /** The README's exchange lead, up to its count clause. */
 const LEAD_HEAD = 'opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify` and `detect`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, ';
 /** The README's contribution sentence, up to the clause on what the flow becomes. */
