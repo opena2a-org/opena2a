@@ -18,7 +18,6 @@ import { isPhraseArgument, shouldTryNaturalLanguageFallback } from './natural/kn
 import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
-import { hmaChecksPhrase } from './util/hma-checks.js';
 import { telemetryHelpLine } from './util/telemetry-help.js';
 import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
@@ -171,23 +170,6 @@ Commands by category:
         entries.map(([term, description]) => helpRow(term, description, 33)).join('\n');
       const para = (text: string): string => wordWrap(text, HELP_WIDTH, 2);
       return `
-Quick Start:
-${rows([
-  ['$ opena2a shield init', 'Full 11-step security setup (scan, protect, sign, policy, hooks)'],
-  ['$ opena2a init', 'Read-only security assessment (no changes to your project)'],
-  ['$ opena2a protect', 'Detect and migrate hardcoded credentials'],
-  ['$ opena2a comply', 'Classify content for PII/credentials before it reaches an LLM'],
-  ['$ opena2a guard sign', 'Sign config files for tamper detection'],
-  ['$ opena2a check express', 'Check npm package against Registry + HMA'],
-  ['$ opena2a scan secure', `Run ${hmaChecksPhrase('security checks')} on your AI agent`],
-  ['$ opena2a skill create', 'Scaffold a secure skill (SKILL.md, heartbeat, tests)'],
-  ['$ opena2a guard harden', 'Scan skills for security issues (--fix to auto-fix)'],
-  ['$ opena2a harden-skill', 'Harden a skill file (frontmatter, permissions, integrity pin)'],
-  ['$ opena2a scan-soul', 'Scan governance file for behavioral safety (AGS)'],
-  ['$ opena2a scan-soul --strict', 'Fail if critical SOUL controls are missing'],
-  ['$ opena2a harden-soul', 'Generate or improve SOUL.md governance file'],
-])}
-
 Smart Features:
 ${rows([
   ['$ opena2a', 'Interactive guided mode (no args)'],

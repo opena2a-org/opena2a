@@ -151,6 +151,11 @@ describe('subcommand --help layout', () => {
     for (const marker of ROOT_ONLY_MARKERS) expect(root).toContain(marker);
   });
 
+  it('opena2a --help has exactly one quick-start block', () => {
+    const headings = root.replace(STRIP_ANSI, '').split('\n').filter((l) => /^quick[ -]?start:?$/i.test(l.trim()));
+    expect(headings).toEqual(['Quick start:']);
+  });
+
   it.each([
     ['a pipe', undefined],
     ['a 200-column terminal', 200],
