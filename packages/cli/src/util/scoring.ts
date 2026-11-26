@@ -27,6 +27,29 @@ export interface ScoreBreakdown {
   configuration: { deduction: number; detail: string };
 }
 
+/**
+ * Count the MCP servers flagged high-risk across every MCP config file (one
+ * 'MCP high-risk tools' warn per file). The score and the init finding both
+ * read this so they print the same number.
+ */
+export function countMcpHighRiskServers(checks: HygieneCheck[]): number {
+  let count = 0;
+  for (const c of checks) {
+    if (c.label !== 'MCP high-risk tools' || c.status !== 'warn') continue;
+    // Prefer the structured `items` count — `detail` is user-facing copy
+    // and changing its wording must not silently break the score model.
+    // Closes #125. Fall back to the legacy regex for back-compat with
+    // any producer that hasn't migrated to populating `items` yet.
+    if (c.items && c.items.length > 0) {
+      count += c.items.length;
+      continue;
+    }
+    const m = c.detail.match(/(\d+)\s+server/);
+    count += m ? parseInt(m[1], 10) : 1;
+  }
+  return count;
+}
+
 // --- Score calculation ---
 
 export interface ScoreExtras {
@@ -97,20 +120,7 @@ export function calculateSecurityScore(
   // matching warn at a flat -5, so a kitchen-sink fixture with five
   // filesystem/shell servers across two configs deducted the same as
   // a single low-risk server.
-  const mcpToolsChecks = checks.filter(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
-  let mcpServerCount = 0;
-  for (const c of mcpToolsChecks) {
-    // Prefer the structured `items` count — `detail` is user-facing copy
-    // and changing its wording must not silently break the score model.
-    // Closes #125. Fall back to the legacy regex for back-compat with
-    // any producer that hasn't migrated to populating `items` yet.
-    if (c.items && c.items.length > 0) {
-      mcpServerCount += c.items.length;
-      continue;
-    }
-    const m = c.detail.match(/(\d+)\s+server/);
-    mcpServerCount += m ? parseInt(m[1], 10) : 1;
-  }
+  const mcpServerCount = countMcpHighRiskServers(checks);
   if (mcpServerCount > 0) {
     // -3 per server, sub-cap -15 so other findings can still contribute.
     envDeduction += Math.min(mcpServerCount * 3, 15);

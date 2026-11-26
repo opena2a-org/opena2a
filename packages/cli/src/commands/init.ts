@@ -28,6 +28,7 @@ import {
   calculateSecurityScore as calculateSecurityScoreShared,
   scoreToRiskLevel as scoreToRiskLevelShared,
   formatCredCount,
+  countMcpHighRiskServers,
   type HygieneCheck as HygieneCheckShared,
   type ScoreBreakdown as ScoreBreakdownShared,
 } from '../util/scoring.js';
@@ -682,11 +683,18 @@ function groupFindings(
   }
 
   // Add AI config findings
-  const mcpToolsCheck = checks.find(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
-  if (mcpToolsCheck) {
+  // One warn exists per MCP config file; count every file's servers so this
+  // title and the score breakdown print the same number.
+  const mcpToolsChecks = checks.filter(c => c.label === 'MCP high-risk tools' && c.status === 'warn');
+  if (mcpToolsChecks.length > 0) {
+    const mcpServerCount = countMcpHighRiskServers(checks);
+    const mcpFiles = mcpToolsChecks
+      .map(c => c.detail.match(/ in (.+)$/)?.[1])
+      .filter((f): f is string => !!f);
     groups.set('MCP-TOOLS', {
       findingId: 'MCP-TOOLS',
-      title: mcpToolsCheck.detail,
+      title: `${mcpServerCount} server${mcpServerCount === 1 ? '' : 's'} with filesystem/shell access`
+        + (mcpFiles.length > 0 ? ` in ${mcpFiles.join(', ')}` : ''),
       severity: 'high',
       count: 1,
       explanation: 'MCP servers with filesystem or shell access can read, modify, or delete files on your system when invoked by an AI assistant.',
