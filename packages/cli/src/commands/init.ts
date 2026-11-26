@@ -831,7 +831,7 @@ function generateActions(
     const quoted = leakFiles.map(f => shellPath(f)).join(' ');
     actions.push({
       description: `Sanitize ${files.join(', ')} — replace credential-shaped values with placeholders`,
-      command: `grep -nE 'AKIA|gh[ps]_|AIza|sk-ant-api|sk-proj-|sk-[A-Za-z0-9]{40}|sk_live_' ${quoted}`,
+      command: `grep -nE 'AKIA|gh[psu]_|AIza|sk-ant-api|sk-proj-|sk-[A-Za-z0-9]{40}|sk_live_' ${quoted}`,
       why: 'Template env files are committed to the repo and onboarding often says to rename them to a live .env, so anyone with repo access can read whatever is here. Replace each value with a placeholder like NAME=your-key-here. If any value was ever a live key, rotate it at the issuer and treat the commit history as leaked — opena2a protect does not migrate template files by design.',
     });
   }

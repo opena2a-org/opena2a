@@ -118,6 +118,14 @@ describe('collectCatalogMatches', () => {
     expect(byValue(GITLAB)).toMatchObject({ title: 'GitLab PAT', severity: 'high', line: 4 });
   });
 
+  it('includes github-user-to-server, so a ghu_ token is reported by the breadth pass', () => {
+    expect(BREADTH_DETECT_IDS.has('github-user-to-server')).toBe(true);
+    const ghu = ['ghu_', 'R4tY8uIo2pAs6dFg0hJk3lZx7cVb5nMq1wEr'].join('');
+    const matches = collect([`const github = "${ghu}";`], '/x/config.js');
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ value: ghu, findingId: 'CRED-CAT-github-user-to-server', severity: 'high' });
+  });
+
   it('surfaces BOTH real secrets of the same pattern on one line (no first-match-only under-report)', () => {
     const g1 = ['glpat-', 'Aa1Bb2Cc3Dd4Ee5Ff6Gg'].join('');
     const g2 = ['glpat-', 'Zz9Yy8Xx7Ww6Vv5Uu4Tt'].join('');
