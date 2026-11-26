@@ -177,9 +177,9 @@ describe('rebrandBundledCommands — #191 import/python surfaces', () => {
 
   describe('hackmyagent harden-soul (not rewritten)', () => {
     it('leaves the citation alone: opena2a harden-soul writes without the backup rollback restores', () => {
-      // `hackmyagent harden-soul` takes a backup before it writes and exits 1
-      // when the write is refused; `opena2a harden-soul` calls the
-      // programmatic API without either, so it is not a faithful equivalent.
+      // `hackmyagent harden-soul` takes a backup before it writes;
+      // `opena2a harden-soul` calls the programmatic API without one, so it
+      // is not a faithful equivalent.
       expect(rebrandBundledCommands('Run: hackmyagent harden-soul .')).toBe('Run: hackmyagent harden-soul .');
     });
   });

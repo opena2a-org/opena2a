@@ -975,16 +975,16 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
     '0': [
       { when: 'the governance file was written', args: ['harden-soul'] },
       { when: 'or previewed with --dry-run', args: ['harden-soul', '--dry-run'] },
-      {
-        when: 'a directory it cannot write to also exits 0 and reports 0 controls covered',
-        args: ['harden-soul'],
-        permissions: true,
-        setup: (s) => lock(s.project, 0o500),
-        output: /Controls covered: 0/,
-      },
     ],
     '1': [
       { when: 'the scanner is unavailable', args: ['harden-soul'], hide: ['hackmyagent'], output: /hackmyagent is not installed/ },
+      {
+        when: 'the write was refused (an unwritable directory or file)',
+        args: ['harden-soul'],
+        permissions: true,
+        setup: (s) => lock(s.project, 0o500),
+        output: /harden-soul did NOT write SOUL\.md[\s\S]*Verify:[\s\S]*Fix:/,
+      },
     ],
   },
   'harden-skill': {
