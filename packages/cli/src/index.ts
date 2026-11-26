@@ -907,6 +907,18 @@ Output formats:
     .description('Map a project directory to OASB-1 controls; evaluates only a subset (e.g. 3 of 39 at L1)')
     .option('--dir <path>', 'Target directory')
     .option('--level <level>', 'Benchmark level: L1, L2, L3', 'L1')
+    .addHelpText('after', `
+Global options benchmark reads (opena2a --help lists them all). Write them
+before the subcommand; they are also accepted after it:
+  --ci             no effect (benchmark never prompts)
+  --format <type>  text (default) or json; --json is shorthand for
+                   --format json
+  --verbose        adds the per-category breakdown and the controls not
+                   evaluated, and the stack trace when the run fails
+
+Example:
+  opena2a --format json benchmark ./my-agent
+`)
     .action(async (directory: string | undefined, opts) => {
       const { benchmark: runBenchmark } = await import('./commands/benchmark.js');
       const globalOpts = program.opts();

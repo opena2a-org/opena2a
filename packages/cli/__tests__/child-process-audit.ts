@@ -92,6 +92,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'example at a time; spawn(node dist/index.js guard watch), awaited and stopped ' +
       'once it prints its start line, never alongside another child',
   },
+  'commands/benchmark-help.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js benchmark --help | --format json benchmark <dir>) ' +
+      'with a scratch HOME and cwd, one at a time',
+  },
   'commands/guard.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
