@@ -63,13 +63,13 @@ await contribute.flush();
 |--------|------------|
 | `contribute.scanResult(params)` | Queue a scan result event |
 | `contribute.detection(params)` | Queue a detection event |
-| `contribute.flush(registryUrl?, verbose?)` | Submit all queued events to the Registry. Resolves `true` when the queue is clear afterwards (batch accepted, or nothing was queued and no request was made); `false` when the Registry refused the batch or could not be reached, and the events stay queued. `verbose` prints the reason to stderr |
+| `contribute.flush(registryUrl?, verbose?)` | Submit the events queued for `registryUrl` (the default Registry when omitted) to that Registry; events queued for another Registry are neither sent nor removed. Resolves `true` when the batch was accepted and its events removed, or nothing was queued for that Registry and no request was made; `false` when the Registry refused the batch or could not be reached, and the events stay queued. `verbose` prints the reason to stderr |
 | `isContributeEnabled()` | Check if contribution is enabled (`contribute.enabled: true` in `~/.opena2a/config.json`, written by the parent tool's consent prompt; every call is a no-op until then) |
-| `queueEvent(event)` | Low-level: add an event to the local queue |
-| `getQueuedEvents()` | Low-level: read queued events |
-| `clearQueue()` | Low-level: clear the local queue |
-| `shouldFlush()` | Check if the queue has reached the flush threshold |
-| `buildBatch()` | Build a submission batch from the queued events; returns `null` when the queue is empty |
+| `queueEvent(event, registryUrl?)` | Low-level: add an event to the local queue, recorded for `registryUrl` (the default Registry when omitted). The queue is shared by every tool on the machine; events queued by an older version with no recorded Registry are dropped, never sent |
+| `getQueuedEvents(registryUrl?)` | Low-level: read queued events; only those for `registryUrl` when given |
+| `clearQueue(registryUrl?)` | Low-level: clear the local queue; only the events for `registryUrl` when given |
+| `shouldFlush(registryUrl?)` | Check if the events queued for `registryUrl` have reached the flush threshold |
+| `buildBatch(registryUrl?)` | Build a submission batch from the events queued for `registryUrl`; returns `null` when none are queued for it |
 | `submitBatch(batch, registryUrl?, verbose?)` | Submit a batch to the Registry API. Resolves `true` only when the Registry accepted it; a `null` or empty batch makes no request and resolves `false` |
 | `getContributorToken()` | Get or create the contributor token |
 | `peekContributorToken()` | Get the contributor token without creating it; null if there is none yet |

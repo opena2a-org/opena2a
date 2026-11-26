@@ -92,7 +92,7 @@ describe('submitBatch with nothing to submit (#299 item 2)', () => {
 describe('unreachable Registry (#299 item 1)', () => {
   it('flush(url, true) prints the cause to stderr and keeps the events queued', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
-    queueEvent(event());
+    queueEvent(event(), 'http://127.0.0.1:9');
 
     const ok = await contribute.flush('http://127.0.0.1:9', true);
     expect(ok).toBe(false);
