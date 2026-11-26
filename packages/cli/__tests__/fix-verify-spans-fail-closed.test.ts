@@ -586,11 +586,12 @@ describe('spans of other classes keep their form', () => {
     expect(src).toContain("expect: '<line>:.env'");
   });
 
-  it('the shield init Fix lines and the export VAULT_TOKEN lines are unchanged', () => {
+  it('the shield init Fix lines take a refusing parameter and the export VAULT_TOKEN lines are unchanged', () => {
     const shield = fs.readFileSync(path.join(SRC, 'commands', 'shield.ts'), 'utf-8');
-    expect(shield).toContain("'  Fix: opena2a shield init <dir>',");
-    expect(shield).toContain("'  Fix: pass one of them, e.g. opena2a shield init <dir>',");
-    expect(shield).toContain("'  Fix: opena2a shield init <existing-project-dir>',");
+    const projectDir = '"${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"';
+    expect(shield).toContain(`'  Fix: opena2a shield init ${projectDir}',`);
+    expect(shield).toContain(`'  Fix: pass one of them, e.g. opena2a shield init ${projectDir}',`);
+    expect(shield).not.toContain('shield init <');
     const vault = fs.readFileSync(path.join(SRC, 'commands', 'vault-migration.ts'), 'utf-8');
     expect(vault).toContain("cyan('export VAULT_TOKEN=<root-token-from-output>')");
     expect(vault).toContain("cyan('export VAULT_TOKEN=<your-token>')");
