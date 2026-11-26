@@ -157,9 +157,22 @@ export function rewordContributionClaims(text: string): string {
   );
 }
 
+/**
+ * hackmyagent's Next Steps end with "opena2a is a separate CLI — install with:
+ * npm i -g opena2a-cli" whenever they cite an `opena2a` command. Run through
+ * opena2a, that tells the user to install the program they are already using
+ * (issue #500). The whole line goes, its colour codes and line ending included.
+ */
+const SELF_INSTALL_HINT = /^[^\n\r]*opena2a is a separate CLI\b[^\n\r]*(?:\r\n|\n|\r|$)/gm;
+
+/** Remove hackmyagent's "install opena2a" hint from text opena2a itself prints. */
+export function dropSelfInstallHint(text: string): string {
+  return text.replace(SELF_INSTALL_HINT, '');
+}
+
 /** Every rewrite applied to a delegated tool's human-readable output. */
 function rebrandBundledText(text: string): string {
-  return rewordContributionClaims(rebrandBundledCommands(text));
+  return dropSelfInstallHint(rewordContributionClaims(rebrandBundledCommands(text)));
 }
 
 /**
