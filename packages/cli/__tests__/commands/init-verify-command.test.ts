@@ -367,4 +367,35 @@ describe('init drift callout', () => {
     expect(block).toContain(`Verify:  opena2a protect --dry-run 'project'\n`);
     expect(block).toContain(`Fix:     opena2a protect 'project'\n`);
   });
+
+  // Every Fix line of one run, the findings list and the callout alike.
+  const driftFixLines = async (project: string, shellDir: string): Promise<string[]> => {
+    vi.spyOn(process, 'cwd').mockReturnValue(shellDir);
+    const out = (await captureStdout(() => init({ targetDir: project }))).replace(ANSI, '');
+    return out.split('\n').map(l => l.trim()).filter(l => l.startsWith('Fix'));
+  };
+  const driftProject = (root: string): string => {
+    const awsKey = 'AK' + 'IA' + Array.from({ length: 16 }, (_, i) => 'BCDFGHJKLMNPQRSTVWXZ234567'[(i * 5 + 2) % 26]).join('');
+    const project = path.join(root, 'project');
+    fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ name: 'drift-test' }));
+    fs.writeFileSync(path.join(project, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(project, 'src', 'aws.ts'), `export const awsKey = "${awsKey}";\n`);
+    return project;
+  };
+
+  it('every Fix line of the output names the scanned directory when init is run from its parent', async () => {
+    const project = driftProject(dir);
+    const fixes = await driftFixLines(project, dir);
+    // One in the findings list and one in the callout.
+    expect(fixes.length).toBeGreaterThanOrEqual(2);
+    for (const line of fixes) expect(line).toMatch(/^Fix: +opena2a protect 'project'$/);
+  });
+
+  it('no Fix line carries a directory when init is run inside the project', async () => {
+    const project = driftProject(dir);
+    const fixes = await driftFixLines(project, project);
+    expect(fixes.length).toBeGreaterThanOrEqual(2);
+    for (const line of fixes) expect(line).toMatch(/^Fix: +opena2a protect$/);
+  });
 });

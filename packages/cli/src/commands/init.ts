@@ -368,13 +368,16 @@ export async function init(options: InitOptions): Promise<number> {
       }
 
       // protect acts on the directory it is given, else on the one it is run
-      // in, so both commands name the scanned directory.
+      // in, so both commands name the scanned directory. The Fix comes from
+      // getToolRecommendation, as in the findings list.
       const protectDryRun = inReportDir('opena2a protect --dry-run', targetDir);
-      const protectFix = inReportDir('opena2a protect', targetDir);
       for (const [findingId, items] of driftByType) {
         const first = items[0];
         const relPath = path.relative(targetDir, first.filePath);
         const extra = items.length > 1 ? ` (+${items.length - 1} more)` : '';
+        const protectFix = (groupedFindings.find(g => g.findingId === findingId)
+          ? getToolRecommendation(groupedFindings.find(g => g.findingId === findingId)!, targetDir)
+          : null)?.command ?? inReportDir('opena2a protect', targetDir);
 
         if (findingId === 'DRIFT-001') {
           process.stdout.write(`  ${yellow(findingId)}  Google Maps key may access Gemini AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
