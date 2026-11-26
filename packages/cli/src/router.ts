@@ -314,6 +314,63 @@ export async function dispatchCommand(
     });
   }
 
+  // 'login', 'logout', 'whoami', 'config' and 'shield' are registered directly
+  // in Commander (index.ts). A confirmed natural-language match or a wizard
+  // pick reaches them here instead, so each runs the handler its Commander
+  // action runs, with the flags that action registers.
+  if (command === 'login') {
+    const { login } = await import('./commands/login.js');
+    return login({
+      server: flagValue(args, '--server'),
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      json: args.includes('--json'),
+    });
+  }
+
+  if (command === 'logout') {
+    const { logout } = await import('./commands/login.js');
+    return logout({
+      format: (globalOptions.format as string) ?? 'text',
+      json: args.includes('--json'),
+    });
+  }
+
+  if (command === 'whoami') {
+    const { whoami } = await import('./commands/login.js');
+    return whoami({
+      format: (globalOptions.format as string) ?? 'text',
+      json: args.includes('--json'),
+    });
+  }
+
+  if (command === 'config') {
+    const { runConfig } = await import('./commands/config.js');
+    const positional = args.filter((a) => !a.startsWith('-'));
+    return runConfig(positional[0], positional[1], positional[2], {
+      enable: args.includes('--enable'),
+      disable: args.includes('--disable'),
+    });
+  }
+
+  if (command === 'shield') {
+    const { shield } = await import('./commands/shield.js');
+    const parsed = parseShieldArgs(args);
+    if (!parsed.subcommand) {
+      process.stderr.write('Usage: opena2a shield <subcommand>\n');
+      process.stderr.write("Run 'opena2a shield --help' for the subcommands.\n");
+      return 1;
+    }
+    return shield({
+      ...parsed.options,
+      subcommand: parsed.subcommand,
+      args: parsed.rest,
+      ci: globalOptions.ci ?? false,
+      format: (globalOptions.format as string) ?? 'text',
+      verbose: globalOptions.verbose ?? false,
+    });
+  }
+
   // scan + a target that is not a local path → delegate to hackmyagent check.
   // The scan adapter runs `hackmyagent secure <directory>`, which reads every
   // argument as a path, so `opena2a scan express` used to exit 1 with
@@ -510,6 +567,82 @@ export async function dispatchCommand(
   }
 
   return result.exitCode;
+}
+
+/** The value after `flag` in args, or undefined when the flag is absent. */
+function flagValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx >= 0 ? args[idx + 1] : undefined;
+}
+
+// The options `opena2a shield` registers in index.ts, keyed by flag.
+const SHIELD_VALUE_FLAGS: Record<string, keyof ShieldFlagOptions> = {
+  '--dir': 'dir',
+  '--agent': 'agent',
+  '--count': 'count',
+  '--since': 'since',
+  '--severity': 'severity',
+  '--source': 'source',
+  '--category': 'category',
+  '--action': 'action',
+  '--target': 'target',
+  '--report': 'report',
+};
+const SHIELD_BOOLEAN_FLAGS: Record<string, keyof ShieldFlagOptions> = {
+  '--verify': 'verify',
+  '--archive-log': 'archiveLog',
+  '--analyze': 'analyze',
+  '--shell-hook': 'shellHook',
+  '--ai-tools': 'aiTools',
+};
+
+interface ShieldFlagOptions {
+  dir?: string;
+  agent?: string;
+  count?: string;
+  since?: string;
+  severity?: string;
+  source?: string;
+  category?: string;
+  action?: string;
+  target?: string;
+  report?: string;
+  verify?: boolean;
+  archiveLog?: boolean;
+  analyze?: boolean;
+  shellHook?: boolean;
+  aiTools?: boolean;
+}
+
+/**
+ * Split `shield` args the way Commander does for `shield [subcommand] [args...]`:
+ * registered flags become options, unregistered ones stay in the rest.
+ */
+function parseShieldArgs(args: string[]): {
+  subcommand: string | undefined;
+  rest: string[];
+  options: ShieldFlagOptions;
+} {
+  const options: Record<string, string | boolean> = {};
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const valueKey = SHIELD_VALUE_FLAGS[arg];
+    if (valueKey) {
+      if (i + 1 < args.length) options[valueKey] = args[++i];
+      continue;
+    }
+    const boolKey = SHIELD_BOOLEAN_FLAGS[arg];
+    if (boolKey) {
+      options[boolKey] = true;
+      continue;
+    }
+    positional.push(arg);
+  }
+  const subIdx = positional.findIndex((a) => !a.startsWith('-'));
+  const subcommand = subIdx >= 0 ? positional[subIdx] : undefined;
+  const rest = subIdx >= 0 ? positional.filter((_, i) => i !== subIdx) : positional;
+  return { subcommand, rest, options: options as ShieldFlagOptions };
 }
 
 function getInstallHint(config: AdapterConfig): string {
