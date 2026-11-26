@@ -29,7 +29,7 @@ What `npx opena2a-cli init my-agent` prints, trimmed ([full output](docs/capture
             models.
             src/agent.js:4
             Verify: sed -n '4p' 'my-agent/src/agent.js'
-            Fix:    opena2a protect
+            Fix:    opena2a protect 'my-agent'
   ...
   Security Score: 43 / 100  (project posture: credentials, config, environment)
 ```

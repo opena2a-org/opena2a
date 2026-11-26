@@ -775,7 +775,8 @@ describe('init', () => {
     expect(textCred).toBeDefined();
     expect(typeof textCred.verify).toBe('string');
     expect(textCred.verify.length).toBeGreaterThan(0);
-    expect(textCred.fix).toBe('opena2a protect');
+    // init runs outside the temp dir here, so the Fix names it.
+    expect(textCred.fix).toBe(`opena2a protect '${tempDir}'`);
     expect(textCred.locations.length).toBeGreaterThan(0);
     expect(textCred.locations[0]).toMatchObject({ file: expect.any(String), line: expect.any(Number) });
 
@@ -791,7 +792,7 @@ describe('init', () => {
     const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
     expect(mcpFinding).toBeDefined();
     expect(mcpFinding.verify).toContain('mcp.json');
-    expect(mcpFinding.fix).toBe('opena2a shield init');
+    expect(mcpFinding.fix).toBe(`opena2a shield init '${tempDir}'`);
     expect(mcpFinding.locations.length).toBeGreaterThan(0);
     expect(mcpFinding.locations[0].file.endsWith('mcp.json')).toBe(true);
   });
