@@ -107,7 +107,7 @@ function renderHygiene() {
       if (guard.tamperedFiles && guard.tamperedFiles.length > 0) {
         h += '<div style="margin-top:8px"><div style="font-size:12px;color:var(--dim);margin-bottom:4px">Tampered files:</div>';
         for (var i = 0; i < guard.tamperedFiles.length; i++) {
-          h += '<div style="font-size:12px;color:var(--red)">' + esc(guard.tamperedFiles[i]) + '</div>';
+          h += '<div style="font-size:12px;color:var(--red);overflow-wrap:anywhere">' + esc(guard.tamperedFiles[i]) + '</div>';
         }
         h += cmdBlock('opena2a guard diff') + '<div style="font-size:12px;color:var(--muted);margin:6px 0 4px">Only if every change is yours:</div>' + cmdBlock('opena2a guard resign') + '</div>';
       } else {
