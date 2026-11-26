@@ -936,7 +936,9 @@ Output formats:
 'verify' computes the SHA-256 of each package's entry file (the one file Node
 loads for it, not the rest of the installed package) and asks the registry
 whether that hash matches its record. "no data" means the registry returned
-neither a match nor a mismatch; it is not a pass.
+neither a match nor a mismatch; it is not a pass. The trust score line names
+the version the registry scored; when that is not the installed version, or
+the registry does not say, the line says the score may not apply to it.
 
 Without --package it checks hackmyagent, secretless-ai and ai-trust; each is
 installed with opena2a-cli. opena2a-cli is not in that list; check it with

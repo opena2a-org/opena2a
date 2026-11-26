@@ -35,6 +35,13 @@ interface VerifyResult {
   localHash: string;
   registryStatus: 'verified' | 'tamper_detected' | 'no_data' | 'error' | 'not_installed';
   trustScore: number | null;
+  /** The package version the registry's trust score was computed for, when it says. */
+  scannedVersion: string | null;
+  /**
+   * Whether the trust score belongs to the installed version: false when the
+   * registry scored another version, null when it does not say which.
+   */
+  scoreMatchesInstalled: boolean | null;
   trustVerdict: string | null;
   oracleVerdict: string | null;
   oracleSignatureValid: boolean | null;
@@ -60,6 +67,9 @@ export const VERIFIABLE_PACKAGES = [
 ];
 
 const CLI_PACKAGE_NAME = 'opena2a-cli';
+
+/** The version the Registry stores for a package it lists but has not resolved. */
+const PLACEHOLDER_VERSION = '0.0.0-discovered';
 
 let cliPackageNames: Set<string> | null = null;
 
@@ -158,6 +168,8 @@ export async function verify(options: VerifyOptions): Promise<number> {
       packages: results.map(r => ({
         ...r,
         trustScore: r.trustScore,
+        scannedVersion: r.scannedVersion,
+        scoreMatchesInstalled: r.scoreMatchesInstalled,
         trustVerdict: r.trustVerdict,
         oracleVerdict: r.oracleVerdict,
         oracleSignatureValid: r.oracleSignatureValid,
@@ -178,6 +190,7 @@ export async function verify(options: VerifyOptions): Promise<number> {
 
 interface TrustProfile {
   trustScore: number;
+  scannedVersion: string | null;
   verdict: string;
   lastScannedAt: string | null;
   dependencyRiskCount: number;
@@ -196,8 +209,14 @@ async function queryTrustProfile(registryUrl: string, name: string, type?: strin
       userAgent: clientUserAgent(),
     });
     const data = await client.checkTrust(name, type);
+    // The answer carries the version its score was computed for when the
+    // registry has one; the client's type does not declare the field.
+    const rawVersion = (data as { version?: unknown }).version;
     return {
       trustScore: data.trustScore ?? 0,
+      scannedVersion: typeof rawVersion === 'string' && rawVersion !== '' && rawVersion !== PLACEHOLDER_VERSION
+        ? rawVersion
+        : null,
       verdict: data.verdict ?? 'unknown',
       lastScannedAt: data.lastScannedAt ?? null,
       dependencyRiskCount: data.dependencies?.riskSummary
@@ -242,6 +261,8 @@ async function verifyPackage(
 ): Promise<VerifyResult> {
   const emptyTrust = {
     trustScore: null,
+    scannedVersion: null,
+    scoreMatchesInstalled: null,
     trustVerdict: null,
     oracleVerdict: null,
     oracleSignatureValid: null,
@@ -308,12 +329,18 @@ async function verifyPackage(
     queryOracleVerdict(registryUrl, packageName),
   ]);
 
+  const trustScore = trustProfile?.trustScore ?? null;
+  const scannedVersion = trustProfile?.scannedVersion ?? null;
   return {
     packageName,
     version: pkgVersion,
     localHash,
     registryStatus,
-    trustScore: trustProfile?.trustScore ?? null,
+    trustScore,
+    scannedVersion,
+    scoreMatchesInstalled: trustScore === null || scannedVersion === null || pkgVersion === 'unknown'
+      ? null
+      : scannedVersion === pkgVersion,
     trustVerdict: trustProfile?.verdict ?? null,
     oracleVerdict: oracle?.verdict ?? null,
     oracleSignatureValid: oracle?.signatureValid ?? null,
@@ -347,6 +374,20 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
 
 // --- Output ---
 
+/**
+ * Names the version the trust score belongs to, and says so when that is not
+ * the installed version or the registry did not say which version it scored.
+ */
+export function scoreVersionNote(r: Pick<VerifyResult, 'version' | 'scannedVersion' | 'scoreMatchesInstalled'>): string {
+  if (r.scannedVersion === null) {
+    return yellow(`(scanned version unknown; may not be ${r.version})`);
+  }
+  if (r.scoreMatchesInstalled === false) {
+    return yellow(`(scanned ${r.scannedVersion}; installed is ${r.version}, so the score may be stale)`);
+  }
+  return dim(`(scanned ${r.scannedVersion})`);
+}
+
 function printResults(results: VerifyResult[], registryUrl: string): void {
   // Detailed per-package output
   for (const r of results) {
@@ -375,7 +416,7 @@ function printResults(results: VerifyResult[], registryUrl: string): void {
       // API returns 0-1 scale; display as 0-100
       const displayScore = r.trustScore <= 1 ? Math.round(r.trustScore * 100) : Math.round(r.trustScore);
       const scoreColor = displayScore >= 80 ? green : displayScore >= 60 ? yellow : red;
-      process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${displayScore} / 100`)}\n`);
+      process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${displayScore} / 100`)} ${scoreVersionNote(r)}\n`);
     }
     if (r.trustVerdict !== null) {
       const verdictColor = r.trustVerdict === 'trusted' ? green

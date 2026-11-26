@@ -238,3 +238,73 @@ describe('verify package list and install hints', () => {
     expect(line).not.toContain('not part of opena2a-cli');
   });
 });
+
+// The trust score was printed with no version, so a score for an older
+// release read as a score for the installed one.
+describe('verify ties the trust score to a version', () => {
+  const STRIP_ANSI = /\x1b\[[0-9;]*m/g;
+
+  function registry(trustAnswer: Record<string, unknown>): void {
+    mockFetch.mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/v1/trust/query') && u.includes('includeProfile')) {
+        return { ok: true, status: 200, json: async () => trustAnswer, text: async () => '' };
+      }
+      if (u.includes('/api/v1/trust/query')) {
+        return { ok: true, status: 200, json: async () => ({ contentVerification: { status: 'verified' } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+    });
+  }
+
+  async function run(format?: 'json'): Promise<string> {
+    vi.spyOn(_internals, 'resolvePackagePath').mockReturnValue({ mainFile: __filename, version: '0.7.2' });
+    const { output } = await captureStdout(() => verify({
+      packageName: 'hackmyagent',
+      registryUrl: 'https://test-registry.example.com',
+      ci: true,
+      format,
+    }));
+    return output;
+  }
+
+  function scoreLine(output: string): string {
+    const line = output.replace(STRIP_ANSI, '').split('\n').find(l => l.trim().startsWith('Trust Score'));
+    expect(line).toBeDefined();
+    return line!.trim();
+  }
+
+  const answer = { packageId: '11111111-1111-1111-1111-111111111111', name: 'hackmyagent', trustScore: 0.85, verdict: 'trusted' };
+
+  it('names the scanned version when it is the installed one', async () => {
+    registry({ ...answer, version: '0.7.2' });
+    expect(scoreLine(await run())).toBe('Trust Score      85 / 100 (scanned 0.7.2)');
+  });
+
+  it('flags the score as stale when the registry scored another version', async () => {
+    registry({ ...answer, version: '0.6.0' });
+    expect(scoreLine(await run())).toBe(
+      'Trust Score      85 / 100 (scanned 0.6.0; installed is 0.7.2, so the score may be stale)',
+    );
+  });
+
+  it('says the scanned version is unknown when the registry does not give one', async () => {
+    registry({ ...answer, version: '0.0.0-discovered' });
+    expect(scoreLine(await run())).toBe('Trust Score      85 / 100 (scanned version unknown; may not be 0.7.2)');
+  });
+
+  it('reports the scanned version and whether it matches in JSON', async () => {
+    registry({ ...answer, version: '0.6.0' });
+    const pkg = JSON.parse(await run('json')).packages[0];
+    expect(pkg.version).toBe('0.7.2');
+    expect(pkg.scannedVersion).toBe('0.6.0');
+    expect(pkg.scoreMatchesInstalled).toBe(false);
+  });
+
+  it('leaves the match null in JSON when the scanned version is unknown', async () => {
+    registry(answer);
+    const pkg = JSON.parse(await run('json')).packages[0];
+    expect(pkg.scannedVersion).toBeNull();
+    expect(pkg.scoreMatchesInstalled).toBeNull();
+  });
+});
