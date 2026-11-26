@@ -184,6 +184,23 @@ function isTracked(dir: string, relativePath: string): boolean {
 }
 
 /**
+ * Does git ignore `relativePath` in `dir`? Decided by `git check-ignore -q`
+ * (exit 0 when ignored), started without a shell. A tracked file is never
+ * reported ignored by it. Not a repository answers false.
+ */
+export function isIgnored(dir: string, relativePath: string): boolean {
+  try {
+    execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'check-ignore', '-q', '--', relativePath], {
+      stdio: 'ignore',
+      env: probeEnv(['GIT_']),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The top level of the git work tree that holds `dir`, as a real path, or
  * null when `dir` is not in one.
  */
@@ -245,7 +262,7 @@ function ignoreRule(relativePath: string): string {
  * given path git does not track in `dir`, each a single-quoted shell word, in
  * ascending order of relative path; the files stay on disk. The empty first
  * line keeps the rules on their own lines when .gitignore does not end with a
- * newline. Null when git tracks all of them; those take {@link untrackCommand}.
+ * newline. Files git already ignores get no rule, so running it twice never duplicates one. Null when git tracks or ignores all of them; those take {@link untrackCommand}.
  *
  * The command runs from `cwd`, the directory the user pastes it in. Run from
  * `dir` it appends to `.gitignore`; from anywhere else it names
@@ -258,8 +275,25 @@ export function ignoreCommand(
   relativePaths: string[],
   cwd: string = process.cwd(),
 ): { command: string; paths: string[] } | null {
-  const paths = Array.from(new Set(relativePaths)).sort().filter(p => !isTracked(dir, p));
+  const paths = Array.from(new Set(relativePaths)).sort().filter(p => !isTracked(dir, p) && !isIgnored(dir, p));
   if (paths.length === 0) return null;
   const gitignore = pathFrom(dir, cwd) === '.' ? '.gitignore' : shellPath(path.join(dir, '.gitignore'), cwd);
   return { command: `printf '%s\\n' '' ${paths.map(p => shellWord(ignoreRule(p))).join(' ')} >> ${gitignore}`, paths };
+}
+
+/**
+ * One command that moves every given untracked file that git already ignores
+ * out of the repository into `~/.opena2a/keys`, the step that changes the
+ * outcome when an ignore rule already exists. `mv -n` never overwrites.
+ * Null when none of them is untracked and ignored.
+ */
+export function moveOutCommand(
+  dir: string,
+  relativePaths: string[],
+  cwd: string = process.cwd(),
+): { command: string; paths: string[] } | null {
+  const paths = Array.from(new Set(relativePaths)).sort().filter(p => !isTracked(dir, p) && isIgnored(dir, p));
+  if (paths.length === 0) return null;
+  const files = paths.map(p => shellPath(path.join(dir, p), cwd)).join(' ');
+  return { command: `mkdir -p ~/.opena2a/keys && chmod 700 ~/.opena2a/keys && mv -n -- ${files} ~/.opena2a/keys/`, paths };
 }
