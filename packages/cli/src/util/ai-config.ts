@@ -50,6 +50,62 @@ const INJECTION_PATTERNS = [
   'override your',
 ];
 
+/**
+ * A quoted attack phrase is defensive text (it names the attack so the agent
+ * can refuse it), not a live instruction. An occurrence is treated as
+ * defensive only when ALL of these hold:
+ *   - it sits inside a closed double-quote / backtick / curly-quote span on one
+ *     line (apostrophes are ignored: they appear in ordinary prose, and parity
+ *     counting on them was an evasion, see soul-defensive-context.test.ts);
+ *   - the span is a short phrase, not a sentence (no sentence punctuation, at
+ *     most DEFENSIVE_SPAN_MAX chars);
+ *   - the same sentence, before the span, carries a defensive framing cue
+ *     ("phrases such as", "refuse", "never", ...).
+ * Quoting a payload with no cue, or with the cue elsewhere, still fires.
+ */
+const DEFENSIVE_SPAN_MAX = 60;
+const QUOTED_SPAN = /"([^"\n]*)"|\u201c([^\u201d\n]*)\u201d|`([^`\n]*)`/g;
+const DEFENSIVE_CUE =
+  /\b(such as|for example|e\.g|containing|contains?|phrases?|attempts?|never|must not|do not|don't|does not|will not|cannot|refuse[sd]?|reject(?:s|ed)?|block(?:s|ed)?|flag(?:s|ged)?|detect(?:s|ed)?|resist(?:s|ed)?|deny|decline|treat)\b/i;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isDefensiveOccurrence(content: string, index: number, length: number): boolean {
+  const lineStart = content.lastIndexOf('\n', index - 1) + 1;
+  let lineEnd = content.indexOf('\n', index);
+  if (lineEnd === -1) lineEnd = content.length;
+  const line = content.slice(lineStart, lineEnd);
+  const rel = index - lineStart;
+
+  QUOTED_SPAN.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = QUOTED_SPAN.exec(line)) !== null) {
+    const spanStart = m.index;
+    const spanEnd = spanStart + m[0].length;
+    if (rel < spanStart + 1 || rel + length > spanEnd - 1) continue;
+    const inner = m[1] ?? m[2] ?? m[3] ?? '';
+    if (inner.length > DEFENSIVE_SPAN_MAX || /[.!?;]/.test(inner)) return false;
+    // Drop earlier closed spans so their contents cannot supply the cue.
+    const prefix = line
+      .slice(0, spanStart)
+      .replace(QUOTED_SPAN, ' ');
+    const sentence = prefix.split(/[.!?;]/).pop() ?? '';
+    return DEFENSIVE_CUE.test(sentence);
+  }
+  return false;
+}
+
+function hasLiveOccurrence(content: string, pattern: string): boolean {
+  const re = new RegExp(escapeRegExp(pattern), 'gi');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    if (!isDefensiveOccurrence(content, m.index, m[0].length)) return true;
+  }
+  return false;
+}
+
 // --- Scan functions ---
 
 /**
@@ -393,8 +449,7 @@ export function scanSoulFile(dir: string): AiConfigFinding | null {
     return null;
   }
 
-  const lower = content.toLowerCase();
-  const matched = INJECTION_PATTERNS.filter(p => lower.includes(p));
+  const matched = INJECTION_PATTERNS.filter(p => hasLiveOccurrence(content, p));
 
   if (matched.length > 0) {
     return {
