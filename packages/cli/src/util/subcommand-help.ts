@@ -459,7 +459,7 @@ export const IDENTITY_HELP: SubcommandHelpRegistry = {
     options: [
       { flag: '--name <name>', description: 'Identity name, instead of the positional' },
       { flag: '--server <url>', description: 'AIM server URL (e.g. localhost:8080, cloud)' },
-      { flag: '--api-key <key>', description: 'AIM API key for that server' },
+      { flag: '--api-key <key>', description: 'AIM API key for that server (OPENA2A_INTERNAL_API_KEY is read first)' },
     ],
     examples: [
       'opena2a identity create production-agent',

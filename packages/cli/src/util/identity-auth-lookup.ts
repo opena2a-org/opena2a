@@ -36,6 +36,15 @@ function sameOrigin(a: string | undefined, b: string): boolean {
   return origin !== undefined && origin === serverOrigin(b);
 }
 
+/** The environment variable that carries the AIM API key, read by every identity server command. */
+export const AIM_API_KEY_ENV = 'OPENA2A_INTERNAL_API_KEY';
+
+/** The API key in OPENA2A_INTERNAL_API_KEY, trimmed, or undefined when it is unset or blank. */
+export function envApiKey(): string | undefined {
+  const key = process.env[AIM_API_KEY_ENV]?.trim();
+  return key || undefined;
+}
+
 /** A key typed with --api-key, and the --server value typed with it, if any. */
 export interface TypedApiKey {
   apiKey?: string;
@@ -48,7 +57,8 @@ export interface TypedApiKey {
  * expired gives the token before a token kept with the agent connection,
  * which is a copy that is not refreshed. A key typed with --api-key replaces
  * the stored key for the server typed with it, or, typed without --server,
- * for the server the command sends to.
+ * for the server the command sends to. A key in OPENA2A_INTERNAL_API_KEY
+ * replaces both: it is read first, for whichever server the command sends to.
  */
 export function authFor(serverUrl: string, typed: TypedApiKey = {}): ServerSignIn {
   const found: ServerSignIn = {};
@@ -64,6 +74,12 @@ export function authFor(serverUrl: string, typed: TypedApiKey = {}): ServerSignI
   }
   if (typed.apiKey && (!typed.apiKeyServer || sameOrigin(typed.apiKeyServer, serverUrl))) {
     found.apiKey = typed.apiKey;
+  }
+  const fromEnv = envApiKey();
+  if (fromEnv) {
+    // The key is read first, so no stored token is used beside it.
+    found.apiKey = fromEnv;
+    delete found.token;
   }
   return found;
 }
