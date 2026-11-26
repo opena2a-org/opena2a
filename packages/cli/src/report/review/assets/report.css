@@ -93,6 +93,7 @@ body {
   border-radius: 6px;
   padding: 16px;
   margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
 .card-title {
   font-size: 14px;
