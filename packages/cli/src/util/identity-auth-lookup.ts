@@ -14,10 +14,27 @@ import { AimClient, loadServerConfig } from './aim-client.js';
 import { loadAuth, saveAuth, isAuthValid } from './auth.js';
 import { resolveServerUrl } from './server-url.js';
 
+/**
+ * Where an API key came from: typed with --api-key, read from
+ * OPENA2A_INTERNAL_API_KEY, or stored with the agent connection.
+ */
+export type ApiKeySource = 'flag' | 'env' | 'stored';
+
 export interface ServerSignIn {
   token?: string;
   apiKey?: string;
+  /** Where `apiKey` came from; set whenever `apiKey` is. */
+  apiKeySource?: ApiKeySource;
   agentId?: string;
+}
+
+/**
+ * The API key a command may save with the agent connection: the key itself,
+ * unless it came from OPENA2A_INTERNAL_API_KEY. A credential from the
+ * environment is never persisted.
+ */
+export function storableApiKey(apiKey: string | undefined, source: ApiKeySource | undefined): string | undefined {
+  return apiKey && source !== 'env' ? apiKey : undefined;
 }
 
 /** The origin of a server URL or --server value, or undefined when it is not an http(s) URL. */
@@ -69,16 +86,21 @@ export function authFor(serverUrl: string, typed: TypedApiKey = {}): ServerSignI
   const connection = loadServerConfig();
   if (connection && sameOrigin(connection.serverUrl, serverUrl)) {
     found.token ??= connection.accessToken || undefined;
-    found.apiKey = connection.apiKey || undefined;
+    if (connection.apiKey) {
+      found.apiKey = connection.apiKey;
+      found.apiKeySource = 'stored';
+    }
     found.agentId = connection.agentId || undefined;
   }
   if (typed.apiKey && (!typed.apiKeyServer || sameOrigin(typed.apiKeyServer, serverUrl))) {
     found.apiKey = typed.apiKey;
+    found.apiKeySource = 'flag';
   }
   const fromEnv = envApiKey();
   if (fromEnv) {
     // The key is read first, so no stored token is used beside it.
     found.apiKey = fromEnv;
+    found.apiKeySource = 'env';
     delete found.token;
   }
   return found;

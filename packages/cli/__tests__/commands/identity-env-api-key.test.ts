@@ -6,9 +6,10 @@ import { createServer, type Server, type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 // The identity server commands sign in with the key in OPENA2A_INTERNAL_API_KEY
-// before --api-key and before what is stored. Credentials come from these
-// mocks only: the test never reads or writes a real auth file, server config,
-// keychain entry or identity.
+// before --api-key and before what is stored, and send it in X-API-Key, the
+// header the AIM server reads for authenticated calls. Credentials come from
+// these mocks only: the test never reads or writes a real auth file, server
+// config, keychain entry or identity.
 
 const state = vi.hoisted(() => ({
   auth: null as null | { serverUrl: string; accessToken: string; expiresAt: string },
@@ -59,13 +60,23 @@ interface FakeAim {
   close: () => Promise<void>;
 }
 
-/** An AIM stub that answers every read with an empty list and records the request. */
+const TAG = { id: 'tag-1', key: 'env', value: 'prod' };
+
+/**
+ * An AIM stub that records every request. Tag reads return one tag, so tag
+ * add and tag remove reach their write; every other request gets one body
+ * that each command accepts.
+ */
 async function startFakeAim(): Promise<FakeAim> {
   const requests: FakeAim['requests'] = [];
   const server: Server = createServer((req, res) => {
     requests.push({ method: req.method ?? '', path: req.url ?? '', headers: req.headers });
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ agents: [], tags: [], policies: [], total: 0 }));
+    if (req.method === 'GET' && /\/tags$/.test(req.url ?? '')) {
+      res.end(JSON.stringify({ tags: [TAG] }));
+      return;
+    }
+    res.end(JSON.stringify({ agents: [], tags: [], policies: [], mcpServers: [], activities: [], total: 0, status: 'ok' }));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
@@ -102,38 +113,151 @@ afterEach(async () => {
   fs.rmSync(state.dataDir, { recursive: true, force: true });
 });
 
-// The client sends a key in X-AIM-API-Key, and a per-call key also in X-API-Key.
-const keyOf = (i: number) => aim.requests[i].headers['x-api-key'] ?? aim.requests[i].headers['x-aim-api-key'];
+/** The X-API-Key header of request `i`: the one header the AIM server reads an API key from. */
+const apiKeyHeader = (i: number) => aim.requests[i].headers['x-api-key'];
 
-describe('OPENA2A_INTERNAL_API_KEY signs in every identity server command', () => {
+/** Every request reached the server with the key in X-API-Key. */
+function expectEveryRequestSends(key: string): void {
+  expect(aim.requests.length).toBeGreaterThan(0);
+  for (let i = 0; i < aim.requests.length; i++) {
+    expect(apiKeyHeader(i), `${aim.requests[i].method} ${aim.requests[i].path}`).toBe(key);
+  }
+}
+
+/** An agent connected to the stub, with no key and no token stored for it. */
+function connectAgentWithoutCredentials(): void {
+  state.serverConfig = { serverUrl: aim.url, agentId: 'agent-1', registeredAt: LATER };
+}
+
+const calls = () => aim.requests.map((r) => `${r.method} ${r.path}`);
+
+describe('OPENA2A_INTERNAL_API_KEY signs in every identity server command, in X-API-Key', () => {
   it('identity list --server <url> authenticates with no --api-key and no stored credentials', async () => {
     expect(await identity({ subcommand: 'list', server: aim.url, json: true })).toBe(0);
-    expect(aim.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /api/v1/agents']);
-    expect(keyOf(0)).toBe(ENV_KEY);
+    expect(calls()).toEqual(['GET /api/v1/agents']);
+    expectEveryRequestSends(ENV_KEY);
   });
 
-  it('identity policy --server <url> authenticates', async () => {
+  it('identity policy --server <url>', async () => {
     expect(await identity({ subcommand: 'policy', server: aim.url, json: true })).toBe(0);
-    expect(aim.requests.length).toBeGreaterThan(0);
-    expect(keyOf(0)).toBe(ENV_KEY);
+    expect(calls()).toEqual(['GET /api/v1/admin/security-policies']);
+    expectEveryRequestSends(ENV_KEY);
   });
 
-  it('identity tag list authenticates without a login', async () => {
-    expect(await identity({ subcommand: 'tag', args: ['list'], server: aim.url, json: true })).toBe(0);
-    expect(aim.requests.length).toBe(1);
-    expect(keyOf(0)).toBe(ENV_KEY);
+  it('identity tag list', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'tag', args: ['list'], json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/tags']);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity tag add', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'tag', args: ['add', 'env=prod'], json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/tags', 'POST /api/v1/agents/agent-1/tags']);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity tag remove', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'tag', args: ['remove', 'env=prod'], json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/agents/agent-1/tags', 'DELETE /api/v1/agents/agent-1/tags/tag-1']);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity mcp list', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'mcp', args: ['list'], json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/agents/agent-1/mcp-servers']);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity activity', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'activity', json: true })).toBe(0);
+    expect(calls()).toHaveLength(1);
+    expect(calls()[0]).toMatch(/^GET \/api\/v1\/agents\/agent-1\/activity/);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity suspend', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'suspend', json: true })).toBe(0);
+    expect(calls()).toEqual(['POST /api/v1/agents/agent-1/suspend']);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity reactivate', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'reactivate', json: true })).toBe(0);
+    expect(calls()).toEqual(['POST /api/v1/agents/agent-1/reactivate']);
+    expectEveryRequestSends(ENV_KEY);
+  });
+
+  it('identity revoke', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'revoke', ci: true, json: true })).toBe(0);
+    expect(calls()).toEqual(['POST /api/v1/agents/agent-1/revoke']);
+    expectEveryRequestSends(ENV_KEY);
   });
 
   it('is read before --api-key and before the stored key', async () => {
     state.serverConfig = { serverUrl: aim.url, agentId: 'agent-1', apiKey: 'STORED-KEY', registeredAt: LATER };
     expect(await identity({ subcommand: 'list', server: aim.url, apiKey: 'TYPED-KEY', json: true })).toBe(0);
-    expect(aim.requests.length).toBeGreaterThan(0);
-    for (let i = 0; i < aim.requests.length; i++) expect(keyOf(i)).toBe(ENV_KEY);
+    expect(calls()).toEqual(['GET /api/v1/agents/agent-1']);
+    expectEveryRequestSends(ENV_KEY);
   });
 
   it('a blank value is ignored and --api-key is used', async () => {
     process.env.OPENA2A_INTERNAL_API_KEY = '   ';
+    connectAgentWithoutCredentials();
     expect(await identity({ subcommand: 'list', server: aim.url, apiKey: 'TYPED-KEY', json: true })).toBe(0);
-    expect(keyOf(0)).toBe('TYPED-KEY');
+    expect(calls()).toEqual(['GET /api/v1/agents/agent-1']);
+    expectEveryRequestSends('TYPED-KEY');
+  });
+});
+
+describe('with OPENA2A_INTERNAL_API_KEY unset', () => {
+  beforeEach(() => {
+    delete process.env.OPENA2A_INTERNAL_API_KEY;
+  });
+
+  it('identity list --api-key with no agent connected asks the server nothing', async () => {
+    expect(await identity({ subcommand: 'list', server: aim.url, apiKey: 'TYPED-KEY', json: true })).toBe(0);
+    expect(calls()).toEqual([]);
+  });
+
+  it('identity list with a stored key and no agent connected asks the server nothing', async () => {
+    state.serverConfig = { serverUrl: aim.url, agentId: '', apiKey: 'STORED-KEY', registeredAt: LATER };
+    expect(await identity({ subcommand: 'list', json: true })).toBe(0);
+    expect(calls()).toEqual([]);
+  });
+
+  it('identity list --api-key fetches the connected agent with the typed key', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'list', server: aim.url, apiKey: 'TYPED-KEY', json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/agents/agent-1']);
+    expectEveryRequestSends('TYPED-KEY');
+  });
+
+  it('identity policy --api-key sends the typed key as before, in X-AIM-API-Key', async () => {
+    expect(await identity({ subcommand: 'policy', server: aim.url, apiKey: 'TYPED-KEY', json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/admin/security-policies']);
+    expect(aim.requests[0].headers['x-aim-api-key']).toBe('TYPED-KEY');
+    expect(apiKeyHeader(0)).toBeUndefined();
+  });
+
+  it('identity tag list signs in with the login token, and no API key', async () => {
+    state.auth = { serverUrl: aim.url, accessToken: 'LOGIN-TOKEN', expiresAt: LATER };
+    expect(await identity({ subcommand: 'tag', args: ['list'], server: aim.url, json: true })).toBe(0);
+    expect(calls()).toEqual(['GET /api/v1/tags']);
+    expect(aim.requests[0].headers.authorization).toBe('Bearer LOGIN-TOKEN');
+    expect(apiKeyHeader(0)).toBeUndefined();
+  });
+
+  it('identity tag list with no login is refused before any request', async () => {
+    connectAgentWithoutCredentials();
+    expect(await identity({ subcommand: 'tag', args: ['list'], json: true })).toBe(1);
+    expect(calls()).toEqual([]);
   });
 });
