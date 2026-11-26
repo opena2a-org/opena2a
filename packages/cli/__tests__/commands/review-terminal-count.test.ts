@@ -75,8 +75,11 @@ describe('review terminal finding count (#408)', () => {
     expect(reportFindings.length).toBeGreaterThan(0);
     const count = (sev: string) => reportFindings.filter(f => f.severity === sev).length;
     expect(line).toBe(
-      `${reportFindings.length} findings (${count('critical')} critical, ${count('high')} high, ${count('medium')} medium)`,
+      `${reportFindings.length} findings (${count('critical')} critical, ${count('high')} high, ${count('medium')} medium, ${count('low')} low)`,
     );
+    // The parts add up to the total the line leads with (#500).
+    const parts = [...line.matchAll(/(\d+) (critical|high|medium|low)/g)].map(m => Number(m[1]));
+    expect(parts.reduce((a, b) => a + b, 0)).toBe(reportFindings.length);
   }
 
   it('counts the same findings on the terminal as in JSON for an empty git repo', async () => {

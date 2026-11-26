@@ -265,6 +265,9 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
 
   const advisoryFinding = (report: Record<string, any>) =>
     report.reportFindings.find((f: any) => f.foundBy.some((b: any) => b.source === 'advisories'));
+  // The finding line lists every severity, so its parts add up to the total.
+  const lowCount = (report: Record<string, any>) =>
+    report.reportFindings.filter((f: any) => f.severity === 'low').length;
 
   // The terminal printed "0 findings" and "No security issues detected"
   // while the report counted the matched advisory as a high finding.
@@ -274,7 +277,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     const { report, stdout } = await runReview();
 
     expect(advisoryFinding(report).severity).toBe('high');
-    expect(stdout).toContain(`${report.reportFindings.length} findings (0 critical, 1 high, 0 medium)`);
+    expect(stdout).toContain(`${report.reportFindings.length} findings (0 critical, 1 high, 0 medium, ${lowCount(report)} low)`);
     expect(stdout).not.toContain('No security issues detected');
   });
 
@@ -462,7 +465,7 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       const { report, stdout } = await runReview();
       expect(advisoryFinding(report).severity, label).toBe('medium');
       expect(report.initData.advisories[0].severity, label).toBeNull();
-      expect(stdout, label).toContain(`${report.reportFindings.length} findings (0 critical, 0 high, 1 medium)`);
+      expect(stdout, label).toContain(`${report.reportFindings.length} findings (0 critical, 0 high, 1 medium, ${lowCount(report)} low)`);
 
       fs.rmSync(cacheDir, { recursive: true, force: true });
       const initialized = await silenced(() => init({ targetDir: tempDir, format: 'text' }));

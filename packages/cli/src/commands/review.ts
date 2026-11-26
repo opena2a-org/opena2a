@@ -50,6 +50,7 @@ import { verifyConfigIntegrity, defaultSigningFiles, type ConfigIntegritySummary
 import { collectEnvFileFacts, type EnvFileFact } from './review-facts.js';
 import { buildReviewFindings, type FindingCategory, type HardeningItem, type ReportFinding, type ScoreModel } from './review-findings.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
+import { hmaCheckCount } from '../util/hma-checks.js';
 import { generateReviewHtml } from '../report/review-html.js';
 import type { EventSeverity, RiskLevel } from '../shield/types.js';
 
@@ -345,6 +346,12 @@ export interface HmaPhaseData {
    *  in the HTML report; this field preserves the raw set so the Observations
    *  block and overview severity counts match `hackmyagent secure`. */
   allFailedFindings: HmaFinding[];
+  /** Static checks in the suite HMA ran: what `scan` prints as `N static`.
+   *  0 when HMA produced no result. */
+  staticChecks?: number;
+  /** Artifacts NanoMind compiled in this run: what `scan` prints as
+   *  `N semantic`. 0 when HMA produced no result or reported no count. */
+  semanticArtifacts?: number;
   /** How the HMA run ended. `available` is false for every status but `ran`. */
   run: HmaRunStatus;
 }
@@ -677,8 +684,7 @@ export async function review(options: ReviewOptions): Promise<number> {
     return counts;
   }, { critical: 0, high: 0, medium: 0, low: 0 });
   const [analyzerCounts, sevCounts] = [countBySeverity(findings), countBySeverity([...findings, ...advisoryFindings])];
-  const lineCounts = countBySeverity(reportFindings);
-  const totalFindings = reportFindings.length;
+  const findingCountLine = formatFindingCounts(reportFindings);
 
   // Why the advisories were not checked (a refused registry.url, no answer,
   // OPENA2A_ADVISORIES=off). On stderr, so `--format json` stays parseable.
@@ -777,7 +783,7 @@ export async function review(options: ReviewOptions): Promise<number> {
   process.stdout.write(
     `  Score: ${scoreColor(`${compositeScore}/100`)}${dim(recoveryHint)}${dim(scopeNote)}` +
     (floorPath ? `\n  ${floorPath}` : '') +
-    `\n  ${totalFindings} findings (${lineCounts.critical} critical, ${lineCounts.high} high, ${lineCounts.medium} medium)` +
+    `\n  ${findingCountLine}` +
     `${yellow(chainNote)}\n`,
   );
 
@@ -835,9 +841,11 @@ export async function review(options: ReviewOptions): Promise<number> {
       }
       const { lines } = cliUi.renderObservationsBlock({
         surfaces: { kind: projectLabel },
+        // The engine's counts for the run that produced these findings, as
+        // `scan` prints them: its static suite and the artifacts NanoMind
+        // compiled. Zero when HMA produced no result.
         checks: {
-          staticCount: phases.length,
-          semanticCount: 0,
+          ...hmaChecksRun(hmaData),
           skipped: credentialsUnread
             ? [{ category: 'credentials', reason: 'no files scanned' }]
             : undefined,
@@ -1261,20 +1269,59 @@ export function mapRawHmaFinding(f: Record<string, unknown>): HmaFinding {
  *   - `allFindings` — every check that ran, both passed and failed
  *
  * Older HMA versions only emit `findings`. When `allFindings` is present we
- * derive `totalChecks` and `passed` from it; otherwise both fall back to the
- * failed count (legacy behaviour displays "0 Passed", which is what we are
- * fixing here for current HMA builds).
+ * read `passed` from it; otherwise it is 0 (legacy behaviour displays
+ * "0 Passed", which is what we are fixing here for current HMA builds).
+ *
+ * `totalChecks` is always `passed + failedCount`, so the tab's Passed and
+ * Failed add up to its Total. `allFindings` also carries failed records that
+ * `findings` leaves out (HMA's noise floor, suppressions), which the tab does
+ * not count as failed; counting them in the total made the parts fall short.
  */
 export function deriveHmaCounts(
   parsed: Record<string, unknown>,
   failedCount: number,
 ): { totalChecks: number; passed: number } {
   const fullSet = parsed.allFindings as Record<string, unknown>[] | undefined;
-  if (!Array.isArray(fullSet)) {
-    return { totalChecks: failedCount, passed: 0 };
-  }
-  const passed = fullSet.filter(f => f.passed === true).length;
-  return { totalChecks: fullSet.length, passed };
+  const passed = Array.isArray(fullSet) ? fullSet.filter(f => f.passed === true).length : 0;
+  return { totalChecks: passed + failedCount, passed };
+}
+
+/**
+ * The Checks line's counts for this run, as `scan` prints them: the static
+ * suite the engine ran and the artifacts NanoMind compiled. Both 0 when HMA
+ * produced no result, since no engine check ran.
+ */
+export function hmaChecksRun(hma: HmaPhaseData): { staticCount: number; semanticCount: number } {
+  if (!hma.available) return { staticCount: 0, semanticCount: 0 };
+  return { staticCount: hma.staticChecks ?? 0, semanticCount: hma.semanticArtifacts ?? 0 };
+}
+
+/**
+ * How many artifacts NanoMind compiled in this run, from HMA's JSON report
+ * (`coverage.semanticFamilyCoverage.artifactsCompiled`, the number `scan`
+ * prints as `N semantic`). 0 when the report does not carry it, as in `scan`.
+ */
+export function hmaSemanticArtifacts(parsed: Record<string, unknown>): number {
+  const coverage = parsed.coverage as Record<string, unknown> | undefined;
+  const family = coverage && typeof coverage === 'object'
+    ? coverage.semanticFamilyCoverage as Record<string, unknown> | undefined
+    : undefined;
+  const count = family && typeof family === 'object' ? family.artifactsCompiled : undefined;
+  return typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : 0;
+}
+
+/**
+ * The line under the score: the total and every severity in it, so the
+ * parts add up to the total. Critical through low always show; any other
+ * severity shows when present.
+ */
+export function formatFindingCounts(list: ReadonlyArray<{ severity: string }>): string {
+  const order = ['critical', 'high', 'medium', 'low'];
+  const counts = new Map<string, number>(order.map(s => [s, 0]));
+  for (const f of list) counts.set(f.severity, (counts.get(f.severity) ?? 0) + 1);
+  // A severity HMA reports is text from the scanned tree's scanner run.
+  const parts = [...counts].map(([sev, n]) => `${n} ${printable(sev)}`);
+  return `${list.length} findings (${parts.join(', ')})`;
 }
 
 /** HMA phase data for a run that produced no result. */
@@ -1283,6 +1330,7 @@ export function emptyHmaData(run: HmaRunStatus): HmaPhaseData {
     available: false, score: 0, maxScore: 100,
     totalChecks: 0, passed: 0, failed: 0,
     bySeverity: {}, byCategory: {}, topFindings: [], allFailedFindings: [],
+    staticChecks: 0, semanticArtifacts: 0,
     run,
   };
 }
@@ -1496,6 +1544,13 @@ export async function runHmaPhase(
       byCategory,
       topFindings,
       allFailedFindings: failedFindings,
+      // The suite size the engine reports in a scan; when it cannot be read,
+      // the checks this run reported on.
+      staticChecks: hmaCheckCount() ?? new Set(
+        [...(Array.isArray(parsed.allFindings) ? parsed.allFindings as Record<string, unknown>[] : []), ...allFindings]
+          .map(f => f.checkId).filter(id => typeof id === 'string' && id.length > 0),
+      ).size,
+      semanticArtifacts: hmaSemanticArtifacts(parsed),
       run: { status: 'ran', reason: null, version, durationMs: Date.now() - started },
     };
   } catch (err) {
