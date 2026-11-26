@@ -412,4 +412,12 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node dist/index.js telemetry status) and spawnSync(node -e <getContributorToken ' +
       'from @opena2a/contribute>) in a scratch HOME, one at a time (#469)',
   },
+  'commands/init-home-writes.test.ts': {
+    shape: 'async-bounded',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawn(node dist/index.js init <dir> [args]) in a scratch HOME, TMPDIR and cwd, ' +
+      'awaited to exit before the next, asynchronous so the in-process registry stub ' +
+      'keeps answering while it runs',
+  },
 };
