@@ -427,6 +427,11 @@ export async function dispatchCommand(
   if (globalOptions.analm && !adapterArgs.includes('--analm')) {
     adapterArgs.push('--analm');
   }
+  // `hackmyagent secure` lists every finding and passed check under --verbose
+  // instead of the top few. Only the scan adapter's tool takes the flag.
+  if (adapterName === 'scan' && globalOptions.verbose && !adapterArgs.includes('--verbose') && !adapterArgs.includes('-v')) {
+    adapterArgs.push('--verbose');
+  }
   if (globalOptions.staticOnly && !adapterArgs.includes('--static-only')) {
     adapterArgs.push('--static-only');
   }
