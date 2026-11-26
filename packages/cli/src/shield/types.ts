@@ -202,7 +202,12 @@ export type ShieldIntegrityStatus = IntegrityStatus | 'not-checked';
 
 export interface IntegrityCheck {
   name: string;
-  status: 'pass' | 'warn' | 'fail';
+  /**
+   * `skip` means the check had nothing to verify (no policy, no signature
+   * store). It is not a pass: it is not counted as one, and it leaves the
+   * overall status as the other checks set it.
+   */
+  status: 'pass' | 'skip' | 'warn' | 'fail';
   detail: string;
   /**
    * The one command to run next. Every `fail` check carries one, and `detail`
