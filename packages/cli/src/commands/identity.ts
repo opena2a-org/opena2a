@@ -2104,23 +2104,38 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
         return 0;
       }
 
+      // A request that never reached the server (connection refused, DNS
+      // failure, proxy refusal, timeout) fails every later request the same
+      // way, so report it once and stop instead of marking each server failed.
+      const unreachable = (err: unknown): boolean => err instanceof AimServerError && err.statusCode === 0;
+      // The org-level registry routes are not agent routes: a 404 there is
+      // not "agent not found", so keep the client's message for it.
+      const orgError = (err: unknown): string =>
+        err instanceof AimServerError && err.statusCode === 404 ? err.message : formatServerError(err);
+
       // Get already-attached MCPs to deduplicate
-      let existingNames: Set<string> = new Set();
+      let existingNames: Set<string>;
       try {
         const existing = await authedClient.getAgentMCPs(agentId);
         existingNames = new Set((existing.mcpServers ?? []).map((m: any) => m.name));
-      } catch { /* ignore */ }
+      } catch (err) {
+        process.stderr.write(`Failed to list the agent's MCP servers: ${formatServerError(err)}\n`);
+        return 1;
+      }
 
       // Get existing org-level MCP server entities for name→ID lookup
-      let orgMcpMap: Map<string, string> = new Map();
+      const orgMcpMap: Map<string, string> = new Map();
       try {
         const orgMcps = await authedClient.listOrgMcpServers();
         for (const m of orgMcps.mcpServers ?? []) {
           orgMcpMap.set(m.name, m.id);
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        process.stderr.write(`Failed to list the organization's MCP servers: ${orgError(err)}\n`);
+        return 1;
+      }
 
-      const results: { name: string; status: string }[] = [];
+      const results: { name: string; status: string; error?: string }[] = [];
 
       for (const server of discovered) {
         if (existingNames.has(server.name)) {
@@ -2139,8 +2154,12 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
               transport: server.transport ?? 'stdio',
             });
             mcpEntityId = created.id;
-          } catch {
-            results.push({ name: server.name, status: 'failed' });
+          } catch (err) {
+            if (unreachable(err)) {
+              process.stderr.write(`Failed to create MCP server "${server.name}": ${formatServerError(err)}\n`);
+              return 1;
+            }
+            results.push({ name: server.name, status: 'failed', error: `create: ${orgError(err)}` });
             continue;
           }
         }
@@ -2148,10 +2167,16 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
         try {
           await authedClient.addMCPsToAgent(agentId, [mcpEntityId!]);
           results.push({ name: server.name, status: 'attached' });
-        } catch {
-          results.push({ name: server.name, status: 'failed' });
+        } catch (err) {
+          if (unreachable(err)) {
+            process.stderr.write(`Failed to attach MCP server "${server.name}": ${formatServerError(err)}\n`);
+            return 1;
+          }
+          results.push({ name: server.name, status: 'failed', error: `attach: ${formatServerError(err)}` });
         }
       }
+
+      const failedCount = results.filter(r => r.status === 'failed').length;
 
       if (isJson) {
         process.stdout.write(JSON.stringify({
@@ -2160,7 +2185,7 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
           attached: results.filter(r => r.status === 'attached').length,
           servers: results,
         }, null, 2) + '\n');
-        return 0;
+        return failedCount > 0 ? 1 : 0;
       }
 
       process.stdout.write(bold('MCP Server Discovery') + '\n');
@@ -2170,11 +2195,13 @@ async function handleMcp(options: IdentityOptions): Promise<number> {
           : r.status === 'already attached' ? dim('already attached')
           : red('failed');
         process.stdout.write(`  ${cyan(r.name)} (${icon})\n`);
+        if (r.error) process.stdout.write(`    ${red(r.error)}\n`);
       }
       process.stdout.write(gray('-'.repeat(50)) + '\n');
       const newCount = results.filter(r => r.status === 'attached').length;
-      process.stdout.write(dim(`  ${discovered.length} discovered, ${newCount} newly attached`) + '\n');
-      return 0;
+      const failedNote = failedCount > 0 ? `, ${failedCount} failed` : '';
+      process.stdout.write(dim(`  ${discovered.length} discovered, ${newCount} newly attached${failedNote}`) + '\n');
+      return failedCount > 0 ? 1 : 0;
     } catch (err) {
       process.stderr.write(`Failed to discover MCP servers: ${err instanceof Error ? err.message : String(err)}\n`);
       return 1;

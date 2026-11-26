@@ -75,3 +75,51 @@ describe('identity connect behind HTTPS_PROXY', () => {
     expect(stderr).not.toContain('Verify the server is running.');
   });
 });
+
+describe('identity mcp attach behind HTTPS_PROXY', () => {
+  it('prints the client error naming the proxy and exits 1 instead of marking each server failed', async () => {
+    const serverUrl = 'https://aim.scratch.invalid';
+    const opena2a = path.join(TMP_HOME, '.opena2a');
+    const identities = path.join(opena2a, 'aim-core', 'identities');
+    fs.mkdirSync(identities, { recursive: true });
+    fs.writeFileSync(path.join(opena2a, 'auth.json'), JSON.stringify({
+      serverUrl,
+      accessToken: 'FAKE-access-token',
+      refreshToken: 'FAKE-refresh-token',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      tokenType: 'Bearer',
+      authenticatedAt: '2026-10-15T00:00:00.000Z',
+      tokenStorage: 'file',
+    }), { mode: 0o600 });
+    fs.writeFileSync(path.join(identities, 'server.json'), JSON.stringify({
+      serverUrl,
+      agentId: 'agent-1',
+      registeredAt: '2026-10-15T00:00:00.000Z',
+    }), { mode: 0o600 });
+    const projectDir = fs.mkdtempSync(path.join(TMP_HOME, 'project-'));
+    fs.writeFileSync(
+      path.join(projectDir, '.mcp.json'),
+      JSON.stringify({ mcpServers: { 'probe-mcp': { command: 'node', args: ['server.js'] } } }),
+    );
+
+    const identity = await freshIdentity();
+    let stderr = '';
+    let stdout = '';
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stderr += String(chunk);
+      return true;
+    });
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stdout += String(chunk);
+      return true;
+    });
+
+    const code = await identity({ subcommand: 'mcp', args: ['attach'], server: serverUrl, dir: projectDir });
+
+    expect(code).toBe(1);
+    expect(stderr).toContain(`Cannot connect to AIM server at ${serverUrl}`);
+    expect(stderr).toContain(proxyUrl);
+    expect(stderr).toContain('HTTPS_PROXY');
+    expect(stdout).not.toContain('failed');
+  });
+});
