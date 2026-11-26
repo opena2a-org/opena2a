@@ -137,7 +137,7 @@
   {
     "id": "init",
     "path": "opena2a init",
-    "description": "Read-only security assessment -- scan for credentials, detect scope drift, check hygiene, calculate trust score (no changes made)",
+    "description": "Read-only security assessment -- scan for credentials, detect scope drift, check hygiene, calculate trust score (changes nothing in the project; writes ~/.opena2a/cache/advisories.json, ~/.opena2a/shield/events.jsonl, and ~/.config/opena2a/telemetry.json when secretless-ai is on PATH)",
     "tags": ["init", "assess", "scan", "drift", "trust-score", "posture"],
     "synonyms": ["assess", "audit", "evaluate", "check posture"],
     "domains": ["project", "config", "credentials"],

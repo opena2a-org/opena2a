@@ -34,7 +34,7 @@ What `npx opena2a-cli init my-agent` prints, trimmed ([full output](docs/capture
   Security Score: 43 / 100  (project posture: credentials, config, environment)
 ```
 
-`init` reads the project and changes nothing in the project. It needs Node.js 20.19 or later, and it exits 1 while a critical finding is open, 0 otherwise.
+`init` reads the project and changes nothing in the project. It does write to the home directory of the account that runs it: it caches the Registry's advisories in `~/.opena2a/cache/advisories.json`, appends to the Shield event log in `~/.opena2a/shield/events.jsonl`, and writes `~/.config/opena2a/telemetry.json` when `secretless-ai` is on `PATH`. It needs Node.js 20.19 or later, and it exits 1 while a critical finding is open, 0 otherwise.
 
 Then apply the fixes and build the full report:
 
