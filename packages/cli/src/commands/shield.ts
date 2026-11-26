@@ -113,10 +113,12 @@ export async function shield(options: ShieldOptions): Promise<number> {
 /**
  * The directory `shield init` hardens: `--dir`, or the positional the way
  * every sibling command (`init`, `review`, `protect`, `scan`) takes it.
- * The positional used to be discarded, so `shield init <dir>` hardened the
- * current directory and reported success for a target it never touched
- * (#268). Returns an error message instead of guessing when the arguments
- * disagree or do not name a directory.
+ * The positional used to be discarded, so `shield init` with a directory
+ * hardened the current directory and reported success for a target it never
+ * touched (#268). Returns an error message instead of guessing when the
+ * arguments disagree or do not name a directory. Its Fix lines name the
+ * directory as a shell parameter that refuses when unset: pasted before
+ * PROJECT_DIR is set, the shell prints the message and runs nothing.
  */
 export function resolveInitTarget(
   options: Pick<ShieldOptions, 'dir' | 'args'>,
@@ -125,7 +127,7 @@ export function resolveInitTarget(
   if (positional.length > 1) {
     return {
       error: `shield init takes one directory, got ${positional.length}: ${positional.join(' ')}\n` +
-        '  Fix: opena2a shield init <dir>',
+        '  Fix: opena2a shield init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"',
     };
   }
   const [dirArg] = positional;
@@ -133,7 +135,7 @@ export function resolveInitTarget(
       path.resolve(dirArg) !== path.resolve(options.dir)) {
     return {
       error: `shield init was given two different directories: ${dirArg} and --dir ${options.dir}\n` +
-        '  Fix: pass one of them, e.g. opena2a shield init <dir>',
+        '  Fix: pass one of them, e.g. opena2a shield init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"',
     };
   }
   const target = options.dir ?? dirArg;
@@ -148,7 +150,7 @@ export function resolveInitTarget(
   if (!isDir) {
     return {
       error: `shield init: ${resolved} is not a directory\n` +
-        '  Fix: opena2a shield init <existing-project-dir>',
+        '  Fix: opena2a shield init "${PROJECT_DIR:?set PROJECT_DIR to the folder that holds your code}"',
     };
   }
   return { targetDir: resolved };

@@ -80,6 +80,29 @@ describe('resolveInitTarget (#268)', () => {
     const file = path.join(mkdir('proj'), 'package.json');
     expect(resolveInitTarget({ dir: file }).error).toContain('is not a directory');
   });
+
+  it('prints Fix lines that refuse in bash with a message while PROJECT_DIR is unset', () => {
+    const a = mkdir('a');
+    const b = mkdir('b');
+    const errors = [
+      resolveInitTarget({ args: [a, b] }).error,
+      resolveInitTarget({ args: [a], dir: b }).error,
+      resolveInitTarget({ args: [path.join(scratch, 'missing')] }).error,
+    ];
+    for (const error of errors) {
+      const fix = (error ?? '').split('\n').find(l => l.includes('Fix: '));
+      expect(fix).toBeDefined();
+      expect(fix).not.toMatch(/<[A-Za-z][^<>\s]*>/);
+      const command = fix!.slice(fix!.indexOf('opena2a shield init'));
+      const env = { ...process.env };
+      delete env.PROJECT_DIR;
+      // `echo` stands in for opena2a: the parameter must refuse before any command runs.
+      const r = spawnSync('bash', ['-c', command.replace(/^opena2a/, 'echo ran')], { env, encoding: 'utf-8' });
+      expect(r.status).not.toBe(0);
+      expect(r.stdout).toBe('');
+      expect(r.stderr).toContain('set PROJECT_DIR to the folder that holds your code');
+    }
+  });
 });
 
 describe('opena2a shield init <dir> end to end (#268)', () => {
