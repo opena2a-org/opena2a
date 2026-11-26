@@ -260,6 +260,25 @@ describe('detect contribution', () => {
     expect(server.scanResult.contributed).toBe(false);
   });
 
+  // uvx fetches a PyPI package; a node_modules directory of the same name is
+  // an unrelated npm package, so it is neither scanned nor sent in its place.
+  it('a server that runs a PyPI package through uvx is scanned in the project directory and not sent, even when an npm package of that name is installed', async () => {
+    installPackage(tempDir, 'mcp-server-fetch');
+    writeMcpConfig(tempDir, {
+      fetch: { command: 'uvx', args: ['mcp-server-fetch'] },
+    });
+
+    const { exitCode, stdout, stderr } = await runDetect({ targetDir: tempDir, format: 'json', ci: true, registry: true, autoScan: true, verbose: true });
+
+    expect(exitCode).toBe(0);
+    expect(scannedDirs()).toEqual([tempDir]);
+    expect(submission.submitScanReport).not.toHaveBeenCalled();
+    expect(stderr).toContain('mcp-server-fetch is a PyPI package; the project directory is scanned and the result is not sent.');
+    const server = JSON.parse(stdout).mcpServers.find((s: { name: string }) => s.name === 'fetch');
+    expect(server).toMatchObject({ registryName: 'mcp-server-fetch', registryEcosystem: 'pypi' });
+    expect(server.scanResult.contributed).toBe(false);
+  });
+
   // The line is for a server whose launch names an npm package that was not
   // found: it says which package, and what was scanned instead. A server that
   // runs no npm package names nothing to look for, so it gets no such line.

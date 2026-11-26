@@ -42,12 +42,13 @@ const DEFAULT_REGISTRY_BASE = 'https://api.oa2a.org';
  * registry is unreachable, slow, or returns unexpected data, returns an empty
  * map instead of throwing.
  *
- * @param assets  Array of { name, type } to query (e.g. MCP server names)
+ * @param assets  Array of { name, type, ecosystem? } to query (e.g. the packages MCP servers run);
+ *   ecosystem names the index the package comes from when it is known
  * @param registryBaseUrl  Base URL of the registry (no trailing slash)
  * @returns Map of "name:type" -> enrichment data
  */
 export async function enrichFromRegistry(
-  assets: { name: string; type: string }[],
+  assets: { name: string; type: string; ecosystem?: 'npm' | 'pypi' }[],
   registryBaseUrl?: string,
 ): Promise<Map<string, RegistryEnrichment>> {
   const enrichments = new Map<string, RegistryEnrichment>();
@@ -68,7 +69,7 @@ export async function enrichFromRegistry(
     });
 
     const response = await client.batchQuery(
-      assets.map((a) => ({ name: a.name, type: a.type })),
+      assets.map((a) => ({ name: a.name, type: a.type, ...(a.ecosystem ? { ecosystem: a.ecosystem } : {}) })),
     );
 
     for (const result of response.results) {

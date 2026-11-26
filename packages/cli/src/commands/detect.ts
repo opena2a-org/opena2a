@@ -14,7 +14,7 @@ import { getUserConfigDir } from '@opena2a/shared';
 import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
-import { registryNameFor, hasNpmPackageNameForm } from '../util/mcp-registry-name.js';
+import { registryPackageFor, hasNpmPackageNameForm, type RegistryEcosystem } from '../util/mcp-registry-name.js';
 import { findMcpIdentityFile, listMcpIdentityNames } from '../util/mcp-identity-store.js';
 
 // ---------------------------------------------------------------------------
@@ -70,8 +70,10 @@ export interface DetectedMcpServer {
   verified: boolean;
   capabilities: string[];
   risk: RiskLevel;
-  /** The npm package the server runs, which is the name the Registry knows it by; absent when it runs none. */
+  /** The package the server's launch command runs, which is the name the Registry knows it by; absent when it runs none. */
   registryName?: string;
+  /** The index registryName comes from: npm, or PyPI for a uvx server; present exactly when registryName is. */
+  registryEcosystem?: RegistryEcosystem;
   registryData?: McpRegistryData;
   scanResult?: McpScanResult;
   scanSuggestion?: string;
@@ -271,11 +273,11 @@ export function parseMcpConfig(
       // Extract capabilities from server name and config
       const capabilities = inferMcpCapabilities(name, e);
       const risk = classifyMcpRisk(name, capabilities, transport);
-      const registryName = registryNameFor({ transport, command: e.command, args: e.args, url: e.url });
+      const registryPackage = registryPackageFor({ transport, command: e.command, args: e.args, url: e.url });
 
       servers.push({
         name, transport, source: label, verified: false, capabilities, risk,
-        ...(registryName ? { registryName } : {}),
+        ...(registryPackage ? { registryName: registryPackage.name, registryEcosystem: registryPackage.ecosystem } : {}),
       });
     }
 
@@ -1052,8 +1054,11 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
  * stays local. The key of the config entry is a label the user chose and
  * names no directory.
  *
- * The package name is the one registryNameFor read from the launch command,
- * so it has the form of an npm package name: `name` or `@scope/name`, no
+ * A PyPI package a uvx server runs has no copy under node_modules that is
+ * known to be it, so its server is scanned in the project directory too.
+ *
+ * The npm package name is the one registryPackageFor read from the launch
+ * command, so it has the form of an npm package name: `name` or `@scope/name`, no
  * path segment of any other kind. installedPackageDir checks that form again
  * itself and answers only a directory that lies under the node_modules
  * directory it was looked up in, whatever produced the name. The global
@@ -1062,7 +1067,7 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
  * absent.
  */
 function resolveMcpServerPath(server: DetectedMcpServer, projectDir: string): { targetDir: string; packageDir: boolean } {
-  if (server.registryName) {
+  if (server.registryName && server.registryEcosystem === 'npm') {
     const localPath = installedPackageDir(path.join(projectDir, 'node_modules'), server.registryName);
     if (localPath) return { targetDir: localPath, packageDir: true };
 
@@ -1288,7 +1293,9 @@ async function scanUnknownAssets(
     try {
       if (verbose) {
         process.stderr.write(dim(`  Scanning ${server.name}...\n`));
-        if (server.registryName && !packageDir) {
+        if (server.registryName && server.registryEcosystem === 'pypi') {
+          process.stderr.write(dim(`  ${server.registryName} is a PyPI package; the project directory is scanned and the result is not sent.\n`));
+        } else if (server.registryName && !packageDir) {
           process.stderr.write(dim(`  ${server.registryName} is not installed under node_modules or the global npm prefix; the project directory is scanned and the result is not sent.\n`));
         }
       }
@@ -1319,7 +1326,7 @@ async function scanUnknownAssets(
       // which must declare the package the launch command runs, and carries
       // the version it declares and the version of the scanner that ran; a
       // scan for which either name or scanner version is unknown is not sent.
-      const record = contributeEnabled && registryUrl && server.registryName && packageDir
+      const record = contributeEnabled && registryUrl && server.registryName && server.registryEcosystem === 'npm' && packageDir
         ? installedPackageRecord(targetDir, server.registryName)
         : null;
       const scannerVersion = record ? scannerVersionOf(scanResult, hmaVersion) : null;
@@ -1442,7 +1449,6 @@ export async function detect(options: DetectOptions): Promise<number> {
   }
 
   // Registry enrichment (opt-in via --registry)
-  let registryEnrichments: Map<string, RegistryEnrichment> | undefined;
   if (options.registry && mcpServers.length > 0) {
     try {
       const { enrichFromRegistry } = await import('../util/registry-enrichment.js');
@@ -1452,16 +1458,24 @@ export async function detect(options: DetectOptions): Promise<number> {
       // `|| 'https://api.oa2a.org'` fallback here was a second copy of the
       // canonical constant with nothing keeping it in sync.
       const registryUrl = await getRegistryUrl();
-      // Look a server up under the package it runs; its config key names
-      // nothing in the registry, so a server that runs no package is not sent.
-      const assets = mcpServers.flatMap((s) => (s.registryName ? [{ name: s.registryName, type: 'mcp_server' }] : []));
-      registryEnrichments = await enrichFromRegistry(assets, registryUrl);
+      // Look a server up under the package it runs, in the index it comes
+      // from; its config key names nothing in the registry, so a server that
+      // runs no package is not sent. Each index is asked on its own, since an
+      // answer is keyed by name and type and an npm and a PyPI package can
+      // share a name.
+      const byEcosystem = new Map<RegistryEcosystem, Map<string, RegistryEnrichment>>();
+      for (const ecosystem of ['npm', 'pypi'] as const) {
+        const assets = mcpServers.flatMap((s) => (
+          s.registryName && s.registryEcosystem === ecosystem ? [{ name: s.registryName, type: 'mcp_server', ecosystem }] : []
+        ));
+        if (assets.length > 0) byEcosystem.set(ecosystem, await enrichFromRegistry(assets, registryUrl));
+      }
 
       // Attach registry data to each MCP server
       for (const server of mcpServers) {
-        if (!server.registryName) continue;
+        if (!server.registryName || !server.registryEcosystem) continue;
         const key = `${server.registryName}:mcp_server`;
-        const enrichment = registryEnrichments.get(key);
+        const enrichment = byEcosystem.get(server.registryEcosystem)?.get(key);
         // A "listed" record was never scanned; its score of 0 measures
         // nothing, so the server stays without trust data.
         if (enrichment && enrichment.verdict !== 'listed') {
