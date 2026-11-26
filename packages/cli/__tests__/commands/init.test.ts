@@ -414,6 +414,33 @@ describe('init', () => {
     expect(report.scoreBreakdown.environment.detail).toContain('MCP');
   });
 
+  it('reports one MCP high-risk server count in the finding and the score breakdown', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(tempDir, 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs-a': { command: 'filesystem-server', args: [] },
+        'fs-b': { command: 'shell-server', args: [] },
+      },
+    }));
+    fs.mkdirSync(path.join(tempDir, '.cursor'));
+    fs.writeFileSync(path.join(tempDir, '.cursor', 'mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fs-c': { command: 'filesystem-server', args: [] },
+      },
+    }));
+
+    const { output } = await captureStdout(() => init({
+      targetDir: tempDir,
+      format: 'json',
+    }));
+
+    const report = JSON.parse(output);
+    const mcpFinding = report.findings.find((f: any) => f.findingId === 'MCP-TOOLS');
+    expect(mcpFinding.title).toMatch(/^3 servers /);
+    expect(report.scoreBreakdown.environment.detail).toContain('MCP high-risk tools (3 servers)');
+  });
+
   it('uses consulting-style prose in actions (no "recover N points")', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test' }));
     fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
