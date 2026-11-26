@@ -128,4 +128,17 @@ describe('dispatchCommand scan', () => {
     expect(spawnCalls).toHaveLength(0);
     expect(adapterRuns).toEqual([['secure']]);
   });
+
+  it('passes --verbose to the directory scan so it lists more than the default', async () => {
+    await dispatchCommand('scan', ['project'], { cwd: dir, verbose: true });
+    expect(adapterRuns).toEqual([['secure', 'project', '--verbose']]);
+    adapterRuns.length = 0;
+    await dispatchCommand('scan', ['project'], { cwd: dir });
+    expect(adapterRuns).toEqual([['secure', 'project']]);
+  });
+
+  it('does not repeat --verbose the user already typed', async () => {
+    await dispatchCommand('scan', ['project', '--verbose'], { cwd: dir, verbose: true });
+    expect(adapterRuns).toEqual([['secure', 'project', '--verbose']]);
+  });
 });
