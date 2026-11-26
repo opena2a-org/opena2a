@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { REVIEW_CLIENT_FILES, assembleReviewClientScript } from '../../src/report/review-assets.js';
-import { describeHmaNoResult, floorPathLine, type HmaRunStatusCode } from '../../src/commands/review.js';
+import { compositeSoftensHighs, describeHmaNoResult, floorPathLine, type HmaRunStatusCode } from '../../src/commands/review.js';
 
 // The client files as committed under src, never a built copy under dist.
 const SRC_ASSETS_DIR = join(__dirname, '..', '..', 'src', 'report', 'review', 'assets');
@@ -231,6 +231,27 @@ describe('review report: Summary', () => {
     expect(t).toContain('No findings to fix.');
     expect(t).toContain('Checked: 6 analyzers');
     expect(t).not.toMatch(/\bundefined\b|\bNaN\b/);
+  });
+
+  // Regression (#552): the terminal Verdict said "Good overall" for a high
+  // finding the score left in the good band while the Overview said "Not
+  // ready to ship". Both now follow compositeSoftensHighs.
+  it('points the verdict the way the terminal Verdict does for high findings', () => {
+    const advisory = { ...URL_PASSWORD, fingerprint: 'a0c1d2e3', title: 'Advisory in vulnerable-package', foundBy: [{ source: 'advisories', checkId: 'OA2A-2026-0001', lines: [] }] };
+    const cases: Array<[number, object[], string]> = [
+      [88, [URL_PASSWORD, FILE_MODE, LOCK_FILE], 'Good overall: 2 high and 1 low findings to harden.'],
+      [80, [URL_PASSWORD], 'Good overall: 1 high finding to harden.'],
+      [79, [URL_PASSWORD], 'Not ready to ship: 1 high finding.'],
+      [93, [advisory], 'Not ready to ship: 1 high finding.'],
+      [93, [URL_PASSWORD, advisory], 'Not ready to ship: 2 high findings.'],
+      [93, [ENV_GROUP, URL_PASSWORD], 'Not ready to ship: 1 critical and 1 high findings.'],
+    ];
+    for (const [compositeScore, reportFindings, sentence] of cases) {
+      const t = text(renderOverview(report({ compositeScore, reportFindings, fixFirst: [] })));
+      expect(t, sentence).toContain(sentence);
+      const softened = compositeScore >= 80 && compositeSoftensHighs(reportFindings as never);
+      expect(sentence.startsWith('Good overall'), sentence).toBe(softened);
+    }
   });
 
   it('renders a severity or source named "constructor" as its own value, not one from Object.prototype', () => {

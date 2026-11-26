@@ -82,6 +82,17 @@ const NO_FILES_SCANNED_VERDICT =
   'No files were scanned for credentials, so this is not a clean result. '
   + 'Run `opena2a review .` from the folder that holds your code.';
 
+/**
+ * True when the composite may soften a high-only Verdict to "Good overall"
+ * (#221): no finding is critical and no high finding is a matched advisory,
+ * which the composite does not weigh. The report's Overview applies the same
+ * rule (`softensHighs` in 10-overview.js), so the two agree in direction (#552).
+ */
+export function compositeSoftensHighs(findings: ReadonlyArray<Pick<ReportFinding, 'severity' | 'foundBy'>>): boolean {
+  return !findings.some(f => f.severity === 'critical'
+    || (f.severity === 'high' && f.foundBy.some(b => b.source === 'advisories')));
+}
+
 export interface PhaseResult {
   name: string;
   status: 'pass' | 'warn' | 'fail' | 'skip';
@@ -834,7 +845,10 @@ export async function review(options: ReviewOptions): Promise<number> {
         verdictFindings,
         // Pass the composite (target-risk) score so the verdict line reconciles
         // with the headline band instead of disagreeing in direction (#221).
-        compositeScore,
+        // The composite does not weigh a matched advisory, so it may not
+        // soften one: a high advisory keeps the verdict that the report's
+        // Overview gives it (#552).
+        compositeSoftensHighs(reportFindings) ? compositeScore : undefined,
       );
       if (credentialsUnread && verdict.status === 'safe') {
         verdict = { status: 'unknown', message: NO_FILES_SCANNED_VERDICT };

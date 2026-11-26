@@ -59,14 +59,31 @@ function severityCounts(findings) {
   }
   return counts;
 }
-function verdictSentence(counts, total) {
+/**
+ * The terminal Verdict's rule (compositeSoftensHighs in review.ts): a score of
+ * 80 or more turns high findings into items to harden, unless a finding is
+ * critical or a high one is a matched advisory, which the score does not weigh.
+ */
+function softensHighs(findings) {
+  var score = report.compositeScore;
+  if (typeof score !== 'number' || !isFinite(score) || score < 80) return false;
+  for (var i = 0; i < findings.length; i++) {
+    var f = findings[i];
+    if (f.severity === 'critical') return false;
+    if (f.severity === 'high' && (f.foundBy || []).some(function(b) { return b.source === 'advisories'; })) return false;
+  }
+  return true;
+}
+function verdictSentence(counts, findings) {
+  var total = findings.length;
   if (total === 0) return 'No findings.';
+  var rest = severityKeys(counts).filter(function(k) { return counts[k]; }).map(function(k) { return counts[k] + ' ' + k; });
   var urgent = [];
   if (counts.critical) urgent.push(counts.critical + ' critical');
   if (counts.high) urgent.push(counts.high + ' high');
   var n = (counts.critical || 0) + (counts.high || 0);
+  if (n > 0 && softensHighs(findings)) return 'Good overall: ' + joinWords(rest) + ' finding' + (total === 1 ? '' : 's') + ' to harden.';
   if (n > 0) return 'Not ready to ship: ' + joinWords(urgent) + ' finding' + (n === 1 ? '' : 's') + '.';
-  var rest = severityKeys(counts).filter(function(k) { return counts[k]; }).map(function(k) { return counts[k] + ' ' + k; });
   return 'No critical or high findings. ' + joinWords(rest) + ' finding' + (total === 1 ? '' : 's') + ' to review.';
 }
 function countsLine(counts) {
@@ -169,7 +186,7 @@ function checkedSentence() {
 }
 function renderSummary(findings, top) {
   var counts = severityCounts(findings);
-  var h = '<section class="card summary" aria-labelledby="summary-title"><h2 class="sum-verdict" id="summary-title">' + esc(verdictSentence(counts, findings.length)) + '</h2>';
+  var h = '<section class="card summary" aria-labelledby="summary-title"><h2 class="sum-verdict" id="summary-title">' + esc(verdictSentence(counts, findings)) + '</h2>';
   var notes = summaryNotices();
   for (var i = 0; i < notes.length; i++) h += '<p class="sum-notice">' + esc(notes[i]) + '</p>';
   h += countsLine(counts);
