@@ -3,7 +3,7 @@
  * with their security scan results. "Eat your own cooking."
  *
  * Flow:
- * 1. Load tool manifest (13 tools)
+ * 1. Load tool manifest (11 tools)
  * 2. For each tool: check existence, optionally scan with HMA, publish results
  * 3. Print summary report
  */
@@ -43,7 +43,8 @@ export interface SelfRegisterOptions {
 interface ToolResult {
   name: string;
   displayName: string;
-  status: 'exists' | 'new' | 'error';
+  /** 'unknown' = the registry was not asked (dry run) or did not answer; never reported as 'new'. */
+  status: 'exists' | 'new' | 'unknown' | 'error';
   scanStatus: 'passed' | 'warnings' | 'failed' | 'skipped' | 'error';
   criticalCount: number;
   highCount: number;
@@ -311,10 +312,10 @@ export async function selfRegister(options: SelfRegisterOptions): Promise<number
 
   // Summary
   if (isJson) {
-    const report = buildJsonReport(results, registryUrl);
+    const report = buildJsonReport(results, registryUrl, options.dryRun ?? false);
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
-    printSummary(results, registryUrl);
+    printSummary(results, registryUrl, options.dryRun ?? false);
   }
 
   const errors = results.filter(r => r.error);
@@ -332,7 +333,7 @@ async function processTool(
   const result: ToolResult = {
     name: tool.name,
     displayName: tool.displayName,
-    status: 'new',
+    status: 'unknown',
     scanStatus: 'skipped',
     criticalCount: 0,
     highCount: 0,
@@ -346,7 +347,7 @@ async function processTool(
     // Phase 1: Check if tool already exists in registry
     if (!options.dryRun) {
       const existsResult = await checkPackageExists(registryUrl, tool);
-      result.status = existsResult.exists ? 'exists' : 'new';
+      result.status = existsResult.exists ? 'exists' : existsResult.lookupFailed ? 'unknown' : 'new';
     }
 
     // Phase 2: Scan (if scannable and not skipped)
@@ -391,6 +392,8 @@ async function processTool(
 interface ExistsResult {
   exists: boolean;
   packageId?: string;
+  /** True when the registry gave no definite answer (network error, 5xx): absence is not established. */
+  lookupFailed?: boolean;
 }
 
 export async function checkPackageExists(registryUrl: string, tool: ToolManifest): Promise<ExistsResult> {
@@ -412,9 +415,9 @@ export async function checkPackageExists(registryUrl: string, tool: ToolManifest
       return { exists: false };
     }
 
-    return { exists: false };
+    return { exists: false, lookupFailed: true };
   } catch {
-    return { exists: false };
+    return { exists: false, lookupFailed: true };
   }
 }
 
@@ -628,11 +631,27 @@ async function resolveRegistryUrl(override?: string): Promise<string> {
 
 // --- Output ---
 
-function printSummary(results: ToolResult[], registryUrl: string): void {
+/**
+ * Partition the results for the summary line. Every tool lands in exactly one
+ * of scan / metadata / neither (it failed before a publish type was chosen), so
+ * the three counts always add up to the total. Counting scanStatus instead
+ * left a dry run at 0 + 5 of 11, because nothing is scanned in one.
+ */
+function summaryCounts(results: ToolResult[]) {
+  const scan = results.filter(r => r.publishType === 'scan').length;
+  const metadataOnly = results.filter(r => r.publishType === 'metadata').length;
+  const unpublished = results.length - scan - metadataOnly;
+  return { total: results.length, scan, metadataOnly, unpublished, errors: results.filter(r => r.error).length };
+}
+
+function printSummary(results: ToolResult[], registryUrl: string, dryRun: boolean): void {
   process.stdout.write('\n');
 
   const rows = results.map(r => {
-    const status = r.status === 'error' ? red(r.status) : r.status === 'exists' ? cyan(r.status) : green(r.status);
+    const status = r.status === 'error' ? red(r.status)
+      : r.status === 'exists' ? cyan(r.status)
+      : r.status === 'unknown' ? dim(r.status)
+      : green(r.status);
     const scan = r.scanStatus === 'passed' ? green(r.scanStatus)
       : r.scanStatus === 'warnings' ? yellow(r.scanStatus)
       : r.scanStatus === 'failed' ? red(r.scanStatus)
@@ -652,31 +671,33 @@ function printSummary(results: ToolResult[], registryUrl: string): void {
   process.stdout.write(table(rows, ['Tool', 'Status', 'Scan', 'Crit', 'High', 'Med', 'Low', 'Published']) + '\n\n');
 
   // Summary line
-  const total = results.length;
-  const scanned = results.filter(r => r.scanStatus !== 'skipped').length;
-  const metadataOnly = results.filter(r => r.publishType === 'metadata').length;
-  const errors = results.filter(r => r.error).length;
+  const { total, scan, metadataOnly, unpublished, errors } = summaryCounts(results);
 
   process.stdout.write(bold('Summary: '));
   const parts = [
     `${total} tools`,
-    `${scanned} scanned`,
+    `${scan} ${dryRun ? 'to scan' : 'scanned'}`,
     `${metadataOnly} metadata-only`,
   ];
+  if (unpublished > 0) parts.push(`${unpublished} not published`);
   if (errors > 0) parts.push(red(`${errors} errors`));
   else parts.push(green('0 errors'));
   process.stdout.write(parts.join(', ') + '\n');
   process.stdout.write(dim(`Registry: ${registryUrl}\n`));
 }
 
-function buildJsonReport(results: ToolResult[], registryUrl: string): object {
+function buildJsonReport(results: ToolResult[], registryUrl: string, dryRun: boolean): object {
+  const { total, scan, metadataOnly, unpublished, errors } = summaryCounts(results);
   return {
     registryUrl,
     timestamp: new Date().toISOString(),
-    total: results.length,
-    scanned: results.filter(r => r.scanStatus !== 'skipped').length,
-    metadataOnly: results.filter(r => r.publishType === 'metadata').length,
-    errors: results.filter(r => r.error).length,
+    dryRun,
+    total,
+    // Tools whose record carries scan findings (planned, in a dry run).
+    scanned: scan,
+    metadataOnly,
+    notPublished: unpublished,
+    errors,
     tools: results,
   };
 }

@@ -121,6 +121,39 @@ describe('selfRegister', () => {
     expect(report.tools).toHaveLength(11);
   });
 
+  it('dry-run counts sum to the total and no tool is called new without a lookup', async () => {
+    const { output } = await captureStdout(() => selfRegister({ dryRun: true, ci: true, format: 'json' }));
+
+    const report = JSON.parse(output);
+    expect(report.dryRun).toBe(true);
+    expect(report.scanned + report.metadataOnly + report.notPublished).toBe(report.total);
+    expect(report.scanned).toBe(6);
+    expect(report.metadataOnly).toBe(5);
+    for (const t of report.tools) expect(t.status).toBe('unknown');
+  });
+
+  it('dry-run text summary counts add up to 11', async () => {
+    const { output } = await captureStdout(() => selfRegister({ dryRun: true, ci: true }));
+    expect(output.replace(/\x1b\[[0-9;]*m/g, '')).toContain('Summary: 11 tools, 6 to scan, 5 metadata-only, 0 errors');
+  });
+
+  it('status reflects the registry when it is asked', async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.includes('by-name/ai_tool/hackmyagent')) return { ok: true, status: 200, json: async () => ({ id: 'x' }) };
+      if (u.includes('by-name/a2a_agent/dvaa')) return { ok: false, status: 404 };
+      if (u.includes('by-name')) throw new Error('timeout');
+      if (u.includes('request-scan-token')) return { ok: true, json: async () => ({ scanToken: 't' }) };
+      return { ok: true, json: async () => ({}) };
+    });
+
+    const { output } = await captureStdout(() => selfRegister({
+      skipScan: true, ci: true, yes: true, format: 'json', only: ['hackmyagent', 'dvaa', 'aim'],
+    }));
+    const byName = Object.fromEntries(JSON.parse(output).tools.map((t: any) => [t.name, t.status]));
+    expect(byName).toEqual({ hackmyagent: 'exists', dvaa: 'new', aim: 'unknown' });
+  });
+
   it('--only filters to specified tools', async () => {
     const options: SelfRegisterOptions = {
       dryRun: true,
