@@ -159,11 +159,20 @@ export function keyFileRemediation(
   relativePath: string,
 ): { remediation: string; remediationNote: string } {
   return {
-    remediation: `git rm --cached ${shellWord(relativePath)}`,
+    remediation: `git rm --cached ${shellWord(literalPathspec(relativePath))}`,
     remediationNote: findingId === 'CRED-KEYFILE'
       ? 'Run after the key is revoked or replaced with the CA or service that issued it, which no opena2a command can do: it stops git tracking the file; add its extension to .gitignore so it is not committed again.'
       : 'This stops git tracking the file and leaves it on disk; add its extension to .gitignore so it is not committed again.',
   };
+}
+
+/**
+ * `relativePath` as a git pathspec that names exactly that file. A name
+ * beginning with `:` would be read as pathspec magic (`:a.key` is `a.key`),
+ * and one beginning with `-` as an option, so both get `./`.
+ */
+function literalPathspec(relativePath: string): string {
+  return relativePath.startsWith(':') || relativePath.startsWith('-') ? `./${relativePath}` : relativePath;
 }
 
 /**
@@ -173,7 +182,7 @@ export function keyFileRemediation(
  */
 function isTracked(dir: string, relativePath: string): boolean {
   try {
-    execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'ls-files', '--error-unmatch', '--', relativePath], {
+    execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'ls-files', '--error-unmatch', '--', literalPathspec(relativePath)], {
       stdio: 'ignore',
       env: probeEnv(['GIT_']),
     });
@@ -190,7 +199,7 @@ function isTracked(dir: string, relativePath: string): boolean {
  */
 export function isIgnored(dir: string, relativePath: string): boolean {
   try {
-    execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'check-ignore', '-q', '--', relativePath], {
+    execFileSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', 'check-ignore', '-q', '--', literalPathspec(relativePath)], {
       stdio: 'ignore',
       env: probeEnv(['GIT_']),
     });
@@ -238,12 +247,12 @@ export function untrackCommand(
   if (paths.length === 0) return null;
   const root = repositoryRoot(dir);
   if (!root) {
-    return { command: `git -C ${shellPath(dir, cwd)} rm --cached ${paths.map(shellWord).join(' ')}`, paths };
+    return { command: `git -C ${shellPath(dir, cwd)} rm --cached ${paths.map(p => shellWord(literalPathspec(p))).join(' ')}`, paths };
   }
   const realDir = fs.realpathSync(dir);
   const fromRoot = paths.map(p => path.relative(root, path.join(realDir, p)));
   const git = pathFrom(root, cwd) === '.' ? 'git' : `git -C ${shellPath(root, cwd)}`;
-  return { command: `${git} rm --cached ${fromRoot.map(shellWord).join(' ')}`, paths };
+  return { command: `${git} rm --cached ${fromRoot.map(p => shellWord(literalPathspec(p))).join(' ')}`, paths };
 }
 
 /**
