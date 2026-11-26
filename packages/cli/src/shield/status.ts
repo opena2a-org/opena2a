@@ -133,7 +133,7 @@ function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
       const hasRegistry = programOnPath('opena2a') !== null;
       return {
         name: 'Registry',
-        installed: hasRegistry !== null,
+        installed: hasRegistry,
         active: false,
         version: null,
         keyMetric: hasRegistry ? 'available' : 'not available',
