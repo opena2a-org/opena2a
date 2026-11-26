@@ -8,6 +8,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CREDENTIAL_PATTERNS, type CredentialMatch } from './credential-patterns.js';
+import { HARDEN_SOUL_LINE_DIGESTS } from './harden-soul-lines.js';
+import { normaliseSoulLine, soulLineDigest } from './soul-line.js';
 
 // --- Types ---
 
@@ -49,6 +51,26 @@ const INJECTION_PATTERNS = [
   'disregard',
   'override your',
 ];
+
+/**
+ * A soul-file line is set aside from the injection match only when it EQUALS,
+ * after whitespace normalisation, a line `harden-soul` writes (compared by
+ * SHA-256 digest). The set is generated from the generator's own templates
+ * (harden-soul-lines.ts), so the
+ * evidence is the exact generated text, not anything about how a sentence is
+ * worded: a line with a word changed, or with anything added before or after,
+ * is judged like any other line. Nothing here keys on quotes, negation or cue
+ * words.
+ */
+const HARDEN_SOUL_LINE_SET: ReadonlySet<string> = new Set(HARDEN_SOUL_LINE_DIGESTS);
+
+/** The soul-file text with every line equal to a harden-soul line removed. */
+function withoutHardenSoulLines(content: string): string {
+  return content
+    .split(/\r\n|\r|\n/)
+    .filter(line => normaliseSoulLine(line) === '' || !HARDEN_SOUL_LINE_SET.has(soulLineDigest(line)))
+    .join('\n');
+}
 
 // --- Scan functions ---
 
@@ -393,7 +415,9 @@ export function scanSoulFile(dir: string): AiConfigFinding | null {
     return null;
   }
 
-  const lower = content.toLowerCase();
+  // No pattern spans a line break, so matching the remaining lines joined by
+  // '\n' judges each of them exactly as the whole-file match did.
+  const lower = withoutHardenSoulLines(content).toLowerCase();
   const matched = INJECTION_PATTERNS.filter(p => lower.includes(p));
 
   if (matched.length > 0) {
