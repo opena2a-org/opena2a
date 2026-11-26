@@ -19,6 +19,7 @@ import { getVersion } from './util/version.js';
 import { printFooter } from './util/footer.js';
 import { checkMinHmaVersion } from './util/hma-version.js';
 import { telemetryHelpLine } from './util/telemetry-help.js';
+import { telemetryJson } from './util/telemetry-json.js';
 import { gray } from './util/colors.js';
 import { wordWrap } from './util/format.js';
 import { HELP_CONTRACTS, adapterSourceLine, formatHelpContract } from './util/help-contract.js';
@@ -283,6 +284,10 @@ Learn more: https://opena2a.org/docs`;
       // install_id, so status shows both. The peek reads the token without
       // creating its salt: printing the status writes nothing.
       const { peekContributorToken } = await import('./util/contributor-token.js');
+      if (program.opts().format === 'json') {
+        console.log(JSON.stringify(telemetryJson(action, tele, peekContributorToken), null, 2));
+        return;
+      }
       console.log(runTelemetryCommand(action, {
         tool: BRAND,
         getStatus: tele.status,

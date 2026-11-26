@@ -93,7 +93,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['0', 'the setting was shown or changed, also for an unknown action (the message names the valid ones)'],
       ['1', 'the telemetry config file could not be written'],
     ],
-    json: 'not supported; output is text',
+    json: 'prints the setting as JSON; an unknown action prints an error object',
     ci: 'no effect',
   },
   protect: {

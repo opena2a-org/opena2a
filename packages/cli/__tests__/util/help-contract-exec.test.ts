@@ -54,6 +54,8 @@ interface Sandbox {
 
 interface Run {
   out: string;
+  /** Standard output alone, colour codes removed. */
+  stdout: string;
   status: number | null;
 }
 
@@ -1402,7 +1404,7 @@ function run(command: string, argv: string[], cwd: string, env: NodeJS.ProcessEn
     child.stderr.on('data', (d) => { stderr += d; watch(); });
     child.on('close', (status) => {
       clearTimeout(timer);
-      done({ out: `${stdout}\n${stderr}`.replace(STRIP_ANSI, ''), status });
+      done({ out: `${stdout}\n${stderr}`.replace(STRIP_ANSI, ''), stdout: stdout.replace(STRIP_ANSI, ''), status });
     });
   });
 }
@@ -1483,6 +1485,64 @@ for (const [command, rows] of Object.entries(CASES)) {
     }
   });
 }
+
+// `telemetry --json` prints one JSON object on stdout, for every action and
+// every placement of the flag, and `status` writes nothing while doing so
+// (#469).
+describe('telemetry --json', () => {
+  async function telemetry(args: string[], setup?: (s: Sandbox) => void) {
+    const { sandbox, env } = makeSandbox({ when: '', args });
+    setup?.(sandbox);
+    const result = await run(process.execPath, [CLI_PATH, ...args], sandbox.project, env);
+    expect(result.status, `opena2a ${args.join(' ')}\n${result.out}`).toBe(0);
+    let parsed: Record<string, unknown> | undefined;
+    expect(() => { parsed = JSON.parse(result.stdout); }, `stdout is not JSON:\n${result.stdout}`).not.toThrow();
+    return { sandbox, json: parsed! };
+  }
+
+  for (const args of [
+    ['telemetry', 'status', '--json'],
+    ['telemetry', '--json'],
+    ['--json', 'telemetry', 'status'],
+    ['telemetry', 'status', '--format', 'json'],
+  ]) {
+    it(`opena2a ${args.join(' ')} prints the status as JSON and creates no file`, async () => {
+      const { sandbox, json } = await telemetry(args);
+      expect(json).toEqual({
+        action: 'status',
+        enabled: false,
+        suppressedBy: 'env-opt-out',
+        installId: null,
+        contributorToken: null,
+        contributorTokenState: 'none',
+        configPath: join(sandbox.home, '.config', 'opena2a', 'telemetry.json'),
+        policyURL: expect.stringMatching(/^https:\/\//),
+      });
+      expect(existsSync(join(sandbox.home, '.opena2a', 'contributor-salt'))).toBe(false);
+      expect(existsSync(join(sandbox.home, '.config'))).toBe(false);
+    }, RUN_TIMEOUT + 5_000);
+  }
+
+  it('reports the contributor token when this machine has one', async () => {
+    const { json } = await telemetry(['telemetry', 'status', '--json'], (s) =>
+      writeFileSync(join(s.home, '.opena2a', 'contributor-salt'), 'a-salt\n'));
+    expect(json.contributorTokenState).toBe('present');
+    expect(json.contributorToken).toMatch(/^[0-9a-f]{64}$/);
+  }, RUN_TIMEOUT + 5_000);
+
+  it('opena2a telemetry off --json saves the setting and prints it as JSON', async () => {
+    const { sandbox, json } = await telemetry(['telemetry', 'off', '--json']);
+    expect(json).toMatchObject({ action: 'off', enabled: false });
+    const saved = JSON.parse(readFileSync(join(sandbox.home, '.config', 'opena2a', 'telemetry.json'), 'utf-8'));
+    expect(saved.enabled).toBe(false);
+  }, RUN_TIMEOUT + 5_000);
+
+  it('opena2a telemetry <unknown> --json prints an error object', async () => {
+    const { json } = await telemetry(['telemetry', 'no-such-action', '--json']);
+    expect(json.error).toMatch(/Unknown action 'no-such-action'/);
+    expect(json.validActions).toEqual(['on', 'off', 'status']);
+  }, RUN_TIMEOUT + 5_000);
+});
 
 describe('census', () => {
   it('every exit-code row has a case or a NOT_RUN reason', () => {
