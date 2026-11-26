@@ -79,4 +79,10 @@ describe('scan-soul / harden-soul --tier', () => {
       expect(opt).not.toContain('STANDARD');
     }
   });
+
+  it('help texts name the governance spec by one acronym, ABGS', () => {
+    const src = readFileSync(resolve(__dirname, '../../src/index.ts'), 'utf-8');
+    expect(src).toContain('(ABGS)');
+    expect(src).not.toMatch(/\bAGS\b/);
+  });
 });

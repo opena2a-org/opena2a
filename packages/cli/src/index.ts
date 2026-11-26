@@ -183,7 +183,7 @@ ${rows([
   ['$ opena2a skill create', 'Scaffold a secure skill (SKILL.md, heartbeat, tests)'],
   ['$ opena2a guard harden', 'Scan skills for security issues (--fix to auto-fix)'],
   ['$ opena2a harden-skill', 'Harden a skill file (frontmatter, permissions, integrity pin)'],
-  ['$ opena2a scan-soul', 'Scan governance file for behavioral safety (AGS)'],
+  ['$ opena2a scan-soul', 'Scan governance file for behavioral safety (ABGS)'],
   ['$ opena2a scan-soul --strict', 'Fail if critical SOUL controls are missing'],
   ['$ opena2a harden-soul', 'Generate or improve SOUL.md governance file'],
 ])}
