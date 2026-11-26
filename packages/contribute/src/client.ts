@@ -1,6 +1,6 @@
 import { ContributionBatch } from './types.js';
+import { normalizeRegistryUrl } from './queue.js';
 
-const DEFAULT_REGISTRY_URL = 'https://api.oa2a.org';
 const TIMEOUT_MS = 10_000;
 
 /**
@@ -22,7 +22,7 @@ export async function submitBatch(
     return false;
   }
 
-  const url = `${(registryUrl || DEFAULT_REGISTRY_URL).replace(/\/+$/, '')}/api/v1/contribute`;
+  const url = `${normalizeRegistryUrl(registryUrl)}/api/v1/contribute`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 

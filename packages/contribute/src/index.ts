@@ -6,7 +6,7 @@ export { isContributeEnabled } from './config.js';
 
 import { isContributeEnabled } from './config.js';
 import { ContributionEvent } from './types.js';
-import { queueEvent, shouldFlush, buildBatch, clearQueue } from './queue.js';
+import { queueEvent, shouldFlush, buildBatch, removeSentEvents } from './queue.js';
 import { submitBatch } from './client.js';
 
 /**
@@ -66,9 +66,9 @@ export const contribute = {
       },
     };
 
-    queueEvent(event);
+    queueEvent(event, params.registryUrl);
 
-    if (shouldFlush()) {
+    if (shouldFlush(params.registryUrl)) {
       await this.flush(params.registryUrl, params.verbose);
     }
   },
@@ -99,29 +99,32 @@ export const contribute = {
       },
     };
 
-    queueEvent(event);
+    queueEvent(event, params.registryUrl);
 
-    if (shouldFlush()) {
+    if (shouldFlush(params.registryUrl)) {
       await this.flush(params.registryUrl, params.verbose);
     }
   },
 
   /**
-   * Flush queued events to Registry.
+   * Flush the events queued for `registryUrl` (the default Registry when
+   * omitted) to that Registry. Events queued for another Registry are
+   * neither sent nor removed.
    *
-   * Resolves `true` when the queue is clear afterwards: the batch was
-   * accepted (and the queue cleared), or the queue was already empty and no
-   * request was made. Resolves `false` when the Registry refused the batch
-   * or could not be reached; the events stay queued for the next flush.
-   * Pass `verbose` to have the reason printed to stderr.
+   * Resolves `true` when nothing for this Registry is left from the batch:
+   * it was accepted (and its events removed from the queue), or nothing was
+   * queued for this Registry and no request was made. Resolves `false` when
+   * the Registry refused the batch or could not be reached; the events stay
+   * queued for the next flush. Pass `verbose` to have the reason printed to
+   * stderr.
    */
   async flush(registryUrl?: string, verbose?: boolean): Promise<boolean> {
-    const batch = buildBatch();
+    const batch = buildBatch(registryUrl);
     if (!batch) return true;
 
     const success = await submitBatch(batch, registryUrl, verbose);
     if (success) {
-      clearQueue();
+      removeSentEvents(batch.events, registryUrl);
     }
     return success;
   },
