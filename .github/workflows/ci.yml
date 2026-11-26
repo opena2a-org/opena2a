@@ -40,6 +40,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         node-version: [18, 20, 22]
@@ -60,7 +62,15 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+      # onnxruntime-node (a dependency of hackmyagent) has a postinstall step
+      # that, on linux/x64 only, downloads the CUDA execution-provider binaries
+      # from the NuGet feed. A runner has no GPU and nothing here loads them, so
+      # the download only adds a second, non-npm network dependency to the
+      # install -- and when that host is unreachable, npm ci fails and the
+      # build goes red for a reason that has nothing to do with the change.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run build
       - run: npm run typecheck
 
