@@ -453,6 +453,28 @@ body {
   .data-table th, .data-table td {
     padding: 6px 8px;
   }
+  /* The HMA table at 375px: 640px left a command 61px beside its Copy button
+     and a file path 60px. A 960px table that scrolls inside .table-scroll gives
+     Occurrences and Fix the room, so the file list wraps at word width and the
+     "+ N more" toggle sits under it, clear of the command. */
+  .data-table.hma-table {
+    min-width: 960px;
+  }
+  .data-table.hma-table col.col-check {
+    width: 10%;
+  }
+  .data-table.hma-table col.col-name {
+    width: 30%;
+  }
+  .data-table.hma-table col.col-severity {
+    width: 9%;
+  }
+  .data-table.hma-table col.col-occurrences {
+    width: 17%;
+  }
+  .data-table.hma-table col.col-fix {
+    width: 34%;
+  }
 }
 button:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--primary);
