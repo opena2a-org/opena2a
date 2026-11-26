@@ -316,6 +316,22 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(t).toContain('No matching advisories found');
   });
 
+  // Regression (#552): with 150 advisories answered, all 150 were compared
+  // while the Hygiene tab said at most 100 were read.
+  it('with more advisories answered than the limit, the number compared and the Hygiene tab agree', async () => {
+    const answered = Array.from({ length: 150 }, (_, i) => ({ ...ADVISORY, id: `OA2A-2026-${String(i).padStart(4, '0')}` }));
+    mockFetch.mockResolvedValue(listResponse(answered));
+
+    const { report } = await runReview();
+    const t = hygieneText(report);
+
+    expect(report.initData.advisoryRead).toEqual(expect.objectContaining({ limit: 100, listed: 100, total: 150 }));
+    expect(report.initData.advisoryCount).toBe(100);
+    expect(t).toContain('100 found');
+    expect(t).toContain('(at most 100) were read from the OpenA2A Registry');
+    expect(t).toContain('The Registry reported 150 advisories; 50 were not read or compared.');
+  });
+
   it('a refused registry.url is named in --verbose output and on the Hygiene tab', async () => {
     registry.answer = refusalOf('http://registry.internal.example');
 
