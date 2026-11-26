@@ -308,3 +308,63 @@ describe('verify ties the trust score to a version', () => {
     expect(pkg.scoreMatchesInstalled).toBeNull();
   });
 });
+
+describe('verify does not guess a scoped package is an MCP server', () => {
+  const STRIP_ANSI = /\x1b\[[0-9;]*m/g;
+  const packageName = '@acme/agent-tool';
+
+  // A registry that holds the package as an ai_tool: asking for it as an
+  // mcp_server finds nothing, as the real registry does.
+  function registry(): string[] {
+    const profileUrls: string[] = [];
+    mockFetch.mockImplementation(async (url: string) => {
+      const u = new URL(String(url));
+      if (u.pathname === '/api/v1/trust/query' && u.searchParams.has('includeProfile')) {
+        profileUrls.push(u.toString());
+        const type = u.searchParams.get('type');
+        if (u.searchParams.get('name') !== packageName || (type !== null && type !== 'ai_tool')) {
+          return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            packageId: '22222222-2222-2222-2222-222222222222',
+            name: packageName,
+            packageType: 'ai_tool',
+            trustScore: 0.9,
+            verdict: 'trusted',
+            version: '1.2.3',
+            lastScannedAt: '2026-11-01T00:00:00Z',
+            dependencies: { riskSummary: { blocked: 0, warning: 1 } },
+          }),
+          text: async () => '',
+        };
+      }
+      if (u.pathname === '/api/v1/trust/query') {
+        return { ok: true, status: 200, json: async () => ({ contentVerification: { status: 'verified' } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+    });
+    return profileUrls;
+  }
+
+  it('queries the trust profile without type=mcp_server and prints it', async () => {
+    const profileUrls = registry();
+    vi.spyOn(_internals, 'resolvePackagePath').mockReturnValue({ mainFile: __filename, version: '1.2.3' });
+    const { output } = await captureStdout(() => verify({
+      packageName,
+      registryUrl: 'https://test-registry.example.com',
+      ci: true,
+    }));
+
+    expect(profileUrls).toHaveLength(1);
+    expect(new URL(profileUrls[0]).searchParams.get('type')).not.toBe('mcp_server');
+
+    const lines = output.replace(STRIP_ANSI, '').split('\n').map(l => l.trim());
+    expect(lines).toContain('Trust Score      90 / 100 (scanned 1.2.3)');
+    expect(lines).toContain('Trust Verdict    trusted');
+    expect(lines).toContain('Last Scanned     2026-11-01T00:00:00Z');
+    expect(lines).toContain('Dependencies     1 risk');
+  });
+});

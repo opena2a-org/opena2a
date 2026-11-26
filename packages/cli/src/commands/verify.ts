@@ -323,7 +323,10 @@ async function verifyPackage(
   }
 
   // Step 4: Query trust profile and oracle verdict (parallel, non-blocking)
-  const type = packageName.startsWith('@') ? 'mcp_server' : 'ai_tool';
+  // A scope says nothing about what a package is: scoped packages are as often
+  // ai_tool as mcp_server, and asking for the wrong type finds no record. Let
+  // the registry resolve a scoped name to whatever type it has on record.
+  const type = packageName.startsWith('@') ? undefined : 'ai_tool';
   const [trustProfile, oracle] = await Promise.all([
     queryTrustProfile(registryUrl, packageName, type),
     queryOracleVerdict(registryUrl, packageName),
