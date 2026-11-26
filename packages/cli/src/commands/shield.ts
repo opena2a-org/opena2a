@@ -1107,6 +1107,22 @@ function extractCredProvider(event: import('../shield/types.js').ShieldEvent): s
   return event.source === 'secretless' ? 'Secretless' : 'Other';
 }
 
+/**
+ * The recommendation the report gives a deny match recorded under enforce:
+ * `shield evaluate` records it as monitored with `verdict: 'deny'`, and by
+ * default zsh and bash still run the command.
+ */
+const ENFORCE_DENY_MATCH_RECOMMENDATION =
+  'The policy denied this under mode enforce, but the shell may have run the command despite the deny rule; check whether it ran.';
+
+/** A monitored event whose detail records a policy deny (mode: enforce). */
+function isEnforceDenyMatch(event: import('../shield/types.js').ShieldEvent): boolean {
+  if (event.outcome !== 'monitored') return false;
+  const detail: unknown = event.detail;
+  if (typeof detail !== 'object' || detail === null) return false;
+  return (detail as Record<string, unknown>).verdict === 'deny';
+}
+
 async function buildWeeklyReport(
   events: import('../shield/types.js').ShieldEvent[],
   since: string,
@@ -1184,9 +1200,13 @@ async function buildWeeklyReport(
   const violations: import('../shield/types.js').PolicyViolation[] = [];
   const violationMap: Record<string, { count: number; event: import('../shield/types.js').ShieldEvent }> = {};
   for (const event of events) {
-    if (event.outcome === 'blocked' || event.severity === 'high' || event.severity === 'critical') {
-      // A Shield deny record never shares a row with another source's event.
-      const group = isShieldDenyRecord(event) ? 'shield-deny' : 'event';
+    const enforceDenyMatch = isEnforceDenyMatch(event);
+    if (
+      event.outcome === 'blocked' || event.severity === 'high' || event.severity === 'critical' || enforceDenyMatch
+    ) {
+      // A Shield deny record, and a deny match recorded under enforce, never
+      // share a row with another event.
+      const group = isShieldDenyRecord(event) ? 'shield-deny' : enforceDenyMatch ? 'enforce-deny' : 'event';
       const key = `${group}:${event.action}:${event.target}:${event.agent ?? 'unknown'}`;
       if (!violationMap[key]) {
         violationMap[key] = { count: 0, event };
@@ -1204,7 +1224,9 @@ async function buildWeeklyReport(
       severity: event.severity,
       recommendation: shieldDenyRecord
         ? SHIELD_DENY_RECORD_RECOMMENDATION
-        : event.outcome === 'blocked' ? 'Already blocked by policy' : 'Review and consider blocking',
+        : isEnforceDenyMatch(event)
+          ? ENFORCE_DENY_MATCH_RECOMMENDATION
+          : event.outcome === 'blocked' ? 'Already blocked by policy' : 'Review and consider blocking',
     };
     if (shieldDenyRecord) violation.shieldDenyRecord = true;
     violations.push(violation);
