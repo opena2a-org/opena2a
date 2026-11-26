@@ -111,6 +111,8 @@ export interface ReviewFindingsInput {
 }
 
 type Effect = (state: ScoreState) => ScoreState;
+const ADVISORY_SEVERITY = new Map<string, string>([['CRITICAL', 'critical'], ['HIGH', 'high'], ['MODERATE', 'medium'], ['MEDIUM', 'medium'], ['LOW', 'low']]);
+
 type DraftFields = 'title' | 'severity' | 'confidence' | 'category' | 'foundBy' | 'evidence' | 'reason' | 'fix' | 'verify';
 
 interface Draft extends Omit<ReportFinding, 'fingerprint' | 'recovery'> {
@@ -585,7 +587,7 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
     const fixedText = fixed.map(f => `${f.package} ${f.versions.join(' or ')}`).join(', ');
     drafts.push(draft({
       title: `${named}: ${a.summary}`,
-      severity: ({ CRITICAL: 'critical', HIGH: 'high', MODERATE: 'medium', MEDIUM: 'medium', LOW: 'low' } as Record<string, string>)[a.severity ?? ''] ?? 'medium',
+      severity: (ADVISORY_SEVERITY.get(a.severity ?? '') ?? 'medium'),
       confidence: 'likely',
       category: 'Dependencies',
       foundBy: [{ source: 'advisories', checkId: a.id, lines: [] }],

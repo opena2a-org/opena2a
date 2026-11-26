@@ -433,7 +433,6 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
       [{ ...ADVISORY, affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: {} }] }],
       [{ ...ADVISORY, affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' }, ranges: [{ type: 'SEMVER', events: {} }] }] }],
       [{ ...ADVISORY, affected: [{ package: { name: 'vulnerable-package', ecosystem: 5 }, ranges: [{ type: 'SEMVER', events: [{ fixed: '1.3.0' }] }] }] }],
-      [{ ...ADVISORY, id: 7 }],
     ];
     for (const advisories of answers) {
       const label = JSON.stringify(advisories);

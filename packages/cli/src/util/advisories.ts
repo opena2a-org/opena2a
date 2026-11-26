@@ -193,14 +193,14 @@ function severityIn(value: unknown): OSVSeverity[] {
 
 /**
  * The advisories of a list, holding the fields the CLI reads. An entry that
- * is not an object is left out, a list field that is not a list is read as
+ * is not an object, or has no text id, is left out, a list field that is not a list is read as
  * empty, and a text field that is not text as ''; the severity list is read
  * as `severityIn` reads it. Read as received, a `null` entry, an `affected`,
  * `ranges` or `events` field that was not a list, or an ecosystem or ID that
  * was not text stopped `review` and `init`.
  */
 function readableAdvisories(list: unknown[]): Advisory[] {
-  return objectsIn(list).map(entry => ({
+  return objectsIn(list).filter(entry => typeof entry.id === 'string' && entry.id !== '').map(entry => ({
     id: textIn(entry.id),
     summary: textIn(entry.summary),
     published: textIn(entry.published),

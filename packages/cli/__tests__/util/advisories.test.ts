@@ -348,8 +348,9 @@ describe('advisories', () => {
       published: '2026-10-01T00:00:00Z',
     };
     // Four entries that are not objects, two objects whose `affected` holds
-    // no object, and three that match: a `ranges` object, an `events` object
-    // with a numeric ecosystem, and a well-formed entry with a numeric ID.
+    // no object, and two that match: a `ranges` object, an `events` object
+    // with a numeric ecosystem, and a well-formed entry with a numeric ID,
+    // which is left out as it has no text id.
     const MIXED = [
       null, 7, 'text', [],
       { ...GOOD, affected: { package: { name: 'vulnerable-package' } } },
@@ -367,10 +368,10 @@ describe('advisories', () => {
 
     function expectMixedRead(result: Awaited<ReturnType<typeof checkAdvisories>>): void {
       expect(result.checked).toBe(true);
-      expect(result.listed).toBe(5);
+      expect(result.listed).toBe(4);
       expect(result.total).toBe(9);
       expect(result.matchedPackages).toEqual(['vulnerable-package']);
-      expect(result.advisories).toHaveLength(3);
+      expect(result.advisories).toHaveLength(2);
       for (const advisory of result.advisories) {
         expect(typeof advisory.id).toBe('string');
         expect(advisory.affected[0].package.ecosystem === 'npm' || advisory.affected[0].package.ecosystem === '').toBe(true);
