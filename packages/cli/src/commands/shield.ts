@@ -311,9 +311,11 @@ async function handlePolicy(options: ShieldOptions): Promise<number> {
   const verb = options.args?.[0];
   if (verb !== undefined && !verb.startsWith('-')) return handlePolicyVerb(verb, options);
 
-  const { loadPolicy } = await import('../shield/policy.js');
+  const { loadPolicy, policyModeOf } = await import('../shield/policy.js');
   const isJson = options.format === 'json';
 
+  // The same load `shield status` reports on, so both give one answer for a
+  // directory: loaded or not, and in which mode.
   const policy = loadPolicy(options.dir);
 
   if (!policy) {
@@ -332,8 +334,9 @@ async function handlePolicy(options: ShieldOptions): Promise<number> {
 
   process.stdout.write(bold('Shield Policy\n'));
   process.stdout.write(gray('-'.repeat(40)) + '\n');
-  process.stdout.write(`  Mode: ${cyan(policy.mode)}\n`);
-  if (policy.mode === 'enforce') {
+  const mode = policyModeOf(policy);
+  process.stdout.write(`  Mode: ${cyan(mode ?? 'unknown')}\n`);
+  if (mode === 'enforce') {
     process.stdout.write(dim('    shield evaluate exits 1 on a deny; shell hooks record the verdict, and by default zsh and bash still run a denied command.\n'));
   }
   process.stdout.write(`  Process deny:  ${policy.default.processes.deny.length} rules\n`);
