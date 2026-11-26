@@ -1181,11 +1181,22 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         storedLogin(s);
         registeredAgent(s);
       },
+      routes: { 'GET /api/v1/agents/agent-1/activity': [200, { events: [] }] },
       interruptOn: /Ctrl\+C to stop/,
     }],
     '1': [
       { when: 'not logged in', args: ['watch'] },
-      { when: 'or no agent is registered', args: ['watch'], setup: (s) => { storedLogin(s); } },
+      { when: 'no agent is registered', args: ['watch'], setup: (s) => { storedLogin(s); } },
+      {
+        when: 'or the server refused 3 polls in a row',
+        args: ['watch', '--interval', '1'],
+        setup: (s) => {
+          storedLogin(s);
+          registeredAgent(s);
+        },
+        routes: { 'GET /api/v1/agents/agent-1/activity': [401, { error: 'invalid token' }] },
+        output: /Poll refused: AIM server returned 401: invalid token/,
+      },
     ],
   },
   demo: {
