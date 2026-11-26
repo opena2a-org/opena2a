@@ -863,6 +863,7 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
   identity: {
     '0': [{ when: 'the subcommand succeeded', args: ['identity', 'create', '--name', 'test-agent'] }],
     '1': [
+      { when: 'no subcommand', args: ['identity'] },
       { when: 'an unknown subcommand', args: ['identity', 'no-such-subcommand'] },
       { when: 'check denied the capability', args: ['identity', 'check', 'db:read'] },
       {
@@ -1201,6 +1202,7 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
       { when: 'the setting was changed or shown', args: ['config', 'llm'] },
     ],
     '1': [
+      { when: 'no action', args: ['config'] },
       { when: 'an unknown action', args: ['config', 'no-such-action'] },
       { when: 'an unknown key or value', args: ['config', 'contribute', 'maybe'] },
       { when: 'an unknown key or value', args: ['config', 'set', 'no-such-key', 'on'] },

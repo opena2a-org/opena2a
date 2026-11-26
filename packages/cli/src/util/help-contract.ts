@@ -196,7 +196,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   identity: {
     exit: [
       ['0', 'the subcommand succeeded'],
-      ['1', 'an error, not logged in, check denied the capability, verify found an invalid signature, revoke without --ci or --json, or an unknown subcommand'],
+      ['1', 'an error, not logged in, check denied the capability, verify found an invalid signature, revoke without --ci or --json, an unknown subcommand, or no subcommand'],
     ],
     json: 'prints JSON; check and verify then exit 0 and report the result in the allowed or valid field, and revoke proceeds without the confirmation step',
     ci: 'revoke proceeds without the confirmation step',
@@ -336,7 +336,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   config: {
     exit: [
       ['0', 'the setting was changed or shown'],
-      ['1', 'an unknown action, an unknown key or value, or config set without its key or value'],
+      ['1', 'no action, an unknown action, an unknown key or value, or config set without its key or value'],
     ],
     json: 'not used; config show always prints JSON',
     ci: 'no effect',

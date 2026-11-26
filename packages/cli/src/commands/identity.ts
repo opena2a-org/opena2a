@@ -158,6 +158,11 @@ export async function identity(options: IdentityOptions): Promise<number> {
   }
 
   const sub = options.subcommand;
+  // No subcommand: print the usage, as guard, runtime and shield do.
+  if (!sub) {
+    process.stderr.write(USAGE + '\n');
+    return 1;
+  }
   switch (sub) {
     case 'list':
     case 'show':

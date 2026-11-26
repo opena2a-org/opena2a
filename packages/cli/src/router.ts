@@ -156,7 +156,7 @@ export async function dispatchCommand(
   // Handle 'identity' directly (aim-core native)
   if (command === 'identity') {
     const { identity } = await import('./commands/identity.js');
-    const subcommand = args[0] ?? 'list';
+    const subcommand = args[0] ?? '';
     const nameIdx = args.indexOf('--name');
     const limitIdx = args.indexOf('--limit');
     return identity({

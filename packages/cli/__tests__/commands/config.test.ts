@@ -107,6 +107,17 @@ describe('config contribute / llm (unchanged forms)', () => {
   });
 });
 
+describe('config with no action', () => {
+  it('prints the usage listing the actions and exits 1', async () => {
+    expect(await runConfig(undefined, undefined, undefined)).toBe(1);
+    expect(out).toBe('');
+    expect(err).toMatch(/^Usage: opena2a config /);
+    for (const action of ['contribute', 'llm', 'set', 'show']) {
+      expect(err).toContain(`opena2a config ${action}`);
+    }
+  });
+});
+
 describe('parseToggleValue', () => {
   it('reads the on and off words and nothing else', () => {
     for (const v of ['on', 'ON', 'true', 'enable', 'enabled', 'yes', '1']) expect(parseToggleValue(v), v).toBe(true);
