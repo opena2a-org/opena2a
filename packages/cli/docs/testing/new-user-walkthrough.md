@@ -65,8 +65,8 @@ Expected: governance score, domain breakdown, conformance level, missing control
 Sanity check only — full grading rubric in the playbook:
 
 ```bash
-DIR=$(mktemp -d) && cat > "$DIR/app.js" <<'EOF'
-const apiKey = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+DIR=$(mktemp -d) && cat > "$DIR/app.js" <<EOF
+const apiKey = 'sk-ant-api03-$(printf 'A%.0s' $(seq 1 81))';
 EOF
 node dist/index.js protect "$DIR"
 ```
