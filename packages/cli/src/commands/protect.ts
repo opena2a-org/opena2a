@@ -752,7 +752,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     await writeHtmlReport(options.report, targetDir, matches, isJson);
   }
 
-  return failed > 0 ? 1 : 0;
+  return failed > 0 || (options.ci && skipped > 0) ? 1 : 0;
 }
 
 // --- Scanning ---
