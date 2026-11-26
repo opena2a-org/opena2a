@@ -88,6 +88,11 @@ export interface ScoreModel {
   floorBand: number;
   /** Analyzers whose score the composite is held at; empty when the floor does not apply. */
   floorHeldBy: string[];
+  /** The ceiling a critical finding puts on the composite; null when none does. */
+  criticalCap: number | null;
+  /** Analyzers whose critical finding holds the composite at criticalCap; empty
+   *  when the cap does not bind or the floor holds the composite lower. */
+  capHeldBy: string[];
 }
 
 export interface ReviewFindingsInput {
@@ -297,8 +302,24 @@ const signGuard: Effect = s => passChecks(['Security config'])({ ...s, guard: { 
 
 /** Participants the composite is held at by the dominant-analyzer floor. */
 export function floorHolders(result: ScoreResult): string[] {
-  if (result.composite >= result.weighted) return [];
+  const ceiling = result.criticalCap ? Math.min(result.weighted, result.criticalCap.score) : result.weighted;
+  if (result.composite >= ceiling) return [];
   return result.participants.filter(p => p.ran && p.score === result.composite).map(p => p.name);
+}
+
+/** Analyzers whose critical finding holds the composite at the critical-finding
+ *  cap, below its weighted average; empty when the cap does not bind or the floor
+ *  holds the composite lower. */
+export function capHolders(result: ScoreResult): string[] {
+  const cap = result.criticalCap;
+  if (!cap || cap.score >= result.weighted || result.composite !== cap.score) return [];
+  return cap.by;
+}
+
+/** Every analyzer holding the composite: the floor's holders, else the cap's. */
+function scoreHolders(result: ScoreResult): string[] {
+  const floor = floorHolders(result);
+  return floor.length > 0 ? floor : capHolders(result);
 }
 
 export function buildReviewFindings(input: ReviewFindingsInput): {
@@ -311,8 +332,8 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
     const from = current.composite;
     const after = effect ? score(effect(state)) : current;
     const points = after.composite - from;
-    // A floor held by an analyzer this fix cannot move pins the result exactly.
-    const holder = floorHolders(after).filter(h => !uncomputed.includes(h));
+    // A floor or cap held by an analyzer this fix cannot move pins the result exactly.
+    const holder = scoreHolders(after).filter(h => !uncomputed.includes(h));
     const exact = uncomputed.length === 0 || holder.length > 0;
     if (exact && points > 0) return { kind: 'computed', points, from, to: after.composite };
     if (exact && holder.length > 0 && (uncomputed.length > 0 || movesAnInput(after))) {
@@ -633,10 +654,12 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
     .sort((a, b) => b.points - a.points);
   const potentialScore = score(gains.reduce((s, a) => a.effect(s), state)).composite;
   const floorHeldBy = floorHolders(current);
-  // No action re-scores a gain while a floor holds the score: name each holder and
-  // what moves it, and leave the potential score to the next run rather than print
-  // the current score as the best this tree can reach.
-  const held = gains.length === 0 && floorHeldBy.length > 0;
+  const capHeldBy = capHolders(current);
+  const heldBy = scoreHolders(current);
+  // No action re-scores a gain while a floor or the critical-finding cap holds the
+  // score: name each holder and what moves it, and leave the potential score to the
+  // next run rather than print the current score as the best this tree can reach.
+  const held = gains.length === 0 && heldBy.length > 0;
   const cited = new Set(reportFindings.flatMap(f => [f.fix?.command, f.then?.command]));
   const holderAction = (holder: string): string => {
     if (holder === 'Credentials' && cited.has('opena2a protect')) return 'opena2a protect';
@@ -648,7 +671,7 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
     return `address the ${plural(counted.length, severity ? `${severity} finding` : 'finding')} under ${holder}`;
   };
   const opportunities: RecoverySummary['opportunities'] = held
-    ? floorHeldBy.map(holder => ({ dimension: holder, pointsRecoverable: null, action: holderAction(holder), kind: 'nextRun' as const }))
+    ? heldBy.map(holder => ({ dimension: holder, pointsRecoverable: null, action: holderAction(holder), kind: 'nextRun' as const }))
     : gains.map(a => ({ dimension: a.dimension, pointsRecoverable: a.points, action: a.action }));
 
   return {
@@ -667,6 +690,8 @@ export function buildReviewFindings(input: ReviewFindingsInput): {
       weightedScore: current.weighted,
       floorBand: input.floorBand,
       floorHeldBy,
+      criticalCap: current.criticalCap ? current.criticalCap.score : null,
+      capHeldBy,
     },
     recoverySummary: {
       currentScore: current.composite,

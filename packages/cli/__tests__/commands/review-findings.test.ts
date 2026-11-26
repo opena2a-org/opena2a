@@ -38,15 +38,17 @@ function build(o: { warn: string[]; envFiles?: EnvFileFact[]; hmaScore: number; 
     credentialData, guardData, shieldData, detectData,
     findings: matches.map(m => ({ id: m.findingId, title: m.title, severity: m.severity, source: 'credential-scan', detail: `src/config.ts:${m.line}`, remediation: '' })),
     hmaData: { available: true, score: o.hmaScore, allFailedFindings: o.hmaFindings } as never,
-    state: { hygieneChecks, credentials: credentialData, guard: guardData, shield: shieldData, hma: { available: true, score: o.hmaScore }, detect: detectData },
+    state: { hygieneChecks, credentials: credentialData, guard: guardData, shield: shieldData, hma: { available: true, score: o.hmaScore, critical: o.hmaFindings.filter(f => f.severity === 'critical').length }, detect: detectData },
     score: scoreReview,
     floorBand: CRITICAL_BAND,
   });
 }
 
-// The measured envcase tree (composite 88): tiny-clean-repo without its .env
-// ignore rules, a .env setting three values, and HMA 0.30.0's results on it.
-const envcase = () => build({
+// The measured envcase tree (weighted average 88): tiny-clean-repo without its
+// .env ignore rules, a .env setting three values, and HMA 0.30.0's results on
+// it. HMA rates GIT-003 critical, which caps the composite at 69; `gitSeverity`
+// rates it lower to measure the recovery arithmetic without the cap.
+const envcase = (gitSeverity = 'critical') => build({
   warn: ['.env protection', 'Lock file'],
   envFiles: [{ path: '.env', assignments: 3, gitIgnored: false, gitTracked: false, stagedByAddAll: true, mode: '-rw-r--r--' }],
   hmaScore: 61,
@@ -54,7 +56,7 @@ const envcase = () => build({
   hmaFindings: [
     hma('PERM-001', 'high', 'permissions', '.env'),
     hma('GIT-002', 'low', 'git', '.gitignore'),
-    hma('GIT-003', 'critical', 'git', '.env'),
+    hma('GIT-003', gitSeverity, 'git', '.env'),
     hma('SEM-CRED-001', 'high', 'Credential Protection', '.env', {
       line: 1, fix: 'opena2a protect .  — migrates hardcoded secrets into the vault',
       evidence: { kind: 'positive', lines: [{ n: 1, content: `DATABASE_URL=postgres://app:${SECRET}@localhost:5432/app` }] },
@@ -90,13 +92,14 @@ const commandsOf = (r: ReturnType<typeof build>) => [
 describe('review findings on the envcase tree', () => {
   it('merges the .env exposure into one first finding listing every check that found it', () => {
     const r = envcase();
-    expect(r.scoreModel).toMatchObject({ weightSet: 'withHma', weightedScore: 88, floorHeldBy: [] });
+    expect(r.scoreModel).toMatchObject({ weightSet: 'withHma', weightedScore: 88, floorHeldBy: [], criticalCap: 69, capHeldBy: ['HMA Scan'] });
     const [env, second, third] = r.reportFindings;
     expect(env).toMatchObject({
       title: '.env is not ignored by git and sets 3 values', severity: 'critical', confidence: 'confirmed',
       fix: { command: "printf '\\n.env\\n' >> .gitignore", tool: 'shell' },
       verify: { command: 'git check-ignore -v -- .env', tool: 'git' },
-      recovery: { kind: 'atLeast', points: 3, from: 88, to: 91 },
+      // The fix also clears HMA's critical GIT-003, which holds the cap: measured on the next run.
+      recovery: { kind: 'nextRun', points: null, from: 69, to: null },
     });
     expect(env.foundBy.map(b => [b.checkId, b.lines])).toEqual([['.env protection', []], ['GIT-003', []], ['SEM-CRED-002', [2, 3]]]);
     expect([second.foundBy[0].checkId, third.foundBy[0].checkId]).toEqual(['SEM-CRED-001', 'PERM-001']);
@@ -104,8 +107,22 @@ describe('review findings on the envcase tree', () => {
     expect(r.fixFirst).toEqual([env, second, third].map(f => f.fingerprint));
   });
 
-  it('re-scores signing at +3, gives a Shield policy no score change, and names no read-only command', () => {
+  it('holds the score at the critical-finding cap and names HMA as what moves it', () => {
     const r = envcase();
+    expect(r.optionalHardening.map(h => [h.id, h.recovery])).toEqual([
+      ['guard-sign', { kind: 'floorPinned', points: 0, from: 69, to: 69, holder: ['HMA Scan'] }],
+      ['shield-policy', { kind: 'none', points: 0, from: 69, to: 69 }],
+    ]);
+    expect(r.recoverySummary).toEqual({
+      currentScore: 69, potentialScore: null, totalRecoverable: null,
+      opportunities: [{ dimension: 'HMA Scan', pointsRecoverable: null, action: 'address the 1 critical finding under HMA Scan', kind: 'nextRun' }],
+    });
+  });
+
+  it('without a critical HMA finding, re-scores the .env fix at least +3, signing at +3 and a Shield policy at 0', () => {
+    const r = envcase('high');
+    expect(r.scoreModel).toMatchObject({ weightedScore: 88, floorHeldBy: [], criticalCap: null, capHeldBy: [] });
+    expect(r.reportFindings[0].recovery).toEqual({ kind: 'atLeast', points: 3, from: 88, to: 91 });
     expect(r.optionalHardening.map(h => [h.id, h.recovery.kind, h.recovery.points])).toEqual([['guard-sign', 'computed', 3], ['shield-policy', 'none', 0]]);
     expect(r.recoverySummary).toEqual({
       currentScore: 88, potentialScore: 91, totalRecoverable: 3,

@@ -615,12 +615,13 @@ export async function review(options: ReviewOptions): Promise<number> {
   // direction with the harshest *target-malice* analyzer. Only analyzers whose
   // critical-band score unambiguously means "the target itself is dangerous"
   // participate — see buildFloorParticipants for which are in/out and why.
+  // A critical finding outside the floor caps the composite (criticalFindingCap).
   const scoreState: ScoreState = {
     hygieneChecks: initData.hygieneChecks,
     credentials: credentialData,
     guard: guardData,
     shield: shieldData,
-    hma: { available: hmaAvailable, score: hmaData.score },
+    hma: { available: hmaAvailable, score: hmaData.score, critical: hmaData.bySeverity['critical'] ?? 0 },
     detect: detectData,
   };
   const scored = scoreReview(scoreState);
@@ -1802,7 +1803,8 @@ export interface ScoreState {
   credentials: CredentialPhaseData;
   guard: GuardPhaseData;
   shield: Pick<ShieldPhaseData, 'classifiedFindings' | 'preExclusionCounts'>;
-  hma: { available: boolean; score: number };
+  /** `critical`: the failed HMA findings rated critical. */
+  hma: { available: boolean; score: number; critical: number };
   detect: Pick<DetectPhaseData, 'mcpServers' | 'aiConfigs'>;
 }
 
@@ -1820,6 +1822,10 @@ export interface ScoreResult {
   /** Each dimension's input to the weighted average. */
   inputs: Record<ScoreDimension, number>;
   participants: FloorParticipant[];
+  /** The ceiling a critical finding puts on the composite (see
+   *  criticalFindingCap), with the analyzers that reported one; null when no
+   *  critical finding is outside the floor. */
+  criticalCap: { score: number; by: string[] } | null;
 }
 
 /** The composite exactly as review() reports it: risk-only dimension views,
@@ -1856,15 +1862,40 @@ export function scoreReview(state: ScoreState): ScoreResult {
     shieldRiskRan: shieldRisk.ran,
   });
   const weightSet = hmaAvailable ? 'withHma' : 'withoutHma';
+  const criticalCap = criticalFindingCap({ hmaAvailable, hmaCritical: state.hma.critical });
   return {
-    composite: applyDominantAnalyzerFloor(weighted, participants),
+    composite: applyDominantAnalyzerFloor(criticalCap ? Math.min(weighted, criticalCap.score) : weighted, participants),
     weighted,
     weightSet,
     weights: credentialsRead ? COMPOSITE_WEIGHTS[weightSet] : weightsWithoutCredentials(COMPOSITE_WEIGHTS[weightSet]),
     credentialsRead,
     inputs,
     participants,
+    criticalCap,
   };
+}
+
+/** The highest composite a tree carrying a critical finding can score: the
+ *  top of the "improving" band, so such a tree never grades moderate or better. */
+export const CRITICAL_FINDING_CAP = 69;
+
+/**
+ * Critical-finding cap.
+ *
+ * A critical finding the dominant-analyzer floor does not see still has to
+ * move the composite. HMA's critical findings are the case: HMA weighs 8% of
+ * the average, and its own score stays above the critical band for a tree
+ * whose one defect is critical (hackmyagent secure scores a tree with
+ * AWS-shaped credentials in .env.example 69, its clean control 93), so the
+ * composite fell three points, 94 to 91, and still read "strong". While HMA
+ * reports a critical finding the composite is held at CRITICAL_FINDING_CAP or
+ * below. The other analyzers' critical findings already reach the floor
+ * (credentialFloorScore, shieldRiskFloorScore, targetGovernanceFloorScore),
+ * which holds the composite lower than this cap.
+ */
+export function criticalFindingCap(inputs: { hmaAvailable: boolean; hmaCritical: number }): { score: number; by: string[] } | null {
+  if (!inputs.hmaAvailable || !(inputs.hmaCritical > 0)) return null;
+  return { score: CRITICAL_FINDING_CAP, by: ['HMA Scan'] };
 }
 
 /** The critical band. An analyzer scoring below this is reporting a critical
