@@ -168,7 +168,7 @@ export function policyChangedSinceRecorded(policyPath: string): boolean {
  * Compare the current policy file hash against the previously recorded hash.
  *
  * Returns `{ valid: true }` when:
- *   - No policy file exists (nothing to verify)
+ *   - No policy file exists (nothing to verify; `skipped` is set)
  *   - No recorded hash exists (policy was never recorded)
  *   - The current hash matches the recorded hash
  *
@@ -178,12 +178,12 @@ export function policyChangedSinceRecorded(policyPath: string): boolean {
 export function verifyPolicyIntegrity(
   policyPath?: string,
 ):
-  | { valid: true; detail: string }
+  | { valid: true; skipped?: true; detail: string }
   | { valid: false; detail: string; nextStep: NextStep } {
   const resolvedPath = policyPath ?? join(getShieldDir(), SHIELD_POLICY_FILE);
 
   if (!existsSync(resolvedPath)) {
-    return { valid: true, detail: 'No policy file found; nothing to verify.' };
+    return { valid: true, skipped: true, detail: 'No policy file found; nothing to verify.' };
   }
 
   const hashFile = join(getShieldDir(), POLICY_HASH_FILE);
@@ -526,7 +526,8 @@ export function getLockdownReason(): string | null {
  *   4. Process integrity (node binary verification)
  *
  * Status logic:
- *   - All pass   -> healthy
+ *   - All pass   -> healthy (a skip, a check with nothing to verify, changes
+ *                   nothing)
  *   - Any warn   -> degraded
  *   - Any fail   -> compromised
  *   - In lockdown -> lockdown (overrides all)
@@ -571,7 +572,12 @@ export function runIntegrityChecks(options: {
   // 1. Policy integrity
   const policyResult = verifyPolicyIntegrity();
   const policyCheck: IntegrityCheck = policyResult.valid
-    ? { name: 'policy', status: 'pass', detail: policyResult.detail, checkedAt: now }
+    ? {
+      name: 'policy',
+      status: policyResult.skipped ? 'skip' : 'pass',
+      detail: policyResult.detail,
+      checkedAt: now,
+    }
     : failCheck('policy', policyResult.detail, policyResult.nextStep, now);
 
   // 2. Shell hook integrity
@@ -589,7 +595,12 @@ export function runIntegrityChecks(options: {
   const artifactResult = verifyAllArtifacts();
   const policyFile = join(getShieldDir(), SHIELD_POLICY_FILE);
   const artifactCheck: IntegrityCheck = artifactResult.valid
-    ? { name: 'artifact-signatures', status: 'pass', detail: artifactResult.detail, checkedAt: now }
+    ? {
+      name: 'artifact-signatures',
+      status: artifactResult.skipped ? 'skip' : 'pass',
+      detail: artifactResult.detail,
+      checkedAt: now,
+    }
     : failCheck(
       'artifact-signatures',
       artifactResult.detail,

@@ -246,10 +246,11 @@ describe('loadSignatures / saveSignatures', () => {
 // ===========================================================================
 
 describe('verifyAllArtifacts', () => {
-  it('returns valid when no signatures exist', () => {
+  it('returns valid and skipped when no signatures exist', () => {
     getShieldDir();
     const result = verifyAllArtifacts();
     expect(result.valid).toBe(true);
+    expect(result.skipped).toBe(true);
   });
 
   it('returns valid when all artifacts are intact', () => {
@@ -261,6 +262,7 @@ describe('verifyAllArtifacts', () => {
 
     const result = verifyAllArtifacts();
     expect(result.valid).toBe(true);
+    expect(result.skipped).toBeUndefined();
     expect(result.detail).toContain('verified');
   });
 

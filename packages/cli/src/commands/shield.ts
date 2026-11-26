@@ -254,12 +254,21 @@ async function handleSelfcheck(options: ShieldOptions): Promise<number> {
 
     for (const check of state.checks) {
       const icon = check.status === 'pass' ? green('PASS')
+        : check.status === 'skip' ? dim('SKIP')
         : check.status === 'warn' ? yellow('WARN')
         : red('FAIL');
       process.stdout.write(`  ${icon}  ${check.name.padEnd(22)} ${dim(check.detail)}\n`);
     }
 
     process.stdout.write(gray('-'.repeat(50)) + '\n');
+    // A skipped check had nothing to verify, so it is not counted as a pass.
+    const passed = state.checks.filter(c => c.status === 'pass').length;
+    const skipped = state.checks.filter(c => c.status === 'skip').length;
+    const verified = state.checks.length - skipped;
+    process.stdout.write(
+      `  Passed: ${passed} of ${verified} ${verified === 1 ? 'check' : 'checks'}` +
+      (skipped > 0 ? dim(` (${skipped} skipped: nothing to verify)`) : '') + '\n',
+    );
     const statusLabel = state.status === 'healthy' ? green(state.status.toUpperCase())
       : state.status === 'degraded' ? yellow(state.status.toUpperCase())
       : red(state.status.toUpperCase());

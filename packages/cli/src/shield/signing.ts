@@ -169,12 +169,13 @@ export function saveSignatures(store: ShieldSignatureStore): void {
 
 /**
  * Verify all Shield artifact signatures.
- * Returns a summary suitable for use as an IntegrityCheck.
+ * Returns a summary suitable for use as an IntegrityCheck. `skipped` is set
+ * when no signature store exists: there was nothing to verify.
  */
-export function verifyAllArtifacts(): { valid: boolean; detail: string } {
+export function verifyAllArtifacts(): { valid: boolean; skipped?: true; detail: string } {
   const store = loadSignatures();
   if (!store) {
-    return { valid: true, detail: 'No artifact signatures recorded; skipping.' };
+    return { valid: true, skipped: true, detail: 'No artifact signatures recorded; nothing to verify.' };
   }
 
   const shieldDir = getShieldDir();
