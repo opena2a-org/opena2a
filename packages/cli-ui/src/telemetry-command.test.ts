@@ -284,7 +284,7 @@ describe("runTelemetryCommand", () => {
         ...makeInput(),
         getContributorToken: () => null,
       });
-      expect(out).toContain("  contributor_token: none (created when a scan is first contributed)");
+      expect(out).toContain("  contributor_token: none (created on first contribution)");
       expect(out).toContain("  config:");
     });
 

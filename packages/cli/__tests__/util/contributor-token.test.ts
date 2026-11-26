@@ -9,10 +9,10 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { contributorSaltPath, peekContributorToken } from '../../src/util/contributor-token.js';
+import { contributorSaltPath, ensureContributorSalt, peekContributorToken } from '../../src/util/contributor-token.js';
 
 const CLI_ROOT = resolve(__dirname, '../..');
 const CLI_PATH = join(CLI_ROOT, 'dist/index.js');
@@ -79,9 +79,25 @@ describe('peekContributorToken', () => {
   });
 });
 
-describe('opena2a telemetry status', () => {
-  function status(telemetry?: string): string {
-    const res = spawnSync(process.execPath, [CLI_PATH, 'telemetry', 'status'], {
+describe('ensureContributorSalt', () => {
+  it('creates the salt the contribute dependency reads, with mode 0600', () => {
+    const token = ensureContributorSalt();
+    expect(token).toMatch(/^[a-f0-9]{64}$/);
+    expect(statSync(contributorSaltPath()).mode & 0o777).toBe(0o600);
+    expect(dependencyToken()).toBe(token);
+  });
+
+  it('leaves an existing salt as it is', () => {
+    const token = dependencyToken();
+    const salt = readFileSync(contributorSaltPath(), 'utf-8');
+    expect(ensureContributorSalt()).toBe(token);
+    expect(readFileSync(contributorSaltPath(), 'utf-8')).toBe(salt);
+  });
+});
+
+describe('opena2a telemetry status, on and off', () => {
+  function run(action: string, telemetry?: string): string {
+    const res = spawnSync(process.execPath, [CLI_PATH, 'telemetry', action], {
       encoding: 'utf8',
       timeout: 60000,
       env: childEnv(telemetry === undefined ? {} : { OPENA2A_TELEMETRY: telemetry }),
@@ -89,16 +105,24 @@ describe('opena2a telemetry status', () => {
     expect(res.status, res.stderr).toBe(0);
     return (res.stdout ?? '').replace(STRIP_ANSI, '');
   }
+  const status = (telemetry?: string): string => run('status', telemetry);
 
   it('leaves a fresh HOME empty while telemetry is off', () => {
     const out = status('off');
-    expect(out).toContain('contributor_token: none (created when a scan is first contributed)');
+    expect(out).toContain('contributor_token: none (created on first contribution)');
     expect(readdirSync(home)).toEqual([]);
   });
 
   it('never creates the contributor salt, whatever the telemetry state', () => {
     status();
     expect(existsSync(join(home, '.opena2a'))).toBe(false);
+  });
+
+  it('on and off create no salt in a fresh HOME with telemetry and contribution off', () => {
+    for (const action of ['status', 'on', 'off', 'status']) {
+      expect(run(action, 'off'), action).toContain('contributor_token: none (created on first contribution)');
+      expect(existsSync(contributorSaltPath()), action).toBe(false);
+    }
   });
 
   it('prints the token once a salt exists, and leaves the salt as it was', () => {

@@ -154,7 +154,7 @@ function renderStatus(
 // creating it, and must still print when that file cannot be read.
 function contributorTokenOrUnavailable(getToken: () => string | null): string {
   try {
-    return getToken() ?? "none (created when a scan is first contributed)";
+    return getToken() ?? "none (created on first contribution)";
   } catch {
     return "unavailable";
   }

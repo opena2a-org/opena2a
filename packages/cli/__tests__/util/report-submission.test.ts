@@ -10,7 +10,10 @@
 // value that is neither a Registry package type, an ecosystem nor a scan kind
 // the CLI publishes is not sent.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const registry = vi.hoisted(() => ({
   publishScan: vi.fn(async () => ({ accepted: true, publishId: 'published-0001' })),
@@ -29,6 +32,14 @@ vi.mock('@opena2a/registry-client', () => ({
   },
   firstPartySignerFromEnv: () => undefined,
 }));
+
+// The contribution opt-in the CLI reads from @opena2a/shared.
+const optIn = vi.hoisted(() => ({ enabled: false }));
+
+vi.mock('@opena2a/shared', () => {
+  const mod = { isContributeEnabled: () => optIn.enabled };
+  return { ...mod, default: mod };
+});
 
 vi.mock('@opena2a/contribute', () => ({
   contribute: { scanResult: queue.scanResult },
@@ -210,5 +221,51 @@ describe('submitScanReport tool version', () => {
     expect(getVersion()).not.toBe('0.1.0');
     expect(queued().toolVersion).toBe(getVersion());
     expect(published().toolVersion).toBe(getVersion());
+  });
+});
+
+// The contributor salt is created on the contribution path and nowhere else:
+// by the first scan contributed while contribution is enabled, after the
+// opt-in check. `telemetry status`, `on` and `off` only read it.
+describe('submitScanReport contributor salt', () => {
+  let sandbox: string;
+  let savedHome: string | undefined;
+  let savedOpena2aHome: string | undefined;
+
+  beforeEach(() => {
+    registry.publishScan.mockClear();
+    queue.scanResult.mockClear();
+    sandbox = mkdtempSync(join(tmpdir(), 'opena2a-submit-salt-'));
+    savedHome = process.env.HOME;
+    savedOpena2aHome = process.env.OPENA2A_HOME;
+    process.env.HOME = sandbox;
+    delete process.env.OPENA2A_HOME;
+    optIn.enabled = false;
+  });
+
+  afterEach(() => {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    if (savedOpena2aHome === undefined) delete process.env.OPENA2A_HOME;
+    else process.env.OPENA2A_HOME = savedOpena2aHome;
+    rmSync(sandbox, { recursive: true, force: true });
+    optIn.enabled = false;
+  });
+
+  const saltPath = (): string => join(sandbox, '.opena2a', 'contributor-salt');
+
+  it('is not created while contribution is off', async () => {
+    await submitScanReport(REGISTRY_URL, report({ packageName: 'revfix', packageType: 'npm' }));
+    expect(existsSync(saltPath())).toBe(false);
+    expect(existsSync(join(sandbox, '.opena2a'))).toBe(false);
+  });
+
+  it('is created by the first scan contributed with contribution on', async () => {
+    optIn.enabled = true;
+
+    await submitScanReport(REGISTRY_URL, report({ packageName: 'revfix', packageType: 'npm' }));
+
+    expect(existsSync(saltPath())).toBe(true);
+    expect(readFileSync(saltPath(), 'utf-8')).toMatch(/^[a-f0-9]{64}$/);
   });
 });
