@@ -244,7 +244,7 @@ export const GUARD_HELP: SubcommandHelpRegistry = {
     ],
   },
   status: {
-    summary: 'Show current guard status (signed / unsigned / tampered file counts).',
+    summary: 'Show current guard status (signed / unsigned / tampered / missing file counts).',
     usage: '[directory]',
     examples: [
       'opena2a guard status',
