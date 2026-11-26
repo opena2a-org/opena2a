@@ -20,6 +20,30 @@ const VAULT_AUDIT_FILE = 'vault-audit.jsonl';
 const MAX_AUDIT_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_ROTATED_LOGS = 5;
 
+/** Set `p` to `mode`; best-effort, since some platforms (Windows) do not support it. */
+function tightenMode(p: string, mode: number): void {
+  try {
+    fs.chmodSync(p, mode);
+  } catch {
+    // chmod is unsupported or not permitted here; the creating modes still apply
+  }
+}
+
+/** Append `data` to `filePath`, created 0o600 and tightened to 0o600 if it already existed looser. */
+function appendOwnerOnly(filePath: string, data: string): void {
+  const fd = fs.openSync(filePath, 'a', 0o600);
+  try {
+    try {
+      fs.fchmodSync(fd, 0o600);
+    } catch {
+      // chmod is unsupported or not permitted here; the creating mode still applies
+    }
+    fs.writeFileSync(fd, data, 'utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /**
  * Log a vault audit event to the append-only JSONL file.
  *
@@ -34,7 +58,11 @@ export function logVaultEvent(
     ...event,
   };
 
-  fs.mkdirSync(vaultDir, { recursive: true });
+  // The vault audit log names every secret operation, so it is the owner's
+  // alone: the directory is created 0o700 and the file 0o600, and a directory
+  // or log left looser by an earlier version is tightened on every write.
+  fs.mkdirSync(vaultDir, { recursive: true, mode: 0o700 });
+  tightenMode(vaultDir, 0o700);
   const filePath = path.join(vaultDir, VAULT_AUDIT_FILE);
 
   // Rotate if log exceeds size limit
@@ -65,7 +93,7 @@ export function logVaultEvent(
     // File doesn't exist yet
   }
 
-  fs.appendFileSync(filePath, JSON.stringify(fullEvent) + '\n', 'utf-8');
+  appendOwnerOnly(filePath, JSON.stringify(fullEvent) + '\n');
   return fullEvent;
 }
 

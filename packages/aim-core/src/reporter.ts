@@ -26,6 +26,24 @@ export interface ReporterOptions {
   maxQueueSize?: number;
 }
 
+/** Set `p` to `mode`; best-effort, since some platforms (Windows) do not support it. */
+function tightenMode(p: string, mode: number): void {
+  try {
+    fs.chmodSync(p, mode);
+  } catch {
+    // chmod is unsupported or not permitted here; the creating modes still apply
+  }
+}
+
+/** Set the open file `fd` to `mode`; best-effort, like tightenMode. */
+function tightenFd(fd: number, mode: number): void {
+  try {
+    fs.fchmodSync(fd, mode);
+  } catch {
+    // fchmod is unsupported or not permitted here; the creating mode still applies
+  }
+}
+
 /**
  * AIM Server Reporter — batch POST audit events to a central server.
  * Includes offline queue: events are persisted to disk and flushed on reconnect.
@@ -186,10 +204,20 @@ export class AIMServerReporter {
 
   private persistQueue(): void {
     try {
-      fs.mkdirSync(this.dataDir, { recursive: true });
+      // The queue holds audit events not yet sent, so it is the owner's alone:
+      // the directory is created 0o700 and the file 0o600, and a directory or
+      // queue left looser by an earlier version is tightened on every write.
+      fs.mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+      tightenMode(this.dataDir, 0o700);
       const queuePath = path.join(this.dataDir, QUEUE_FILE);
       const content = this.queue.map((e) => JSON.stringify(e)).join('\n');
-      fs.writeFileSync(queuePath, content + (content ? '\n' : ''), 'utf-8');
+      const fd = fs.openSync(queuePath, 'w', 0o600);
+      try {
+        tightenFd(fd, 0o600);
+        fs.writeFileSync(fd, content + (content ? '\n' : ''), 'utf-8');
+      } finally {
+        fs.closeSync(fd);
+      }
     } catch {
       // Persistence is best-effort
     }
@@ -199,6 +227,9 @@ export class AIMServerReporter {
     try {
       const queuePath = path.join(this.dataDir, QUEUE_FILE);
       if (!fs.existsSync(queuePath)) return;
+      // Tighten a queue (and its directory) left looser by an earlier version.
+      tightenMode(this.dataDir, 0o700);
+      tightenMode(queuePath, 0o600);
 
       const content = fs.readFileSync(queuePath, 'utf-8').trim();
       if (!content) return;
