@@ -215,7 +215,42 @@ interface ResolvedPackageInfo {
   pkgJson: any;
 }
 
+/** A bare package name, optionally scoped: no path separators beyond the scope's one. */
+const PACKAGE_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i;
+
+/**
+ * Finds the installed package named `packageName`: first in the current
+ * project (the `node_modules` folders from the working directory up), then
+ * where opena2a-cli itself is installed.
+ */
 function resolvePackage(packageName: string): ResolvedPackageInfo {
+  return findInProject(packageName, process.cwd()) ?? findFromCli(packageName);
+}
+
+function findInProject(packageName: string, from: string): ResolvedPackageInfo | null {
+  if (!PACKAGE_NAME.test(packageName)) return null;
+  const path = require('node:path');
+  const fs = require('node:fs');
+
+  let dir = path.resolve(from);
+  for (;;) {
+    const pkgDir = path.join(dir, 'node_modules', packageName);
+    const pkgJsonPath = path.join(pkgDir, 'package.json');
+    try {
+      const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+      if (pkgJson && pkgJson.name === packageName) {
+        return { dir: pkgDir, pkgJson };
+      }
+    } catch {
+      // not installed at this level, or an unreadable package.json
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function findFromCli(packageName: string): ResolvedPackageInfo {
   const resolved = require.resolve(packageName);
   const path = require('node:path');
   const fs = require('node:fs');
