@@ -19,29 +19,31 @@ Before users install your MCP server, they may run an audit to check its securit
 npx opena2a-cli mcp audit
 ```
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04; the config file path is replaced with a fixed placeholder:
+Captured from opena2a-cli v0.10.13 on 2026-11-26 ([capture](../captures/mcp-server-author-mcp-audit.txt)), with the registry reachable:
 ```
 MCP Server Audit
 ==================================================
 
-Source: /home/dev/mcp-server-tools/.mcp.json (project-local)
-  my-server            stdio    node ./dist/index.js                           not signed  no trust score
-  filesystem           stdio    npx @modelcontextprotocol/server-filesystem .  not signed  no trust score
-  postgres             stdio    npx @modelcontextprotocol/server-postgres      not signed  no trust score
-  github               stdio    npx @modelcontextprotocol/server-github        not signed  no trust score
+Source: ~/mcp-server-tools/.mcp.json (project-local)
+  my-server            stdio    node ./dist/index.js                           not signed  no package to look up
+  filesystem           stdio    npx @modelcontextprotocol/server-filesystem .  not signed  trust: 79
+  postgres             stdio    npx @modelcontextprotocol/server-postgres      not signed  listed, not scanned
+  github               stdio    npx @modelcontextprotocol/server-github        not signed  listed, not scanned
 
 Summary
   Servers found:     4
   Signed:            0 / 4
   Verified:          0 / 4
-  Trust scores:      0 / 4
+  Trust scores:      1 / 3 looked up; 2 listed, not scanned; 1 server has no package name
 
 Next Steps
-  opena2a mcp sign <name>       Sign an MCP server with AIM identity
-  opena2a mcp verify <name>     Verify server signature and trust score
+  Sign an MCP server with AIM identity:
+    opena2a mcp sign "${MCP_SERVER:?set MCP_SERVER to a server name listed above}"
+  Verify server signature and trust score:
+    opena2a mcp verify "${MCP_SERVER:?set MCP_SERVER to a server name listed above}"
 ```
 
-Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists in the user store for the project (`~/.opena2a/projects/<key>/mcp-identities/`, or under `$OPENA2A_HOME`), and its registry trust score. `no trust score` means the registry held no record of that server when the audit ran -- which is what every unregistered server looks like, yours included, until Step 5. `Verified` in the summary counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
+Each row is one configured server: the transport it speaks, the command that launches it (without `-y`), whether a signature for it exists in the user store for the project (`~/.opena2a/projects/<key>/mcp-identities/`, or under `$OPENA2A_HOME`), and what the registry said about it. The audit looks a server up under the npm package a package runner (`npx`, `npm exec`, `pnpm dlx`, `bunx`) starts, never under its name in `.mcp.json`, so the row ends in one of: `trust: <score>`, the score out of 100 of a package the registry has scanned; `listed, not scanned`, a package the registry lists but has never scanned, whose score would measure nothing; `not in registry`, a package the registry holds no record of; `no package to look up`, a server started some other way, such as your own `node ./dist/index.js`; `lookup failed`, when the registry did not answer; and `not looked up (--ci)`, since `--ci` sends no lookups. The trust values above are what the registry held on the capture date, and yours will show what it holds when you run the audit. `Trust scores` in the summary counts scored servers out of those it looked up, then names the listed-but-unscanned servers, the failed lookups and the servers with no package name instead of counting them as misses; under `--ci` it reads `not looked up (--ci)`. `Verified` counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today. Next Steps prints the sign and verify commands with the server name left to `MCP_SERVER`: set it to a name from the list first, or the shell stops with that message and runs nothing.
 
 ---
 
@@ -280,7 +282,7 @@ jobs:
           npx ai-trust check @myorg/mcp-server-tools --no-scan --json > trust.json
           score=$(jq -r '.trustScore // empty' trust.json)
           if [ -z "$score" ]; then
-            echo "The registry returned no trust score for @myorg/mcp-server-tools"
+            echo "The registry holds no score for @myorg/mcp-server-tools"
             exit 1
           fi
           if ! jq -e '.trustScore >= 0.70' trust.json > /dev/null; then
