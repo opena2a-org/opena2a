@@ -877,13 +877,30 @@ function printVerifyReport(report: GuardReport, enforce?: boolean): void {
 
 // --- Silent signing (for protect command integration) ---
 
+/** What a silent sign did: the files it signed, and the changed signed files it left on their stored signature. */
+export interface SilentSignResult {
+  signed: number;
+  files: string[];
+  kept: { filePath: string; sizeChange: number }[];
+}
+
 /**
- * Sign config files without any stdout output. Returns what was signed.
- * Used by `protect` to silently sign configs as part of the fix-all flow.
+ * Sign config files without prompting. Returns what was signed.
+ * Used by `protect` and `shield init` to sign configs as part of their flows.
+ *
+ * Re-signing a signed file whose contents changed needs the consent that
+ * `guard sign` and `guard resign` ask for, and these flows do not prompt, so
+ * such a file keeps its stored entry and is returned in `kept`: it stays
+ * reported as tampered until someone re-signs it with `guard resign`. With
+ * `report`, the kept files are listed on that stream (use stderr when stdout
+ * carries JSON); without it nothing is printed.
  */
-export async function signConfigFilesSilent(targetDir: string): Promise<{ signed: number; files: string[] }> {
+export async function signConfigFilesSilent(
+  targetDir: string,
+  options: { report?: 'stdout' | 'stderr'; indent?: string } = {},
+): Promise<SilentSignResult> {
   const filesToSign = resolveFiles(targetDir);
-  const signatures: ConfigSignature[] = [];
+  const fresh: ConfigSignature[] = [];
 
   for (const relPath of filesToSign) {
     const fullPath = path.join(targetDir, relPath);
@@ -891,11 +908,19 @@ export async function signConfigFilesSilent(targetDir: string): Promise<{ signed
     const content = fs.readFileSync(fullPath);
     const hash = 'sha256:' + createHash('sha256').update(content).digest('hex');
     const stat = fs.statSync(fullPath);
-    signatures.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: signedByLabel(), fileSize: stat.size });
+    fresh.push({ filePath: relPath, hash, signedAt: new Date().toISOString(), signedBy: signedByLabel(), fileSize: stat.size });
   }
 
-  if (signatures.length === 0) {
-    return { signed: 0, files: [] };
+  const kept = changedSignedFiles(targetDir, fresh);
+  if (options.report) printKeptSignatures(kept, options.report, options.indent ?? '');
+  const keptPaths = new Set(kept.map(k => k.filePath));
+  const storedByPath = new Map(previousSignatures(targetDir).map(entry => [entry.filePath, entry]));
+  // A changed file keeps its stored entry, in place; every other file is signed now.
+  const signatures = fresh.map(sig => (keptPaths.has(sig.filePath) ? storedByPath.get(sig.filePath) ?? sig : sig));
+  const signedNow = fresh.filter(sig => !keptPaths.has(sig.filePath));
+
+  if (signedNow.length === 0) {
+    return { signed: 0, files: [], kept };
   }
 
   const store: SignatureStore = { version: 1, signatures, updatedAt: new Date().toISOString() };
@@ -904,10 +929,24 @@ export async function signConfigFilesSilent(targetDir: string): Promise<{ signed
   fs.writeFileSync(path.join(storeDir, STORE_FILE), JSON.stringify(store, null, 2) + '\n', 'utf-8');
 
   await emitEvent('config.signed', 'guard.sign', targetDir, 'info', 'allowed', {
-    fileCount: signatures.length, files: signatures.map(s => s.filePath),
+    fileCount: signedNow.length, files: signedNow.map(s => s.filePath),
+    ...(kept.length > 0 ? { keptUnsigned: kept.map(k => k.filePath) } : {}),
   });
 
-  return { signed: signatures.length, files: signatures.map(s => s.filePath) };
+  return { signed: signedNow.length, files: signedNow.map(s => s.filePath), kept };
+}
+
+/** Lists the changed signed files a silent sign left on their stored signature, and how to re-sign them. */
+function printKeptSignatures(kept: SilentSignResult['kept'], stream: 'stdout' | 'stderr', indent: string): void {
+  if (kept.length === 0) return;
+  const out = stream === 'stdout' ? process.stdout : process.stderr;
+  const n = kept.length;
+  out.write(yellow(`${indent}Not re-signed: ${n} signed file${n === 1 ? '' : 's'} changed since signing; re-signing needs your consent.\n`));
+  for (const entry of kept) {
+    const sizeInfo = entry.sizeChange !== 0 ? ` (${entry.sizeChange > 0 ? '+' : ''}${entry.sizeChange}b)` : '';
+    out.write(`${indent}  CHANGED ${entry.filePath}${sizeInfo}\n`);
+  }
+  out.write(dim(`${indent}Review the change, then run: opena2a guard resign\n`));
 }
 
 // --- Testable internals ---
