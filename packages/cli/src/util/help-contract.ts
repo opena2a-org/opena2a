@@ -147,6 +147,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     exit: [
       ['0', 'the assessment ran and found no critical next step'],
       ['1', 'a critical next step was found, or the directory does not exist'],
+      ['2', 'an unsupported --format'],
     ],
     json: 'prints the assessment as JSON',
     ci: 'no effect',
