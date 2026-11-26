@@ -416,3 +416,30 @@ describe('stored sign-in is matched by the server origin', () => {
     expect(serverOrigin('http://aim.example.test')).not.toBe(serverOrigin('https://aim.example.test'));
   });
 });
+
+describe('identity audit --server says which server it reads', () => {
+  const warnings = () =>
+    vi.mocked(process.stderr.write).mock.calls.map((c) => String(c[0])).filter((t) => t.includes('--server is not supported'));
+
+  it('names the connected server, and reads the audit log from it', async () => {
+    writeStore(SETUPS[0]);
+    const code = await identity({ subcommand: 'audit', server: servers.B.url, json: true });
+    expect(code).toBe(0);
+    const [warning] = warnings();
+    expect(warning).toContain(`connected AIM server ${servers.A.url}`);
+    expect(warning).not.toContain('local mode');
+    expect(servers.A.requests).toHaveLength(1);
+    expect(servers.A.requests[0].path).toContain(stored.A.agentId);
+    expect(servers.B.requests).toEqual([]);
+  });
+
+  it('says local mode, and contacts no server, when no agent is connected', async () => {
+    const code = await identity({ subcommand: 'audit', server: servers.A.url, json: true });
+    expect(code).toBe(0);
+    const [warning] = warnings();
+    expect(warning).toContain('Operating in local mode.');
+    expect(warning).not.toContain('connected AIM server');
+    expect(servers.A.requests).toEqual([]);
+    expect(servers.B.requests).toEqual([]);
+  });
+});
