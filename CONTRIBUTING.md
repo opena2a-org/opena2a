@@ -67,7 +67,7 @@ packages/
 └── shared               types + utilities
 ```
 
-The CLI also depends on three sister packages published from their own repos (declared as runtime deps in `packages/cli/package.json`): [`hackmyagent`](https://github.com/opena2a-org/hackmyagent), [`secretless-ai`](https://github.com/opena2a-org/secretless-ai), and [`ai-trust`](https://github.com/opena2a-org/ai-trust). `opena2a scan` delegates to `hackmyagent`. `opena2a secrets` delegates to `secretless-ai`. `opena2a trust` queries via `ai-trust`.
+The CLI also depends on three sister packages published from their own repos (declared as runtime deps in `packages/cli/package.json`): [`hackmyagent`](https://github.com/opena2a-org/hackmyagent), [`secretless-ai`](https://github.com/opena2a-org/secretless-ai), and [`ai-trust`](https://github.com/opena2a-org/ai-trust). `opena2a scan` delegates to `hackmyagent`. `opena2a secrets` delegates to `secretless-ai`. `opena2a trust` does not go through `ai-trust`: it queries the OpenA2A Registry API directly.
 
 ## Running Tests
 
