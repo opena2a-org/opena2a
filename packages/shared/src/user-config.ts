@@ -62,7 +62,13 @@ const DEFAULT_CONFIG: UserConfig = {
 /**
  * The OpenA2A user home. `OPENA2A_HOME` names that directory itself (not a
  * parent of `.opena2a`) when it is set to a non-blank value; otherwise it is
- * `~/.opena2a`. Every per-user path the tools write hangs off this directory.
+ * `~/.opena2a`. Only paths built through this function follow it: the user
+ * config (`getUserConfigPath()`), the per-project stores
+ * (`getProjectStoreDir()`) and the global identity `detect` reads. Other
+ * sites — scan history (history.ts), the contribute config and queue, shield
+ * events and `util/auth` among them — build `~/.opena2a` from `homedir()`
+ * directly and ignore `OPENA2A_HOME`. Routing them through this function is
+ * tracked in #295 and #589.
  */
 export function getUserConfigDir(): string {
   const configured = process.env.OPENA2A_HOME?.trim();
