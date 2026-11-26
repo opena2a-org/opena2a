@@ -6,7 +6,7 @@
     "tags": ["security", "scan", "vulnerability", "hardening", "audit"],
     "synonyms": ["check", "test", "analyze", "inspect", "review"],
     "domains": ["mcp", "agent", "llm", "ai"],
-    "examples": ["scan my MCP server", "find vulnerabilities", "security audit"]
+    "examples": ["audit my MCP server", "find vulnerabilities", "security audit"]
   },
   {
     "id": "scan-secure",
@@ -24,7 +24,7 @@
     "tags": ["attack", "pentest", "adversarial", "red-team", "offensive"],
     "synonyms": ["pentest", "red-team", "exploit", "break"],
     "domains": ["agent", "mcp", "llm"],
-    "examples": ["attack test my agent", "red team my MCP server", "pentest"]
+    "examples": ["attack test my agent", "red team my MCP server", "pentest my agent"]
   },
   {
     "id": "secrets-init",
@@ -33,7 +33,7 @@
     "tags": ["secrets", "credentials", "protection", "encrypt", "vault", "1password", "gcp-sm", "keychain"],
     "synonyms": ["protect-secrets", "encrypt", "hide-keys"],
     "domains": ["cursor", "claude-code", "windsurf", "vscode"],
-    "examples": ["protect my API keys", "hide credentials from AI", "encrypt secrets"]
+    "examples": ["secure my API keys", "hide credentials from AI", "encrypt secrets"]
   },
   {
     "id": "secrets-scan",
@@ -42,7 +42,7 @@
     "tags": ["secrets", "scan", "credentials", "leak", "exposure"],
     "synonyms": ["find-secrets", "detect-keys", "credential-scan"],
     "domains": ["git", "env", "config"],
-    "examples": ["find leaked API keys", "scan for hardcoded secrets", "detect credentials"]
+    "examples": ["find leaked API keys", "look for hardcoded secrets", "search for exposed credentials"]
   },
   {
     "id": "protect",
@@ -51,7 +51,7 @@
     "tags": ["protect", "migrate", "vault", "1password", "gcp-sm", "keychain", "remediate", "fix", "drift", "google", "aws", "gemini", "bedrock"],
     "synonyms": ["migrate-secrets", "vault", "fix-credentials", "scope-drift", "key-detection"],
     "domains": ["credentials", "security", "google", "aws", "drift"],
-    "examples": ["move secrets to vault", "fix hardcoded credentials", "migrate API keys", "detect google key drift", "find AWS bedrock drift"]
+    "examples": ["move secrets to vault", "fix hardcoded credentials", "migrate API keys", "report google key drift", "find AWS bedrock drift"]
   },
   {
     "id": "runtime",
@@ -60,7 +60,7 @@
     "tags": ["runtime", "monitor", "process", "network", "filesystem", "edr"],
     "synonyms": ["monitor", "watch", "observe", "guard"],
     "domains": ["agent", "process", "network"],
-    "examples": ["monitor my agent", "watch network calls", "runtime protection"]
+    "examples": ["monitor my agent", "monitor network calls", "enable runtime protection"]
   },
   {
     "id": "benchmark",
@@ -69,7 +69,7 @@
     "tags": ["benchmark", "oasb", "compliance", "score", "assessment"],
     "synonyms": ["assess", "grade", "score", "evaluate"],
     "domains": ["compliance", "owasp", "mitre"],
-    "examples": ["benchmark my agent", "security score", "compliance check"]
+    "examples": ["grade my agent", "security score", "compliance check"]
   },
   {
     "id": "registry",
@@ -78,7 +78,7 @@
     "tags": ["registry", "trust", "package", "supply-chain", "verify"],
     "synonyms": ["trust", "verify", "lookup", "check-package"],
     "domains": ["npm", "pypi", "supply-chain"],
-    "examples": ["check if package is safe", "trust score lookup", "verify dependency"]
+    "examples": ["is lodash safe", "package trust score", "supply chain risk"]
   },
   {
     "id": "train",
@@ -96,7 +96,7 @@
     "tags": ["crypto", "pqc", "quantum", "tls", "certificate", "encryption"],
     "synonyms": ["quantum", "post-quantum", "pqc", "tls-scan"],
     "domains": ["cryptography", "tls", "certificate"],
-    "examples": ["scan for weak crypto", "quantum readiness", "TLS configuration check"]
+    "examples": ["find weak crypto", "quantum readiness", "TLS configuration check"]
   },
   {
     "id": "identity",
@@ -105,7 +105,7 @@
     "tags": ["identity", "aim", "agent-id", "certificate", "governance"],
     "synonyms": ["agent-id", "register-agent", "identity-management"],
     "domains": ["agent", "governance", "access-control"],
-    "examples": ["create agent identity", "register my agent", "manage agent certificates"]
+    "examples": ["set up agent identity", "register my agent", "manage agent certificates"]
   },
   {
     "id": "broker",
@@ -114,7 +114,7 @@
     "tags": ["broker", "daemon", "credential-resolution", "policy", "identity-aware"],
     "synonyms": ["credential-broker", "secret-proxy", "vault-daemon"],
     "domains": ["credentials", "identity", "policy"],
-    "examples": ["start credential broker", "run secret proxy", "identity-aware secrets"]
+    "examples": ["start credential broker", "run secret proxy", "use identity-aware secrets"]
   },
   {
     "id": "guard",
@@ -123,7 +123,7 @@
     "tags": ["guard", "integrity", "config", "sign", "verify", "tamper", "hash"],
     "synonyms": ["configguard", "sign-config", "verify-config", "integrity-check"],
     "domains": ["config", "security", "supply-chain"],
-    "examples": ["sign config files", "verify config integrity", "detect config tampering"]
+    "examples": ["sign config files", "confirm config integrity", "find config tampering"]
   },
   {
     "id": "dlp",
@@ -141,7 +141,7 @@
     "tags": ["init", "assess", "scan", "drift", "trust-score", "posture"],
     "synonyms": ["assess", "audit", "evaluate", "check posture"],
     "domains": ["project", "config", "credentials"],
-    "examples": ["assess my project", "check security posture", "security audit", "scan project"],
+    "examples": ["assess my project", "show my security posture", "security audit", "assess this project"],
     "writesInProject": [],
     "writesOutsideProject": [
       {
@@ -240,7 +240,7 @@
     "tags": ["status", "dashboard", "overview", "summary", "report"],
     "synonyms": ["overview", "dashboard", "summary"],
     "domains": ["project"],
-    "examples": ["show security status", "project overview", "what's the status"]
+    "examples": ["show security status", "project overview", "what is the status"]
   },
   {
     "id": "config",
@@ -258,7 +258,7 @@
     "tags": ["login", "auth", "authenticate", "oauth", "device", "browser", "token"],
     "synonyms": ["sign in", "authenticate", "connect", "auth"],
     "domains": ["identity", "server", "cloud"],
-    "examples": ["login to AIM", "authenticate with server", "sign in to cloud"]
+    "examples": ["log in to AIM", "authenticate with server", "sign in to cloud"]
   },
   {
     "id": "logout",
@@ -267,7 +267,7 @@
     "tags": ["logout", "sign out", "disconnect", "revoke", "token"],
     "synonyms": ["sign out", "disconnect", "deauth"],
     "domains": ["identity", "server", "cloud"],
-    "examples": ["logout", "sign out", "remove credentials"]
+    "examples": ["log out", "sign out", "remove credentials"]
   },
   {
     "id": "whoami",
@@ -276,6 +276,6 @@
     "tags": ["whoami", "status", "auth", "identity", "session"],
     "synonyms": ["who am i", "auth status", "session info", "current user"],
     "domains": ["identity", "server", "cloud"],
-    "examples": ["who am I", "am I logged in", "check auth status"]
+    "examples": ["who am I", "am I logged in", "show auth status"]
   }
 ]
