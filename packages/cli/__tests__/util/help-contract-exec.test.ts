@@ -1116,30 +1116,34 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
     ],
   },
   baselines: {
-    '0': [{
-      when: 'observations were collected',
-      // Resolved from the CLI's own install, as the handler resolves --package.
-      args: ['baselines', '--package', 'commander', '--ci'],
-      setup: contributionsOn,
-      routes: { 'POST /internal/behavioral-observation': [200, { ok: true }] },
-    }],
-    '1': [
-      { when: 'community contributions are not enabled', args: ['baselines', '--package', 'commander', '--ci'] },
+    '0': [
       {
-        when: 'the package cannot be resolved from where opena2a-cli is installed',
-        args: ['baselines', '--package', 'no-such-package-installed', '--ci'],
+        when: 'observations were collected',
+        // Not in the project: resolved from the CLI's own install.
+        args: ['baselines', '--package', 'commander', '--ci'],
         setup: contributionsOn,
+        routes: { 'POST /internal/behavioral-observation': [200, { ok: true }] },
       },
       {
-        when: 'the package cannot be resolved from where opena2a-cli is installed',
+        when: 'observations were collected',
+        // Installed only in the project the command is run in.
         args: ['baselines', '--package', 'demo-pkg', '--ci'],
         setup: (s) => {
           contributionsOn(s);
-          // Installed in the project, which is not where the handler looks.
           put(s, 'node_modules/demo-pkg/package.json', '{"name":"demo-pkg","version":"1.0.0","main":"index.js"}\n');
           put(s, 'node_modules/demo-pkg/index.js', 'module.exports = {};\n');
         },
-        output: /Package not found: demo-pkg/,
+        routes: { 'POST /internal/behavioral-observation': [200, { ok: true }] },
+        output: /Package: demo-pkg v1\.0\.0/,
+      },
+    ],
+    '1': [
+      { when: 'community contributions are not enabled', args: ['baselines', '--package', 'commander', '--ci'] },
+      {
+        when: 'the package is installed neither in the node_modules of the current project nor where opena2a-cli is installed',
+        args: ['baselines', '--package', 'no-such-package-installed', '--ci'],
+        setup: contributionsOn,
+        output: /Package not found: no-such-package-installed/,
       },
       { when: 'no --package was given', args: ['baselines'] },
     ],

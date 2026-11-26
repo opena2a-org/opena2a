@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { baselines } from '../../src/commands/baselines.js';
 import type { BaselinesOptions } from '../../src/commands/baselines.js';
+
+// Tests that need contributions on set this; it is reset after each test.
+const optIn = vi.hoisted(() => ({ enabled: false }));
 
 // Isolate from the developer's real ~/.opena2a/config.json. checkOptIn does
 // `await import('@opena2a/shared')` and reads loadUserConfig().contribute.enabled
@@ -11,12 +17,12 @@ import type { BaselinesOptions } from '../../src/commands/baselines.js';
 vi.mock('@opena2a/shared', () => ({
   default: {
     loadUserConfig: () => ({
-      contribute: { enabled: false },
+      contribute: { enabled: optIn.enabled },
       registry: { url: 'https://test-registry.example.com' },
     }),
   },
   loadUserConfig: () => ({
-    contribute: { enabled: false },
+    contribute: { enabled: optIn.enabled },
     registry: { url: 'https://test-registry.example.com' },
   }),
 }));
@@ -31,6 +37,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  optIn.enabled = false;
 });
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
@@ -201,5 +209,60 @@ describe('baselines', () => {
       expect(metrics).toHaveProperty('hasSuspiciousScripts');
       expect(metrics).toHaveProperty('hasEnginesField');
     }
+  });
+
+  describe('--package installed only in the current project', () => {
+    let project: string;
+
+    beforeEach(() => {
+      project = realpathSync(mkdtempSync(join(tmpdir(), 'baselines-project-')));
+      const pkgDir = join(project, 'node_modules', '@demo-scope', 'project-only-pkg');
+      mkdirSync(pkgDir, { recursive: true });
+      writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+        name: '@demo-scope/project-only-pkg',
+        version: '2.3.4',
+        main: 'index.js',
+        dependencies: { a: '1', b: '1' },
+        scripts: { test: 'true' },
+      }));
+      writeFileSync(join(pkgDir, 'index.js'), 'module.exports = {};\n');
+      // The command is run from a folder inside the project.
+      mkdirSync(join(project, 'src'));
+      vi.spyOn(process, 'cwd').mockReturnValue(join(project, 'src'));
+      optIn.enabled = true;
+      mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    });
+
+    afterEach(() => {
+      rmSync(project, { recursive: true, force: true });
+    });
+
+    it('finds the package in the node_modules of the project', async () => {
+      const { exitCode, output } = await captureStdout(() => baselines({
+        packageName: '@demo-scope/project-only-pkg',
+        registryUrl: 'https://test-registry.example.com',
+        ci: true,
+        format: 'json',
+      }));
+
+      expect(exitCode).toBe(0);
+      const result = JSON.parse(output);
+      expect(result.observation.packageName).toBe('@demo-scope/project-only-pkg');
+      expect(result.observation.version).toBe('2.3.4');
+      expect(result.observation.metrics.fileCount).toBe(2);
+      expect(result.observation.metrics.dependencyCount).toBe(2);
+      expect(result.observation.metrics.hasTestScript).toBe(true);
+    });
+
+    it('exits 1 for a package installed neither in the project nor with the CLI', async () => {
+      const { exitCode, stderr } = await captureStderr(() => baselines({
+        packageName: 'no-such-package-installed-anywhere',
+        registryUrl: 'https://test-registry.example.com',
+        ci: true,
+      }));
+
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain('Package not found: no-such-package-installed-anywhere');
+    });
   });
 });

@@ -294,7 +294,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   baselines: {
     exit: [
       ['0', 'observations were collected'],
-      ['1', 'no --package was given, community contributions are not enabled, or the package cannot be resolved from where opena2a-cli is installed'],
+      ['1', 'no --package was given, community contributions are not enabled, or the package is installed neither in the node_modules of the current project nor where opena2a-cli is installed'],
     ],
     json: 'prints the result as JSON',
     ci: 'prints no heading or spinner',
