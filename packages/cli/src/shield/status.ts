@@ -2,8 +2,9 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { type ShieldStatus, type ToolStatus, type PolicyMode, type ShieldIntegrityStatus, SHIELD_POLICY_FILE, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
+import { type ShieldStatus, type ToolStatus, type PolicyMode, type ShieldIntegrityStatus, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 import { runIntegrityChecks } from './integrity.js';
+import { loadPolicy, policyModeOf } from './policy.js';
 import { CHILD_ENV_CONTRACTS } from '../adapters/registry.js';
 import { probeEnv } from '../util/child-env.js';
 import { programOnPath, withAbsolutePathDirs, withEmptyWorkDir, type EmptyWorkDir } from '../util/program-on-path.js';
@@ -176,21 +177,13 @@ export function getShieldStatus(targetDir?: string): ShieldStatus {
     detectTool('ConfigGuard', workDir),
   ]);
 
-  // Policy status
-  const policyPath = join(shieldDir, SHIELD_POLICY_FILE);
-  let policyLoaded = false;
-  let policyMode: PolicyMode | null = null;
-
-  if (existsSync(policyPath)) {
-    policyLoaded = true;
-    try {
-      const raw = readFileSync(policyPath, 'utf-8');
-      const policy = JSON.parse(raw);
-      policyMode = policy.mode ?? 'adaptive';
-    } catch {
-      policyMode = null;
-    }
-  }
+  // Policy status: the policy `shield policy` loads for the same directory
+  // (the project's .opena2a/shield/policy.yaml, else the user's), so the two
+  // commands give one answer. A file that does not parse is not a loaded
+  // policy for either of them.
+  const policy = loadPolicy(targetDir);
+  const policyLoaded = policy !== null;
+  const policyMode: PolicyMode | null = policy ? policyModeOf(policy) : null;
 
   // Shell integration
   const shell = process.env.SHELL?.includes('zsh') ? 'zsh'

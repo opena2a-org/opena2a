@@ -241,6 +241,22 @@ export function loadPolicy(targetDir?: string): ShieldPolicy | null {
   return null;
 }
 
+const POLICY_MODES: readonly PolicyMode[] = ['adaptive', 'monitor', 'enforce'];
+
+/**
+ * The mode a loaded policy runs in: its `mode`, 'adaptive' (the default
+ * policy's mode) when it names none, and null when it names something that
+ * is not a mode. `shield status` and `shield policy` both print this, so the
+ * two give one answer for the same directory.
+ */
+export function policyModeOf(policy: ShieldPolicy): PolicyMode | null {
+  const mode: unknown = (policy as { mode?: unknown }).mode;
+  if (mode === undefined || mode === null) return 'adaptive';
+  return typeof mode === 'string' && (POLICY_MODES as readonly string[]).includes(mode)
+    ? mode as PolicyMode
+    : null;
+}
+
 /**
  * Write a policy to disk as JSON with restrictive permissions (0o600).
  * Creates parent directories if they do not exist.
