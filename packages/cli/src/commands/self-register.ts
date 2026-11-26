@@ -661,9 +661,11 @@ function printSummary(results: ToolResult[], registryUrl: string, dryRun: boolea
     const high = r.scanStatus === 'skipped' ? dim('-') : String(r.highCount);
     const med = r.scanStatus === 'skipped' ? dim('-') : String(r.mediumCount);
     const low = r.scanStatus === 'skipped' ? dim('-') : String(r.lowCount);
+    // 'dry-run' only when --dry-run was given; a real run whose publish was
+    // refused must not read as a preview.
     const pub = r.published
       ? (r.publishType === 'metadata' ? green('yes (metadata)') : green('yes'))
-      : r.error ? red('no') : dim('dry-run');
+      : r.error ? red('no') : dryRun ? dim('dry-run') : yellow('not published');
 
     return [r.displayName, status, scan, crit, high, med, low, pub];
   });

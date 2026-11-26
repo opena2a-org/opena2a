@@ -137,6 +137,27 @@ describe('selfRegister', () => {
     expect(output.replace(/\x1b\[[0-9;]*m/g, '')).toContain('Summary: 11 tools, 6 to scan, 5 metadata-only, 0 errors');
   });
 
+  it('dry-run table labels unpublished tools dry-run', async () => {
+    const { output } = await captureStdout(() => selfRegister({ dryRun: true, ci: true, only: ['hackmyagent'] }));
+    const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
+    expect(plain).toContain('dry-run');
+    expect(plain).not.toContain('not published');
+  });
+
+  it('table says not published, not dry-run, when a real publish is refused', async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('by-name')) return { ok: false, status: 404 };
+      return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+    });
+
+    const { output } = await captureStdout(() => selfRegister({
+      skipScan: true, ci: true, yes: true, only: ['hackmyagent'],
+    }));
+    const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
+    expect(plain).toContain('not published');
+    expect(plain).not.toContain('dry-run');
+  });
+
   it('status reflects the registry when it is asked', async () => {
     mockFetch.mockImplementation(async (url: string) => {
       const u = String(url);
