@@ -137,11 +137,92 @@
   {
     "id": "init",
     "path": "opena2a init",
-    "description": "Read-only security assessment -- scan for credentials, detect scope drift, check hygiene, calculate trust score (no changes made)",
+    "description": "Security assessment -- scan for credentials, detect scope drift, check hygiene, calculate trust score (changes nothing in the project; under the home directory it writes a Shield event log, an advisory cache and a telemetry file, each on the conditions writesOutsideProject lists)",
     "tags": ["init", "assess", "scan", "drift", "trust-score", "posture"],
     "synonyms": ["assess", "audit", "evaluate", "check posture"],
     "domains": ["project", "config", "credentials"],
-    "examples": ["assess my project", "check security posture", "security audit", "scan project"]
+    "examples": ["assess my project", "check security posture", "security audit", "scan project"],
+    "writesInProject": [],
+    "writesOutsideProject": [
+      {
+        "path": "~/.opena2a/shield/events.jsonl",
+        "change": "append",
+        "when": {},
+        "note": "Every run appends a posture event and one event per credential found. The first run creates the file and its directory."
+      },
+      {
+        "path": "~/.opena2a/shield/events-*.jsonl",
+        "change": "create",
+        "when": { "eventsFile": "over 10 MB" },
+        "note": "When events.jsonl is over 10 MB it is first renamed to events-<time>.jsonl, and a new events.jsonl is started."
+      },
+      {
+        "path": "~/.opena2a/shield/events.lock",
+        "change": "transient",
+        "when": {},
+        "note": "Created while an event is written and removed straight after; it is not there when init ends."
+      },
+      {
+        "path": "$TMPDIR/opena2a-shield-status-*",
+        "change": "transient",
+        "when": {},
+        "note": "An empty folder in the system temporary directory, made as the working directory for the helper probes and removed before init ends."
+      },
+      {
+        "path": "~/.opena2a/cache/advisories.json",
+        "change": "write",
+        "when": { "advisories": "read from the Registry" },
+        "note": "Written when the advisory list is read from the Registry: not with --no-advisories or OPENA2A_ADVISORIES=off, not when this file already holds the same Registry's list from the last 5 minutes, and not when the Registry does not answer with a list."
+      },
+      {
+        "path": "~/.config/opena2a/telemetry.json",
+        "change": "write",
+        "when": { "XDG_CONFIG_HOME": "unset", "telemetry": "on", "telemetryFile": ["no install id", "install id, no enabled field"] },
+        "note": "Written with an install ID when telemetry is on and the file holds no install ID (a first run) or no enabled field. A later run with telemetry on leaves it as it is."
+      },
+      {
+        "path": "~/.config/opena2a/telemetry.json",
+        "change": "delete",
+        "when": { "XDG_CONFIG_HOME": "unset", "telemetry": "off", "secretlessOnPath": "no", "telemetryFile": ["install id", "install id, no enabled field"] },
+        "note": "Deleted when telemetry is off, for any reason, and the file holds an install ID without enabled: false."
+      },
+      {
+        "path": "~/.config/opena2a/telemetry.json",
+        "change": "write",
+        "when": { "XDG_CONFIG_HOME": "unset", "telemetry": "off", "secretlessOnPath": "no", "telemetryFile": "install id, enabled false" },
+        "note": "Rewritten as {\"enabled\": false}, without the install ID, when telemetry is off and the file holds an install ID beside enabled: false."
+      },
+      {
+        "path": "~/.config/opena2a/telemetry.json",
+        "change": "write",
+        "when": { "XDG_CONFIG_HOME": "unset", "telemetry": "off", "secretlessOnPath": "yes" },
+        "note": "When a secretless-ai program is on PATH (npx puts the one opena2a-cli depends on there), init runs secretless-ai --version. secretless-ai 0.23.0 writes this file with an install ID whenever it holds none, telemetry on or off, so after a run with telemetry off the file holds an install ID."
+      },
+      {
+        "path": "$XDG_CONFIG_HOME/opena2a/telemetry.json",
+        "change": "write",
+        "when": { "XDG_CONFIG_HOME": "set", "telemetry": "on", "telemetryFile": ["no install id", "install id, no enabled field"] },
+        "note": "As ~/.config/opena2a/telemetry.json, in this place when XDG_CONFIG_HOME is set and not empty."
+      },
+      {
+        "path": "$XDG_CONFIG_HOME/opena2a/telemetry.json",
+        "change": "delete",
+        "when": { "XDG_CONFIG_HOME": "set", "telemetry": "off", "secretlessOnPath": "no", "telemetryFile": ["install id", "install id, no enabled field"] },
+        "note": "As ~/.config/opena2a/telemetry.json, in this place when XDG_CONFIG_HOME is set and not empty."
+      },
+      {
+        "path": "$XDG_CONFIG_HOME/opena2a/telemetry.json",
+        "change": "write",
+        "when": { "XDG_CONFIG_HOME": "set", "telemetry": "off", "secretlessOnPath": "no", "telemetryFile": "install id, enabled false" },
+        "note": "As ~/.config/opena2a/telemetry.json, in this place when XDG_CONFIG_HOME is set and not empty."
+      },
+      {
+        "path": "$XDG_CONFIG_HOME/opena2a/telemetry.json",
+        "change": "write",
+        "when": { "XDG_CONFIG_HOME": "set", "telemetry": "off", "secretlessOnPath": "yes" },
+        "note": "As ~/.config/opena2a/telemetry.json, in this place when XDG_CONFIG_HOME is set and not empty."
+      }
+    ]
   },
   {
     "id": "shield-init",
