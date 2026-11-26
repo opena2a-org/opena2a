@@ -140,8 +140,8 @@ The 0.2.0 entry in this file called the hash irreversible, which was misleading:
 
 - **The README's `installId` row says how the ID is made**: a SHA-256 of the
   OS machine ID, or of the hostname, platform and Node major where no machine
-  ID can be read, written as a UUID, and random only when neither can be read.
-  It said `<random UUID>`. The `Status.installId` doc comment now says the ID
+  ID can be read, written as a UUID, and random when no machine ID can be read
+  and the hostname cannot be read, is empty or is `localhost`. It said `<random UUID>`. The `Status.installId` doc comment now says the ID
   identifies the machine, and the README and the package header no longer cite
   an engineering spec in a repository readers cannot open.
 
