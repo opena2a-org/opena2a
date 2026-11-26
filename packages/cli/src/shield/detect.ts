@@ -146,9 +146,10 @@ const CLI_SPECS: CliSpec[] = [
 /**
  * How long a CLI's version command may run. One that has not finished by then
  * is stopped and the CLI is listed with no version, so a slow or hung CLI
- * cannot hold `shield init` at its first step.
+ * cannot hold `shield init` at its first step. Shield status uses the same
+ * limit for its helper probes.
  */
-const VERSION_PROBE_TIMEOUT_MS = 5_000;
+export const VERSION_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * The CLI's config directory when it exists, else null. Only an absolute path

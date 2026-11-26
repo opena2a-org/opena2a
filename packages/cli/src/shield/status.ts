@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { type ShieldStatus, type ToolStatus, type PolicyMode, type ShieldIntegrityStatus, SHIELD_EVENTS_FILE, SHIELD_REPORTS_DIR } from './types.js';
 import { runIntegrityChecks } from './integrity.js';
+import { VERSION_PROBE_TIMEOUT_MS } from './detect.js';
 import { loadPolicy, policyModeOf } from './policy.js';
 import { CHILD_ENV_CONTRACTS } from '../adapters/registry.js';
 import { probeEnv } from '../util/child-env.js';
@@ -23,31 +24,42 @@ function getShieldDir(): string {
  * directory, so a program reachable only through an empty or relative PATH
  * entry, resolved against the directory the command was started in, never
  * runs.
+ *
+ * The probe may run for VERSION_PROBE_TIMEOUT_MS; a helper that has not
+ * answered by then is killed and reported installed with no version, so a hung
+ * helper cannot stall `shield status`, `init` or `review`.
  */
-function helperVersion(name: 'secretless-ai' | 'hackmyagent', workDir: EmptyWorkDir): string | null {
+function helperVersion(
+  name: 'secretless-ai' | 'hackmyagent',
+  workDir: EmptyWorkDir,
+): { installed: boolean; version: string | null } {
   const binaryPath = programOnPath(name);
-  if (binaryPath === null || workDir.path === null) return null;
+  if (binaryPath === null || workDir.path === null) return { installed: false, version: null };
   try {
-    return execFileSync(binaryPath, ['--version'], {
+    const version = execFileSync(binaryPath, ['--version'], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: workDir.path,
       env: probeEnv(CHILD_ENV_CONTRACTS[name].envAllowPrefixes, withAbsolutePathDirs()),
+      timeout: VERSION_PROBE_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
     }).trim();
-  } catch {
-    return null;
+    return { installed: true, version };
+  } catch (err) {
+    const timedOut = (err as NodeJS.ErrnoException | null)?.code === 'ETIMEDOUT';
+    return { installed: timedOut, version: null };
   }
 }
 
 function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
   switch (name) {
     case 'Secretless': {
-      const version = helperVersion('secretless-ai', workDir);
+      const { installed, version } = helperVersion('secretless-ai', workDir);
       const configExists = existsSync(join(process.cwd(), '.secretless.json')) ||
         existsSync(join(homedir(), '.secretless', 'config.json'));
       return {
         name: 'Secretless',
-        installed: version !== null,
+        installed,
         active: configExists,
         version,
         keyMetric: configExists ? 'configured' : 'not configured',
@@ -99,6 +111,7 @@ function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
     case 'HMA': {
       // Prefer workspace version over stale global binary
       let version: string | null = null;
+      let installed = false;
       try {
         // resolve from CLI's own location (not cwd) to find workspace hackmyagent
         const entryPath = require.resolve('hackmyagent', { paths: [__dirname, process.cwd()] });
@@ -114,16 +127,17 @@ function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
             }
           }
         }
+        installed = version !== null;
       } catch {
         // Fall back to global binary
-        version = helperVersion('hackmyagent', workDir);
+        ({ installed, version } = helperVersion('hackmyagent', workDir));
       }
       return {
         name: 'HackMyAgent',
-        installed: version !== null,
-        active: version !== null,
+        installed,
+        active: installed,
         version,
-        keyMetric: version ? `v${version}` : 'not installed',
+        keyMetric: version ? `v${version}` : installed ? 'version unknown' : 'not installed',
       };
     }
 
