@@ -64,7 +64,10 @@ export async function scanSoul(options: SoulOptions): Promise<number> {
     });
 
     if (options.format === 'json') {
-      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      // The engine still returns a deprecated letter `grade`; `level` is the
+      // reported maturity, so the letter is left out of the JSON.
+      const { grade: _grade, ...report } = result ?? {};
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     } else {
       formatScanResult(result, options.verbose ?? false, options.strict ?? false);
     }
@@ -157,7 +160,7 @@ function findMissingCriticalControls(result: any): string[] {
 
 function formatScanResult(result: any, verbose: boolean, strict = false): void {
   const score = result.score ?? result.overallScore ?? 0;
-  const rawLevel = result.level ?? result.grade ?? 'unknown';
+  const rawLevel = result.level ?? 'unknown';
   const file = result.file ?? 'not found';
   const tier = result.agentTier ?? 'unknown';
   const profile = result.agentProfile ?? 'unknown';
