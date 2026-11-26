@@ -214,25 +214,25 @@ Registering 11 OpenA2A tool(s) at https://api.oa2a.org
 [DRY RUN] No HTTP requests will be made.
 
 
-Tool                       Status  Scan     Crit  High  Med  Low  Published
--------------------------  ------  -------  ----  ----  ---  ---  ---------
-HackMyAgent                new     skipped  -     -     -    -    dry-run  
-Secretless AI              new     skipped  -     -     -    -    dry-run  
-Agent Runtime Protection   new     skipped  -     -     -    -    dry-run  
-OASB Benchmark             new     skipped  -     -     -    -    dry-run  
-BrowserGuard               new     skipped  -     -     -    -    dry-run  
-AI Trust                   new     skipped  -     -     -    -    dry-run  
-OpenA2A Registry           new     skipped  -     -     -    -    dry-run  
-Agent Identity Management  new     skipped  -     -     -    -    dry-run  
-Damn Vulnerable AI Agent   new     skipped  -     -     -    -    dry-run  
-CryptoServe                new     skipped  -     -     -    -    dry-run  
-Trust Gate                 new     skipped  -     -     -    -    dry-run  
+Tool                       Status   Scan     Crit  High  Med  Low  Published
+-------------------------  -------  -------  ----  ----  ---  ---  ---------
+HackMyAgent                unknown  skipped  -     -     -    -    dry-run  
+Secretless AI              unknown  skipped  -     -     -    -    dry-run  
+Agent Runtime Protection   unknown  skipped  -     -     -    -    dry-run  
+OASB Benchmark             unknown  skipped  -     -     -    -    dry-run  
+BrowserGuard               unknown  skipped  -     -     -    -    dry-run  
+AI Trust                   unknown  skipped  -     -     -    -    dry-run  
+OpenA2A Registry           unknown  skipped  -     -     -    -    dry-run  
+Agent Identity Management  unknown  skipped  -     -     -    -    dry-run  
+Damn Vulnerable AI Agent   unknown  skipped  -     -     -    -    dry-run  
+CryptoServe                unknown  skipped  -     -     -    -    dry-run  
+Trust Gate                 unknown  skipped  -     -     -    -    dry-run  
 
-Summary: 11 tools, 0 scanned, 5 metadata-only, 0 errors
+Summary: 11 tools, 6 to scan, 5 metadata-only, 0 errors
 Registry: https://api.oa2a.org
 ```
 
-Without `--dry-run` the command asks before it writes, because the registry is public and the CLI cannot undo a publish. Each row is one tool: `Scan` is the HackMyAgent result behind the published record (`skipped` under `--dry-run`, which runs no scans), and `Published` says whether the record went out with scan findings or as metadata only.
+Without `--dry-run` the command asks before it writes, because the registry is public and the CLI cannot undo a publish. Each row is one tool: `Status` is `exists` or `new` only when the registry was asked, so it reads `unknown` under `--dry-run` (and when the registry did not answer), and the summary counts always add up to the tool total (`to scan` in a dry run, `scanned` otherwise). `Scan` is the HackMyAgent result behind the published record (`skipped` under `--dry-run`, which runs no scans), and `Published` says whether the record went out with scan findings or as metadata only.
 
 After a successful claim, your server appears in `detect --registry` results with its trust score, and its row carries `Trust: <score>/100` instead of `No trust data`.
 
