@@ -114,6 +114,7 @@ import {
   type HmaFinding,
 } from '../../src/commands/review.js';
 import type { CredentialMatch } from '../../src/util/credential-patterns.js';
+import { hmaCheckCount } from '../../src/util/hma-checks.js';
 
 function captureStdout(fn: () => Promise<number>): Promise<{ exitCode: number; output: string }> {
   const chunks: string[] = [];
@@ -785,6 +786,54 @@ describe('review', () => {
     expect(terminal).not.toContain('all clear');
   });
 
+  it('the Checks line carries the engine run\'s static and semantic counts, as scan prints them (#500)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
+    fakeHma.report = {
+      score: 90,
+      maxScore: 100,
+      findings: [{
+        checkId: 'NET-001', name: 'Server binds to all interfaces', category: 'network',
+        severity: 'medium', passed: false, message: 'Server listens on 0.0.0.0',
+      }],
+      coverage: { semanticFamilyCoverage: { totalFamilies: 7, artifactsCompiled: 3, fullyExamined: 1 } },
+    };
+
+    const origStderr = process.stderr.write;
+    process.stderr.write = (() => true) as any;
+    let report: any;
+    let terminal = '';
+    try {
+      const { output } = await captureStdout(() => review({
+        targetDir: tempDir, format: 'json', autoOpen: false,
+      }));
+      report = JSON.parse(output);
+      ({ output: terminal } = await captureStdout(() => review({
+        targetDir: tempDir, autoOpen: false, ci: true,
+      })));
+    } finally {
+      process.stderr.write = origStderr;
+    }
+    const checksLine = terminal.split('\n').find(l => l.includes('Checks')) ?? '';
+
+    // The engine's suite size, the number `scan` prints as `N static`; one
+    // check reported when the suite size cannot be read.
+    const staticCount = hmaCheckCount() ?? 1;
+    expect(report.hmaData.staticChecks).toBe(staticCount);
+    expect(report.hmaData.semanticArtifacts).toBe(3);
+    expect(checksLine).toContain(`${staticCount} static · 3 semantic (NanoMind AST)`);
+    // Not the number of review dimensions it used to print.
+    expect(checksLine).not.toContain(`${report.phases.length} static`);
+  });
+
+  it('the Checks line counts no engine check when HMA did not run (#500)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
+    const { report, terminalLine } = await reviewBothFormats(tempDir);
+    expect(report.hmaData.available).toBe(false);
+    expect(report.hmaData.staticChecks).toBe(0);
+    expect(report.hmaData.semanticArtifacts).toBe(0);
+    expect(terminalLine('Checks')).toContain('0 static · 0 semantic (NanoMind AST)');
+  });
+
   it('reads the project for credentials once per review', async () => {
     fs.writeFileSync(path.join(tempDir, 'index.js'), 'console.log("hello");\n');
     credentialWalks.count = 0;
@@ -977,7 +1026,7 @@ describe('review', () => {
     const lines = result.output.replace(/\x1b\[\d+m/g, '').split('\n').filter(l => l.trim() !== '');
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatch(/^ {2}Score: \d+\/100/);
-    expect(lines[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium\)$/);
+    expect(lines[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium, \d+ low\)$/);
     expect(lines[2]).toBe(`  Report: ${reportPath}`);
     expect(result.output).not.toContain('OpenA2A Security Review');
     expect(result.output).not.toContain('[1/6]');
@@ -1049,7 +1098,7 @@ describe('review', () => {
     const out = result.output.replace(/\x1b\[\d+m/g, '').split('\n').filter(l => l.trim() !== '');
     expect(out).toHaveLength(4);
     expect(out[0]).toMatch(/^ {2}Score: \d+\/100/);
-    expect(out[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium\)$/);
+    expect(out[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium, \d+ low\)$/);
     expect(out[2]).toBe('  6 shield events excluded — event log chain broken at index 4');
     expect(out[3]).toBe(`  Report: ${reportPath}`);
     expect(stderrChunks.join('')).toMatch(/chain broken/);

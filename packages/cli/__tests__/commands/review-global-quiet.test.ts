@@ -64,7 +64,7 @@ describe('opena2a --quiet review', () => {
     const lines = stdout.split('\n').filter(l => l.trim() !== '');
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatch(/^ {2}Score: \d+\/100/);
-    expect(lines[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium\)$/);
+    expect(lines[1]).toMatch(/^ {2}\d+ findings \(\d+ critical, \d+ high, \d+ medium, \d+ low\)$/);
     expect(lines[2]).toBe(`  Report: ${reportPath}`);
     expect(fs.existsSync(reportPath)).toBe(true);
   });
