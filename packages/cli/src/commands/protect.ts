@@ -289,7 +289,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     if (!options.skipSign && !options.dryRun) {
       try {
         const { signConfigFilesSilent } = await import('./guard.js');
-        const signResult = await signConfigFilesSilent(targetDir);
+        const signResult = await signConfigFilesSilent(targetDir, { report: isJson ? 'stderr' : 'stdout' });
         if (signResult.signed > 0) {
           noCredFixes.configsSigned = signResult.signed;
           noCredFixes.configsSignedFiles = signResult.files;
@@ -560,7 +560,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
   if (!options.skipSign && !options.dryRun) {
     try {
       const { signConfigFilesSilent } = await import('./guard.js');
-      const signResult = await signConfigFilesSilent(targetDir);
+      const signResult = await signConfigFilesSilent(targetDir, { report: isJson ? 'stderr' : 'stdout' });
       if (signResult.signed > 0) {
         additionalFixes.configsSigned = signResult.signed;
         additionalFixes.configsSignedFiles = signResult.files;

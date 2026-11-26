@@ -37,7 +37,8 @@ interface InitResult {
   secretlessConfigured: boolean;
   identityCreated: boolean;
   aiToolsConfigured: boolean;
-  configSigning: { signed: number; files: string[] } | null;
+  /** `kept` lists the changed signed files left on their stored signature: re-signing them needs consent. */
+  configSigning: { signed: number; files: string[]; kept?: { filePath: string; sizeChange: number }[] } | null;
   arpInit: { created: boolean; path: string; agentName?: string } | null;
   /** Files the credential audit opened and read; null when the audit did not
    *  run. Zero findings over zero files is "nothing examined", not "clean". */
@@ -266,15 +267,16 @@ export async function shieldInit(options: {
 
   // --- Step 5: Config Integrity Baseline ---
   if (isText) process.stdout.write(bold('Step 5: Config Integrity Baseline\n'));
-  let configSigningResult: { signed: number; files: string[] } | null = null;
+  let configSigningResult: InitResult['configSigning'] = null;
   try {
     const { signConfigFilesSilent } = await import('../commands/guard.js');
-    configSigningResult = await signConfigFilesSilent(targetDir);
+    // A changed signed file is not re-signed without consent; it is listed instead.
+    configSigningResult = await signConfigFilesSilent(targetDir, { report: isText ? 'stdout' : 'stderr', indent: '  ' });
     steps.push({ name: 'Config signing', status: 'done' });
     if (isText) {
       if (configSigningResult.signed > 0) {
         process.stdout.write(green(`  Signed ${configSigningResult.signed} config file${configSigningResult.signed === 1 ? '' : 's'} (${configSigningResult.files.join(', ')})\n`));
-      } else {
+      } else if ((configSigningResult.kept ?? []).length === 0) {
         process.stdout.write(dim('  No config files found to sign\n'));
       }
     }
