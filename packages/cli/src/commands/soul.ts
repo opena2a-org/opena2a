@@ -171,6 +171,7 @@ function formatScanResult(result: any, verbose: boolean, strict = false): void {
   const totalControls = result.totalControls ?? 0;
   const passingControls = result.totalPassed ?? result.passingControls ?? 0;
   const profileMismatch = result.profileMismatch;
+  const violations: any[] = Array.isArray(result.violations) ? result.violations.filter((v: any) => v && typeof v === 'object') : [];
 
   // #136: detect partial scope from BOTH sources HMA exposes — the top-level
   // `skippedDomains` array AND the per-domain `skippedByProfile: true` flag.
@@ -216,6 +217,30 @@ function formatScanResult(result: any, verbose: boolean, strict = false): void {
     // Inline scope disclosure — required regardless of verbose mode so the
     // partial-scope state is always visible. Closes #136.
     process.stdout.write(`Scope:    ${evaluatedDomains} of ${totalDomains} domains evaluated; ${skippedDomains.length} skipped: ${skippedDomains.join(', ')}\n`);
+  }
+  // A violation clamps the score below the raw control tally. Without saying
+  // so, "Controls: 29/29 passing" beside "25/100 [initial]" reads as a
+  // contradiction, and the reason the score fell was only in --format json.
+  if (violations.length > 0 && typeof result.rawScore === 'number' && result.rawScore !== score) {
+    process.stdout.write(`Clamped:  controls alone score ${result.rawScore}; ${violations.length} violation(s) lower it to ${score}\n`);
+  }
+
+  if (violations.length > 0) {
+    for (const v of violations) {
+      const where = v.line !== undefined ? ` (line ${v.line})` : '';
+      process.stdout.write(`\nVIOLATION  ${v.id ?? 'SOUL-VIOLATION'}  ${v.name ?? 'Governance violation'}${where}\n`);
+      if (v.evidence) process.stdout.write(`      Evidence: ${String(v.evidence)}\n`);
+      if (v.fix) process.stdout.write(`      Fix: ${String(v.fix)}\n`);
+    }
+  }
+
+  // `opena2a scan` and `scan-soul` look at the same file with different
+  // checks. When scan-soul reports something a scan may not evaluate (a
+  // violation, a narrowed scope, a profile mismatch), say so where the reader
+  // sees it, so a clean `scan` beside a failing `scan-soul` is not mistaken
+  // for a contradiction to be resolved in favour of the clean one.
+  if (violations.length > 0 || hasPartialScope || (profileMismatch && typeof profileMismatch === 'object')) {
+    process.stdout.write(`\nNote:     scan-soul checks governance only; \`opena2a scan\` runs different checks across the project and may not report this. A failure from either command is a failure.\n`);
   }
 
   // #136: surface profile-mismatch as a prominent finding with severity +
