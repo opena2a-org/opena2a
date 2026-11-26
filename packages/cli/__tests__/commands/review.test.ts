@@ -105,6 +105,8 @@ import {
   credentialFloorScore,
   scoreReview,
   CRITICAL_BAND,
+  CRITICAL_FINDING_CAP,
+  criticalFindingCap,
   type ScoreState,
   type CredentialPhaseData,
   type ShieldPhaseData,
@@ -723,9 +725,12 @@ describe('review', () => {
     expect(credentialsTab).toContain('.env.example:1');
     expect(credentialsTab).toContain('data-cmd="opena2a protect"');
     expect(credentialsTab).not.toContain('data-cmd="opena2a review ."');
-    // The unread local check carries no weight; HMA's own dimension keeps
-    // the finding.
-    expect(report.compositeScore).toBe(84);
+    // The unread local check carries no weight, and HMA's critical finding
+    // holds the composite at the critical-finding cap (84 weighted).
+    expect(report.scoreModel.weightedScore).toBe(84);
+    expect(report.compositeScore).toBe(69);
+    expect(report.scoreModel.capHeldBy).toEqual(['HMA Scan']);
+    expect(terminalLine('Path forward')).toContain('held at 69 by HMA Scan; address the 1 critical finding under HMA Scan');
 
     expect(terminalLine('Categories')).toContain('credentials (1 critical)');
     expect(terminalLine('Checks')).toContain('0 skipped');
@@ -1694,7 +1699,7 @@ describe('scoreReview when the credential check read no file', () => {
         () => ({ finding: { severity: 'medium' } }),
       ) as unknown as ScoreState['shield']['classifiedFindings'],
     },
-    hma: { available: true, score: opts.hmaScore },
+    hma: { available: true, score: opts.hmaScore, critical: 0 },
     detect: { mcpServers: [], aiConfigs: [] },
   });
   const credentialsParticipant = (r: ReturnType<typeof scoreReview>) =>
@@ -1725,6 +1730,66 @@ describe('scoreReview when the credential check read no file', () => {
     expect(credentialsParticipant(read)?.ran).toBe(true);
     expect(unread.composite).toBe(47);
     expect(credentialsParticipant(unread)?.ran).toBe(false);
+  });
+});
+
+describe('scoreReview: a critical finding caps the composite', () => {
+  const passing: ScoreState['hygieneChecks'] = [
+    { label: '.gitignore', status: 'pass', detail: '' },
+    { label: '.env protection', status: 'pass', detail: '' },
+    { label: 'Lock file', status: 'pass', detail: '' },
+  ];
+  // One tree in three tiers: the clean control, the same tree with AWS-shaped
+  // credentials in .env.example (the local credential walk skips that file; HMA
+  // rates it critical and scores 69 against the control's 93), and a malicious
+  // tree carrying a critical credential the local walk reads and HMA at 0.
+  const tree = (o: { hmaScore: number; hmaCritical: number; credentials?: Record<string, number> }): ScoreState => ({
+    hygieneChecks: passing,
+    credentials: {
+      matches: [], totalFindings: 0, filesScanned: 1, bySeverity: o.credentials ?? {},
+      driftFindings: [], envVarSuggestions: [], coverage: { filesRead: 1, placeholdersSkipped: 0, skippedDirs: [] },
+    },
+    guard: { filesMonitored: 0, tamperedFiles: [], signatureStatus: 'unsigned', candidates: [] },
+    shield: { classifiedFindings: [] },
+    hma: { available: true, score: o.hmaScore, critical: o.hmaCritical },
+    detect: { mcpServers: [], aiConfigs: [] },
+  });
+  const benign = () => scoreReview(tree({ hmaScore: 93, hmaCritical: 0 }));
+  const buggy = () => scoreReview(tree({ hmaScore: 69, hmaCritical: 1 }));
+  const malicious = () => scoreReview(tree({ hmaScore: 0, hmaCritical: 4, credentials: { critical: 2 } }));
+
+  it('scores the tree with a critical HMA finding well below its clean control', () => {
+    const clean = benign();
+    const leaky = buggy();
+    expect(clean.criticalCap).toBeNull();
+    expect(clean.composite).toBe(clean.weighted);
+    // The weighted average alone moves two points; the cap holds the composite at 69.
+    expect(clean.weighted - leaky.weighted).toBeLessThan(5);
+    expect(leaky.criticalCap).toEqual({ score: CRITICAL_FINDING_CAP, by: ['HMA Scan'] });
+    expect(leaky.composite).toBe(CRITICAL_FINDING_CAP);
+    expect(clean.composite - leaky.composite).toBeGreaterThanOrEqual(15);
+  });
+
+  it('orders benign above buggy above malicious', () => {
+    const [b, g, m] = [benign(), buggy(), malicious()].map(r => r.composite);
+    expect(b).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(m);
+  });
+
+  it('never raises a composite already below the cap, and does not apply without HMA', () => {
+    // trust 70 (all hygiene warns), credentials 60, integrity 40 (three tampered),
+    // shield 0 (fifteen medium), HMA 40: weighted 50, no analyzer in the critical band.
+    const low = scoreReview({
+      ...tree({ hmaScore: 40, hmaCritical: 1, credentials: { medium: 5 } }),
+      hygieneChecks: passing.map(c => ({ ...c, status: 'warn' as const })),
+      guard: { filesMonitored: 3, tamperedFiles: ['a.json', 'b.json', 'c.json'], signatureStatus: 'tampered', candidates: [] },
+      shield: { classifiedFindings: Array.from({ length: 15 }, () => ({ finding: { severity: 'medium' } })) as unknown as ScoreState['shield']['classifiedFindings'] },
+    });
+    expect(low.weighted).toBeLessThan(CRITICAL_FINDING_CAP);
+    expect(low.composite).toBe(low.weighted);
+    const skipped = scoreReview({ ...tree({ hmaScore: 0, hmaCritical: 1 }), hma: { available: false, score: 0, critical: 1 } });
+    expect(skipped.criticalCap).toBeNull();
+    expect(criticalFindingCap({ hmaAvailable: true, hmaCritical: 0 })).toBeNull();
   });
 });
 

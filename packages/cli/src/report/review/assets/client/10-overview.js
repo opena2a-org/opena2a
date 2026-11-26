@@ -125,6 +125,9 @@ function scoreSentences(top) {
   if (held) {
     var who = joinWords(model.floorHeldBy.map(function(n) { return lookup(FLOOR_LABEL, n) || n; }));
     s += ' The score is held at ' + report.compositeScore + ' because ' + who + ' scored this tree ' + report.compositeScore + ' of 100. It rises once ' + (model.floorHeldBy.length === 1 ? 'that score reaches ' : 'those scores reach ') + model.floorBand + '; fixes in other areas do not change the score until then.';
+  } else if (model && model.capHeldBy && model.capHeldBy.length > 0) {
+    var capWho = joinWords(model.capHeldBy.map(function(n) { return lookup(FLOOR_LABEL, n) || n; }));
+    s += ' The score is held at ' + report.compositeScore + ' because ' + capWho + ' reported a critical finding on this tree. It rises once ' + (model.capHeldBy.length === 1 ? 'that analyzer reports' : 'those analyzers report') + ' none; fixes in other areas do not change the score until then.';
   }
   var first = top.length > 0 ? top[0].recovery : null;
   if (first && first.kind === 'computed') s += ' +' + first.points + ' available from the first fix.';
