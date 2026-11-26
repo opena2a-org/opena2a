@@ -398,6 +398,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'spawnSync(node dist/index.js runtime tail [-c 5 | --count 5] [--format json]) in a scratch ' +
       'HOME and cwd holding an ARP event log, one at a time',
   },
+  'commands/harden-soul-analyzers.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js harden-soul | scan-soul | scan <dir>) in a scratch HOME ' +
+      'with requests sent to a closed local proxy port, one at a time (#251)',
+  },
   'util/contributor-token.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
