@@ -183,7 +183,7 @@ export class AimClient {
     return this.post('/api/v1/agents', serverBody);
   }
 
-  async listAgents(token: string, params?: { page?: number; pageSize?: number }): Promise<AgentListResponse> {
+  async listAgents(token: AimCredential, params?: { page?: number; pageSize?: number }): Promise<AgentListResponse> {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
     if (params?.pageSize) qs.set('pageSize', String(params.pageSize));

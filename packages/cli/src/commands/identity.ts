@@ -11,7 +11,7 @@ import {
   type AimCredential,
   type ServerConfig,
 } from '../util/aim-client.js';
-import { authFor, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
+import { authFor, envApiKey, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
 import { describeProxyRoute } from '../util/env-proxy.js';
 
 /**
@@ -131,6 +131,7 @@ const USAGE = [
   'Server Flags (for create, list, trust, policy):',
   '  --server <url>                 AIM server URL (e.g. localhost:8080, cloud)',
   '  --api-key <key>                AIM API key for that server',
+  '                                 (or set OPENA2A_INTERNAL_API_KEY, read first)',
   '',
   'tag, mcp, activity, suspend, reactivate and revoke act on the agent',
   'connected to the AIM server. Log in first with opena2a login.',
@@ -264,7 +265,12 @@ function signedInToServer(options: IdentityOptions): { serverUrl?: string; clien
   const serverUrl = targetServerUrl(options);
   if (!serverUrl) return {};
   const { token, agentId } = authFor(serverUrl, options);
-  return { serverUrl, client: token ? new AimClient(serverUrl, { accessToken: token }) : undefined, agentId };
+  // OPENA2A_INTERNAL_API_KEY is read before the stored token.
+  const fromEnv = envApiKey();
+  const client = fromEnv
+    ? new AimClient(serverUrl, { apiKey: fromEnv })
+    : token ? new AimClient(serverUrl, { accessToken: token }) : undefined;
+  return { serverUrl, client, agentId };
 }
 
 /**
@@ -384,9 +390,13 @@ async function handleList(options: IdentityOptions): Promise<number> {
           process.stderr.write(yellow('Showing local identity only.') + '\n\n');
         }
       }
-    } else if (client && agentId && apiKey) {
+    } else if (client && apiKey) {
       try {
-        serverAgent = await client.getAgent({ apiKey }, agentId);
+        if (agentId) {
+          serverAgent = await client.getAgent({ apiKey }, agentId);
+        } else {
+          serverAgentList = await client.listAgents({ apiKey });
+        }
       } catch (err) {
         if (!isJson) {
           process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
@@ -966,9 +976,9 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
     return 1;
   }
 
-  const apiKey = options.apiKey;
+  const apiKey = envApiKey() ?? options.apiKey;
   if (!apiKey) {
-    process.stderr.write('Missing required option: --api-key <key>\n');
+    process.stderr.write('Missing required option: --api-key <key> (or set OPENA2A_INTERNAL_API_KEY)\n');
     process.stderr.write('The AIM server requires an API key for agent registration.\n');
     return 1;
   }
@@ -1156,16 +1166,17 @@ async function handleServerPolicies(options: IdentityOptions): Promise<number> {
 
   // Query the server --server names, with --api-key or a token stored for it.
   const serverUrl = resolveServerUrl(options.server!);
-  const accessToken = options.apiKey ? undefined : authFor(serverUrl).token;
-  if (!options.apiKey && !accessToken) {
+  const typedKey = envApiKey() ?? options.apiKey;
+  const accessToken = typedKey ? undefined : authFor(serverUrl).token;
+  if (!typedKey && !accessToken) {
     process.stderr.write(`Not logged in to ${serverUrl}.\n`);
     process.stderr.write(`Run: opena2a login --server ${serverUrl}\n`);
     process.stderr.write(`  or: opena2a identity policy --server ${serverUrl} ${IDENTITY_NEXT_STEPS.apiKeyFlag}\n`);
     return 1;
   }
 
-  const authedClient = options.apiKey
-    ? new AimClient(serverUrl, { apiKey: options.apiKey })
+  const authedClient = typedKey
+    ? new AimClient(serverUrl, { apiKey: typedKey })
     : new AimClient(serverUrl, { accessToken });
 
   try {
