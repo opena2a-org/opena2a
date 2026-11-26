@@ -676,15 +676,13 @@ analysis runs and results can be shared with the community.
     .action(async (subcommand: string | undefined, args: string[], opts, cmd) => {
       // --help prints help and never runs the subcommand (#132)
       if (answerHelpRequest('identity', subcommand, IDENTITY_HELP, () => cmd.helpInformation(), undefined, valueFlags(cmd))) return;
-      if (!subcommand) {
-        subcommand = 'list';
-      }
+      // No subcommand prints the usage and exits 1 (see identity()).
       // For "check", the capability is the first positional arg
       const capability = subcommand === 'check' ? args[0] : undefined;
       const { identity } = await import('./commands/identity.js');
       const globalOpts = program.opts();
       process.exitCode = await identity({
-        subcommand,
+        subcommand: subcommand ?? '',
         name: opts.name,
         limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
         dir: opts.dir,
@@ -1187,7 +1185,7 @@ Output formats:
 
   // Config command
   program
-    .command('config <action> [key] [value]')
+    .command('config [action] [key] [value]')
     .description('Manage OpenA2A configuration')
     .option('--enable', 'Enable the feature (alias for "on")')
     .option('--disable', 'Disable the feature (alias for "off")')
@@ -1199,7 +1197,7 @@ Valid actions:
   llm [on|off|--enable|--disable]         Enable or disable LLM-powered features
   set <contribute|llm> <on|off>           Same as the two above (true/false
                                           also accepted)`)
-    .action(async (action: string, key: string | undefined, value: string | undefined, opts: { enable?: boolean; disable?: boolean }) => {
+    .action(async (action: string | undefined, key: string | undefined, value: string | undefined, opts: { enable?: boolean; disable?: boolean }) => {
       const { runConfig } = await import('./commands/config.js');
       process.exitCode = await runConfig(action, key, value, opts);
     });

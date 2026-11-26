@@ -73,13 +73,19 @@ function applyToggle(key: Toggle, value: string | undefined): number {
 
 /** Runs `opena2a config <action> [key] [value]`; returns the exit code. */
 export async function runConfig(
-  action: string,
+  action: string | undefined,
   key: string | undefined,
   value: string | undefined,
   opts: ConfigOptions = {},
 ): Promise<number> {
   // --enable / --disable stand in for the value.
   const flag = opts.enable ? 'on' : opts.disable ? 'off' : undefined;
+
+  // No action: print the usage, which lists the actions.
+  if (action === undefined) {
+    process.stderr.write(`${USAGE}\n`);
+    return 1;
+  }
 
   if (isToggle(action)) {
     return applyToggle(action, flag ?? key);
