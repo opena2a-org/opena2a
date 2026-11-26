@@ -134,6 +134,16 @@ describe("rotation commands leave no <placeholder> to paste", () => {
     expect(bad).toEqual([]);
   });
 
+  it("the AWS command names the leaked key as a parameter and deletes that key", () => {
+    const cmd = SECRET_ROTATION_TABLE.aws_access_key.rotationCommand ?? "";
+    expect(cmd).toBe(
+      ': "${OLD_KEY_ID:?set OLD_KEY_ID to the ID of the leaked key}" && aws iam create-access-key && aws iam delete-access-key --access-key-id "$OLD_KEY_ID"',
+    );
+    const [firstStep, ...laterSteps] = cmd.split(" && ");
+    expect(firstStep).not.toContain("aws");
+    expect(laterSteps.length).toBe(2);
+  });
+
   it("the GCP command names each operand as a parameter that says what to set", () => {
     const cmd = SECRET_ROTATION_TABLE.gcp_service_account_key.rotationCommand ?? "";
     const params = [...cmd.matchAll(/"\$\{([A-Z_]+):\?([^"}]*)\}"/g)].map((m) => [m[1], m[2]]);

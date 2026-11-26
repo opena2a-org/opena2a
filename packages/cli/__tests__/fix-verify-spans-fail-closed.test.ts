@@ -288,7 +288,7 @@ describe('finding fields carry no <placeholder>', () => {
     ].filter((entry): entry is readonly [string, string] => hasParameter(entry[1]));
     expect(fields.map(([id]) => id).sort()).toEqual([
       'SHIELD-BAS-001', 'SHIELD-PROC-001', 'SHIELD-PROC-002', 'SHIELD-SUP-001', 'SHIELD-SUP-002',
-      'gcp_service_account_key',
+      'aws_access_key', 'gcp_service_account_key',
     ]);
     const bad = fields.map(([id, cmd]) => [id, notFailClosed(cmd)]).filter(([, why]) => why);
     expect(bad).toEqual([]);
@@ -464,7 +464,7 @@ describe('next-step lines print each operand as a refusing parameter', () => {
 // ---------------------------------------------------------------------------
 
 /** Commands a span may start; each is a stub that records that it ran. */
-const STUBBED = ['opena2a', 'npm', 'npx', 'git', 'gcloud', 'hackmyagent'];
+const STUBBED = ['opena2a', 'npm', 'npx', 'git', 'gcloud', 'aws', 'hackmyagent'];
 const SHELLS = ['bash', 'zsh', 'dash'];
 const ENV_BIN = ['/usr/bin/env', '/bin/env'].find(p => fs.existsSync(p))!;
 
@@ -526,6 +526,14 @@ describe('each converted span, pasted with its parameters unset, refuses before 
       const r = paste(shell!, SPANS.initProjectDir, [], { PROJECT_DIR: '/tmp/my project' });
       expect(r.status).toBe(0);
       expect(r.ran).toBe(`${bin}/opena2a init /tmp/my project\n`);
+    });
+
+    it.skipIf(!shell)(`${name}: the AWS rotation command, with OLD_KEY_ID set, deletes the key it names`, () => {
+      const r = paste(shell!, SECRET_ROTATION_TABLE.aws_access_key.rotationCommand!, [], { OLD_KEY_ID: 'AKIATESTLEAKED' });
+      expect(r.status).toBe(0);
+      expect(r.ran).toBe(
+        `${bin}/aws iam create-access-key\n${bin}/aws iam delete-access-key --access-key-id AKIATESTLEAKED\n`,
+      );
     });
 
     it.skipIf(!shell)(`${name}: exits non-zero with the message, and runs no command`, () => {
