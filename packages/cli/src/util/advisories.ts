@@ -52,8 +52,9 @@ export interface AdvisoryCheck {
   matchedPackages: string[];
   /** The number of advisories the Registry reported for the request. */
   total: number;
-  /** The number of advisories in the list that was read. Below `total` when
-   *  the Registry holds more than the request asks for. */
+  /** The number of advisories read and compared: at most ADVISORY_LIMIT,
+   *  even when the Registry answers with more. Below `total` when the
+   *  Registry holds more than the request asks for. */
   listed: number;
   fromCache: boolean;
   /** Whether an advisory list was read, from the Registry or the cache. When
@@ -553,9 +554,14 @@ export async function checkAdvisories(
     writeCache(registryUrl, data);
   }
 
-  const listed = data.advisories.length;
+  // The request asks for at most ADVISORY_LIMIT advisories, and the report
+  // says at most that many were read, so no more than that are compared when
+  // the Registry answers with more. The total keeps every advisory answered.
+  const received = data.advisories.length;
+  const advisories = data.advisories.slice(0, ADVISORY_LIMIT);
+  const listed = advisories.length;
   // A missing or malformed total is read as the length of the list.
-  const total = typeof data.total === 'number' && Number.isFinite(data.total) ? Math.max(data.total, listed) : listed;
+  const total = typeof data.total === 'number' && Number.isFinite(data.total) ? Math.max(data.total, received) : received;
 
   if (listed === 0) {
     return { advisories: [], matchedPackages: [], total, listed, fromCache, checked: true, reason: null, turnedOff: false };
@@ -566,7 +572,7 @@ export async function checkAdvisories(
   const matched: Advisory[] = [];
   const matchedNames: string[] = [];
 
-  for (const advisory of data.advisories) {
+  for (const advisory of advisories) {
     for (const affected of advisory.affected ?? []) {
       // The advisory's name for the package, which the report compares.
       const pkgName = affected.package.name;

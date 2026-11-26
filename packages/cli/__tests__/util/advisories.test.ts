@@ -539,6 +539,30 @@ describe('advisories', () => {
     expect(result.total).toBe(250);
   });
 
+  // Regression (#552): a Registry that answered with more advisories than the
+  // limit had all of them compared, while the report said at most the limit
+  // were read.
+  it('compares at most the limit when the Registry answers with more, and keeps the total', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({
+      name: 'test-project', dependencies: { 'vulnerable-package': '1.0.0' },
+    }));
+    const advisories = Array.from({ length: 150 }, (_, i) => ({
+      id: `OA2A-2026-${String(i).padStart(4, '0')}`,
+      summary: `Advisory ${i}`,
+      severity: [{ type: 'ADVISORY', score: 'HIGH' }],
+      affected: [{ package: { name: 'vulnerable-package', ecosystem: 'npm' } }],
+      published: '2026-10-01T00:00:00Z',
+    }));
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ advisories, total: 150, format: 'osv' }) });
+
+    const result = await checkAdvisories(tempDir, 'https://registry.test');
+
+    expect(result.listed).toBe(100);
+    expect(result.total).toBe(150);
+    expect(result.advisories).toHaveLength(100);
+    expect(result.advisories.map(a => a.id)).toEqual(advisories.slice(0, 100).map(a => a.id));
+  });
+
   // Regression (#464): a refused registry.url left the advisories "not
   // checked" with nothing that named the URL or the refusal.
   it('names the refusal of a configured Registry URL and sends nothing', async () => {
