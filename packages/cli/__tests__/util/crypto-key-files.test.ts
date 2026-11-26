@@ -188,6 +188,23 @@ describe('key files and git tracking', () => {
     expect(ignored(dir, 'a bz.key'), 'the * in a name is literal, not a glob').toBe(false);
   });
 
+  it('checks and prints a name beginning with a colon as a literal path, not pathspec magic', () => {
+    fs.writeFileSync(path.join(dir, 'a.key'), 'FAKE\n');
+    fs.writeFileSync(path.join(dir, ':a.key'), 'FAKE\n');
+    git(dir, ['add', '--', 'a.key']);
+    git(dir, ['commit', '-qm', 'x']);
+    const colon = scanCryptoKeyFiles(dir).find(m => m.filePath.endsWith(':a.key'))!;
+    expect(colon.explanation).toContain('in the working tree, not tracked by git');
+    expect(untrackCommand(dir, [':a.key'], dir)).toBeNull();
+    expect(untrackCommand(dir, ['a.key'], dir)!.command).toBe(`git rm --cached 'a.key'`);
+
+    git(dir, ['add', '--', './:a.key']);
+    const fix = untrackCommand(dir, [':a.key'], dir);
+    expect(fix!.command).toBe(`git rm --cached './:a.key'`);
+    execFileSync('sh', ['-c', fix!.command], { cwd: dir, stdio: 'ignore' });
+    expect(git(dir, ['ls-files']).split('\n').filter(Boolean)).toEqual(['a.key']);
+  });
+
   it('ignoreCommand is null when git tracks every file', () => {
     fs.writeFileSync(path.join(dir, 'x.key'), 'FAKE\n');
     git(dir, ['add', '--', 'x.key']);
