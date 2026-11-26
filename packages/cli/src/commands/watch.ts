@@ -40,12 +40,16 @@ export async function watch(options: WatchOptions): Promise<number> {
 
   let lastSeenId: string | null = null;
   let running = true;
+  // Aborted on SIGINT/SIGTERM so a stalled poll or the wait between polls
+  // ends at once instead of holding the process until it returns.
+  const abort = new AbortController();
 
   // Handle graceful shutdown. The handlers go in before the banner says
   // Ctrl+C stops the watch: an interrupt sent the moment that line appears
   // must end the run with exit 0, not by the signal's default action.
   const cleanup = () => {
     running = false;
+    abort.abort();
     if (!isJson) {
       process.stdout.write('\n' + dim('  Stopped watching.') + '\n');
     }
@@ -72,7 +76,7 @@ export async function watch(options: WatchOptions): Promise<number> {
   try {
     while (running) {
       try {
-        const resp = await client.getAgentActivity(agentId, { pageSize: 20 });
+        const resp = await client.getAgentActivity(agentId, { pageSize: 20 }, abort.signal);
         const events = resp.events ?? resp.activity ?? [];
 
         // Find new events (everything after lastSeenId)
@@ -131,7 +135,14 @@ export async function watch(options: WatchOptions): Promise<number> {
 
       // Wait before next poll
       if (running) {
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise<void>(resolve => {
+          const onAbort = () => { clearTimeout(timer); resolve(); };
+          const timer = setTimeout(() => {
+            abort.signal.removeEventListener('abort', onAbort);
+            resolve();
+          }, pollInterval);
+          abort.signal.addEventListener('abort', onAbort, { once: true });
+        });
       }
     }
   } finally {

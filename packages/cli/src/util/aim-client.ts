@@ -353,24 +353,28 @@ export class AimClient {
 
   // ---- Activity -----------------------------------------------------------
 
-  async getAgentActivity(agentId: string, params?: { page?: number; pageSize?: number }): Promise<any> {
+  async getAgentActivity(
+    agentId: string,
+    params?: { page?: number; pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<any> {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
     if (params?.pageSize) qs.set('pageSize', String(params.pageSize));
     const query = qs.toString();
-    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}/activity${query ? '?' + query : ''}`);
+    return this.get(`/api/v1/agents/${encodeURIComponent(agentId)}/activity${query ? '?' + query : ''}`, undefined, signal);
   }
 
   // ---- Generic HTTP helpers -----------------------------------------------
 
-  private async get<T>(path: string, credential?: AimCredential): Promise<T> {
+  private async get<T>(path: string, credential?: AimCredential, signal?: AbortSignal): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (typeof credential === 'object') headers['X-API-Key'] = credential.apiKey;
     else if (credential) headers['Authorization'] = `Bearer ${credential}`;
     else if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
     if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
 
-    const response = await this.fetch(path, { method: 'GET', headers });
+    const response = await this.fetch(path, { method: 'GET', headers }, signal);
     return this.parseResponse<T>(response);
   }
 
@@ -416,16 +420,22 @@ export class AimClient {
     return this.parseResponse<T>(response);
   }
 
-  private async fetch(path: string, init: RequestInit): Promise<Response> {
+  private async fetch(path: string, init: RequestInit, callerSignal?: AbortSignal): Promise<Response> {
     const url = `${this.baseUrl}${path}`;
     const route = routeThroughEnvProxy(url) ?? undefined;
     const proxyNote = route ? ` ${describeProxyRoute(route, url)}` : '';
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    // The caller's signal cancels the request too, e.g. Ctrl+C during a poll.
+    const onCallerAbort = () => controller.abort();
+    if (callerSignal?.aborted) controller.abort();
+    else callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
 
     try {
       return await fetchWithEnvProxy(url, { ...init, signal: controller.signal }, route);
     } catch (err: unknown) {
+      // Cancelled by the caller: pass the abort through, it is not a timeout.
+      if (callerSignal?.aborted) throw err;
       if (err instanceof Error && err.name === 'AbortError') {
         throw new AimServerError(
           `Request timed out after ${this.timeoutMs}ms: ${init.method} ${path}${proxyNote}`,
@@ -449,6 +459,7 @@ export class AimClient {
       );
     } finally {
       clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', onCallerAbort);
     }
   }
 

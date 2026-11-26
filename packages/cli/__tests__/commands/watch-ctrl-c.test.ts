@@ -92,4 +92,30 @@ describe('opena2a watch', () => {
       expect(added(signal), `${signal} handler removed once the watch ended`).toEqual([]);
     }
   });
+
+  it('aborts a stalled poll on Ctrl+C and exits well within the poll interval', async () => {
+    const before = new Set(process.listeners('SIGINT'));
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    let received: AbortSignal | undefined;
+    // A poll that never answers unless it is aborted.
+    getAgentActivity.mockImplementation((_id: string, _params: unknown, signal?: AbortSignal) => {
+      received = signal;
+      setTimeout(() => {
+        for (const listener of process.listeners('SIGINT')) {
+          if (!before.has(listener)) listener('SIGINT');
+        }
+      }, 20);
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    });
+
+    const started = Date.now();
+    const code = await watch({ interval: 30 });
+
+    expect(received, 'poll got an AbortSignal').toBeDefined();
+    expect(received!.aborted).toBe(true);
+    expect(code).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
 });
