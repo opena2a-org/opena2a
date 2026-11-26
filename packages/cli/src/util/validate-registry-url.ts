@@ -8,9 +8,9 @@
 /**
  * The refusal `validateRegistryUrl` throws. `kind` says why and `url` holds
  * the refused value as it was given, so a caller that names the URL in its
- * own output can name it from the parsed URL instead of from the message,
- * which repeats the value whole, a user name and password included. The
- * message is the same as before for every caller that prints it.
+ * own output can build that name from the parsed URL. The message never
+ * holds the URL's user name or password: it names the URL with them cleared,
+ * or does not name it when that cannot be done safely.
  */
 export class RegistryUrlRefusal extends Error {
   readonly kind: 'not-a-url' | 'plain-http';
@@ -21,6 +21,21 @@ export class RegistryUrlRefusal extends Error {
     this.kind = kind;
     this.url = url;
   }
+}
+
+/**
+ * The parsed URL as a refusal names it: with its user name and password
+ * cleared. A `/`, `?`, `#` or `\` in a password ends the host part early, so
+ * the parser reads the user name as the host and the rest of the password
+ * as a port and a path; an `@` left after the host shows that, and then the
+ * URL is not named at all.
+ */
+function shownUrl(parsed: URL): string | null {
+  if (`${parsed.pathname}${parsed.search}${parsed.hash}`.includes('@')) return null;
+  const shown = new URL(parsed.href);
+  shown.username = '';
+  shown.password = '';
+  return shown.href;
 }
 
 /**
@@ -37,7 +52,12 @@ export function validateRegistryUrl(url: string): void {
   try {
     parsed = new URL(url);
   } catch {
-    throw new RegistryUrlRefusal(`Invalid registry URL: ${url}`, 'not-a-url', url);
+    // A value that does not parse has no user name or password to clear; it
+    // is named only when it holds no `@` that could set one off.
+    const message = url.includes('@')
+      ? 'Invalid registry URL (the value is not shown because it may hold a user name or password).'
+      : `Invalid registry URL: ${url}`;
+    throw new RegistryUrlRefusal(message, 'not-a-url', url);
   }
 
   const isLocalhost =
@@ -46,8 +66,9 @@ export function validateRegistryUrl(url: string): void {
     parsed.hostname === '::1';
 
   if (parsed.protocol === 'http:' && !isLocalhost) {
+    const shown = shownUrl(parsed);
     throw new RegistryUrlRefusal(
-      `Registry URL must use HTTPS: ${url}\n` +
+      (shown ? `Registry URL must use HTTPS: ${shown}\n` : 'Registry URL must use HTTPS.\n') +
       'Plain HTTP is only allowed for localhost development.\n' +
       'Use https:// or http://localhost for local testing.',
       'plain-http',
