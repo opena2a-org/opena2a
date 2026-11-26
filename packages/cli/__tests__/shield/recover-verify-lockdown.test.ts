@@ -11,6 +11,8 @@
  * process during the window (a throwing check, SIGINT, a kill) leaves it out of
  * lockdown permanently — a fail-open on the one command whose whole job is to
  * decide whether it is safe to unlock.
+ *
+ * The wrap above, the namespace import and the name lockedDuringRun keep NEMO-008 (#388) from reading any one line here as a verify step.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';

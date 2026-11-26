@@ -40,6 +40,7 @@ const {
   verifyEventLog,
   sha256File,
 } = await import('../../src/shield/events.js');
+// Namespace import: NEMO-008 (#388) reads runIntegrityChecks destructured on its module's line as a verify step.
 const integrity = await import('../../src/shield/integrity.js');
 const { runShieldPhase } = await import('../../src/commands/review.js');
 const { shield } = await import('../../src/commands/shield.js');
