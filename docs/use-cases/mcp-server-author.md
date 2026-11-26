@@ -37,8 +37,10 @@ Summary
   Trust scores:      0 / 4
 
 Next Steps
-  opena2a mcp sign <name>       Sign an MCP server with AIM identity
-  opena2a mcp verify <name>     Verify server signature and trust score
+  Sign an MCP server with AIM identity:
+    opena2a mcp sign "${MCP_SERVER:?set MCP_SERVER to a server name listed above}"
+  Verify server signature and trust score:
+    opena2a mcp verify "${MCP_SERVER:?set MCP_SERVER to a server name listed above}"
 ```
 
 Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists in the user store for the project (`~/.opena2a/projects/<key>/mcp-identities/`, or under `$OPENA2A_HOME`), and its registry trust score. `no trust score` means the registry held no record of that server when the audit ran -- which is what every unregistered server looks like, yours included, until Step 5. `Verified` in the summary counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
