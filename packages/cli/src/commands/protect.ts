@@ -1420,8 +1420,8 @@ function printReport(report: ProtectReport): void {
     process.stdout.write('  1. Review changes: ' + dim('git diff') + '\n');
     process.stdout.write('  2. Configure broker allow rules: ' + dim('~/.secretless-ai/broker-policies.json') + '\n');
     process.stdout.write('  3. Re-assess posture: ' + dim('opena2a init') + '\n');
-    process.stdout.write('\n' + dim('Rollback:') + '\n');
-    for (const line of renderRollbackLines(report.targetDir, report, af)) {
+    process.stdout.write('\n' + dim('Undo:') + '\n');
+    for (const line of renderUndoLines(report.targetDir, report, af)) {
       process.stdout.write(line + '\n');
     }
     process.stdout.write('\n' + dim('Continue hardening:') + '\n');
@@ -1440,7 +1440,7 @@ function printReport(report: ProtectReport): void {
 function isInsideGitWorkTree(dir: string): 'yes' | 'no' | 'unknown' {
   // Resolve and confirm the target is a real directory before handing it to
   // git as a cwd. Without this, a symlink pointing outside the scanned tree
-  // would have git answer about a DIFFERENT repository, and the rollback
+  // would have git answer about a DIFFERENT repository, and the undo
   // advice would describe somewhere the user never touched.
   try {
     if (!fs.statSync(dir).isDirectory()) return 'unknown';
@@ -1484,7 +1484,7 @@ const VAULT_GET_COMMAND =
   'npx secretless-ai secret get "${SECRET_NAME:?set SECRET_NAME to a name that secret list printed}"';
 
 /**
- * Build the Rollback block.
+ * Build the Undo block.
  *
  * protect rewrites source files in place. Its only advertised undo used to be
  * `git checkout -- <files>`, printed unconditionally -- including in the
@@ -1493,12 +1493,12 @@ const VAULT_GET_COMMAND =
  * end.
  *
  * Deliberately NOT solved by writing a backup of the original file: that file
- * still contains the plaintext credential, so a rollback manifest on disk
+ * still contains the plaintext credential, so an on-disk backup of it
  * would re-create the exposure protect just removed. Outside a repo the honest
  * answer is that the edit is not reversible from disk, plus the vault command
  * that reads the value back so the user can restore it by hand.
  */
-function renderRollbackLines(
+function renderUndoLines(
   targetDir: string,
   report: { migrated: number },
   af?: { configsSigned?: number; gitignoreFixed?: boolean } | null,
@@ -1547,7 +1547,7 @@ function renderRollbackLines(
 
 /** Test-only surface. Not part of the public API. */
 export const _protectInternals = {
-  renderRollbackLines,
+  renderUndoLines,
   isInsideGitWorkTree,
 };
 

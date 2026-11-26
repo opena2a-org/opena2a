@@ -132,11 +132,11 @@ describe('protect: a non-interactive run must not claim success (#256)', () => {
 describe('protect: rollback guidance must be runnable where it is printed (#257)', () => {
   // Resolved per-call rather than destructured at module scope: an absent
   // export would otherwise abort the whole file and hide the #256 results.
-  const renderRollbackLines = (
+  const renderUndoLines = (
     dir: string,
     report: { migrated: number },
     af?: { configsSigned?: number; gitignoreFixed?: boolean } | null,
-  ): string[] => _protectInternals.renderRollbackLines(dir, report, af);
+  ): string[] => _protectInternals.renderUndoLines(dir, report, af);
 
   it('does not offer git checkout in a directory that is not a git repo', () => {
     // Precondition: the temp dir really is not a work tree.
@@ -150,12 +150,12 @@ describe('protect: rollback guidance must be runnable where it is printed (#257)
     }
     expect(isRepo).toBe(false);
 
-    const lines = renderRollbackLines(workDir, { migrated: 1 }).join('\n');
+    const lines = renderUndoLines(workDir, { migrated: 1 }).join('\n');
     expect(lines).not.toContain('git checkout');
   });
 
   it('names a recovery command that exists when there is no git repo', () => {
-    const lines = renderRollbackLines(workDir, { migrated: 1 }).join('\n');
+    const lines = renderUndoLines(workDir, { migrated: 1 }).join('\n');
 
     // `secretless-ai secret get <NAME>` is a real subcommand of the vault CLI
     // protect stores into. Without it the user is told only that the edit is
@@ -164,7 +164,7 @@ describe('protect: rollback guidance must be runnable where it is printed (#257)
   });
 
   it('states plainly that the source edit is not reversible from disk', () => {
-    const lines = renderRollbackLines(workDir, { migrated: 1 }).join('\n');
+    const lines = renderUndoLines(workDir, { migrated: 1 }).join('\n');
     expect(lines).toMatch(/not reversible|cannot be restored|no backup/i);
   });
 
@@ -173,7 +173,7 @@ describe('protect: rollback guidance must be runnable where it is printed (#257)
     // case where it works. Without this, deleting the line entirely passes.
     execFileSync('git', ['init', '-q'], { cwd: workDir, stdio: 'pipe' });
 
-    const lines = renderRollbackLines(workDir, { migrated: 1 }).join('\n');
+    const lines = renderUndoLines(workDir, { migrated: 1 }).join('\n');
     expect(lines).toContain('git checkout');
   });
 
@@ -187,7 +187,7 @@ describe('protect: rollback guidance must be runnable where it is printed (#257)
     const state = _protectInternals.isInsideGitWorkTree(missing);
     expect(state).toBe('unknown');
 
-    const lines = renderRollbackLines(missing, { migrated: 1 }).join('\n');
+    const lines = renderUndoLines(missing, { migrated: 1 }).join('\n');
     expect(lines).toContain('git checkout');
     expect(lines).toMatch(/secret get/);
     expect(lines).toMatch(/could not determine/i);
@@ -204,7 +204,7 @@ describe('protect: rollback guidance must be runnable where it is printed (#257)
   it('reports a modified .gitignore even outside a git repo', () => {
     // protect edits .gitignore with no repo check. Printing the rollback line
     // only inside a repo meant a file it had just modified went unmentioned.
-    const lines = renderRollbackLines(workDir, { migrated: 0 }, { gitignoreFixed: true }).join('\n');
+    const lines = renderUndoLines(workDir, { migrated: 0 }, { gitignoreFixed: true }).join('\n');
     expect(lines).toMatch(/\.gitignore was modified/i);
     expect(lines).not.toContain('git checkout');
   });
@@ -216,7 +216,7 @@ describe('protect: rollback guidance must be runnable where it is printed (#257)
     const sub = path.join(workDir, 'packages', 'app');
     fs.mkdirSync(sub, { recursive: true });
 
-    const lines = renderRollbackLines(sub, { migrated: 1 }).join('\n');
+    const lines = renderUndoLines(sub, { migrated: 1 }).join('\n');
     expect(lines).toContain('git checkout');
   });
 });

@@ -298,7 +298,7 @@ Learn more: https://opena2a.org/docs`;
 
   program
     .command('protect [directory]')
-    .description('Detect and migrate credentials to encrypted vault')
+    .description('Detect and migrate credentials to encrypted vault (MCP server findings are fixed by "shield init")')
     .option('--dry-run', 'Show what would change without modifying files')
     // Also a global option, but protect is the command where its absence is
     // actively harmful: without it a non-interactive run cannot migrate, so it
@@ -492,7 +492,7 @@ analysis runs and results can be shared with the community.
   // Init command (direct, not adapter-based)
   program
     .command('init [directory]')
-    .description('Assess your project security posture (read-only scan; use "shield init" for full setup)')
+    .description('Assess your project security posture (read-only scan; MCP server findings and full setup go to "shield init")')
     .option('--dir <path>', 'Target directory')
     .option('--no-advisories', "Skip the Registry advisory request (also OPENA2A_ADVISORIES=off)")
     .action(async (directory: string | undefined, opts) => {

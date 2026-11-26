@@ -43,7 +43,7 @@ npx opena2a-cli protect my-agent
 npx opena2a-cli review my-agent
 ```
 
-`protect` moves each hardcoded credential out of the source files into Secretless, which stores it outside the project (a local vault or the OS keychain), and rewrites the source to read environment variables. `review` downloads the NanoMind model files on its first run and opens an HTML report in the browser; `--no-open` skips the browser.
+`protect` moves each hardcoded credential out of the source files into Secretless, which stores it outside the project (a local vault or the OS keychain), and rewrites the source to read environment variables. MCP server findings from `init` are not fixed by `protect`; they go to `opena2a shield init`. `review` downloads the NanoMind model files on its first run and opens an HTML report in the browser; `--no-open` skips the browser.
 
 ## What you can do
 

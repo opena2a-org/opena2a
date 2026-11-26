@@ -86,7 +86,7 @@ Three job categories: assess, protect, operate. Run any with `--help` for full f
 
 | Command | What it does |
 |---|---|
-| `opena2a protect` | Migrate hardcoded credentials to env-var references, masked previews, rollback manifest. Adds `.gitignore` patterns. Signs configs. |
+| `opena2a protect` | Migrate hardcoded credentials to env-var references. Adds `.gitignore` patterns. Signs configs. MCP server findings from `init` (servers with filesystem or shell access) go to `opena2a shield init`. |
 | `opena2a harden-soul` | Generate a `SOUL.md` governance file from your project state. |
 | `opena2a harden-skill <path>` | Frontmatter validation, permission scoping, integrity pinning on a Claude or Cursor skill. |
 | `opena2a guard sign` | Sign and watch config files (`mcp.json`, `claude_desktop_config.json`, etc.). Alerts on unauthorized changes. |

@@ -345,7 +345,7 @@ describe('next-step lines print each operand as a refusing parameter', () => {
 
   it('protect rollback, in a git tree, outside one, and where git cannot tell', () => {
     const render = (dir: string) =>
-      _protectInternals.renderRollbackLines(dir, { migrated: 1 }).join('\n').replace(ANSI, '');
+      _protectInternals.renderUndoLines(dir, { migrated: 1 }).join('\n').replace(ANSI, '');
     const repo = tempDir('protect-git');
     execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'pipe' });
     const plain = tempDir('protect-plain');
