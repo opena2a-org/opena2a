@@ -103,6 +103,7 @@ describe('shield status starts helper tools only by absolute path from PATH\'s a
     expect(secretless.installed).toBe(false);
     expect(secretless.version).toBeNull();
     expect(status.tools.find((t) => t.name === 'Registry')!.keyMetric).toBe('not available');
+    expect(status.tools.find((t) => t.name === 'Registry')!.installed).toBe(false);
   });
 
   // (b) The same with a relative entry: `.`, a bare `bin`, `node_modules/.bin`.
@@ -183,6 +184,7 @@ describe('shield status starts helper tools only by absolute path from PATH\'s a
     expect(secretless.installed).toBe(true);
     expect(secretless.version).toBe('9.9.9');
     expect(status.tools.find((t) => t.name === 'Registry')!.keyMetric).toBe('available');
+    expect(status.tools.find((t) => t.name === 'Registry')!.installed).toBe(true);
     expect(markersWritten(), 'finding the registry CLI starts nothing').toEqual([]);
   });
 });
