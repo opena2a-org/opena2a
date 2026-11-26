@@ -60,7 +60,8 @@ export const SECRET_ROTATION_TABLE: Record<string, SecretRotationGuide> = {
   aws_access_key: {
     typeLabel: "AWS access key",
     rotationUrl: "https://console.aws.amazon.com/iam/home#/security_credentials",
-    rotationCommand: "aws iam create-access-key && aws iam delete-access-key",
+    rotationCommand:
+      ': "${OLD_KEY_ID:?set OLD_KEY_ID to the ID of the leaked key}" && aws iam create-access-key && aws iam delete-access-key --access-key-id "$OLD_KEY_ID"',
   },
   github_pat: {
     typeLabel: "GitHub personal access token",
