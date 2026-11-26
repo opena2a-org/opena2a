@@ -5,6 +5,30 @@ import type { AuditEvent, AuditEventInput, AuditReadOptions } from './types';
 
 const AUDIT_FILE = 'audit.jsonl';
 
+/** Set `p` to `mode`; best-effort, since some platforms (Windows) do not support it. */
+function tightenMode(p: string, mode: number): void {
+  try {
+    fs.chmodSync(p, mode);
+  } catch {
+    // chmod is unsupported or not permitted here; the creating modes still apply
+  }
+}
+
+/** Append `data` to `filePath`, created 0o600 and tightened to 0o600 if it already existed looser. */
+function appendOwnerOnly(filePath: string, data: string): void {
+  const fd = fs.openSync(filePath, 'a', 0o600);
+  try {
+    try {
+      fs.fchmodSync(fd, 0o600);
+    } catch {
+      // chmod is unsupported or not permitted here; the creating mode still applies
+    }
+    fs.writeFileSync(fd, data, 'utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Append an audit event to the JSON-lines log */
 export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
   const fullEvent: AuditEvent = {
@@ -28,8 +52,10 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
 
   // The log records what agents did, so it is the owner's alone: the
   // directory is created 0o700 and the file 0o600, by the calls that create
-  // them, whatever the mode of the directory above.
+  // them, whatever the mode of the directory above. A directory or log left
+  // looser by an earlier version is tightened to the same modes on every write.
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  tightenMode(dataDir, 0o700);
   const filePath = path.join(dataDir, AUDIT_FILE);
 
   // Rotate if audit log exceeds 50MB, keep last 5 rotated logs
@@ -69,7 +95,7 @@ export function logEvent(dataDir: string, event: AuditEventInput): AuditEvent {
     // File doesn't exist yet — will be created by appendFileSync
   }
 
-  fs.appendFileSync(filePath, serialized + '\n', { encoding: 'utf-8', mode: 0o600 });
+  appendOwnerOnly(filePath, serialized + '\n');
 
   return fullEvent;
 }
