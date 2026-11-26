@@ -515,8 +515,10 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         setup: hardcodedCredential,
         output: /1 migrated/,
       },
+    ],
+    '1': [
       {
-        when: 'or no store accepted a credential, which is then reported as skipped and stays in the source',
+        when: '--ci was given and no store accepted a credential (reported as skipped, it stays in the source)',
         args: ['protect', '--ci', '--skip-liveness', '--skip-sign', '--skip-git', '--skip-verify'],
         setup: (s) => {
           hardcodedCredential(s);
@@ -525,8 +527,6 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         },
         output: /1 skipped/,
       },
-    ],
-    '1': [
       {
         when: 'a migration failed',
         args: ['protect', '--ci', '--skip-liveness', '--skip-sign', '--skip-git', '--skip-verify'],

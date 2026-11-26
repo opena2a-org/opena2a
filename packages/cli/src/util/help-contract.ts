@@ -98,8 +98,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   protect: {
     exit: [
-      ['0', 'credentials migrated, nothing found, a --dry-run that found text credentials, you declined at the prompt, or no store accepted a credential, which is then reported as skipped and stays in the source'],
-      ['1', 'a migration failed, the directory does not exist, or no text credential was found but key files were that protect cannot migrate (also with --dry-run)'],
+      ['0', 'credentials migrated, nothing found, a --dry-run that found text credentials, you declined at the prompt, or, without --ci, no store accepted a credential, which is then reported as skipped and stays in the source'],
+      ['1', 'a migration failed, --ci was given and no store accepted a credential (reported as skipped, it stays in the source), the directory does not exist, or no text credential was found but key files were that protect cannot migrate (also with --dry-run)'],
       ['2', 'cannot prompt (stdin is not a terminal and --ci was not given), the prompt was aborted, or the --atx file for --grant is missing or invalid'],
       ['3', 'the broker denied the --grant'],
       ['4', 'the broker is unreachable, rejected the token (401), answered 200 without a JSON body, or its socket belongs to another user'],
@@ -107,7 +107,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
       ['6', 'the broker answered with a status other than 200, 401 or 403'],
     ],
     json: 'prints the result as JSON and skips the confirmation prompt; when stdin is not a terminal, --ci is still needed',
-    ci: 'migrates without prompting (needed when stdin is not a terminal), does not print the finding explanations, and skips the vault upgrade offer after a migration',
+    ci: 'migrates without prompting (needed when stdin is not a terminal), does not print the finding explanations, skips the vault upgrade offer after a migration, and exits 1 when a credential could not be stored and stays in the source',
   },
   comply: {
     exit: [
