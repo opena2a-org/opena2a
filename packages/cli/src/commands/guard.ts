@@ -244,7 +244,10 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
   }
 
   if (signatures.length > 0) {
-    const store: SignatureStore = { version: 1, signatures, updatedAt: new Date().toISOString() };
+    // --files updates only the named entries; every other entry keeps its
+    // signature, so a changed file stays reported until it is re-signed.
+    const stored = usingCustomFiles ? mergeSignatures(previousSignatures(targetDir), signatures) : signatures;
+    const store: SignatureStore = { version: 1, signatures: stored, updatedAt: new Date().toISOString() };
     const storeDir = path.join(targetDir, STORE_DIR);
     fs.mkdirSync(storeDir, { recursive: true });
     fs.writeFileSync(path.join(storeDir, STORE_FILE), JSON.stringify(store, null, 2) + '\n', 'utf-8');
@@ -796,15 +799,8 @@ function loadStore(targetDir: string): SignatureStore | null {
  * an absent or unparseable store has nothing to re-sign.
  */
 function changedSignedFiles(targetDir: string, signatures: ConfigSignature[]): { filePath: string; sizeChange: number }[] {
-  let previous: unknown;
-  try { previous = JSON.parse(fs.readFileSync(path.join(targetDir, STORE_DIR, STORE_FILE), 'utf-8')); }
-  catch { return []; }
-  const entries = (previous as { signatures?: unknown })?.signatures;
-  if (!Array.isArray(entries)) return [];
   const signed = new Map<string, ConfigSignature>();
-  for (const entry of entries as ConfigSignature[]) {
-    if (entry && typeof entry.filePath === 'string' && typeof entry.hash === 'string') signed.set(entry.filePath, entry);
-  }
+  for (const entry of previousSignatures(targetDir)) signed.set(entry.filePath, entry);
   const changed: { filePath: string; sizeChange: number }[] = [];
   for (const sig of signatures) {
     const before = signed.get(sig.filePath);
@@ -813,6 +809,26 @@ function changedSignedFiles(targetDir: string, signatures: ConfigSignature[]): {
     }
   }
   return changed;
+}
+
+/** The well-formed entries of the existing store, read quietly; none when it is absent or unparseable. */
+function previousSignatures(targetDir: string): ConfigSignature[] {
+  let previous: unknown;
+  try { previous = JSON.parse(fs.readFileSync(path.join(targetDir, STORE_DIR, STORE_FILE), 'utf-8')); }
+  catch { return []; }
+  const entries = (previous as { signatures?: unknown })?.signatures;
+  if (!Array.isArray(entries)) return [];
+  return (entries as ConfigSignature[]).filter(entry =>
+    entry && typeof entry.filePath === 'string' && typeof entry.hash === 'string');
+}
+
+/** The stored entries with each fresh signature replacing its own path's entry in place; new paths are appended. */
+function mergeSignatures(stored: ConfigSignature[], fresh: ConfigSignature[]): ConfigSignature[] {
+  const byPath = new Map(fresh.map(sig => [sig.filePath, sig]));
+  const merged = stored.map(entry => byPath.get(entry.filePath) ?? entry);
+  const kept = new Set(stored.map(entry => entry.filePath));
+  for (const sig of byPath.values()) if (!kept.has(sig.filePath)) merged.push(sig);
+  return merged;
 }
 
 function buildReport(subcommand: string, targetDir: string, results: GuardResult[], totalSigned: number): GuardReport {
