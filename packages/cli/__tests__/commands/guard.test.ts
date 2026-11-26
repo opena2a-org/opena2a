@@ -138,6 +138,29 @@ describe('guard', () => {
     expect(result.files).not.toContain('package.json');
   });
 
+  it('sign --files updates only the named entries and keeps the others (#499)', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"original"}');
+    fs.writeFileSync(path.join(tempDir, 'tsconfig.json'), '{}');
+    await captureStdout(() => guard({ subcommand: 'sign', targetDir: tempDir, format: 'json' }));
+
+    fs.writeFileSync(path.join(tempDir, 'package.json'), '{"name":"tampered"}');
+    fs.writeFileSync(path.join(tempDir, 'tsconfig.json'), '{"compilerOptions":{}}');
+    const signed = await captureStdout(() => guard({
+      subcommand: 'sign', targetDir: tempDir, files: ['tsconfig.json'], format: 'json', ci: true,
+    }));
+    expect(signed.exitCode).toBe(0);
+    expect(JSON.parse(signed.output).files).toEqual(['tsconfig.json']);
+
+    const store = JSON.parse(fs.readFileSync(path.join(tempDir, '.opena2a/guard/signatures.json'), 'utf-8'));
+    expect(store.signatures.map((s: { filePath: string }) => s.filePath).sort()).toEqual(['package.json', 'tsconfig.json']);
+
+    const { exitCode, output } = await captureStdout(() => guard({ subcommand: 'verify', targetDir: tempDir, format: 'json' }));
+    expect(exitCode).toBe(1);
+    const report = JSON.parse(output);
+    expect(report.results.find((r: { filePath: string }) => r.filePath === 'package.json').status).toBe('tampered');
+    expect(report.results.find((r: { filePath: string }) => r.filePath === 'tsconfig.json').status).toBe('pass');
+  });
+
   it('reports unsigned config files', async () => {
     fs.writeFileSync(path.join(tempDir, 'package.json'), '{}');
     // Create an empty store (no signatures)
