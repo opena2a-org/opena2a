@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { ignoreCommand, scanCryptoKeyFiles, untrackCommand } from '../../src/util/crypto-key-files.js';
+import { ignoreCommand, moveOutCommand, scanCryptoKeyFiles, untrackCommand } from '../../src/util/crypto-key-files.js';
 
 /** git in `dir` with no hook, signing or user config of the machine running the test. */
 function git(dir: string, args: string[]): string {
@@ -192,5 +192,20 @@ describe('key files and git tracking', () => {
     fs.writeFileSync(path.join(dir, 'x.key'), 'FAKE\n');
     git(dir, ['add', '--', 'x.key']);
     expect(ignoreCommand(dir, ['x.key'])).toBeNull();
+  });
+});
+
+describe('key files git already ignores', () => {
+  it('gets no .gitignore append, and a move-out step instead', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opena2a-keyfiles-ign-'));
+    try {
+      git(dir, ['init', '-q']);
+      fs.writeFileSync(path.join(dir, '.gitignore'), '*.key\n');
+      fs.writeFileSync(path.join(dir, 'x.key'), 'FAKE\n');
+      expect(ignoreCommand(dir, ['x.key'], dir)).toBeNull();
+      expect(moveOutCommand(dir, ['x.key'], dir)!.command).toContain("mv -n -- 'x.key'");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

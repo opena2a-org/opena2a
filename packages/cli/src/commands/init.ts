@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { bold, green, yellow, red, cyan, dim, gray } from '../util/colors.js';
 import { detectProject, formatProjectType, type ProjectType } from '../util/detect.js';
 import { scanCredentialsWithCoverage, scanTemplateEnvLeaksWithCoverage, type CredentialMatch, type TemplateEnvLeak } from '../util/credential-patterns.js';
-import { ignoreCommand, scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
+import { ignoreCommand, moveOutCommand, scanCryptoKeyFiles, untrackCommand } from '../util/crypto-key-files.js';
 import { pathFrom, shellPath, shellWord } from '../util/shell-word.js';
 import { printAdvisoryWarnings, readAdvisories } from '../util/advisories.js';
 import { printable } from '../util/printable.js';
@@ -1133,7 +1133,10 @@ export function getToolRecommendation(
     const untrack = untrackCommand(reportDir, relativePaths);
     if (untrack) return { command: untrack.command, label: 'git rm --cached' };
     const ignore = ignoreCommand(reportDir, relativePaths);
-    return ignore ? { command: ignore.command, label: '.gitignore' } : null;
+    if (ignore) return { command: ignore.command, label: '.gitignore' };
+    // Already ignored: another rule would change nothing, so move the key out.
+    const moveOut = moveOutCommand(reportDir, relativePaths);
+    return moveOut ? { command: moveOut.command, label: 'move key outside repository' } : null;
   }
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
     return { command: 'opena2a protect', label: 'opena2a protect' };
