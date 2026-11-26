@@ -269,17 +269,32 @@ describe('the measures catch the long form they replace', () => {
   });
 
   it('reports each spelling of the account sentence and leaves a stated requirement alone', () => {
-    const planted = [
+    // One spelling per line, so a spelling the pattern stops catching fails on its own.
+    const reported = [
       'It needs Node.js 20.19 or later and no account, and it exits 1.',
       'No signup.',
-      'No sign-up and no sign up either.',
+      'No sign-up.',
+      'No sign up either.',
       'Works without an account.',
-      'No registration, no credit card.',
-      'An account required? An account needed?',
+      'No registration.',
+      'No credit card.',
+      'An account required?',
+      'An account needed?',
+    ];
+    const stated = [
       'It needs Node.js 20.19 or later, and it exits 1.',
       'The `--publish` flag needs a GitHub token for the account that owns the repository.',
-    ].join('\n');
-    expect(notNeededLines(planted).map((h) => h.split(':')[0])).toEqual(['1', '2', '3', '4', '5', '6']);
+    ];
+    for (const line of reported) {
+      expect(notNeededLines(line), line).toEqual([`1: ${line}`]);
+    }
+    for (const line of stated) {
+      expect(notNeededLines(line), line).toEqual([]);
+    }
+    const planted = [...reported, ...stated].join('\n');
+    expect(notNeededLines(planted).map((h) => h.split(':')[0])).toEqual(
+      reported.map((_, i) => String(i + 1)),
+    );
   });
 
   it('treats a list and a fenced block as one block each, and counts a long paragraph', () => {
