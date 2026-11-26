@@ -11,9 +11,10 @@ import * as path from 'node:path';
  * the telemetry disclosure and a list of the reference pages. Everything
  * else lives under docs/ or in CONTRIBUTING.md. This file pins that shape:
  * the word and section budgets, the absence of release numbers and dates
- * (they go stale on every release), the absence of sentences about what a
- * command does not need, the capture's tie to its sidecar, and the presence
- * of each moved passage at its new path.
+ * (they go stale on every release), the absence of the phrases that say a
+ * command needs no account, sign-up, registration or credit card, the
+ * capture's tie to its sidecar, and the presence of each moved passage at
+ * its new path.
  *
  * It reads files only. Nothing here starts a process or reaches the network.
  */
@@ -37,9 +38,14 @@ const ELISION_LINE = '  ...';
 const VERSION_OR_DATE = /v?[0-9]+\.[0-9]+\.[0-9]+|20[0-9]{2}-[0-9]{2}-[0-9]{2}/;
 
 /**
- * A sentence about what a command does not need. The README states what a
- * command needs (a Node.js release, a token for one flag); an install from
- * npm needs no account anyway, so saying so adds nothing.
+ * A phrase saying a command needs no account, sign-up, registration or
+ * credit card: "no account", "without an account", "no signup" ("sign-up",
+ * "sign up"), "no registration", "no credit card", "account required" and
+ * "account needed". The README states what a command needs (a Node.js
+ * release); an install from npm needs no account anyway, so saying so adds
+ * nothing. Other wordings, such as "An account is not required.", "Does not
+ * need an account.", "It needs no API key." or "No login required.", do not
+ * match.
  */
 const NOT_NEEDED =
   /no account|no sign-?\s?up|without an? account|no registration|no credit card|account (required|needed)/i;
@@ -121,7 +127,7 @@ export function versionOrDateLines(markdown: string): string[] {
   return hits;
 }
 
-/** `line: text` for each line that says what a command does not need. */
+/** `line: text` for each line that carries a NOT_NEEDED phrase. */
 export function notNeededLines(markdown: string): string[] {
   const hits: string[] = [];
   markdown.split('\n').forEach((line, i) => {
@@ -236,7 +242,7 @@ describe('the repository README is a short form', () => {
     expect(versionOrDateLines(readme)).toEqual([]);
   });
 
-  it('states what a command needs, never that it needs no account', () => {
+  it('carries no phrase saying a command needs no account, sign-up, registration or credit card', () => {
     expect(notNeededLines(readme)).toEqual([]);
   });
 
@@ -268,7 +274,7 @@ describe('the measures catch the long form they replace', () => {
     expect(versionOrDateLines(planted).map((h) => h.split(':')[0])).toEqual(['1', '2', '3']);
   });
 
-  it('reports each spelling of the account sentence and leaves a stated requirement alone', () => {
+  it('reports each phrase the pattern covers and leaves a stated requirement alone', () => {
     // One spelling per line, so a spelling the pattern stops catching fails on its own.
     const reported = [
       'It needs Node.js 20.19 or later and no account, and it exits 1.',
