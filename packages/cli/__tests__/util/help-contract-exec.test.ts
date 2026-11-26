@@ -993,7 +993,7 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         output: /is not a directory, so nothing was scanned/,
       },
       {
-        when: 'or cannot be read',
+        when: 'or could not be read',
         args: (s) => ['benchmark', join(s.project, 'locked')],
         permissions: true,
         setup: (s) => { mkdirSync(join(s.project, 'locked')); lock(join(s.project, 'locked'), 0o000); },
