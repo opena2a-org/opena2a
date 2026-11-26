@@ -319,7 +319,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   watch: {
     exit: [
       ['0', 'stopped with Ctrl+C'],
-      ['1', 'not logged in, or no agent is registered'],
+      ['1', 'not logged in, no agent is registered, or the server refused 3 polls in a row (401, 403 or 404)'],
     ],
     json: 'prints one JSON object per event line (NDJSON)',
     ci: 'no effect',

@@ -6,7 +6,7 @@
  */
 
 import { bold, dim, green, red, cyan, gray } from '../util/colors.js';
-import { AimClient, loadServerConfig } from '../util/aim-client.js';
+import { AimClient, AimServerError, loadServerConfig } from '../util/aim-client.js';
 import { loadAuth, isAuthValid } from '../util/auth.js';
 
 export interface WatchOptions {
@@ -16,6 +16,12 @@ export interface WatchOptions {
   json?: boolean;
   interval?: number;  // Poll interval in seconds (default: 3)
 }
+
+/** Statuses that say the server refuses the poll; waiting will not change them. */
+const REFUSED_STATUSES = new Set([401, 403, 404]);
+
+/** Consecutive refused polls after which the watch gives up with exit 1. */
+export const MAX_CONSECUTIVE_REFUSALS = 3;
 
 export async function watch(options: WatchOptions): Promise<number> {
   const isJson = options.json || options.format === 'json';
@@ -40,6 +46,7 @@ export async function watch(options: WatchOptions): Promise<number> {
 
   let lastSeenId: string | null = null;
   let running = true;
+  let refusals = 0;
   // Aborted on SIGINT/SIGTERM so a stalled poll or the wait between polls
   // ends at once instead of holding the process until it returns.
   const abort = new AbortController();
@@ -78,6 +85,7 @@ export async function watch(options: WatchOptions): Promise<number> {
       try {
         const resp = await client.getAgentActivity(agentId, { pageSize: 20 }, abort.signal);
         const events = resp.events ?? resp.activity ?? [];
+        refusals = 0;
 
         // Find new events (everything after lastSeenId)
         let newEvents = events;
@@ -128,8 +136,24 @@ export async function watch(options: WatchOptions): Promise<number> {
         }
       } catch (err) {
         if (!running) break;
-        if (options.verbose) {
-          process.stderr.write(dim(`  Poll error: ${err instanceof Error ? err.message : String(err)}`) + '\n');
+        const message = err instanceof Error ? err.message : String(err);
+        if (err instanceof AimServerError && REFUSED_STATUSES.has(err.statusCode)) {
+          // A refusal will not go away by polling again: say so without
+          // --verbose, and stop once it has happened several times in a row.
+          refusals++;
+          process.stderr.write(red(`  Poll refused: ${message}`) + '\n');
+          if (refusals >= MAX_CONSECUTIVE_REFUSALS) {
+            process.stderr.write(
+              `Stopped watching: the server refused ${refusals} polls in a row. ` +
+              'Check the login (opena2a login) and the agent (opena2a setup).\n',
+            );
+            return 1;
+          }
+        } else {
+          refusals = 0;
+          if (options.verbose) {
+            process.stderr.write(dim(`  Poll error: ${message}`) + '\n');
+          }
         }
       }
 
