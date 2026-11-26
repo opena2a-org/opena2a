@@ -1514,8 +1514,13 @@ export function spawnHmaCheck(
       env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
     });
 
-    child.on('error', (err) => {
+    // A program that cannot start emits 'error' and then 'close' with a
+    // negative errno (-2 for ENOENT). That close must not settle the promise:
+    // the npx fallback's status, or 1, is the answer.
+    let fellBack = false;
+    child.on('error', () => {
       // hackmyagent not found -- try npx
+      fellBack = true;
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: process.cwd(),
         stdio: 'inherit',
@@ -1529,7 +1534,9 @@ export function spawnHmaCheck(
       npxChild.on('close', (code) => resolve(code ?? 1));
     });
 
-    child.on('close', (code) => resolve(code ?? 1));
+    child.on('close', (code) => {
+      if (!fellBack) resolve(code ?? 1);
+    });
   });
 }
 
@@ -1545,7 +1552,10 @@ export function spawnHackmyagent(args: string[]): Promise<number> {
       stdio: 'inherit',
       env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
     });
+    // See spawnHmaCheck: a failed start is followed by close(-2).
+    let fellBack = false;
     child.on('error', () => {
+      fellBack = true;
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: process.cwd(),
         stdio: 'inherit',
@@ -1558,7 +1568,9 @@ export function spawnHackmyagent(args: string[]): Promise<number> {
       });
       npxChild.on('close', (code) => resolve(code ?? 1));
     });
-    child.on('close', (code) => resolve(code ?? 1));
+    child.on('close', (code) => {
+      if (!fellBack) resolve(code ?? 1);
+    });
   });
 }
 
