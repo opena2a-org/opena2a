@@ -4,7 +4,7 @@
  * may start with a bundled tool name.
  */
 import { describe, it, expect } from 'vitest';
-import { rebrandBundledCommands, createLineRebrander } from '../../src/util/rebrand.js';
+import { rebrandBundledCommands, createLineRebrander, dropSelfInstallHint } from '../../src/util/rebrand.js';
 
 const BUNDLED_TOOLS = ['hackmyagent', 'ai-trust', 'cryptoserve'];
 
@@ -90,6 +90,31 @@ describe('createLineRebrander (streaming, line-buffered)', () => {
     const r = createLineRebrander();
     expect(r.push('tail without newline: npx ai-trust check x')).toBe('');
     expect(r.flush()).toBe('tail without newline: opena2a registry x');
+  });
+
+  it('drops the "opena2a is a separate CLI" install hint from scan Next Steps', () => {
+    const r = createLineRebrander();
+    const dim = '\x1b[2m';
+    const reset = '\x1b[0m';
+    const out = r.push(
+      '  All commands:         opena2a scan --help\n'
+      + `  ${dim}opena2a is a sep`,
+    ) + r.push(`arate CLI — install with: npm i -g opena2a-cli${reset}\n\n  Scanned with hackmyagent v0.30.0\n`)
+      + r.flush();
+    expect(out).toBe('  All commands:         opena2a scan --help\n\n  Scanned with hackmyagent v0.30.0\n');
+    expect(out).not.toContain('separate CLI');
+  });
+});
+
+describe('dropSelfInstallHint', () => {
+  it('removes only the hint line, at the end of text without a newline too', () => {
+    expect(dropSelfInstallHint('a\nopena2a is a separate CLI — install with: npm i -g opena2a-cli\nb\n')).toBe('a\nb\n');
+    expect(dropSelfInstallHint('a\n  opena2a is a separate CLI — install with: npm i -g opena2a-cli')).toBe('a\n');
+  });
+
+  it('leaves other mentions of opena2a-cli alone', () => {
+    const text = 'Audit MCP servers:    npx opena2a-cli mcp audit\nnpm i -g opena2a-cli\n';
+    expect(dropSelfInstallHint(text)).toBe(text);
   });
 });
 
