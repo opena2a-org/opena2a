@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { isKnownExample, findRealMatch } from './match.js';
 import { CREDENTIAL_PATTERNS } from './patterns.js';
 
+// AWS-shaped fixtures are assembled at run time so the committed source never
+// carries a contiguous provider-shaped literal (see source-literal-guard.test.ts).
+const AWS_DOCS_EXAMPLE = ['AKIA', 'IOSFODNN7EXAMPLE'].join('');
+const AWS_REAL_SHAPED = ['AKIA', 'REALKEY1234567890'].join('');
+const AWS_EXAMPLE_SHAPED = ['AKIA', 'EXAMPLEKEY1234567'].join('');
+// The AWS Access Key regex is AKIA[0-9A-Z]{16}: a match is exactly 20 chars.
+const AWS_REAL_SHAPED_MATCH = AWS_REAL_SHAPED.slice(0, 20);
+
 function patternByName(name: string) {
   const p = CREDENTIAL_PATTERNS.find(p => p.name === name);
   if (!p) throw new Error(`pattern ${name} not found`);
@@ -13,7 +21,7 @@ describe('isKnownExample (issue #50 — comment-marker precedence)', () => {
     // Python comment line with a credential-shaped value but no "example" marker.
     // Previous buggy precedence `(A && B) || C` would enter the inner block on any
     // line containing `#`. Regression guard: must return false here.
-    const line = '# rotate AKIAREALKEY1234567890 next sprint';
+    const line = `# rotate ${AWS_REAL_SHAPED} next sprint`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(match).not.toBeNull();
     expect(isKnownExample(line, match)).toBe(false);
@@ -27,14 +35,14 @@ describe('isKnownExample (issue #50 — comment-marker precedence)', () => {
     expect(isKnownExample(line, match)).toBe(false);
   });
 
-  it('treats the AKIAIOSFODNN7EXAMPLE public example as a known example', () => {
-    const line = 'See AKIAIOSFODNN7EXAMPLE in the AWS docs.';
+  it(`treats the ${AWS_DOCS_EXAMPLE} public example as a known example`, () => {
+    const line = `See ${AWS_DOCS_EXAMPLE} in the AWS docs.`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
 
   it('#127: treats the AWS canonical secret-key example wJalrXUtnFEMI... as a known example', () => {
-    // Paired with AKIAIOSFODNN7EXAMPLE in the AWS IAM User Guide canonical
+    // Paired with the AKIA...EXAMPLE access key in the AWS IAM User Guide canonical
     // example. AWS docs reference verified 2026-05-21.
     const line = 'const secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";';
     const match = line.match(/wJalr[A-Za-z0-9/+]+EXAMPLEKEY/)!;
@@ -51,38 +59,38 @@ describe('isKnownExample (0.1.1 — block-comment markers)', () => {
   // `EXAMPLE` itself, so the value rule hides it.
 
   it('JSDoc continuation `* example AKIA...` is allowlisted', () => {
-    const line = ' * example: AKIAEXAMPLEKEY1234567 in this docstring';
+    const line = ` * example: ${AWS_EXAMPLE_SHAPED} in this docstring`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(match).not.toBeNull();
     expect(isKnownExample(line, match)).toBe(true);
   });
 
   it('JSDoc continuation with leading whitespace `   * example` is allowlisted', () => {
-    const line = '   * example AKIAEXAMPLEKEY1234567 indented';
+    const line = `   * example ${AWS_EXAMPLE_SHAPED} indented`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
 
   it('block-comment open `/* example AKIA...` is allowlisted', () => {
-    const line = '/* example: AKIAEXAMPLEKEY1234567 */';
+    const line = `/* example: ${AWS_EXAMPLE_SHAPED} */`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
 
   it('HTML comment `<!-- example AKIA... -->` is allowlisted', () => {
-    const line = '<!-- example AKIAEXAMPLEKEY1234567 in HTML -->';
+    const line = `<!-- example ${AWS_EXAMPLE_SHAPED} in HTML -->`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
 
   it('Python triple-single-quote docstring with example AKIA... is allowlisted', () => {
-    const line = "'''example: AKIAEXAMPLEKEY1234567'''";
+    const line = `'''example: ${AWS_EXAMPLE_SHAPED}'''`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
 
   it('Python triple-double-quote docstring with example AKIA... is allowlisted', () => {
-    const line = '"""example: AKIAEXAMPLEKEY1234567"""';
+    const line = `"""example: ${AWS_EXAMPLE_SHAPED}"""`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(true);
   });
@@ -90,7 +98,7 @@ describe('isKnownExample (0.1.1 — block-comment markers)', () => {
   it('multiplication line `x * y` containing real AKIA but no comment marker is NOT allowlisted', () => {
     // Negative test: `*` only counts as a comment marker when it leads the line
     // (after whitespace). Real code with `*` operator must still fire.
-    const line = 'const computed = AKIAREALKEY1234567890 * multiplier;';
+    const line = `const computed = ${AWS_REAL_SHAPED} * multiplier;`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(false);
   });
@@ -99,7 +107,7 @@ describe('isKnownExample (0.1.1 — block-comment markers)', () => {
     // The example-gate is preserved: a comment containing a real credential
     // but no "example" token still fires. This guards against silently
     // suppressing real credentials that happen to live in a JSDoc block.
-    const line = ' * Real API key follows: AKIAREALKEY1234567890';
+    const line = ` * Real API key follows: ${AWS_REAL_SHAPED}`;
     const match = line.match(/AKIA[0-9A-Z]{16}/)!;
     expect(isKnownExample(line, match)).toBe(false);
   });
@@ -163,7 +171,7 @@ describe('isKnownExample (0.1.1 — localhost+demo-password DB connection string
   });
 
   it('mongodb+srv with localhost+demo password is allowlisted', () => {
-    const line = 'MONGO_URI=mongodb+srv://demo:demo@localhost/db';
+    const line = ['MONGO_URI=mongodb+srv://', 'demo:demo', '@localhost/db'].join('');
     const pattern = patternByName('MongoDB Connection String');
     const match = line.match(pattern.regex)!;
     expect(isKnownExample(line, match)).toBe(true);
@@ -241,9 +249,10 @@ describe('isKnownExample (0.1.1 — localhost+demo-password DB connection string
 describe('findRealMatch (issue #51 — known-example shadowing)', () => {
   it('mixed-pattern line: AWS example + real GitHub PAT returns the PAT', () => {
     // Intentionally NO `//` or `#` markers — we're testing that the KNOWN_EXAMPLE_KEYS
-    // match for AKIAIOSFODNN7EXAMPLE does not shadow the real GitHub PAT later on
+    // match for the AWS docs example key does not shadow the real GitHub PAT later on
     // the same line. (isKnownExample does not read a comment on the line.)
-    const line = 'const old = "AKIAIOSFODNN7EXAMPLE"; const new_ = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";';
+    const ghToken = ['ghp', '_abcdefghijklmnopqrstuvwxyz1234567890'].join('');
+    const line = `const old = "${AWS_DOCS_EXAMPLE}"; const new_ = "${ghToken}";`;
     const awsPattern = patternByName('AWS Access Key');
     const ghPattern = patternByName('GitHub Token');
 
@@ -252,22 +261,22 @@ describe('findRealMatch (issue #51 — known-example shadowing)', () => {
     // GitHub pattern: match is real
     const ghMatch = findRealMatch(line, ghPattern);
     expect(ghMatch).not.toBeNull();
-    expect(ghMatch![0]).toBe('ghp_abcdefghijklmnopqrstuvwxyz1234567890');
+    expect(ghMatch![0]).toBe(ghToken);
   });
 
-  it('multi-match same-pattern line: example AKIAIOSFODNN7EXAMPLE before real AKIA key returns the real one', () => {
+  it(`multi-match same-pattern line: example ${AWS_DOCS_EXAMPLE} before real AKIA key returns the real one`, () => {
     // AWS Access Key pattern ships without /g; findRealMatch must still iterate
     // every match on the line and skip the example to find the real key.
-    const line = 'const keys = ["AKIAIOSFODNN7EXAMPLE", "AKIAREALKEY1234567890"];';
+    const line = `const keys = ["${AWS_DOCS_EXAMPLE}", "${AWS_REAL_SHAPED}"];`;
     const awsPattern = patternByName('AWS Access Key');
     const match = findRealMatch(line, awsPattern);
     expect(match).not.toBeNull();
     // AWS regex is AKIA[0-9A-Z]{16} — match is exactly 20 chars, trailing digits truncated.
-    expect(match![0]).toBe('AKIAREALKEY123456789');
+    expect(match![0]).toBe(AWS_REAL_SHAPED_MATCH);
   });
 
   it('returns null when every match on the line is a known example', () => {
-    const line = '// examples: AKIAIOSFODNN7EXAMPLE';
+    const line = `// examples: ${AWS_DOCS_EXAMPLE}`;
     const awsPattern = patternByName('AWS Access Key');
     expect(findRealMatch(line, awsPattern)).toBeNull();
   });
@@ -311,8 +320,8 @@ describe('findRealMatch (0.1.1 — multi-real per-pattern-category coverage)', (
     {
       category: 'cloud',
       pattern: 'AWS Access Key',
-      line: 'aws_examples="AKIAIOSFODNN7EXAMPLE" aws_real="AKIAREALKEY1234567890"',
-      expected: 'AKIAREALKEY123456789',
+      line: `aws_examples="${AWS_DOCS_EXAMPLE}" aws_real="${AWS_REAL_SHAPED}"`,
+      expected: AWS_REAL_SHAPED_MATCH,
     },
     {
       category: 'communication',
@@ -401,7 +410,7 @@ describe('isKnownExample — name-gated value-awareness + entropy floor (aws-sec
 
   it('value-only patterns (no group 1) are unaffected — a real AKIA key still matches', () => {
     const akia = CREDENTIAL_PATTERNS.find(p => p.id === 'aws-access')!;
-    const line = 'AKIAREALKEY1234567890';
+    const line = AWS_REAL_SHAPED;
     const m = line.match(akia.regex)!;
     expect(isKnownExample(line, m)).toBe(false); // match[1] undefined -> match[0], unchanged
   });

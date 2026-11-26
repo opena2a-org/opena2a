@@ -224,7 +224,7 @@ describe('quickCredentialScan label routing (integration)', () => {
   // silently skipped while the OpenAI key on the same line was flagged. The
   // prefix is specific enough that a 20+ char body must be detected too.
   it('detects a short sk-ant-api03- key alongside an OpenAI key (#184)', async () => {
-    const shortAnthropic = 'sk-ant-api03-FAKE_VERIFY_XYZ_NOT_REAL_KEY'; // 28-char body
+    const shortAnthropic = ['sk-ant-', 'api03-FAKE_VERIFY_XYZ_NOT_REAL_KEY'].join(''); // 28-char body
     write('.env', `ANTHROPIC_API_KEY=${shortAnthropic}\nOPENAI_API_KEY=sk-FAKE_NOT_REAL_KEY_VERIFY_XYZ\n`);
     const matches = await quickCredentialScan(tmpDir);
     const anth = matches.find(x => x.value === shortAnthropic);
