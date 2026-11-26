@@ -195,6 +195,18 @@ export async function submitScanReport(
   const identity = registryIdentity(report);
   if (!identity) return false;
 
+  // The contributor salt is created here and nowhere else: on the first scan
+  // contributed while contribution is enabled. `telemetry status`, `on` and
+  // `off` only read it.
+  if (await isContributeEnabled()) {
+    try {
+      const { ensureContributorSalt } = await import('./contributor-token.js');
+      ensureContributorSalt();
+    } catch {
+      // A salt that cannot be written is not a reason to fail the scan.
+    }
+  }
+
   // Also queue via @opena2a/contribute for buffered submission
   try {
     const { contribute } = await import('@opena2a/contribute');

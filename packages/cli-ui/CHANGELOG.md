@@ -24,7 +24,7 @@
   reads the token without creating its salt), the status block prints
   `contributor_token:` between `install_id:` and `config:`, and the `status`
   help line names it. A getter that returns null prints
-  `none (created when a scan is first contributed)`; one that throws prints
+  `none (created on first contribution)`; one that throws prints
   `unavailable` instead of failing the command. A CLI that passes no getter
   prints exactly what it printed before.
 - `TelemetryStatusLike.suppressedBy` accepts `"test-runner"` and
