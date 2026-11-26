@@ -386,7 +386,7 @@ body {
 }
 .cmd-note {
   font-size: 11px;
-  color: var(--dim);
+  color: var(--muted);
   margin: 2px 0 6px;
 }
 .empty-state {
