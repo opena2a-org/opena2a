@@ -55,7 +55,7 @@ const RUNTIME_COMMENT = 'Opt-in: send ARP runtime anomaly events to the Registry
 /** The `--contribute` option's help. */
 const CONTRIBUTE_HELP = "Share this scan with the OpenA2A Registry: its summary, and its findings where the command sends them (detect, review, identity, scan/benchmark/scan-soul with --json)";
 /** The README's exchange lead, up to its count clause. */
-const LEAD_HEAD = 'opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify` and `detect`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, ';
+const LEAD_HEAD = 'opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify`, `trust`, `claim`, `mcp audit` and `mcp verify`, and on `detect` only when you pass `--registry`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, ';
 /** The README's contribution sentence, up to the clause on what the flow becomes. */
 const CONTRIBUTION_PREMISE = 'This is **separate** from the community-contribution data the Registry already collects via `--publish` flags; ';
 /** The rest of the contribution sentence, and the usage telemetry sentence. */
@@ -77,6 +77,7 @@ const REPLACED = {
   contributeHelp: 'Share scan summaries with OpenA2A community',
   readmeContribution: 'that flow continues to populate the public community page (scan submissions, findings, contributors). Telemetry just answers "is anyone running these commands at all?"',
   trustLabelExample: 'Trust: 92/100 | 45 community scans',
+  readmeLeadCommands: 'on `init`, `review`, `verify` and `detect`:',
 } as const;
 
 /** The paragraphs of a `/** ... *\/` block, each one's lines joined by single spaces. */
@@ -144,6 +145,7 @@ describe('the texts on what the CLI sends to the Registry and what it counts', (
     expect(lines.filter((l) => l === README_LEAD)).toHaveLength(1);
     expect(lines.filter((l) => l === README_CONTRIBUTION)).toHaveLength(1);
     expect(occurrences(lines.join('\n'), REPLACED.readmeContribution)).toBe(0);
+    expect(occurrences(lines.join('\n'), REPLACED.readmeLeadCommands)).toBe(0);
   });
 
   it('detect labels its count of shared scans unverified', () => {
