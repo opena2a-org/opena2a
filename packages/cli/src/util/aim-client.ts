@@ -133,13 +133,23 @@ export class AimClient {
   private readonly timeoutMs: number;
   private readonly apiKey?: string;
   private readonly accessToken?: string;
+  private readonly credential?: AimCredential;
 
-  constructor(serverUrl: string, options?: { timeoutMs?: number; apiKey?: string; accessToken?: string }) {
+  /**
+   * `credential` is sent with every request that carries no per-call
+   * credential, the way a per-call one is: an API key in X-API-Key, a token
+   * as a bearer token.
+   */
+  constructor(
+    serverUrl: string,
+    options?: { timeoutMs?: number; apiKey?: string; accessToken?: string; credential?: AimCredential },
+  ) {
     // Normalize: strip trailing slash
     this.baseUrl = serverUrl.replace(/\/+$/, '');
     this.timeoutMs = options?.timeoutMs ?? 10_000;
     this.apiKey = options?.apiKey;
     this.accessToken = options?.accessToken;
+    this.credential = options?.credential;
   }
 
   /** The AIM server URL requests go to, without a trailing slash. */
@@ -183,7 +193,7 @@ export class AimClient {
     return this.post('/api/v1/agents', serverBody);
   }
 
-  async listAgents(token: string, params?: { page?: number; pageSize?: number }): Promise<AgentListResponse> {
+  async listAgents(token: AimCredential, params?: { page?: number; pageSize?: number }): Promise<AgentListResponse> {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
     if (params?.pageSize) qs.set('pageSize', String(params.pageSize));
@@ -367,13 +377,23 @@ export class AimClient {
 
   // ---- Generic HTTP helpers -----------------------------------------------
 
-  private async get<T>(path: string, credential?: AimCredential, signal?: AbortSignal): Promise<T> {
-    const headers: Record<string, string> = { 'Accept': 'application/json' };
+  /**
+   * The headers that sign in one request: the per-call credential, else the
+   * client's `credential`, else its access token; and the client's API key
+   * in X-AIM-API-Key.
+   */
+  private authHeaders(perCall?: AimCredential): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const credential = perCall ?? this.credential;
     if (typeof credential === 'object') headers['X-API-Key'] = credential.apiKey;
     else if (credential) headers['Authorization'] = `Bearer ${credential}`;
     else if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
     if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    return headers;
+  }
 
+  private async get<T>(path: string, credential?: AimCredential, signal?: AbortSignal): Promise<T> {
+    const headers: Record<string, string> = { 'Accept': 'application/json', ...this.authHeaders(credential) };
     const response = await this.fetch(path, { method: 'GET', headers }, signal);
     return this.parseResponse<T>(response);
   }
@@ -383,8 +403,7 @@ export class AimClient {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    Object.assign(headers, this.authHeaders());
     Object.assign(headers, extraHeaders);
 
     const response = await this.fetch(path, {
@@ -400,8 +419,7 @@ export class AimClient {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    Object.assign(headers, this.authHeaders());
 
     const response = await this.fetch(path, {
       method: 'PUT',
@@ -413,8 +431,7 @@ export class AimClient {
 
   private async del<T>(path: string): Promise<T> {
     const headers: Record<string, string> = { 'Accept': 'application/json' };
-    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
-    if (this.apiKey) headers['X-AIM-API-Key'] = this.apiKey;
+    Object.assign(headers, this.authHeaders());
 
     const response = await this.fetch(path, { method: 'DELETE', headers });
     return this.parseResponse<T>(response);
@@ -535,6 +552,12 @@ export function loadServerConfig(): ServerConfig | null {
 }
 
 export function saveServerConfig(config: ServerConfig): void {
+  // A key from OPENA2A_INTERNAL_API_KEY stays in the environment: it is never
+  // written to the stored config, whichever caller passes it.
+  const envKey = process.env.OPENA2A_INTERNAL_API_KEY?.trim();
+  if (envKey && config.apiKey === envKey) {
+    config = { ...config, apiKey: undefined };
+  }
   if (!existsSync(AIM_DIR)) {
     mkdirSync(AIM_DIR, { recursive: true });
   }

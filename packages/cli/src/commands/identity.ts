@@ -11,7 +11,7 @@ import {
   type AimCredential,
   type ServerConfig,
 } from '../util/aim-client.js';
-import { authFor, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
+import { authFor, envApiKey, storableApiKey, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
 import { describeProxyRoute } from '../util/env-proxy.js';
 
 /**
@@ -131,6 +131,7 @@ const USAGE = [
   'Server Flags (for create, list, trust, policy):',
   '  --server <url>                 AIM server URL (e.g. localhost:8080, cloud)',
   '  --api-key <key>                AIM API key for that server',
+  '                                 (or set OPENA2A_INTERNAL_API_KEY, read first)',
   '',
   'tag, mcp, activity, suspend, reactivate and revoke act on the agent',
   'connected to the AIM server. Log in first with opena2a login.',
@@ -256,15 +257,21 @@ function getServerClient(options: IdentityOptions): AimClient | null {
 
 /**
  * The client a tag, mcp, activity, suspend, reactivate or revoke command
- * sends with: signed in with the token stored for the server the command acts
- * on, and the agent connected to that server. No client when no token is
- * stored for it.
+ * sends with: signed in with the key in OPENA2A_INTERNAL_API_KEY, else the
+ * token stored for the server the command acts on; and the agent connected to
+ * that server. No client when neither is there.
  */
 function signedInToServer(options: IdentityOptions): { serverUrl?: string; client?: AimClient; agentId?: string } {
   const serverUrl = targetServerUrl(options);
   if (!serverUrl) return {};
   const { token, agentId } = authFor(serverUrl, options);
-  return { serverUrl, client: token ? new AimClient(serverUrl, { accessToken: token }) : undefined, agentId };
+  // OPENA2A_INTERNAL_API_KEY is read before the stored token, and sent with
+  // every request in X-API-Key, the header the AIM server reads.
+  const fromEnv = envApiKey();
+  const client = fromEnv
+    ? new AimClient(serverUrl, { credential: { apiKey: fromEnv } })
+    : token ? new AimClient(serverUrl, { accessToken: token }) : undefined;
+  return { serverUrl, client, agentId };
 }
 
 /**
@@ -363,7 +370,7 @@ async function handleList(options: IdentityOptions): Promise<number> {
     const client = getServerClient(options);
     // A stored token, API key or agent ID goes only to the server it was
     // stored for, and the agent connection is shown only for that server.
-    const { token, apiKey, agentId } = client ? authFor(client.serverUrl, options) : {};
+    const { token, apiKey, apiKeySource, agentId } = client ? authFor(client.serverUrl, options) : {};
     let serverAgent = null;
     let serverAgentList = null;
     const effectiveServerUrl = client?.serverUrl;
@@ -384,9 +391,15 @@ async function handleList(options: IdentityOptions): Promise<number> {
           process.stderr.write(yellow('Showing local identity only.') + '\n\n');
         }
       }
-    } else if (client && agentId && apiKey) {
+    } else if (client && apiKey && (agentId || apiKeySource === 'env')) {
+      // A --api-key or stored key fetches the connected agent only; a key
+      // from OPENA2A_INTERNAL_API_KEY lists the server's agents when none is.
       try {
-        serverAgent = await client.getAgent({ apiKey }, agentId);
+        if (agentId) {
+          serverAgent = await client.getAgent({ apiKey }, agentId);
+        } else {
+          serverAgentList = await client.listAgents({ apiKey });
+        }
       } catch (err) {
         if (!isJson) {
           process.stderr.write(yellow(`Warning: Could not fetch server data: ${formatServerError(err)}`) + '\n');
@@ -540,7 +553,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
   }
 
   // Sign in with what is stored for this server, or the key typed with --api-key
-  const { token, apiKey } = authFor(serverUrl, options);
+  const { token, apiKey, apiKeySource } = authFor(serverUrl, options);
   if (!token && !apiKey) {
     process.stderr.write(`Not logged in to ${serverUrl}.\n`);
     process.stderr.write(`Run "opena2a login --server ${serverUrl}" first, or use ${IDENTITY_NEXT_STEPS.apiKeyFlag}\n`);
@@ -578,11 +591,12 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
       localId = aim.getIdentity();
     }
 
-    // 4. Store server config locally
+    // 4. Store server config locally. A key from OPENA2A_INTERNAL_API_KEY
+    // stays in the environment and is not stored.
     const config: ServerConfig = {
       serverUrl,
       agentId: agentId,
-      apiKey,
+      apiKey: storableApiKey(apiKey, apiKeySource),
       registeredAt: new Date().toISOString(),
     };
     saveServerConfig(config);
@@ -966,9 +980,10 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
     return 1;
   }
 
-  const apiKey = options.apiKey;
+  const fromEnv = envApiKey();
+  const apiKey = fromEnv ?? options.apiKey;
   if (!apiKey) {
-    process.stderr.write('Missing required option: --api-key <key>\n');
+    process.stderr.write('Missing required option: --api-key <key> (or set OPENA2A_INTERNAL_API_KEY)\n');
     process.stderr.write('The AIM server requires an API key for agent registration.\n');
     return 1;
   }
@@ -998,11 +1013,12 @@ async function handleConnect(options: IdentityOptions): Promise<number> {
       apiKey,
     );
 
-    // 4. Store server config
+    // 4. Store server config. A key from OPENA2A_INTERNAL_API_KEY stays in
+    // the environment and is not stored.
     const config: ServerConfig = {
       serverUrl,
       agentId: resp.agentId,
-      apiKey,
+      apiKey: storableApiKey(apiKey, fromEnv ? 'env' : 'flag'),
       registeredAt: new Date().toISOString(),
     };
     saveServerConfig(config);
@@ -1156,17 +1172,23 @@ async function handleServerPolicies(options: IdentityOptions): Promise<number> {
 
   // Query the server --server names, with --api-key or a token stored for it.
   const serverUrl = resolveServerUrl(options.server!);
-  const accessToken = options.apiKey ? undefined : authFor(serverUrl).token;
-  if (!options.apiKey && !accessToken) {
+  const fromEnv = envApiKey();
+  const typedKey = fromEnv ?? options.apiKey;
+  const accessToken = typedKey ? undefined : authFor(serverUrl).token;
+  if (!typedKey && !accessToken) {
     process.stderr.write(`Not logged in to ${serverUrl}.\n`);
     process.stderr.write(`Run: opena2a login --server ${serverUrl}\n`);
     process.stderr.write(`  or: opena2a identity policy --server ${serverUrl} ${IDENTITY_NEXT_STEPS.apiKeyFlag}\n`);
     return 1;
   }
 
-  const authedClient = options.apiKey
-    ? new AimClient(serverUrl, { apiKey: options.apiKey })
-    : new AimClient(serverUrl, { accessToken });
+  // A key from OPENA2A_INTERNAL_API_KEY is sent in X-API-Key, the header the
+  // AIM server reads.
+  const authedClient = fromEnv
+    ? new AimClient(serverUrl, { credential: { apiKey: fromEnv } })
+    : typedKey
+      ? new AimClient(serverUrl, { apiKey: typedKey })
+      : new AimClient(serverUrl, { accessToken });
 
   try {
     const resp = await authedClient.listPolicies();
