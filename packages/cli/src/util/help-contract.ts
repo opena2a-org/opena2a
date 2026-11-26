@@ -245,7 +245,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
     exit: [
       ['0', 'the benchmark ran (the score does not change the exit status)'],
       ['1', 'hackmyagent is unavailable, the --level is invalid, or the run failed'],
-      ['2', 'the target does not exist, is not a directory, or could not be read; nothing was scanned'],
+      ['2', 'the target does not exist, is not a directory or could not be read; nothing was scanned'],
     ],
     json: 'prints the results as JSON; when the target is refused (exit 2) no document is written',
     ci: 'no effect',
