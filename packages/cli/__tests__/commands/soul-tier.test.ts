@@ -40,6 +40,13 @@ describe('scan-soul / harden-soul --tier', () => {
     expect([...SOUL_TIERS]).toEqual(['BASIC', 'TOOL-USING', 'AGENTIC', 'MULTI-AGENT']);
   });
 
+  it('reports a missing directory without scanning or scoring', async () => {
+    const { exitCode, stderr } = await capture(() => scanSoul({ targetDir: '/tmp/opena2a-no-such-dir-' + Date.now() }));
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('Directory not found');
+    expect(mockScanSoul).not.toHaveBeenCalled();
+  });
+
   it('rejects an unknown tier before scanning, with a nonzero exit', async () => {
     const { exitCode, stderr } = await capture(() => scanSoul({ targetDir: '/tmp', tier: 'STANDARD' }));
     expect(exitCode).toBe(1);
