@@ -120,9 +120,8 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   check: {
     exit: [
-      ['engine', 'the exit status of hackmyagent (check for a package or repository, secure for a directory), passed through unchanged'],
-      ['1', 'the target is not a recognised form, or hackmyagent could not start for a directory'],
-      ['254', 'hackmyagent is not on PATH for a package or repository, also when the npx fallback then runs it'],
+      ['engine', 'the exit status of hackmyagent (check for a package or repository, secure for a directory), passed through unchanged; when hackmyagent is not on PATH for a package or repository, the exit status of the npx fallback'],
+      ['1', 'the target is not a recognised form, hackmyagent could not start for a directory, or neither hackmyagent nor npx could start for a package or repository'],
     ],
     json: 'passed to hackmyagent as --format json for a directory and as --json for a package or repository',
     ci: 'passed to hackmyagent check for a package or repository; for a directory it only skips the prompt to share scan results',

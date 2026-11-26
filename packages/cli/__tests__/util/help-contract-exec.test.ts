@@ -470,24 +470,23 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         engine: () => [workspaceBin('hackmyagent'), 'secure', '.', '--no-such-option'],
         output: /unknown option '--no-such-option'/,
       },
+      {
+        when: 'when hackmyagent is not on PATH for a package or repository, the exit status of the npx fallback',
+        args: ['check', 'express'],
+        barePath: true,
+        setup: (s) => tool(s, 'npx', `echo "npx ran: $*"\nexit ${ENGINE_STATUS}`),
+        status: ENGINE_STATUS,
+        output: /npx ran: hackmyagent check express/,
+      },
     ],
     '1': [
       { when: 'the target is not a recognised form', args: ['check', 'example.invalid'], output: /Unknown target/ },
       { when: 'hackmyagent could not start for a directory', args: ['check', '.'], hide: ['hackmyagent'], output: /scan is not installed/ },
-    ],
-    '254': [
       {
-        when: 'hackmyagent is not on PATH for a package or repository',
+        when: 'neither hackmyagent nor npx could start for a package or repository',
         args: ['check', 'express'],
         barePath: true,
         output: /hackmyagent is not installed/,
-      },
-      {
-        when: 'also when the npx fallback then runs it',
-        args: ['check', 'express'],
-        barePath: true,
-        setup: (s) => tool(s, 'npx', 'echo "npx ran: $*"\nexit 0'),
-        output: /npx ran: hackmyagent check express/,
       },
     ],
   },

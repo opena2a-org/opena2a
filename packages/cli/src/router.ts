@@ -656,7 +656,10 @@ export function spawnHmaCheckFromRouter(
       env: childEnv('hackmyagent', { set: HMA_CITATION_ENV }),
     });
 
+    // A failed start emits 'error' and then close(-2); only the fallback settles.
+    let fellBack = false;
     child.on('error', () => {
+      fellBack = true;
       const npxChild = spawn('npx', ['hackmyagent', ...args], {
         cwd: (globalOptions.cwd as string) ?? process.cwd(),
         stdio: 'inherit',
@@ -670,6 +673,8 @@ export function spawnHmaCheckFromRouter(
       npxChild.on('close', (code) => resolve(code ?? 1));
     });
 
-    child.on('close', (code) => resolve(code ?? 1));
+    child.on('close', (code) => {
+      if (!fellBack) resolve(code ?? 1);
+    });
   });
 }
