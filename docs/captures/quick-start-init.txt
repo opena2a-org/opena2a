@@ -13,21 +13,21 @@
             models.
             src/agent.js:4
             Verify: sed -n '4p' 'my-agent/src/agent.js'
-            Fix:    opena2a protect
+            Fix:    opena2a protect 'my-agent'
 
   CRITICAL  OpenAI API Key
             OpenAI API key hardcoded in source. Grants full API access
             to anyone with the source code.
             src/config.js:3
             Verify: sed -n '3p' 'my-agent/src/config.js'
-            Fix:    opena2a protect
+            Fix:    opena2a protect 'my-agent'
 
   HIGH      AWS Access Key (Bedrock drift risk)
             AWS access key may grant Bedrock LLM access beyond its
             intended S3/EC2 scope. IAM policies often over-provision.
             src/aws.js:1
             Verify: sed -n '1p' 'my-agent/src/aws.js'
-            Fix:    opena2a protect
+            Fix:    opena2a protect 'my-agent'
 
   HIGH      1 server with filesystem/shell access in mcp.json
             MCP servers with filesystem or shell access can read,
@@ -35,13 +35,13 @@
             AI assistant.
             mcp.json:1
             Verify: cat 'my-agent/mcp.json'
-            Fix:    opena2a shield init
+            Fix:    opena2a shield init 'my-agent'
 
   MEDIUM    .env not in .gitignore
             Environment files may be committed to version control.
             .gitignore:1
             Verify: grep -c '\.env' 'my-agent/.gitignore' 2>/dev/null || echo 0
-            Fix:    opena2a protect
+            Fix:    opena2a protect 'my-agent'
 
   MEDIUM    2 AI config files not excluded from git
             AI instruction files (CLAUDE.md, .cursorrules, etc.)
@@ -49,11 +49,11 @@
             to a public repository.
             .gitignore:1
             Verify: cat 'my-agent/.gitignore'
-            Fix:    opena2a protect
+            Fix:    opena2a protect 'my-agent'
 
   Security Score: 43 / 100  (project posture: credentials, config, environment)
 
-  Credentials    -40  2 critical, 1 high
+  Credentials    +40 recoverable  2 critical, 1 high
   Environment    -14  .env unprotected, MCP high-risk tools (1 server), AI config exposed
   Configuration  -3  no security config
 
@@ -99,9 +99,9 @@
     src/aws.js:1
     IAM policies frequently over-provision. A key scoped for S3/EC2
     may also pass STS auth and call Bedrock LLM endpoints.
-    Verify:  opena2a protect --dry-run
+    Verify:  opena2a protect --dry-run 'my-agent'
              (live STS + Bedrock access check; reports drift, changes no file)
-    Fix:     opena2a protect
+    Fix:     opena2a protect 'my-agent'
              (runs live STS + Bedrock access check and applies fixes)
 
   Tip: opena2a protect
@@ -111,6 +111,6 @@
        Bedrock check to confirm actual exposure.
 
   To set up full Shield protection (11-step orchestration): opena2a shield init
-  For deeper analysis (209 checks): opena2a scan --deep
+  For deeper analysis (310 checks): opena2a scan --deep
   Tip: Install globally for easier access: npm install -g opena2a-cli
 

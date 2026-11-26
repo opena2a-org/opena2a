@@ -367,6 +367,10 @@ export async function init(options: InitOptions): Promise<number> {
         driftByType.set(d.findingId, existing);
       }
 
+      // protect acts on the directory it is given, else on the one it is run
+      // in, so both commands name the scanned directory.
+      const protectDryRun = inReportDir('opena2a protect --dry-run', targetDir);
+      const protectFix = inReportDir('opena2a protect', targetDir);
       for (const [findingId, items] of driftByType) {
         const first = items[0];
         const relPath = path.relative(targetDir, first.filePath);
@@ -377,25 +381,25 @@ export async function init(options: InitOptions): Promise<number> {
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
           process.stdout.write(`  ${dim('  Keys provisioned for Maps silently authenticate to Gemini if the')}\n`);
           process.stdout.write(`  ${dim('  Generative Language API is enabled in the same GCP project.')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim(`  Verify:  ${protectDryRun}`)}\n`);
           process.stdout.write(`  ${dim('           (live Gemini API access check; reports drift, changes no file)')}\n`);
-          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+          process.stdout.write(`  ${dim(`  Fix:     ${protectFix}`)}\n`);
           process.stdout.write(`  ${dim('           (runs live Gemini API access check and applies fixes)')}\n`);
         } else if (findingId === 'DRIFT-002') {
           process.stdout.write(`  ${yellow(findingId)}  AWS key may access Bedrock AI  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
           process.stdout.write(`  ${dim('  IAM policies frequently over-provision. A key scoped for S3/EC2')}\n`);
           process.stdout.write(`  ${dim('  may also pass STS auth and call Bedrock LLM endpoints.')}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim(`  Verify:  ${protectDryRun}`)}\n`);
           process.stdout.write(`  ${dim('           (live STS + Bedrock access check; reports drift, changes no file)')}\n`);
-          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+          process.stdout.write(`  ${dim(`  Fix:     ${protectFix}`)}\n`);
           process.stdout.write(`  ${dim('           (runs live STS + Bedrock access check and applies fixes)')}\n`);
         } else {
           process.stdout.write(`  ${yellow(findingId)}  Credential scope drift  (${items.length} location${items.length === 1 ? '' : 's'})\n`);
           process.stdout.write(`  ${dim('  ' + relPath + ':' + first.line + extra)}\n`);
-          process.stdout.write(`  ${dim('  Verify:  opena2a protect --dry-run')}\n`);
+          process.stdout.write(`  ${dim(`  Verify:  ${protectDryRun}`)}\n`);
           process.stdout.write(`  ${dim('           (live access check; reports drift, changes no file)')}\n`);
-          process.stdout.write(`  ${dim('  Fix:     opena2a protect')}\n`);
+          process.stdout.write(`  ${dim(`  Fix:     ${protectFix}`)}\n`);
           process.stdout.write(`  ${dim('           (runs live access check and applies fixes)')}\n`);
         }
         process.stdout.write('\n');
@@ -1135,34 +1139,47 @@ export function getToolRecommendation(
     const ignore = ignoreCommand(reportDir, relativePaths);
     return ignore ? { command: ignore.command, label: '.gitignore' } : null;
   }
+  // The opena2a commands below act on the directory they are given, else on
+  // the one they are run in, so each names `reportDir` the way a Verify names
+  // a path (see inReportDir).
   if (findingId.startsWith('CRED-') || findingId.startsWith('DRIFT-')) {
-    return { command: 'opena2a protect', label: 'opena2a protect' };
+    return { command: inReportDir('opena2a protect', reportDir), label: 'opena2a protect' };
   }
   if (findingId === 'ENV-LLM') {
-    return { command: 'opena2a shield init', label: 'opena2a shield init' };
+    return { command: inReportDir('opena2a shield init', reportDir), label: 'opena2a shield init' };
   }
   if (findingId === 'ENV-DOTENV') {
-    return { command: 'opena2a protect', label: 'opena2a protect' };
+    return { command: inReportDir('opena2a protect', reportDir), label: 'opena2a protect' };
   }
   if (findingId.startsWith('HMA-')) {
     return { command: 'opena2a scan --deep', label: 'opena2a scan --deep' };
   }
   if (findingId === 'MCP-TOOLS') {
-    return { command: 'opena2a shield init', label: 'opena2a shield init' };
+    return { command: inReportDir('opena2a shield init', reportDir), label: 'opena2a shield init' };
   }
   if (findingId === 'MCP-CRED') {
-    return { command: 'opena2a protect', label: 'opena2a protect' };
+    return { command: inReportDir('opena2a protect', reportDir), label: 'opena2a protect' };
   }
   if (findingId === 'AI-CONFIG') {
-    return { command: 'opena2a protect', label: 'opena2a protect' };
+    return { command: inReportDir('opena2a protect', reportDir), label: 'opena2a protect' };
   }
   if (findingId === 'AI-SKILLS') {
-    return { command: 'opena2a guard sign --skills', label: 'opena2a guard sign --skills' };
+    return { command: inReportDir('opena2a guard sign --skills', reportDir), label: 'opena2a guard sign --skills' };
   }
   if (findingId === 'AI-SOUL') {
-    return { command: 'opena2a guard sign', label: 'opena2a guard sign' };
+    return { command: inReportDir('opena2a guard sign', reportDir), label: 'opena2a guard sign' };
   }
   return null;
+}
+
+/**
+ * `command` with `reportDir` appended as one shell word, named from the
+ * directory `init` was run in (`shellPath`), where the user pastes it; with
+ * nothing appended when init was run in `reportDir`, so the command reads as
+ * it always has there.
+ */
+function inReportDir(command: string, reportDir: string): string {
+  return pathFrom(reportDir) === '.' ? command : `${command} ${shellPath(reportDir)}`;
 }
 
 function getContextualTip(

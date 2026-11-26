@@ -216,6 +216,67 @@ describe('init commands name files from the directory init runs in', () => {
     expect(fix.command).toBe(String.raw`printf '%s\n' '' '/server.key' >> .gitignore`);
   });
 
+  // `opena2a protect`, `shield init` and `guard sign` act on the directory
+  // they are given, else on the one they are run in, so a Fix that names no
+  // directory acts on the shell directory, not the scanned one.
+  const opena2aFixes: [string, string][] = [
+    ['CRED-001', 'opena2a protect'],
+    ['DRIFT-001', 'opena2a protect'],
+    ['ENV-DOTENV', 'opena2a protect'],
+    ['MCP-CRED', 'opena2a protect'],
+    ['AI-CONFIG', 'opena2a protect'],
+    ['ENV-LLM', 'opena2a shield init'],
+    ['MCP-TOOLS', 'opena2a shield init'],
+    ['AI-SKILLS', 'opena2a guard sign --skills'],
+    ['AI-SOUL', 'opena2a guard sign'],
+  ];
+
+  it('every opena2a Fix names the scanned directory from the shell directory', () => {
+    for (const [id, command] of opena2aFixes) {
+      expect(getToolRecommendation(finding(id), scanned), id).toEqual({ command: `${command} 'project'`, label: command });
+    }
+  });
+
+  it('every opena2a Fix names no directory when the shell directory is the scanned one', () => {
+    vi.spyOn(process, 'cwd').mockReturnValue(scanned);
+    for (const [id, command] of opena2aFixes) {
+      expect(getToolRecommendation(finding(id), scanned), id).toEqual({ command, label: command });
+    }
+  });
+
+  it('every opena2a Fix names the scanned directory absolutely from outside it', () => {
+    const elsewhere = path.join(shellDir, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    vi.spyOn(process, 'cwd').mockReturnValue(elsewhere);
+    for (const [id, command] of opena2aFixes) {
+      expect(getToolRecommendation(finding(id), scanned)!.command, id).toBe(`${command} '${scanned}'`);
+    }
+  });
+
+  it('the scan --deep Fix, which reads the home directory, names no directory', () => {
+    expect(getToolRecommendation(finding('HMA-001'), scanned)!.command).toBe('opena2a scan --deep');
+  });
+
+  it('init <dir> prints opena2a Fix lines that name the directory, and init inside it prints them without', async () => {
+    fs.writeFileSync(path.join(scanned, 'src', 'config.ts'), `const k = "${'sk-' + 'ant-api03-' + 'P'.repeat(85)}";\n`);
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network disabled in this test'); }));
+    try {
+      const fixLines = async () => (await captureStdout(() => init({ targetDir: scanned })))
+        .replace(ANSI, '').split('\n').map(l => l.trim()).filter(l => /^Fix: +opena2a /.test(l));
+
+      const fromParent = await fixLines();
+      expect(fromParent).toContain(`Fix:    opena2a protect 'project'`);
+      for (const line of fromParent) expect(line).toMatch(/ 'project'$/);
+
+      vi.spyOn(process, 'cwd').mockReturnValue(scanned);
+      const inside = await fixLines();
+      expect(inside).toContain('Fix:    opena2a protect');
+      for (const line of inside) expect(line).not.toContain('project');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('the template-leak action greps the template from the shell directory', async () => {
     fs.writeFileSync(path.join(scanned, '.env.example'), `ANTHROPIC_API_KEY=${'sk-' + 'ant-api03-' + 'Q'.repeat(85)}\n`);
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network disabled in this test'); }));
@@ -254,6 +315,7 @@ describe('init drift callout', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -267,6 +329,7 @@ describe('init drift callout', () => {
     fs.writeFileSync(path.join(dir, 'src', 'maps.ts'), `export const mapsKey = "${mapsKey}";\n`);
     fs.writeFileSync(path.join(dir, 'src', 'aws.ts'), `export const awsKey = "${awsKey}";\n`);
 
+    vi.spyOn(process, 'cwd').mockReturnValue(dir);
     const out = (await captureStdout(() => init({ targetDir: dir }))).replace(ANSI, '');
     const start = out.indexOf('Scope Drift Detected');
     expect(start).toBeGreaterThan(-1);
@@ -287,5 +350,21 @@ describe('init drift callout', () => {
       expect(line).not.toMatch(/opena2a protect(?! --dry-run)/);
       expect(line).not.toMatch(/git rm|guard sign|shield init/);
     }
+  });
+
+  it('Verify and Fix name the scanned directory when init is run from its parent', async () => {
+    const awsKey = 'AK' + 'IA' + Array.from({ length: 16 }, (_, i) => 'BCDFGHJKLMNPQRSTVWXZ234567'[(i * 5 + 2) % 26]).join('');
+    const project = path.join(dir, 'project');
+    fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ name: 'drift-test' }));
+    fs.writeFileSync(path.join(project, '.gitignore'), '.env\n');
+    fs.writeFileSync(path.join(project, 'src', 'aws.ts'), `export const awsKey = "${awsKey}";\n`);
+    vi.spyOn(process, 'cwd').mockReturnValue(dir);
+
+    const out = (await captureStdout(() => init({ targetDir: project }))).replace(ANSI, '');
+    const callout = out.slice(out.indexOf('Scope Drift Detected'));
+    const block = callout.slice(callout.indexOf('DRIFT-002')).split('\n\n')[0];
+    expect(block).toContain(`Verify:  opena2a protect --dry-run 'project'\n`);
+    expect(block).toContain(`Fix:     opena2a protect 'project'\n`);
   });
 });
