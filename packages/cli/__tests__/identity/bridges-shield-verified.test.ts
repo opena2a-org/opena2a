@@ -145,6 +145,26 @@ describe('importShieldEvents', () => {
     expect(importShieldEvents(aim)).toEqual({ imported: 2, skipped: 0, errors: 0, unverified: 0 });
   });
 
+  it('keeps the deny verdict of a monitored enforce event in the audit metadata', () => {
+    const denied = writeEvent(makePartial({
+      category: 'enforcement',
+      action: 'command.monitored',
+      target: 'curl evil.example',
+      outcome: 'monitored',
+      detail: { rule: 'processes.deny:curl', mode: 'enforce', verdict: 'deny' },
+    }));
+    const plain = writeEvent(makePartial());
+    const aim = fakeAim();
+
+    importShieldEvents(aim);
+
+    const entry = aim.logged.find(e => e.metadata?.sourceEventId === denied.id);
+    expect(entry?.metadata?.verdict).toBe('deny');
+    expect(entry?.metadata?.outcome).toBe('monitored');
+    const other = aim.logged.find(e => e.metadata?.sourceEventId === plain.id);
+    expect(other?.metadata).not.toHaveProperty('verdict');
+  });
+
   it('counts an unparseable line as an error', () => {
     writeEvent(makePartial());
     fs.appendFileSync(getEventsPath(), '{not json\n');

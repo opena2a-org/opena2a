@@ -127,6 +127,12 @@ export function importShieldEvents(aim: AIMCoreLike, opts?: { since?: string }):
       event.outcome === 'monitored' ? 'allowed' :
       'allowed';
 
+    // A deny match under enforce is recorded as monitored with
+    // `detail.verdict: 'deny'` (shield evaluate cannot see whether the shell
+    // ran the command), so the result above reads allowed.  Carry the verdict
+    // so the audit entry still shows the policy denied it.
+    const verdict = event.detail?.verdict;
+
     aim.logEvent({
       action: `shield.${event.action ?? event.category ?? 'event'}`,
       target: event.target ?? '',
@@ -137,6 +143,7 @@ export function importShieldEvents(aim: AIMCoreLike, opts?: { since?: string }):
         severity: event.severity,
         category: event.category,
         outcome: event.outcome,
+        ...(typeof verdict === 'string' ? { verdict } : {}),
       },
     });
     imported++;
