@@ -325,13 +325,14 @@ For repositories with MCP servers or AI agent code, add a HackMyAgent deep scan:
 
 ### trust-badge-action
 
-Generates a trust score badge for your README:
+Updates the trust score badge in your README. Name the package the badge is for and the registry it is published to:
 
 ```yaml
 - name: Update trust badge
   uses: opena2a-org/trust-badge-action@v1
   with:
-    output-path: .github/badges/trust-score.svg
+    package-name: your-package
+    package-source: npm
 ```
 
 Repository: [opena2a-org/trust-badge-action](https://github.com/opena2a-org/trust-badge-action)
