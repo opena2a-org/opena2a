@@ -18,7 +18,8 @@
     "release-smoke:corpus": "tsx scripts/release-smoke-corpus.ts",
     "release-smoke:init": "tsx scripts/release-smoke-init.ts",
     "release-smoke:comply": "tsx scripts/release-smoke-comply.ts",
-    "release-smoke:benchmark": "tsx scripts/release-smoke-benchmark.ts"
+    "release-smoke:benchmark": "tsx scripts/release-smoke-benchmark.ts",
+    "gen:harden-soul-lines": "tsx scripts/gen-harden-soul-lines.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
