@@ -89,7 +89,7 @@ and no pattern was removed. `CREDENTIAL_PATTERNS` grows from 57 to 59 entries.
   a placeholder word that follows a value which is a complete match on its own
   no longer marks that value as a placeholder; the part in front of the word
   still has to pass the other allowlist rules (known example, low entropy,
-  comment marker). For `slack`, `github-pat`, `github-oauth`, `github-app`
+  localhost demo). For `slack`, `github-pat`, `github-oauth`, `github-app`
   and `github-user-to-server`, whose body is a fixed length followed by an
   open run, the token may also end inside the word: when the word begins
   inside the fixed length and runs past it (`xoxb-…-<23 characters>x` then
@@ -197,7 +197,7 @@ False-positive suppression release driven by `secretless-ai status` dogfooding i
 
 ### Allowlist additions in `isKnownExample`
 
-- **Block-comment marker recognition.** The comment-marker example branch now also fires on `/*`, `<!--`, `-->`, `'''`, `"""`, and JSDoc-continuation lines (regex `^\s*\*`). The original `//` and `#` markers continue to fire. The `example`-token gate is preserved — a comment without an explicit `example` keyword still flags real credentials.
+- **Comment-marker recognition for block comments.** The comment-marker example branch now also fires on `/*`, `<!--`, `-->`, `'''`, `"""`, and JSDoc-continuation lines (regex `^\s*\*`). The original `//` and `#` markers continue to fire. The `example`-token gate is preserved — a comment without an explicit `example` keyword still flags real credentials.
 - **Localhost + demo-password DB connection strings.** `<protocol>://user:password@host` URLs whose host is `localhost` or `127.0.0.1` AND whose password is one of `{password, password123, secret, admin, root, demo, test, changeme}` are now treated as known examples. Anchored host check defeats `localhost.evil.com` bypass attempts; production hostnames with weak passwords still fire (the finding is preserved, not silenced).
 - **Bare `'fake'` placeholder.** `PLACEHOLDER_INDICATORS` now contains a bare `'fake'` substring (replacing the previous `'fake_'` and `'fake-'`). Catches `sk-proj-fake1234567890abcdefghij` style values where no underscore or dash followed `fake`.
 
