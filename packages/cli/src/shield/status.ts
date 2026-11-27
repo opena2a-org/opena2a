@@ -8,6 +8,7 @@ import { VERSION_PROBE_TIMEOUT_MS } from './detect.js';
 import { loadPolicy, policyModeOf } from './policy.js';
 import { CHILD_ENV_CONTRACTS } from '../adapters/registry.js';
 import { probeEnv } from '../util/child-env.js';
+import { getAimCoreDir } from '../util/aim-core-dir.js';
 import { programOnPath, withAbsolutePathDirs, withEmptyWorkDir, type EmptyWorkDir } from '../util/program-on-path.js';
 
 function getShieldDir(): string {
@@ -67,7 +68,7 @@ function detectTool(name: string, workDir: EmptyWorkDir): ToolStatus {
     }
 
     case 'AIM Core': {
-      const dataDir = join(homedir(), '.opena2a', 'aim-core');
+      const dataDir = getAimCoreDir();
       const hasIdentity = existsSync(join(dataDir, 'identity.json')) ||
         existsSync(join(dataDir, 'keypair.json'));
       return {

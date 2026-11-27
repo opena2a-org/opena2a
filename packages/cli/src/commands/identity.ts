@@ -13,6 +13,7 @@ import {
 } from '../util/aim-client.js';
 import { authFor, loginServerUrl, storedServerUrl, refreshExpiredLogin } from '../util/identity-auth-lookup.js';
 import { describeProxyRoute } from '../util/env-proxy.js';
+import { displayAimCoreDir } from '../util/aim-core-dir.js';
 
 /**
  * Commands and flags this file prints for the reader to run next. Every
@@ -512,7 +513,7 @@ async function handleCreate(options: IdentityOptions): Promise<number> {
     if (existing) {
       process.stdout.write(yellow('Identity already exists') + '\n');
       process.stdout.write(dim('  aim-core uses a single identity per data directory.') + '\n');
-      process.stdout.write(dim('  To start fresh, remove ~/.opena2a/aim-core/ and re-run.') + '\n\n');
+      process.stdout.write(dim(`  To start fresh, remove ${displayAimCoreDir()} and re-run.`) + '\n\n');
     } else {
       process.stdout.write(green('Identity created') + '\n');
     }
@@ -621,7 +622,7 @@ async function handleServerCreate(options: IdentityOptions, name: string, isJson
       process.stdout.write(`\n  Local ID:     ${dim(localId.agentId)}\n`);
     }
     process.stdout.write(gray('-'.repeat(50)) + '\n');
-    process.stdout.write(dim('Server config stored in ~/.opena2a/aim-core/identities/server.json') + '\n');
+    process.stdout.write(dim(`Server config stored in ${path.join(displayAimCoreDir(), 'identities', 'server.json')}`) + '\n');
     return 0;
   } catch (err) {
     process.stderr.write(`Failed to register on server: ${formatServerError(err)}\n`);

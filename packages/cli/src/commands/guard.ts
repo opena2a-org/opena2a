@@ -16,11 +16,11 @@
 import * as fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { signedByLabel } from '../util/signed-by.js';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { bold, green, yellow, red, dim, gray, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
+import { getAimCoreDir } from '../util/aim-core-dir.js';
 
 // --- Types ---
 
@@ -298,7 +298,7 @@ async function guardSign(targetDir: string, options: GuardOptions): Promise<numb
 
     // Recommend AIM for automatic signature management if no identity exists
     const aimIdentityPath = path.join(targetDir, '.opena2a', 'aim', 'identity.json');
-    const globalAimPath = path.join(os.homedir(), '.opena2a', 'aim-core', 'identity.json');
+    const globalAimPath = path.join(getAimCoreDir(), 'identity.json');
     const hasIdentity = fs.existsSync(aimIdentityPath) || fs.existsSync(globalAimPath);
     if (!hasIdentity) {
       process.stdout.write('\n');

@@ -516,12 +516,14 @@ export interface ServerConfig {
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { getAimCoreDir } from './aim-core-dir.js';
 
-const AIM_DIR = join(homedir(), '.opena2a', 'aim-core', 'identities');
+function identitiesDir(): string {
+  return join(getAimCoreDir(), 'identities');
+}
 
 function serverConfigPath(): string {
-  return join(AIM_DIR, 'server.json');
+  return join(identitiesDir(), 'server.json');
 }
 
 export function loadServerConfig(): ServerConfig | null {
@@ -535,8 +537,9 @@ export function loadServerConfig(): ServerConfig | null {
 }
 
 export function saveServerConfig(config: ServerConfig): void {
-  if (!existsSync(AIM_DIR)) {
-    mkdirSync(AIM_DIR, { recursive: true });
+  const dir = identitiesDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
   writeFileSync(serverConfigPath(), JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }
