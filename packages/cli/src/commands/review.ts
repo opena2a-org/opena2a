@@ -781,10 +781,13 @@ export async function review(options: ReviewOptions): Promise<number> {
   // IS observable and worth saying: the composite sits below every phase, which
   // is the signal that a critical dimension capped it rather than an average
   // producing it.
-  const lowestPhase = phases.length > 0 ? Math.min(...phases.map(ph => ph.score)) : 0;
+  // A skipped phase measured nothing and carries no weight in the composite:
+  // it is neither counted as a dimension nor taken as the lowest score.
+  const ranPhases = phases.filter(ph => ph.status !== 'skip');
+  const lowestPhase = ranPhases.length > 0 ? Math.min(...ranPhases.map(ph => ph.score)) : 0;
   const scopeNote = compositeScore < lowestPhase
-    ? `  (composite across ${phases.length} dimensions; capped by a critical dimension)`
-    : `  (composite across ${phases.length} dimensions)`;
+    ? `  (composite across ${ranPhases.length} dimensions; capped by a critical dimension)`
+    : `  (composite across ${ranPhases.length} dimensions)`;
   // The finding count above is what survived chain verification. When events
   // were excluded, the summary must say so on the same screen as the count it
   // qualifies, not only on stderr.
