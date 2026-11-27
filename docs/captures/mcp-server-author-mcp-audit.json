@@ -1,0 +1,29 @@
+{
+  "capture": "mcp-server-author-mcp-audit.txt",
+  "doc": "docs/use-cases/mcp-server-author.md",
+  "section": "Step 1: See How Your Server Looks to Users",
+  "command": "npx opena2a-cli mcp audit",
+  "package": "opena2a-cli",
+  "version": "0.10.13",
+  "build": "packages/cli/dist built with npm run build from commit 7506588f",
+  "invocation": "node packages/cli/dist/index.js mcp audit, run with a new empty HOME (a path with no symlink in it, so the CLI shortens the config path to ~) from HOME/mcp-server-tools",
+  "setup": "HOME/mcp-server-tools: package.json (@myorg/mcp-server-tools 1.2.0), dist/index.js and a .mcp.json configuring my-server (node ./dist/index.js), filesystem (npx -y @modelcontextprotocol/server-filesystem .), postgres (npx -y @modelcontextprotocol/server-postgres) and github (npx -y @modelcontextprotocol/server-github); `opena2a mcp sign my-server` from Step 2 was run once before the audit, so my-server holds a signature and the other three do not",
+  "environment": [
+    "CI=true",
+    "TERM=dumb",
+    "LANG=en_US.UTF-8",
+    "OPENA2A_TELEMETRY=off"
+  ],
+  "network": "online: the three npm-package servers were looked up in the OpenA2A Registry, and the trust endings are the answers it gave at capture time",
+  "tools": {
+    "node": "v26.13.1",
+    "npm": "11.20.0",
+    "os": "macOS 27.2 arm64"
+  },
+  "capturedAt": "2026-11-27T01:49:20Z",
+  "exitCode": 0,
+  "stream": "stdout; stderr was empty on this run",
+  "outputLines": 20,
+  "outputSha256": "84dc72a72fe9afb0831510fa3040faed1d053ecb171c7659a1a49dfbfe73884c",
+  "docReplacements": []
+}
