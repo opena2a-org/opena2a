@@ -456,6 +456,26 @@ describe('review', () => {
     expect(report.credentialData.totalFindings).toBeGreaterThan(0);
   });
 
+  it('reports a GitHub App user access token (ghu_) as CRED-003', async () => {
+    fs.writeFileSync(path.join(tempDir, 'package.json'), JSON.stringify({ name: 'test-project' }));
+    fs.writeFileSync(path.join(tempDir, '.gitignore'), 'node_modules\n');
+    const userToken = 'ghu_' + 'R4tY8uIo2pAs6dFg0hJk3lZx7cVb5nMq1wEr';
+    fs.writeFileSync(path.join(tempDir, 'config.js'), `const github = "${userToken}";\n`);
+
+    const { output } = await captureStdout(() => review({
+      targetDir: tempDir,
+      format: 'json',
+      autoOpen: false,
+      skipHma: true,
+    }));
+
+    const report = JSON.parse(output);
+    const cred = report.findings.filter((f: { id: string }) => f.id === 'CRED-003');
+    expect(cred).toHaveLength(1);
+    expect(cred[0].detail).toContain('config.js');
+    expect(output).not.toContain(userToken);
+  });
+
   // #267: review copied every detected credential verbatim into
   // credentialData.matches[].value, so the JSON CI archives and the HTML built
   // to be shared both carried the secret. Two credential shapes on purpose: a

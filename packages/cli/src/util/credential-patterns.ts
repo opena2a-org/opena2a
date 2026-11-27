@@ -110,7 +110,7 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   {
     id: 'CRED-003',
     title: 'GitHub Token',
-    pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g,
+    pattern: /gh[psu]_[A-Za-z0-9_]{36,}/g,
     envVarPrefix: 'GITHUB_TOKEN',
     severity: 'high',
     explanation: 'GitHub token hardcoded in source. Grants repository access, potentially including private repos and org resources.',
@@ -271,7 +271,7 @@ export const TEMPLATE_SCAN_PATTERNS: { id: string; title: string; pattern: RegEx
   { id: 'CRED-002', title: 'OpenAI API Key',    pattern: /sk-[A-Za-z0-9]{48,}/g },
   { id: 'DRIFT-001', title: 'Google API Key',   pattern: /AIza[0-9A-Za-z_-]{35,}/g },
   { id: 'DRIFT-002', title: 'AWS Access Key',   pattern: /AKIA[0-9A-Z]{16}/g },
-  { id: 'CRED-003', title: 'GitHub Token',      pattern: /gh[ps]_[A-Za-z0-9_]{36,}/g },
+  { id: 'CRED-003', title: 'GitHub Token',      pattern: /gh[psu]_[A-Za-z0-9_]{36,}/g },
   { id: 'CRED-STRIPE', title: 'Stripe Secret Key', pattern: /sk_live_[0-9a-zA-Z]{24,}/g },
 ];
 
@@ -538,8 +538,10 @@ export const BREADTH_DETECT_IDS = new Set([
   'aws-sts', 'digitalocean', 'heroku', 'fly-io', 'netlify',
   // communication (telegram-bot/twilio are shape-only FPs)
   'slack', 'slack-webhook', 'slack-app', 'discord-bot', 'discord-webhook', 'sendgrid',
-  // developer (github-pat/app `gh[ps]_` owned by local CRED-003; gho_/ghr_/fine are not)
-  'github-fine', 'github-oauth', 'github-refresh', 'gitlab', 'gitlab-pipeline',
+  // developer (github-pat/app `gh[ps]_` owned by local CRED-003; gho_/ghr_/fine are
+  // not; github-user-to-server `ghu_` is matched by CRED-003 too, and the value dedup
+  // keeps the local finding, so listing it here only adds a fallback)
+  'github-fine', 'github-oauth', 'github-user-to-server', 'github-refresh', 'gitlab', 'gitlab-pipeline',
   'gitlab-runner', 'npm', 'pypi', 'dockerhub', 'bitbucket',
   // payment
   'stripe-test', 'stripe-restricted', 'stripe', 'stripe-webhook', 'square',
