@@ -248,3 +248,43 @@ describe('quickCredentialScan — catalog breadth integration', () => {
     expect(matches).toHaveLength(0);
   });
 });
+
+describe('quickCredentialScan — file-name-like runs after HRKU-, fo1_, glpat-, GR1348941 and dckr_pat_', () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cred-cat-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  // Prefixes and tokens are assembled from parts so this file never carries a
+  // contiguous token shape. The token bodies are mixed-case and hold digits,
+  // as random tokens do, at each vendor's length. FAKE
+  const body = (length: number, offset: number): string => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    return Array.from({ length }, (_, i) => alphabet[(offset + i * 7) % alphabet.length]).join('');
+  };
+  const RULES: Array<{ id: string; prefix: string; token: string }> = [
+    { id: 'heroku', prefix: ['HR', 'KU-'].join(''), token: ['HR', 'KU-', 'AA', body(58, 5)].join('') },
+    { id: 'fly-io', prefix: ['fo', '1_'].join(''), token: ['fo', '1_', body(43, 11)].join('') },
+    { id: 'gitlab', prefix: ['gl', 'pat-'].join(''), token: ['gl', 'pat-', body(20, 17)].join('') },
+    { id: 'gitlab-runner', prefix: ['GR13', '48941'].join(''), token: ['GR13', '48941', body(20, 23)].join('') },
+    { id: 'dockerhub', prefix: ['dckr', '_pat_'].join(''), token: ['dckr', '_pat_', body(27, 29)].join('') },
+  ];
+
+  it('reports none of the file names and every real-shaped token, under its catalog id', async () => {
+    const lines = RULES.flatMap(({ prefix, token }) => [
+      `import runbook from "./docs/${prefix}rotation-runbook-for-the-platform-team.md";`,
+      `const plan = "${prefix}migration_plan_for_the_staging_cluster";`,
+      `const token = "${token}";`,
+    ]);
+    fs.writeFileSync(path.join(tmpDir, 'config.js'), lines.join('\n') + '\n');
+
+    const matches = await quickCredentialScan(tmpDir);
+
+    for (const { id, prefix, token } of RULES) {
+      expect(matches.filter(m => m.value.startsWith(prefix) && m.value !== token), `${id} reported a file name`).toHaveLength(0);
+      const forToken = matches.filter(m => m.value === token);
+      expect(forToken, `${id} token not reported`).toHaveLength(1);
+      expect(forToken[0].findingId).toBe(`CRED-CAT-${id}`);
+    }
+    expect(matches).toHaveLength(RULES.length);
+  });
+});

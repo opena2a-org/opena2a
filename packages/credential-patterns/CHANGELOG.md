@@ -2,6 +2,24 @@
 
 All notable changes to `@opena2a/credential-patterns` will be documented in this file.
 
+## Unreleased
+
+### A run of words after HRKU-, fo1_, glpat-, GR1348941 or dckr_pat_ is not a token
+
+The `heroku`, `fly-io`, `gitlab`, `gitlab-runner` and `dockerhub` patterns
+do not match when the run after the prefix is two or more lowercase words
+joined by `-` or `_`, such as a file name that holds the prefix
+(`docs/glpat-rotation-runbook-for-the-platform-team.md`). Their bodies take
+`_` and `-`, so such a run matched as soon as it passed the length floor, and
+`findRealMatch` reported it. The run is read to its end, so the match cannot
+stop early to get past the check, and for at most 255 characters, the longest
+file name common file systems allow, so a line that repeats a prefix stays
+linear-time; a longer lowercase run is matched as before. A real token, whose
+body is random base62 or base64url text with capital letters or digits,
+still matches, and so does a single lowercase run with no separator. Ids,
+names, `envPrefix` and categories are unchanged, and
+`CREDENTIAL_PREFIX_QUICK_CHECK` still extracts each prefix.
+
 ## 0.1.4 — 2026-11-25
 
 ### The PyPI rule matches only tokens that carry the pypi.org or test.pypi.org prefix

@@ -18,6 +18,24 @@ export interface CredentialPattern {
   category?: string;
 }
 
+/**
+ * Negative lookahead placed directly after a token prefix whose body takes
+ * `_` and `-`: the run after the prefix must not be two or more lowercase
+ * words joined by `-` or `_`, a kebab-case or snake-case name such as a file
+ * name that holds the prefix (`<prefix>rotation-runbook-for-the-team.md`).
+ * The run is read to its end, so the match cannot stop early to get past it.
+ * A token is random base62 or base64url text: a body of 20 such characters
+ * with no capital letter and no digit comes up about once in fifteen million,
+ * and less often as the body grows, so real tokens still match. One run of
+ * letters with no separator is not a name and still matches.
+ *
+ * The run is read for at most 255 characters, the longest file name common
+ * file systems allow, so a line that repeats a prefix stays linear-time; a
+ * longer lowercase run is matched as before. The literal prefix stays first
+ * in the source, so `CREDENTIAL_PREFIX_QUICK_CHECK` still extracts it.
+ */
+const NOT_A_WORD_RUN = '(?!(?=[a-z_-]{1,255}(?![a-zA-Z0-9_-]))[-_]*[a-z]+[-_]+[a-z])';
+
 export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   // ── AI/ML (category: ai-ml) ──────────────────────────────────────────
   { id: 'anthropic', name: 'Anthropic API Key', regex: /sk-ant-api\d{2}-[a-zA-Z0-9_-]{20,}/, envPrefix: 'ANTHROPIC_API_KEY', category: 'ai-ml' },
@@ -48,8 +66,8 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'aws-secret', name: 'AWS Secret Access Key', regex: /(?:aws.{0,16}(?:secret|private).{0,16}key|secret[_\s.-]?access[_\s.-]?key)["'\s]*[:=]+>?\s*["']?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+])/i, envPrefix: 'AWS_SECRET_ACCESS_KEY', category: 'cloud' },
   { id: 'gcp-service-account', name: 'GCP Service Account JSON', regex: /"type"\s*:\s*"service_account"/, envPrefix: 'GOOGLE_APPLICATION_CREDENTIALS', category: 'cloud' },
   { id: 'digitalocean', name: 'DigitalOcean PAT', regex: /dop_v1_[a-f0-9]{64}/, envPrefix: 'DIGITALOCEAN_TOKEN', category: 'cloud' },
-  { id: 'heroku', name: 'Heroku API Key', regex: /HRKU-[a-zA-Z0-9_-]{30,}/, envPrefix: 'HEROKU_API_KEY', category: 'cloud' },
-  { id: 'fly-io', name: 'Fly.io Token', regex: /fo1_[a-zA-Z0-9_-]{20,}/, envPrefix: 'FLY_API_TOKEN', category: 'cloud' },
+  { id: 'heroku', name: 'Heroku API Key', regex: new RegExp(`HRKU-${NOT_A_WORD_RUN}[a-zA-Z0-9_-]{30,}`), envPrefix: 'HEROKU_API_KEY', category: 'cloud' },
+  { id: 'fly-io', name: 'Fly.io Token', regex: new RegExp(`fo1_${NOT_A_WORD_RUN}[a-zA-Z0-9_-]{20,}`), envPrefix: 'FLY_API_TOKEN', category: 'cloud' },
   { id: 'netlify', name: 'Netlify PAT', regex: /nfp_[a-zA-Z0-9]{40,}/, envPrefix: 'NETLIFY_AUTH_TOKEN', category: 'cloud' },
   // Azure Storage account keys are 512-bit (https://learn.microsoft.com/azure/storage/common/storage-account-keys-manage):
   // base64 of 64 bytes is 88 characters ending in `==`. The 44-character shape
@@ -94,12 +112,12 @@ export const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   { id: 'github-app', name: 'GitHub App Installation Token', regex: /ghs_[a-zA-Z0-9]{36}[a-zA-Z0-9]*/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
   { id: 'github-user-to-server', name: 'GitHub App User Access Token', regex: /ghu_[a-zA-Z0-9]{36}[a-zA-Z0-9]*/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
   { id: 'github-refresh', name: 'GitHub Refresh Token', regex: /ghr_[a-zA-Z0-9]{36,}/, envPrefix: 'GITHUB_TOKEN', category: 'developer' },
-  { id: 'gitlab', name: 'GitLab PAT', regex: /glpat-[a-zA-Z0-9_-]{20,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
+  { id: 'gitlab', name: 'GitLab PAT', regex: new RegExp(`glpat-${NOT_A_WORD_RUN}[a-zA-Z0-9_-]{20,}`), envPrefix: 'GITLAB_TOKEN', category: 'developer' },
   { id: 'gitlab-pipeline', name: 'GitLab Pipeline Trigger', regex: /glptt-[a-f0-9]{40,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
-  { id: 'gitlab-runner', name: 'GitLab Runner Token', regex: /GR1348941[a-zA-Z0-9_-]{20,}/, envPrefix: 'GITLAB_TOKEN', category: 'developer' },
+  { id: 'gitlab-runner', name: 'GitLab Runner Token', regex: new RegExp(`GR1348941${NOT_A_WORD_RUN}[a-zA-Z0-9_-]{20,}`), envPrefix: 'GITLAB_TOKEN', category: 'developer' },
   { id: 'npm', name: 'npm Access Token', regex: /npm_[a-zA-Z0-9]{36}/, envPrefix: 'NPM_TOKEN', category: 'developer' },
   { id: 'pypi', name: 'PyPI API Token', regex: /pypi-(?:AgEIcHlwaS5vcmc|AgENdGVzdC5weXBpLm9yZw)[A-Za-z0-9_-]{50,}/, envPrefix: 'PYPI_API_TOKEN', category: 'developer' },
-  { id: 'dockerhub', name: 'Docker Hub PAT', regex: /dckr_pat_[a-zA-Z0-9_-]{20,}/, envPrefix: 'DOCKER_TOKEN', category: 'developer' },
+  { id: 'dockerhub', name: 'Docker Hub PAT', regex: new RegExp(`dckr_pat_${NOT_A_WORD_RUN}[a-zA-Z0-9_-]{20,}`), envPrefix: 'DOCKER_TOKEN', category: 'developer' },
   { id: 'bitbucket', name: 'Bitbucket App Password', regex: /ATBB[a-zA-Z0-9]{32,}/, envPrefix: 'BITBUCKET_TOKEN', category: 'developer' },
 
   // ── Payment (category: payment) ───────────────────────────────────────
