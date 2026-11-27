@@ -419,6 +419,8 @@ function makeCertificates(dir: string, sans: Record<string, string>): { ca: stri
   };
   const newKey = (name: string): string => file(name, generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
     .privateKey.export({ type: 'pkcs8', format: 'pem' }) as string);
+  // Every signature names SHA-256: LibreSSL (macOS /usr/bin/openssl) signs
+  // with SHA-1 by default, and Node.js refuses that as too weak.
   const openssl = (...args: string[]): void => { execFileSync('openssl', args, { stdio: 'pipe' }); };
   const config = file('openssl.cnf', [
     '[req]', 'distinguished_name = dn', '[dn]',
@@ -426,7 +428,7 @@ function makeCertificates(dir: string, sans: Record<string, string>): { ca: stri
   ].join('\n'));
   const caKey = newKey('ca-key.pem');
   const caCert = file('ca.pem');
-  openssl('req', '-new', '-x509', '-key', caKey, '-subj', '/CN=opena2a test CA', '-days', '1',
+  openssl('req', '-new', '-x509', '-sha256', '-key', caKey, '-subj', '/CN=opena2a test CA', '-days', '1',
     '-config', config, '-extensions', 'test_ca', '-out', caCert);
   const servers: Record<string, ServerCert> = {};
   let serial = 1;
@@ -437,7 +439,7 @@ function makeCertificates(dir: string, sans: Record<string, string>): { ca: stri
     const ext = file(`${name}.ext`, `subjectAltName = ${san}\nextendedKeyUsage = serverAuth\n`);
     const cert = file(`${name}.pem`);
     serial += 1;
-    openssl('x509', '-req', '-in', csr, '-CA', caCert, '-CAkey', caKey, '-set_serial', String(serial),
+    openssl('x509', '-req', '-sha256', '-in', csr, '-CA', caCert, '-CAkey', caKey, '-set_serial', String(serial),
       '-days', '1', '-extfile', ext, '-out', cert);
     servers[name] = { key: fs.readFileSync(key, 'utf8'), cert: fs.readFileSync(cert, 'utf8') };
   }
