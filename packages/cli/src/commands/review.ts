@@ -198,6 +198,8 @@ export interface InitPhaseData {
     total: number;
     notCheckedReason: string | null;
     turnedOff: boolean;
+    /** The configured registry.url was refused, so no request was made. */
+    urlRefused: boolean;
   };
   /** Env files in the tree with their git state, value count and mode. */
   envFiles: EnvFileFact[];
@@ -1039,6 +1041,7 @@ async function runInitPhase(
       total: advisoryCheck.total,
       notCheckedReason: advisoryCheck.reason,
       turnedOff: advisoryCheck.turnedOff,
+      urlRefused: advisoryCheck.urlRefused,
     },
     envFiles: collectEnvFileFacts(targetDir),
   };

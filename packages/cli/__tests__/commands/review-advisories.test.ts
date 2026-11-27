@@ -375,6 +375,33 @@ describe('advisory findings, scope and reasons in review and init (#464)', () =>
     expect(hygieneText(report)).toContain('Reason: Registry URL must use HTTPS: http://registry.internal.example.');
   });
 
+  // Regression (#552): a refused registry.url was followed by "Run the review
+  // again when the Registry is reachable", though no request was made and
+  // waiting would not change the result.
+  it('a refused registry.url is followed on the Hygiene tab by the step that corrects it', async () => {
+    for (const url of ['http://registry.internal.example', 'http://FAKE-user:FAKE-pw@registry.internal.example']) {
+      registry.answer = refusalOf(url);
+
+      const { report } = await runReview();
+      const t = hygieneText(report);
+
+      expect(report.initData.advisoryRead.urlRefused, url).toBe(true);
+      expect(t, url).toContain('Set registry.url to an https URL, or an http URL on localhost, 127.0.0.1 or ::1, without a user name or password, then run the review again.');
+      expect(t, url).not.toContain('when the Registry is reachable');
+    }
+  }, 60_000);
+
+  it('a Registry that does not answer is followed on the Hygiene tab by the step to run the review again', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+
+    const { report } = await runReview();
+    const t = hygieneText(report);
+
+    expect(report.initData.advisoryRead.urlRefused).toBe(false);
+    expect(t).toContain('Run the review again when the Registry is reachable.');
+    expect(t).not.toContain('Set registry.url');
+  });
+
   // Regression (#464): the reason repeated a password holding a space or a
   // `/`, and the part after an `@`, in --verbose output, the JSON and the
   // Hygiene tab.

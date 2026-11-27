@@ -65,6 +65,9 @@ export interface AdvisoryCheck {
   reason: string | null;
   /** True when OPENA2A_ADVISORIES=off or --no-advisories turned the request off. */
   turnedOff: boolean;
+  /** True when the configured registry.url was refused, so no request was
+   *  made: the next step is to correct the URL, not to wait for the Registry. */
+  urlRefused: boolean;
 }
 
 /** The request reads the advisories published in this many days... */
@@ -79,8 +82,8 @@ export const ADVISORIES_ENV = 'OPENA2A_ADVISORIES';
 export const NO_ADVISORIES_FLAG = '--no-advisories';
 
 /** The result when no advisory list was read. */
-export function advisoriesNotChecked(reason: string | null = null, turnedOff = false): AdvisoryCheck {
-  return { advisories: [], matchedPackages: [], total: 0, listed: 0, fromCache: false, checked: false, reason, turnedOff };
+export function advisoriesNotChecked(reason: string | null = null, turnedOff = false, urlRefused = false): AdvisoryCheck {
+  return { advisories: [], matchedPackages: [], total: 0, listed: 0, fromCache: false, checked: false, reason, turnedOff, urlRefused };
 }
 
 function advisoriesTurnedOff(): boolean {
@@ -294,13 +297,13 @@ function writeCache(registryUrl: string, data: AdvisoryResponse): void {
  * about the project: dependencies are matched against the list here, on this
  * machine. When no list is read, `reason` says why in one line.
  */
-async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryResponse } | { reason: string }> {
+async function fetchAdvisories(registryUrl: string): Promise<{ data: AdvisoryResponse } | { reason: string; urlRefused?: boolean }> {
   // The validator accepts an empty URL, which would build a relative one.
   if (!registryUrl) return { reason: 'no Registry URL is configured' };
   try {
     validateRegistryUrl(registryUrl);
   } catch (err) {
-    return { reason: refusalReason(err) };
+    return { reason: refusalReason(err), urlRefused: true };
   }
   const where = shownUrl(registryUrl);
   const since = new Date(Date.now() - ADVISORY_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -549,7 +552,7 @@ export async function checkAdvisories(
     fromCache = true;
   } else {
     const fetched = await fetchAdvisories(registryUrl);
-    if ('reason' in fetched) return advisoriesNotChecked(fetched.reason);
+    if ('reason' in fetched) return advisoriesNotChecked(fetched.reason, false, fetched.urlRefused === true);
     data = fetched.data;
     writeCache(registryUrl, data);
   }
@@ -564,7 +567,7 @@ export async function checkAdvisories(
   const total = typeof data.total === 'number' && Number.isFinite(data.total) ? Math.max(data.total, received) : received;
 
   if (listed === 0) {
-    return { advisories: [], matchedPackages: [], total, listed, fromCache, checked: true, reason: null, turnedOff: false };
+    return { advisories: [], matchedPackages: [], total, listed, fromCache, checked: true, reason: null, turnedOff: false, urlRefused: false };
   }
 
   // Match advisories against project packages
@@ -595,6 +598,7 @@ export async function checkAdvisories(
     checked: true,
     reason: null,
     turnedOff: false,
+    urlRefused: false,
   };
 }
 
@@ -620,7 +624,7 @@ export async function readAdvisories(
   try {
     registryUrl = await resolveRegistryUrl();
   } catch (err) {
-    return advisoriesNotChecked(refusalReason(err));
+    return advisoriesNotChecked(refusalReason(err), false, true);
   }
   // The advisory check never stops review or init: an error the read or the
   // comparison throws leaves the advisories not checked. Its message is not

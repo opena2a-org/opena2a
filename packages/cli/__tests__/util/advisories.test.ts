@@ -502,6 +502,7 @@ describe('advisories', () => {
         checked: true,
         reason: null,
         turnedOff: false,
+        urlRefused: false,
       });
     } finally {
       process.stdout.write = origWrite;
@@ -581,6 +582,28 @@ describe('advisories', () => {
     expect(resolved.checked).toBe(false);
     expect(resolved.reason).toBe('Registry URL must use HTTPS: http://registry.internal.example');
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // Regression (#552): the report told the user to wait for the Registry when
+  // the configured registry.url was refused and no request was made.
+  it('marks the advisories of a refused Registry URL as refused, and no other result', async () => {
+    for (const url of ['http://registry.internal.example', 'not a url', 'http://FAKE-user:FAKE/pw@registry.internal.example']) {
+      const direct = await checkAdvisories(tempDir, url);
+      const resolved = await readAdvisories(tempDir, async () => {
+        validateRegistryUrl(url);
+        return url;
+      });
+      expect(direct.urlRefused, url).toBe(true);
+      expect(resolved.urlRefused, url).toBe(true);
+    }
+    const thrown = await readAdvisories(tempDir, async () => { throw new Error('refused'); });
+    expect(thrown.urlRefused).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+    const unreachable = await checkAdvisories(tempDir, 'https://registry.internal.example');
+    expect(unreachable.checked).toBe(false);
+    expect(unreachable.urlRefused).toBe(false);
   });
 
   // Regression (#464): the reason was the first line of the refusal's

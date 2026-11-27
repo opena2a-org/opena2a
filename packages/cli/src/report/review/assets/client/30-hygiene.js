@@ -90,7 +90,11 @@ function renderHygiene() {
     }).join(', ') + '</div>' + (advScope ? '<div style="font-size:12px;color:var(--dim);margin-top:6px">' + esc(advScope) + '</div>' : '') + '</div>';
   } else if (!advChecked) {
     var advReason = advRead && advRead.notCheckedReason ? ' Reason: ' + advRead.notCheckedReason + '.' : '';
-    var advNext = advRead && advRead.turnedOff ? ' Unset OPENA2A_ADVISORIES and drop --no-advisories to check them.' : ' Run the review again when the Registry is reachable.';
+    // A refused registry.url made no request, so waiting for the Registry
+    // would not help: the next step is to correct the URL.
+    var advNext = advRead && advRead.turnedOff ? ' Unset OPENA2A_ADVISORIES and drop --no-advisories to check them.'
+      : advRead && advRead.urlRefused ? ' Set registry.url to an https URL, or an http URL on localhost, 127.0.0.1 or ::1, without a user name or password, then run the review again.'
+      : ' Run the review again when the Registry is reachable.';
     h += '<div class="card" style="font-size:12px;color:var(--dim)">' + esc('Advisories not checked: no advisory list was read from the OpenA2A Registry, so no dependency was compared.' + advReason + advNext) + '</div>';
   } else {
     h += '<div class="card" style="font-size:12px;color:var(--dim)">' + esc((advScope || 'Advisories checked against project dependencies via the OpenA2A Registry.') + ' No matching advisories found.') + '</div>';
