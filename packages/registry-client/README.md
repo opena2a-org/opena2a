@@ -105,6 +105,7 @@ tweetnacl signature is byte-compatible with the registry's Go `crypto/ed25519` v
 
 - **The client never computes a trust level.** `trustLevel` comes from the server. If the server returns no level, the CLI renders a "Listed — not yet assessed" path.
 - **Opinionated defaults, minimal knobs.** 10 s per-request timeout, 60 s read-method cache TTL, both tunable via `RegistryClientOptions`.
+- **Every call ends.** The timeout covers the whole call, body included, so a server that sends headers and then stalls still ends in a `timeout` error. Answers are read with a byte cap (1 MB for a query or publish, 10 MB for a batch; 2 KB is kept of an error body), and an answer that is too large or the wrong shape (not an object, a batch without a `results` array or `total`, a `trustLevel` that is not an integer from 0 to 4, a `trustScore` outside 0 to 1) is a `RegistryApiError` with code `invalid_response`.
 - **Structured errors.** `PackageNotFoundError` on 404; `RegistryApiError` with a `code` (`not_found | unauthorized | forbidden | rate_limited | bad_request | server_error | network | timeout | invalid_response`) and optional `statusCode` + `body` for everything else. CLIs render prose from these codes.
 - **No telemetry side effects.** The client sends the `User-Agent` the caller provides; it does not log or emit anything.
 
