@@ -14,6 +14,13 @@ import { Spinner } from '../util/spinner.js';
 import { table } from '../util/format.js';
 import { validateRegistryUrl } from '../util/validate-registry-url.js';
 import { getVersion } from '../util/version.js';
+import {
+  describeTrustAnswer,
+  loadTrustUi,
+  paintTrustAnswer,
+  type TrustAnswerView,
+  type TrustUi,
+} from '../util/trust-answer.js';
 
 function clientUserAgent(): string {
   return `opena2a-cli/${getVersion()}`;
@@ -43,6 +50,14 @@ interface VerifyResult {
    */
   scoreMatchesInstalled: boolean | null;
   trustVerdict: string | null;
+  /** The level shown, 0-4 (the registry's, lowered when its verdict is worse); null when it gives none. */
+  trustLevel: number | null;
+  /** That level's word: Blocked, Warning, Listed, Scanned or Verified. */
+  trustLevelWord: string | null;
+  /** True when the registry lists the package and never scanned it; its trust score then measures nothing. */
+  trustNotScanned: boolean | null;
+  /** The command to run next for a Blocked or Warning answer. */
+  nextStep: string | null;
   oracleVerdict: string | null;
   oracleSignatureValid: boolean | null;
   dependencyRiskCount: number | null;
@@ -138,7 +153,9 @@ export async function verify(options: VerifyOptions): Promise<number> {
     process.stdout.write(bold('Looking up installed OpenA2A package hashes in the registry') + '\n\n');
   }
 
+  const ui = await loadTrustUi();
   const results: VerifyResult[] = [];
+  const views = new Map<VerifyResult, TrustAnswerView>();
   const spinner = new Spinner('');
 
   for (const pkg of packages) {
@@ -147,8 +164,9 @@ export async function verify(options: VerifyOptions): Promise<number> {
       spinner.start();
     }
 
-    const result = await verifyPackage(pkg, registryUrl, options);
+    const { result, view } = await verifyPackage(pkg, registryUrl, options, ui);
     results.push(result);
+    if (view) views.set(result, view);
 
     if (!isCi && !isJson) {
       spinner.stop();
@@ -179,7 +197,7 @@ export async function verify(options: VerifyOptions): Promise<number> {
     };
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
-    printResults(results, registryUrl);
+    printResults(results, registryUrl, views, ui);
   }
 
   const tampered = results.filter(r => r.registryStatus === 'tamper_detected');
@@ -189,7 +207,10 @@ export async function verify(options: VerifyOptions): Promise<number> {
 // --- Trust profile and oracle queries ---
 
 interface TrustProfile {
+  /** Whether the registry answered with a record of the package. */
+  found: boolean;
   trustScore: number;
+  trustLevel: number | null;
   scannedVersion: string | null;
   verdict: string;
   lastScannedAt: string | null;
@@ -213,7 +234,9 @@ async function queryTrustProfile(registryUrl: string, name: string, type?: strin
     // registry has one; the client's type does not declare the field.
     const rawVersion = (data as { version?: unknown }).version;
     return {
+      found: data.found !== false,
       trustScore: data.trustScore ?? 0,
+      trustLevel: typeof data.trustLevel === 'number' ? data.trustLevel : null,
       scannedVersion: typeof rawVersion === 'string' && rawVersion !== '' && rawVersion !== PLACEHOLDER_VERSION
         ? rawVersion
         : null,
@@ -258,12 +281,17 @@ async function verifyPackage(
   packageName: string,
   registryUrl: string,
   options: VerifyOptions,
-): Promise<VerifyResult> {
+  ui: TrustUi,
+): Promise<{ result: VerifyResult; view: TrustAnswerView | null }> {
   const emptyTrust = {
     trustScore: null,
     scannedVersion: null,
     scoreMatchesInstalled: null,
     trustVerdict: null,
+    trustLevel: null,
+    trustLevelWord: null,
+    trustNotScanned: null,
+    nextStep: null,
     oracleVerdict: null,
     oracleSignatureValid: null,
     dependencyRiskCount: null,
@@ -282,11 +310,14 @@ async function verifyPackage(
       process.stderr.write(dim(`  ${packageName}: not installed locally\n`));
     }
     return {
-      packageName,
-      version: 'N/A',
-      localHash: 'N/A',
-      registryStatus: 'not_installed',
-      ...emptyTrust,
+      result: {
+        packageName,
+        version: 'N/A',
+        localHash: 'N/A',
+        registryStatus: 'not_installed',
+        ...emptyTrust,
+      },
+      view: null,
     };
   }
 
@@ -334,7 +365,11 @@ async function verifyPackage(
 
   const trustScore = trustProfile?.trustScore ?? null;
   const scannedVersion = trustProfile?.scannedVersion ?? null;
-  return {
+  // An answer without a record names no level: it is not shown as Blocked.
+  const view = trustProfile?.found
+    ? describeTrustAnswer(ui, { trustLevel: trustProfile.trustLevel, verdict: trustProfile.verdict }, packageName)
+    : null;
+  const result: VerifyResult = {
     packageName,
     version: pkgVersion,
     localHash,
@@ -345,12 +380,17 @@ async function verifyPackage(
       ? null
       : scannedVersion === pkgVersion,
     trustVerdict: trustProfile?.verdict ?? null,
+    trustLevel: view?.level ?? null,
+    trustLevelWord: view?.word ?? null,
+    trustNotScanned: view ? view.notScanned : null,
+    nextStep: view?.nextStep ?? null,
     oracleVerdict: oracle?.verdict ?? null,
     oracleSignatureValid: oracle?.signatureValid ?? null,
     dependencyRiskCount: trustProfile?.dependencyRiskCount ?? null,
     lastScannedAt: trustProfile?.lastScannedAt ?? null,
     error,
   };
+  return { result, view };
 }
 
 // --- Helpers ---
@@ -391,7 +431,12 @@ export function scoreVersionNote(r: Pick<VerifyResult, 'version' | 'scannedVersi
   return dim(`(scanned ${r.scannedVersion})`);
 }
 
-function printResults(results: VerifyResult[], registryUrl: string): void {
+function printResults(
+  results: VerifyResult[],
+  registryUrl: string,
+  views: Map<VerifyResult, TrustAnswerView>,
+  ui: TrustUi,
+): void {
   // Detailed per-package output
   for (const r of results) {
     if (r.registryStatus === 'not_installed') {
@@ -415,16 +460,27 @@ function printResults(results: VerifyResult[], registryUrl: string): void {
     process.stdout.write(`  ${dim('Version')}          ${r.version}\n`);
     process.stdout.write(`  ${dim('Hash Check')}       ${statusLabel} ${dim('(SHA-256 ' + hashDisplay + ')')}\n`);
 
-    if (r.trustScore !== null) {
+    const view = views.get(r);
+    if (view?.notScanned) {
+      // Listed and never scanned: the registry's score of 0 measures nothing.
+      process.stdout.write(`  ${dim('Trust Score')}      ${dim(ui.NO_SCAN_RESULT_SHORT_TEXT)}\n`);
+    } else if (r.trustScore !== null) {
       // API returns 0-1 scale; display as 0-100
       const displayScore = r.trustScore <= 1 ? Math.round(r.trustScore * 100) : Math.round(r.trustScore);
       const scoreColor = displayScore >= 80 ? green : displayScore >= 60 ? yellow : red;
       process.stdout.write(`  ${dim('Trust Score')}      ${scoreColor(`${displayScore} / 100`)} ${scoreVersionNote(r)}\n`);
     }
+    if (view) {
+      process.stdout.write(`  ${dim('Trust Level')}      ${paintTrustAnswer(view)}\n`);
+      if (view.nextStep) {
+        process.stdout.write(`  ${dim('Next step')}        ${view.nextStep}\n`);
+      }
+    }
     if (r.trustVerdict !== null) {
-      const verdictColor = r.trustVerdict === 'trusted' ? green
-        : r.trustVerdict === 'caution' ? yellow
-        : r.trustVerdict === 'untrusted' ? red
+      const family = ui.normalizeVerdict(r.trustVerdict);
+      const verdictColor = r.trustVerdict === 'trusted' || family === 'safe' ? green
+        : r.trustVerdict === 'caution' || family === 'warning' ? yellow
+        : r.trustVerdict === 'untrusted' || family === 'blocked' ? red
         : dim;
       process.stdout.write(`  ${dim('Trust Verdict')}    ${verdictColor(r.trustVerdict)}\n`);
     }

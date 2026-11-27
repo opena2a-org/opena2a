@@ -509,6 +509,70 @@ describe('detect command', () => {
     }
   });
 
+  // A Blocked answer was a cyan "Trust: 12/100": no word, no tone, nothing
+  // to do. A listed record read "No trust data".
+  it('--registry shows a Blocked or Warning answer by its word and number, then the next step', async () => {
+    const savedHome = process.env.HOME;
+    process.env.HOME = path.join(tempDir, 'home');
+    fs.writeFileSync(
+      path.join(tempDir, 'mcp.json'),
+      JSON.stringify({
+        mcpServers: {
+          'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+          'shell-executor': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-shell'] },
+          'database-admin': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres'] },
+        },
+      })
+    );
+    const record = (name: string, trustScore: number, trustLevel: number, verdict: string) => [
+      `${name}:mcp_server`,
+      { name, packageType: 'mcp_server', trustScore, trustLevel, verdict, communityScans: 0, verified: false, scanStatus: 'completed' },
+    ] as const;
+    registryEnrichment.enrichFromRegistry.mockResolvedValue(new Map([
+      record('@modelcontextprotocol/server-filesystem', 0.12, 0, 'blocked'),
+      record('@modelcontextprotocol/server-shell', 0.55, 1, 'warning'),
+      record('@modelcontextprotocol/server-postgres', 0, 2, 'listed'),
+    ]));
+
+    try {
+      const { exitCode, output } = await captureStdout(() =>
+        detect({ targetDir: tempDir, format: 'text', ci: true, registry: true })
+      );
+      expect(exitCode).toBe(0);
+      const lines = output.split('\n');
+      const at = (name: string) => lines.findIndex((l) => l.trimStart().startsWith(`${name} `));
+
+      const blocked = at('filesystem-root');
+      expect(lines[blocked]).toContain('Blocked (level 0 of 4), do not use | Trust: 12/100');
+      expect(lines[blocked + 1].trim()).toBe('Next: opena2a check @modelcontextprotocol/server-filesystem');
+
+      const warning = at('shell-executor');
+      expect(lines[warning]).toContain('Warning (level 1 of 4), review before use | Trust: 55/100');
+      expect(lines[warning + 1].trim()).toBe('Next: opena2a check @modelcontextprotocol/server-shell');
+
+      const listed = at('database-admin');
+      expect(lines[listed]).toContain('Listed (level 2 of 4), not scanned');
+      expect(lines[listed]).not.toContain('/100');
+      expect(lines[listed + 1] ?? '').not.toContain('Next:');
+
+      const json = await captureStdout(() =>
+        detect({ targetDir: tempDir, format: 'json', ci: true, registry: true })
+      );
+      const byName = Object.fromEntries(JSON.parse(json.output).mcpServers.map((s: any) => [s.name, s]));
+      expect(byName['filesystem-root'].registryData.trustLevel).toBe(0);
+      expect(byName['filesystem-root'].trustAnswer).toMatchObject({
+        level: 0,
+        word: 'Blocked',
+        nextStep: 'opena2a check @modelcontextprotocol/server-filesystem',
+      });
+      expect(byName['database-admin'].registryData).toBeUndefined();
+      expect(byName['database-admin'].trustAnswer).toMatchObject({ level: 2, word: 'Listed', notScanned: true, nextStep: null });
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+    }
+  });
+
   it('includes MCP servers from project-local config in JSON', async () => {
     fs.writeFileSync(
       path.join(tempDir, 'mcp.json'),

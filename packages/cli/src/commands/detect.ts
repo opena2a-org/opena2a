@@ -15,6 +15,7 @@ import { bold, dim, green, yellow, red, cyan, orange } from '../util/colors.js';
 import { calculateGovernanceScore } from '../util/governance-scoring.js';
 import type { RegistryEnrichment } from '../util/registry-enrichment.js';
 import { registryNameFor, hasNpmPackageNameForm } from '../util/mcp-registry-name.js';
+import { paintTrustAnswer, trustNextStepLine, type TrustAnswerView } from '../util/trust-answer.js';
 import { findMcpIdentityFile, listMcpIdentityNames } from '../util/mcp-identity-store.js';
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,8 @@ export interface DetectedMcpServer {
   /** The npm package the server runs, which is the name the Registry knows it by; absent when it runs none. */
   registryName?: string;
   registryData?: McpRegistryData;
+  /** How the Registry's answer is shown: its level's word and number, and the next step for Blocked or Warning. */
+  trustAnswer?: TrustAnswerView;
   scanResult?: McpScanResult;
   scanSuggestion?: string;
 }
@@ -766,12 +769,16 @@ function riskLabel(level: RiskLevel): string {
  * --help, and the privacy policy.
  */
 function formatMcpTrustLabel(server: DetectedMcpServer): string {
-  // State 1: Registry data available
+  // State 1: Registry data available. The answer leads with its level's
+  // word and number, in the tone `check` gives it; the score follows.
   if (server.registryData) {
     const score = Math.round(server.registryData.trustScore * 100);
     const parts = [`Trust: ${score}/100`];
     if (server.registryData.communityScans > 0) {
       parts.push(`${server.registryData.communityScans} shared scan${server.registryData.communityScans !== 1 ? 's' : ''} (unverified)`);
+    }
+    if (server.trustAnswer) {
+      return ` ${paintTrustAnswer(server.trustAnswer)}${dim(` | ${parts.join(' | ')}`)}`;
     }
     return cyan(` ${parts.join(' | ')}`);
   }
@@ -783,9 +790,14 @@ function formatMcpTrustLabel(server: DetectedMcpServer): string {
     return cyan(` ${parts.join(' | ')}`);
   }
 
-  // State 3: No data at all -- show actionable suggestion
+  // State 3: No data at all -- show actionable suggestion. A record the
+  // Registry lists and never scanned says so, and shows no score.
   if (server.scanSuggestion) {
-    return dim(` No trust data | scan: ${server.scanSuggestion}`);
+    const what = server.trustAnswer?.notScanned ? server.trustAnswer.label : 'No trust data';
+    return dim(` ${what} | scan: ${server.scanSuggestion}`);
+  }
+  if (server.trustAnswer?.notScanned) {
+    return ` ${paintTrustAnswer(server.trustAnswer)}`;
   }
 
   return '';
@@ -979,6 +991,8 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
           ? dim(` -- ${realCaps.map((c) => capabilityDescription(c).toLowerCase()).join(', ')}`)
           : '';
         lines.push(`    ${nameCol}${verifiedStr}${trustStr}${capsStr}`);
+        const next = trustNextStepLine(server.trustAnswer);
+        if (next) lines.push(`      ${next}`);
       }
     }
 
@@ -994,6 +1008,8 @@ function formatText(result: DetectResult, verbose: boolean, targetDir: string): 
             ? dim(` -- ${realCaps.map((c) => capabilityDescription(c).toLowerCase()).join(', ')}`)
             : '';
           lines.push(`    ${nameCol}${trustStr}${capsStr}`);
+          const next = trustNextStepLine(server.trustAnswer);
+          if (next) lines.push(`      ${next}`);
         }
       } else {
         // Compact: just show the count and which ones have sensitive access
@@ -1456,12 +1472,18 @@ export async function detect(options: DetectOptions): Promise<number> {
       // nothing in the registry, so a server that runs no package is not sent.
       const assets = mcpServers.flatMap((s) => (s.registryName ? [{ name: s.registryName, type: 'mcp_server' }] : []));
       registryEnrichments = await enrichFromRegistry(assets, registryUrl);
+      const { describeTrustAnswer, loadTrustUi } = await import('../util/trust-answer.js');
+      const trustUi = await loadTrustUi();
 
       // Attach registry data to each MCP server
       for (const server of mcpServers) {
         if (!server.registryName) continue;
         const key = `${server.registryName}:mcp_server`;
         const enrichment = registryEnrichments.get(key);
+        const trustAnswer = enrichment
+          ? describeTrustAnswer(trustUi, { trustLevel: enrichment.trustLevel, verdict: enrichment.verdict }, server.registryName)
+          : null;
+        if (trustAnswer) server.trustAnswer = trustAnswer;
         // A "listed" record was never scanned; its score of 0 measures
         // nothing, so the server stays without trust data.
         if (enrichment && enrichment.verdict !== 'listed') {

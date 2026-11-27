@@ -368,3 +368,94 @@ describe('verify does not guess a scoped package is an MCP server', () => {
     expect(lines).toContain('Dependencies     1 risk');
   });
 });
+
+// A Blocked answer printed as a red number with the verdict in grey, and a
+// package the registry lists and never scanned printed as "0 / 100" in red.
+describe('verify shows the trust level by its word', () => {
+  const STRIP_ANSI = /\x1b\[[0-9;]*m/g;
+
+  function registry(trustAnswer: Record<string, unknown>): void {
+    mockFetch.mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/v1/trust/query') && u.includes('includeProfile')) {
+        return { ok: true, status: 200, json: async () => trustAnswer, text: async () => '' };
+      }
+      if (u.includes('/api/v1/trust/query')) {
+        return { ok: true, status: 200, json: async () => ({ contentVerification: { status: 'verified' } }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+    });
+  }
+
+  async function run(format?: 'json'): Promise<string> {
+    vi.spyOn(_internals, 'resolvePackagePath').mockReturnValue({ mainFile: __filename, version: '0.7.2' });
+    const { output } = await captureStdout(() => verify({
+      packageName: 'hackmyagent',
+      registryUrl: 'https://test-registry.example.com',
+      ci: true,
+      format,
+    }));
+    return output;
+  }
+
+  function lines(output: string): string[] {
+    return output.replace(STRIP_ANSI, '').split('\n').map(l => l.trim());
+  }
+
+  const record = { packageId: '11111111-1111-1111-1111-111111111111', name: 'hackmyagent', version: '0.7.2' };
+
+  it('shows a Blocked answer by its word and number, then the next step', async () => {
+    registry({ ...record, trustScore: 0.12, trustLevel: 0, verdict: 'blocked', scanStatus: 'completed' });
+    const out = lines(await run());
+    const i = out.findIndex(l => l.startsWith('Trust Level'));
+    expect(out[i]).toBe('Trust Level      Blocked (level 0 of 4), do not use');
+    expect(out[i + 1]).toBe('Next step        opena2a check hackmyagent');
+  });
+
+  it('shows a Warning answer by its word and number, then the next step', async () => {
+    registry({ ...record, trustScore: 0.55, trustLevel: 1, verdict: 'warning', scanStatus: 'warnings' });
+    const out = lines(await run());
+    const i = out.findIndex(l => l.startsWith('Trust Level'));
+    expect(out[i]).toBe('Trust Level      Warning (level 1 of 4), review before use');
+    expect(out[i + 1]).toBe('Next step        opena2a check hackmyagent');
+  });
+
+  it('shows a listed, never-scanned package as not scanned, never 0 / 100', async () => {
+    registry({ ...record, trustScore: 0, trustLevel: 2, verdict: 'listed' });
+    const output = await run();
+    const out = lines(output);
+    expect(out).toContain('Trust Score      not scanned');
+    expect(out).toContain('Trust Level      Listed (level 2 of 4), not scanned');
+    expect(output).not.toContain('0 / 100');
+    expect(out.some(l => l.startsWith('Next step'))).toBe(false);
+  });
+
+  it('shows a scanned answer by its word with no next step', async () => {
+    registry({ ...record, trustScore: 0.85, trustLevel: 3, verdict: 'passed', scanStatus: 'completed' });
+    const out = lines(await run());
+    expect(out).toContain('Trust Score      85 / 100 (scanned 0.7.2)');
+    expect(out).toContain('Trust Level      Scanned (level 3 of 4)');
+    expect(out.some(l => l.startsWith('Next step'))).toBe(false);
+  });
+
+  it('adds the level, its word and the next step to the JSON and keeps the score field', async () => {
+    registry({ ...record, trustScore: 0.12, trustLevel: 0, verdict: 'blocked', scanStatus: 'completed' });
+    const pkg = JSON.parse(await run('json')).packages[0];
+    expect(pkg).toMatchObject({
+      trustScore: 0.12,
+      trustVerdict: 'blocked',
+      trustLevel: 0,
+      trustLevelWord: 'Blocked',
+      trustNotScanned: false,
+      nextStep: 'opena2a check hackmyagent',
+    });
+  });
+
+  it('gives an answer without a record no level, rather than Blocked', async () => {
+    registry({ name: 'hackmyagent', trustScore: 0, trustLevel: 0, verdict: 'unknown' });
+    const output = await run();
+    expect(output).not.toContain('Blocked');
+    const pkg = JSON.parse(await run('json')).packages[0];
+    expect(pkg).toMatchObject({ trustLevel: null, trustLevelWord: null, nextStep: null });
+  });
+});
