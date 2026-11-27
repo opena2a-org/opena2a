@@ -34,7 +34,12 @@ concurrency:
   # event_name is part of the key so that a manual re-check does not cancel the
   # in-flight push run for the same commit -- github.ref is refs/heads/main for
   # both, so ref alone is not enough to separate them.
-  group: ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.ref) }}
+  #
+  # The sha is part of the key too. Without it every push to main still shared
+  # the one group `ci-push-refs/heads/main`, so each merge cancelled the run on
+  # the tip before it and left that commit's build cells "canceled" -- red on
+  # main with nothing wrong in the code. Each commit on main gets its own run.
+  group: ci-${{ github.event.pull_request.number || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
   cancel-in-progress: true
 
 jobs:
