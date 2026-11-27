@@ -64,9 +64,10 @@ const DEFAULT_CONFIG: UserConfig = {
  * parent of `.opena2a`) when it is set to a non-blank value; otherwise it is
  * `~/.opena2a`. Only paths built through this function follow it: the user
  * config (`getUserConfigPath()`), the per-project stores
- * (`getProjectStoreDir()`) and the global identity `detect` reads. Other
- * sites — scan history (history.ts), the contribute config and queue, shield
- * events and `util/auth` among them — build `~/.opena2a` from `homedir()`
+ * (`getProjectStoreDir()`) and the aim-core data directory (`aim-core`, which
+ * `detect`, `guard sign`, `shield init`, `shield status` and the AIM server
+ * connection file use). Other sites — scan history (history.ts), the
+ * contribute config and queue, shield events and `util/auth` among them — build `~/.opena2a` from `homedir()`
  * directly and ignore `OPENA2A_HOME`. Routing them through this function is
  * tracked in #295 and #589.
  */

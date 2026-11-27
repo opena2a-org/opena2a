@@ -19,6 +19,7 @@ import { configureAiTools, holdsOnlyManagedSections } from './ai-tool-config.js'
 import type { AiToolConfigResult } from './ai-tool-config.js';
 import { bold, dim, green, yellow, red, cyan } from '../util/colors.js';
 import { Spinner } from '../util/spinner.js';
+import { getAimCoreDir, displayAimCoreDir } from '../util/aim-core-dir.js';
 import { runtimeInitSilent, isGeneratedInitConfig } from '../commands/runtime.js';
 
 /**
@@ -223,7 +224,7 @@ export async function shieldInit(options: {
     if (typeof aimCore.getOrCreateIdentity === 'function') {
       const identity = aimCore.getOrCreateIdentity({
         agentName: 'shield',
-        dataDir: join(homedir(), '.opena2a', 'aim-core'),
+        dataDir: getAimCoreDir(),
       });
       identityCreated = true;
       if (identity && typeof identity === 'object' && 'publicKey' in identity) {
@@ -235,7 +236,7 @@ export async function shieldInit(options: {
         if (identityPublicKey) {
           process.stdout.write(`  Public key: ${identityPublicKey}\n`);
         }
-        process.stdout.write(`  Storage: ~/.opena2a/aim-core/\n`);
+        process.stdout.write(`  Storage: ${displayAimCoreDir()}\n`);
       }
       // Log identity event
       if (typeof aimCore.logEvent === 'function') {
@@ -251,7 +252,7 @@ export async function shieldInit(options: {
       identityCreated = true;
       if (isText) {
         process.stdout.write(green('  Local Ed25519 identity created\n'));
-        process.stdout.write(`  Storage: ~/.opena2a/aim-core/\n`);
+        process.stdout.write(`  Storage: ${displayAimCoreDir()}\n`);
       }
     } else {
       if (isText) process.stdout.write(dim('  aim-core module found but identity API not available\n'));
