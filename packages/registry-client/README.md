@@ -75,17 +75,28 @@ import { RegistryClient, firstPartySignerFromEnv, FirstPartySigner } from "@open
 
 // Recommended: build the signer from a secret in the environment (never commit the key).
 // Returns undefined when the env var is unset, so end-user runs publish as community.
+// A value that is set but not a usable key also returns undefined, unless `strict: true`,
+// which throws. The variable is deleted from the environment after it is read, so child
+// processes do not inherit the key (`removeFromEnv: false` keeps it).
 const signer = firstPartySignerFromEnv({
   keyEnv: "MY_SCANNER_SIGNING_KEY", // base64/hex Ed25519 32-byte seed or 64-byte secret key
   source: "first_party_scanner",
+  strict: true,
 });
 
-await client.publishScan(submission, signer);
+const res = await client.publishScan(submission, signer);
+console.log(res.signing); // "signed" or "unsigned: <reason>"
 
 // Or construct directly from a raw key (e.g. for tests):
 const direct = new FirstPartySigner({ secretKey: seed32, source: "ci" });
 console.log(direct.publicKey); // base64 — register this in FIRST_PARTY_SCANNER_PUBKEYS
 ```
+
+A signer's key cannot be printed or serialised: `JSON.stringify` and `util.inspect` show only
+`publicKey` and `source`. The signer refuses to sign an unknown `source`, a score or maxScore that
+is not a safe non-negative integer, a non-integer `signedAt`, and a nonce shorter than 16 characters.
+`publishScan` never fails because signing failed: it publishes unsigned and says why in
+`PublishResponse.signing`.
 
 `signedAt` is stamped in Unix seconds; each `sign()` mints a fresh single-use nonce. The
 tweetnacl signature is byte-compatible with the registry's Go `crypto/ed25519` verifier.

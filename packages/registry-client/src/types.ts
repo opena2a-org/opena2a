@@ -98,4 +98,11 @@ export interface PublishResponse {
   consensusStatus?: string;
   weight?: number;
   idempotent?: boolean;
+  /**
+   * Set by the client on every publish: `"signed"` when a first-party signature was
+   * attached to the submission, otherwise `"unsigned: <reason>"` (no signer given, or the
+   * signer refused the scan). `"signed"` means the signature was sent — the registry
+   * still decides whether to honor it.
+   */
+  signing?: "signed" | `unsigned: ${string}`;
 }

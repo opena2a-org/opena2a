@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  FirstPartySigner,
   PackageNotFoundError,
   RegistryApiError,
   RegistryClient,
@@ -446,6 +447,43 @@ describe("RegistryClient", () => {
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toContain("/api/v1/trust/publish");
       expect(init.method).toBe("POST");
+    });
+
+    describe("signing outcome", () => {
+      const base = {
+        name: "pkg",
+        score: 95,
+        maxScore: 100,
+        findings: [],
+        tool: "hackmyagent",
+        toolVersion: "0.18.0",
+        scanTimestamp: "2026-01-01T00:00:00Z",
+      };
+      const signer = () =>
+        new FirstPartySigner({ secretKey: new Uint8Array(32).fill(3), source: "ci" });
+
+      it("reports signed when a signature was attached", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ accepted: true }));
+        const res = await client.publishScan(base, signer());
+        expect(res.signing).toBe("signed");
+        const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(sent.signature).toBeTypeOf("string");
+      });
+
+      it("reports unsigned with a reason for a float score, and still publishes", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ accepted: true }));
+        const res = await client.publishScan({ ...base, score: 90.5 }, signer());
+        expect(res.accepted).toBe(true);
+        expect(res.signing).toMatch(/^unsigned: .*score/);
+        const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(sent.signature).toBeUndefined();
+      });
+
+      it("reports unsigned when no signer is given", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ accepted: true }));
+        const res = await client.publishScan(base);
+        expect(res.signing).toMatch(/^unsigned: /);
+      });
     });
 
     it("surfaces server error codes", async () => {

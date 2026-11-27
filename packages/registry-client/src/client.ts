@@ -172,29 +172,37 @@ export class RegistryClient {
    * server's strong canonical. Without a signer the scan is published as community (the
    * safe default). A signed claim the server can't verify (key not allowlisted, stale,
    * replayed) is silently downgraded to community by the registry — never rejected.
+   *
+   * The returned `signing` field says whether a signature was attached (`"signed"`) or why
+   * not (`"unsigned: <reason>"`).
    */
   async publishScan(
     submission: ScanSubmission,
     signer?: FirstPartySigner,
   ): Promise<PublishResponse> {
     let body: ScanSubmission = submission;
+    let signing: NonNullable<PublishResponse["signing"]> = "unsigned: no signer provided";
     if (signer) {
       // Stamping provenance must never crash a publish. If the signer rejects the scan
-      // (e.g. a non-integer score, a key that failed self-verification), fall through to an
-      // unsigned publish — the registry records it as community (the same fail-closed
-      // outcome as an unverifiable claim), rather than dropping the scan entirely.
+      // (e.g. a non-integer score), the scan is published unsigned — the registry records
+      // it as community, rather than dropping the scan — and the reason is returned in
+      // `PublishResponse.signing`.
       try {
         body = { ...submission, ...signer.sign(submission) };
-      } catch {
+        signing = "signed";
+      } catch (err) {
         body = submission;
+        const reason = err instanceof Error ? err.message : String(err);
+        signing = `unsigned: ${reason}`;
       }
     }
     const url = `${this.baseUrl}/api/v1/trust/publish`;
-    return this.request<PublishResponse>(url, {
+    const response = await this.request<PublishResponse>(url, {
       method: "POST",
       body: JSON.stringify(body),
       headers: { "Content-Type": "application/json" },
     });
+    return { ...response, signing };
   }
 
   private async request<T>(
