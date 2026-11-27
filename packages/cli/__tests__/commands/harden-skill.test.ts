@@ -234,3 +234,26 @@ capabilities:
     expect(parsed.error).toContain('No skill files found in current directory');
   });
 });
+
+describe('harden-skill docs match discovery', () => {
+  it('docs/commands.md claims only the file types discovery finds', async () => {
+    const { findSkillFilesNonRecursive } = await import('../../src/commands/harden-skill.js');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'harden-skill-docs-'));
+    try {
+      for (const name of ['SKILL.md', 'a.skill.md', '.cursorrules', 'rule.mdc']) {
+        fs.writeFileSync(path.join(dir, name), '# x\n');
+      }
+      const found = findSkillFilesNonRecursive(dir).map(f => path.basename(f)).sort();
+      expect(found).toEqual(['SKILL.md', 'a.skill.md']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    const doc = fs.readFileSync(path.resolve(__dirname, '../../../../docs/commands.md'), 'utf-8');
+    const row = doc.split('\n').find(l => l.includes('`opena2a harden-skill'));
+    expect(row).toBeDefined();
+    expect(row).not.toMatch(/cursor/i);
+    expect(row).toContain('`SKILL.md`');
+    expect(row).toContain('`*.skill.md`');
+  });
+});
