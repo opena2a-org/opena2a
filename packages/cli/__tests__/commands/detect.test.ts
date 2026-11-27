@@ -243,16 +243,22 @@ describe('parseMcpConfig', () => {
     fs.writeFileSync(configPath, JSON.stringify({
       mcpServers: {
         'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
+        fetch: { command: 'uvx', args: ['mcp-server-fetch@2025.4.7'] },
+        git: { command: 'uv', args: ['tool', 'run', '--from', 'Mcp_Server.Git', 'mcp-server-git'] },
+        'from-git': { command: 'uvx', args: ['--from', 'git+https://github.com/example/server', 'server'] },
         local: { command: 'node', args: ['server.js'] },
         remote: { url: 'https://api.example.com/mcp' },
       },
     }));
 
     const servers = parseMcpConfig(configPath, 'test-source');
-    expect(servers.map((s) => [s.name, s.registryName])).toEqual([
-      ['filesystem-root', '@modelcontextprotocol/server-filesystem'],
-      ['local', undefined],
-      ['remote', undefined],
+    expect(servers.map((s) => [s.name, s.registryName, s.registryEcosystem])).toEqual([
+      ['filesystem-root', '@modelcontextprotocol/server-filesystem', 'npm'],
+      ['fetch', 'mcp-server-fetch', 'pypi'],
+      ['git', 'mcp-server-git', 'pypi'],
+      ['from-git', undefined, undefined],
+      ['local', undefined, undefined],
+      ['remote', undefined, undefined],
     ]);
   });
 
@@ -477,6 +483,7 @@ describe('detect command', () => {
         mcpServers: {
           'filesystem-root': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/'] },
           'database-admin': { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres'] },
+          fetch: { command: 'uvx', args: ['mcp-server-fetch'] },
           local: { command: 'node', args: ['server.js'] },
         },
       })
@@ -485,22 +492,30 @@ describe('detect command', () => {
       `${name}:mcp_server`,
       { name, packageType: 'mcp_server', trustScore, trustLevel, verdict, communityScans: 0, verified: false, scanStatus: '' },
     ] as const;
-    registryEnrichment.enrichFromRegistry.mockResolvedValue(new Map([
-      record('@modelcontextprotocol/server-filesystem', 0.7866666666666666, 3, 'passed'),
-      record('@modelcontextprotocol/server-postgres', 0, 2, 'listed'),
-    ]));
+    registryEnrichment.enrichFromRegistry.mockImplementation(async (assets: { ecosystem?: string }[]) => (
+      assets[0]?.ecosystem === 'pypi'
+        ? new Map([record('mcp-server-fetch', 0.5, 2, 'passed')])
+        : new Map([
+          record('@modelcontextprotocol/server-filesystem', 0.7866666666666666, 3, 'passed'),
+          record('@modelcontextprotocol/server-postgres', 0, 2, 'listed'),
+        ])
+    ));
 
     try {
       const { exitCode, output } = await captureStdout(() =>
         detect({ targetDir: tempDir, format: 'json', ci: true, registry: true })
       );
       expect(exitCode).toBe(0);
-      expect(registryEnrichment.enrichFromRegistry.mock.calls[0][0]).toEqual([
-        { name: '@modelcontextprotocol/server-filesystem', type: 'mcp_server' },
-        { name: '@modelcontextprotocol/server-postgres', type: 'mcp_server' },
+      expect(registryEnrichment.enrichFromRegistry.mock.calls.map((call) => call[0])).toEqual([
+        [
+          { name: '@modelcontextprotocol/server-filesystem', type: 'mcp_server', ecosystem: 'npm' },
+          { name: '@modelcontextprotocol/server-postgres', type: 'mcp_server', ecosystem: 'npm' },
+        ],
+        [{ name: 'mcp-server-fetch', type: 'mcp_server', ecosystem: 'pypi' }],
       ]);
       const byName = Object.fromEntries(JSON.parse(output).mcpServers.map((s: any) => [s.name, s]));
       expect(byName['filesystem-root'].registryData.trustScore).toBe(0.7866666666666666);
+      expect(byName['fetch'].registryData.trustScore).toBe(0.5);
       expect(byName['database-admin'].registryData).toBeUndefined();
       expect(byName['local'].registryData).toBeUndefined();
     } finally {
