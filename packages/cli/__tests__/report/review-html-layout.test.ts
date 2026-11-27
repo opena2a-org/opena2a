@@ -172,6 +172,23 @@ describe('review report: 375px', () => {
     expect(declarations(css, '.header>:first-child')).toContain('min-width:0');
   });
 
+  it('at phone width the HMA table gives the file list and the command usable columns', () => {
+    // Measured at 375px: the 640px table left the file list 60px and the
+    // command 61px beside its Copy button.
+    const phone = mediaBlock('max-width:600px');
+    expect(phone.length).toBeGreaterThan(0); // non-vacuity: the phone block exists
+    const minWidth = Number(declarations(phone, '.data-table.hma-table').match(/min-width:(\d+)px/)?.[1]);
+    expect(minWidth).toBeGreaterThanOrEqual(900);
+    const width = (c: string) =>
+      Number(declarations(phone, '.data-table.hma-table col.' + c).match(/width:(\d+)%/)?.[1]);
+    const cols = ['col-check', 'col-name', 'col-severity', 'col-occurrences', 'col-fix'];
+    expect(cols.reduce((a, c) => a + width(c), 0)).toBe(100);
+    // Occurrences holds the file list and Fix the command; each keeps 140px+
+    // of content width after the 8px cell padding.
+    expect((minWidth * width('col-occurrences')) / 100 - 16).toBeGreaterThanOrEqual(140);
+    expect((minWidth * width('col-fix')) / 100 - 16).toBeGreaterThanOrEqual(240);
+  });
+
   it('a Hygiene row breaks its value instead of widening the page', () => {
     // The "Security config" row prints the signature store path
     // (.opena2a/guard/signatures.json) as one flex item. Unbreakable, it set
