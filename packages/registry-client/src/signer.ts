@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { inspect } from "node:util";
 import nacl from "tweetnacl";
 
 /**
@@ -41,6 +42,8 @@ export interface SignableScan {
 
 const ED25519_SEED_BYTES = 32;
 const ED25519_SECRET_KEY_BYTES = 64;
+const MIN_NONCE_LENGTH = 16;
+const PRIVILEGED_SOURCES: readonly string[] = ["first_party_scanner", "ci", "partner"];
 
 /**
  * Build the STRONG canonical string the registry signs and verifies:
@@ -80,10 +83,19 @@ function assertCanonicalField(value: string, label: string): void {
 // score/maxScore are formatted as bare integers in the canonical to match the Go server's
 // %d formatting. A float ("90.5"), NaN, or Infinity would diverge from the server byte
 // string and silently fail verification (→ community), so reject anything non-integer.
+// Only safe integers are accepted: a value of 1e21 or more would format as "1e+21".
 function assertCanonicalInteger(value: number, label: string): void {
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(
       `FirstPartySigner: ${label} must be a non-negative integer to sign (got ${value})`,
+    );
+  }
+}
+
+function assertPrivilegedSource(source: unknown): asserts source is PrivilegedSource {
+  if (typeof source !== "string" || !PRIVILEGED_SOURCES.includes(source)) {
+    throw new Error(
+      `FirstPartySigner: source must be one of ${PRIVILEGED_SOURCES.join(", ")} (got ${String(source)})`,
     );
   }
 }
@@ -102,7 +114,8 @@ function assertCanonicalInteger(value: number, label: string): void {
  */
 function toSecretKey(secret: Uint8Array): Uint8Array {
   if (secret.length === ED25519_SECRET_KEY_BYTES) {
-    return secret;
+    // Copy, so later changes to the caller's array cannot alter the signer's key.
+    return Uint8Array.from(secret);
   }
   if (secret.length === ED25519_SEED_BYTES) {
     return nacl.sign.keyPair.fromSeed(secret).secretKey;
@@ -141,22 +154,25 @@ export interface FirstPartySignerOptions {
  * freshness window).
  */
 export class FirstPartySigner {
-  private readonly secretKey: Uint8Array;
-  private readonly publicKeyB64: string;
-  private readonly source: PrivilegedSource;
-  private readonly generateNonce: () => string;
-  private readonly now: () => number;
+  // ES private fields: the key (and the other state) is not an enumerable property, so it
+  // is absent from JSON.stringify, Object.keys, structured dumps and util.inspect output.
+  readonly #secretKey: Uint8Array;
+  readonly #publicKeyB64: string;
+  readonly #source: PrivilegedSource;
+  readonly #generateNonce: () => string;
+  readonly #now: () => number;
 
   constructor(options: FirstPartySignerOptions) {
-    this.secretKey = toSecretKey(options.secretKey);
+    assertPrivilegedSource(options.source);
+    this.#secretKey = toSecretKey(options.secretKey);
     // tweetnacl's secret key embeds the public key in its trailing 32 bytes; derive it so
     // the publicKey on the wire always matches the signing key.
-    this.publicKeyB64 = Buffer.from(this.secretKey.slice(ED25519_SEED_BYTES)).toString(
+    this.#publicKeyB64 = Buffer.from(this.#secretKey.slice(ED25519_SEED_BYTES)).toString(
       "base64",
     );
-    this.source = options.source;
-    this.generateNonce = options.generateNonce ?? randomUUID;
-    this.now = options.now ?? (() => Math.floor(Date.now() / 1000));
+    this.#source = options.source;
+    this.#generateNonce = options.generateNonce ?? randomUUID;
+    this.#now = options.now ?? (() => Math.floor(Date.now() / 1000));
 
     // Self-verify: sign a fixed probe and confirm it verifies under the derived public
     // key. Catches a corrupted 64-byte secret key (whose embedded public-key bytes don't
@@ -167,8 +183,8 @@ export class FirstPartySigner {
     const probe = Buffer.from("opena2a-first-party-signer-selfcheck", "utf-8");
     const ok = nacl.sign.detached.verify(
       probe,
-      nacl.sign.detached(probe, this.secretKey),
-      Buffer.from(this.publicKeyB64, "base64"),
+      nacl.sign.detached(probe, this.#secretKey),
+      Buffer.from(this.#publicKeyB64, "base64"),
     );
     if (!ok) {
       throw new Error(
@@ -177,9 +193,19 @@ export class FirstPartySigner {
     }
   }
 
+  /** Only the public key and source are ever serialised; the secret key is never included. */
+  toJSON(): { publicKey: string; source: PrivilegedSource } {
+    return { publicKey: this.#publicKeyB64, source: this.#source };
+  }
+
+  /** `console.log` / `util.inspect` show only the public key and source. */
+  [inspect.custom](): string {
+    return `FirstPartySigner ${inspect(this.toJSON())}`;
+  }
+
   /** The base64 public key to register in the server's FIRST_PARTY_SCANNER_PUBKEYS. */
   get publicKey(): string {
-    return this.publicKeyB64;
+    return this.#publicKeyB64;
   }
 
   /**
@@ -195,20 +221,30 @@ export class FirstPartySigner {
     assertCanonicalField(scan.version ?? "", "version");
     assertCanonicalInteger(scan.score, "score");
     assertCanonicalInteger(scan.maxScore, "maxScore");
-    const nonce = this.generateNonce();
+    const nonce = this.#generateNonce();
+    if (typeof nonce !== "string" || nonce.length < MIN_NONCE_LENGTH) {
+      throw new Error(
+        `FirstPartySigner: nonce must be a string of at least ${MIN_NONCE_LENGTH} characters`,
+      );
+    }
     assertCanonicalField(nonce, "nonce");
-    const signedAt = this.now();
-    const canonical = strongCanonical(scan, this.source, nonce, signedAt);
+    const signedAt = this.#now();
+    if (!Number.isSafeInteger(signedAt) || signedAt < 0) {
+      throw new Error(
+        `FirstPartySigner: signedAt must be a non-negative integer number of seconds (got ${signedAt})`,
+      );
+    }
+    const canonical = strongCanonical(scan, this.#source, nonce, signedAt);
     const signature = nacl.sign.detached(
       Buffer.from(canonical, "utf-8"),
-      this.secretKey,
+      this.#secretKey,
     );
     return {
-      source: this.source,
+      source: this.#source,
       nonce,
       signedAt,
       signature: Buffer.from(signature).toString("base64"),
-      publicKey: this.publicKeyB64,
+      publicKey: this.#publicKeyB64,
     };
   }
 }
@@ -219,6 +255,9 @@ export class FirstPartySigner {
  * Throws on a non-empty value that is neither valid base64 nor valid hex of a plausible
  * length — we fail loud rather than silently signing with garbage.
  */
+const STRICT_BASE64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/;
+
 export function decodeSecretKey(raw: string): Uint8Array | null {
   const s = raw.trim();
   if (!s) return null;
@@ -226,9 +265,13 @@ export function decodeSecretKey(raw: string): Uint8Array | null {
   if (/^[0-9a-fA-F]+$/.test(s) && (s.length === 64 || s.length === 128)) {
     return Uint8Array.from(Buffer.from(s, "hex"));
   }
-  const b = Uint8Array.from(Buffer.from(s, "base64"));
-  if (b.length === ED25519_SEED_BYTES || b.length === ED25519_SECRET_KEY_BYTES) {
-    return b;
+  // Standard base64 only (padding optional): Node's decoder silently skips characters
+  // outside the alphabet, so the text is checked before decoding.
+  if (STRICT_BASE64.test(s)) {
+    const b = Uint8Array.from(Buffer.from(s, "base64"));
+    if (b.length === ED25519_SEED_BYTES || b.length === ED25519_SECRET_KEY_BYTES) {
+      return b;
+    }
   }
   throw new Error(
     "decodeSecretKey: expected a base64 or hex Ed25519 32-byte seed or 64-byte secret key",
@@ -242,6 +285,17 @@ export interface SignerFromEnvOptions {
   source: PrivilegedSource;
   /** Override the environment (tests). Default process.env. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Throw when the variable holds a value that is not a usable key, instead of returning
+   * undefined. An unset or empty variable still returns undefined. Default false.
+   */
+  strict?: boolean;
+  /**
+   * Delete the variable from the environment once it has been read, so child processes
+   * do not inherit the key. Applies whether or not the value turns out to be usable.
+   * Default true.
+   */
+  removeFromEnv?: boolean;
 }
 
 /**
@@ -252,22 +306,27 @@ export interface SignerFromEnvOptions {
  * secret lives only in the runtime env, never in the repo. End-user runs (no env var)
  * get `undefined`, so their scans publish as community — we never mis-tag a community
  * scan as first-party.
+ *
+ * A value that is present but not a usable key returns `undefined` too, unless
+ * `strict: true`, in which case the error is thrown. By default the variable is removed
+ * from the environment after it is read (`removeFromEnv: false` keeps it), so a second
+ * call for the same variable sees it unset.
  */
 export function firstPartySignerFromEnv(
   options: SignerFromEnvOptions,
 ): FirstPartySigner | undefined {
   const env = options.env ?? process.env;
   const keyEnv = options.keyEnv ?? "OPENA2A_FIRST_PARTY_KEY";
-  // Fail closed: an unset, malformed, or unusable key yields undefined (the caller then
-  // publishes as community) rather than throwing. A misconfigured CI key must never crash
-  // a publish; the staging-verify step (rows landing as community instead of the claimed
-  // source) is where a wrong-but-valid key is caught. Use `new FirstPartySigner` directly
-  // if you want construction to throw on a bad key.
+  const raw = env[keyEnv] ?? "";
+  if (options.removeFromEnv ?? true) {
+    delete env[keyEnv];
+  }
   try {
-    const secretKey = decodeSecretKey(env[keyEnv] ?? "");
+    const secretKey = decodeSecretKey(raw);
     if (!secretKey) return undefined;
     return new FirstPartySigner({ secretKey, source: options.source });
-  } catch {
+  } catch (err) {
+    if (options.strict) throw err;
     return undefined;
   }
 }
