@@ -162,7 +162,7 @@ const client = new Anthropic({
   apiKey: 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
 });
 EOF
-opena2a protect "$DIR" --ci | sed -n '/Rollback:/,/Continue hardening/p'
+opena2a protect "$DIR" --ci | sed -n '/Undo:/,/Continue hardening/p'
 ```
 
 Expected: no `git checkout` line (there is no repository, so it could not run).
