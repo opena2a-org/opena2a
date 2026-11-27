@@ -605,7 +605,9 @@ describe('isKnownExample — a comment on the line is not a placeholder marker',
   // a plain line and on a line whose comment says example.
   const VALUE_RULES: Array<[string, string, string]> = [
     ['a documented example key (KNOWN_EXAMPLE_KEYS)', 'aws-access', ['AKIA', 'IOSFODNN7', 'EXAMPLE'].join('')],
-    ['a value holding your_', 'gitlab', ['glpat-', 'your_', 'gitlab_token_here'].join('')],
+    // The digits keep it a token shape: a run of lowercase words alone after
+    // glpat- is a name, which the gitlab pattern does not match.
+    ['a value holding your_', 'gitlab', ['glpat-', 'your_', 'gitlab_token_here_0123'].join('')],
     ['a value holding example', 'github-pat', ['ghp', '_', 'example', 'abcdefghijklmnopqrstuvwxyz123'].join('')],
     ['a value of at most 6 distinct characters', 'github-pat', ['ghp', '_', 'ab'.repeat(18)].join('')],
     ['a localhost connection string with a demo password', 'postgres', ['postgres://', 'admin:password123', '@localhost:5432/mydb'].join('')],

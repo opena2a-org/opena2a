@@ -525,7 +525,10 @@ export function catalogSeverityForCategory(category?: string): string {
  * carry a high length floor (`nfp_`{40,}, `npm_`{36}), or are anchored on the
  * token's macaroon prefix (`pypi` matches `pypi-` only when the pypi.org or
  * test.pypi.org prefix follows it), so a benign identifier of that exact shape
- * is implausible.
+ * is implausible. The prefixes whose body takes `_` and `-` (`HRKU-`, `fo1_`,
+ * `glpat-`, `GR1348941`, `dckr_pat_`) do not match a run of two or more
+ * lowercase words joined by `-` or `_` after them, so a file name that holds
+ * one of them is not reported or migrated.
  */
 export const BREADTH_DETECT_IDS = new Set([
   // ai-ml (anthropic/openai-legacy owned by local; groq/replicate/huggingface/

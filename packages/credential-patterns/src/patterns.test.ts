@@ -40,6 +40,32 @@ const PYPI_FILE_NAME_LINE = 'roadmap unit ' + ['py','pi-'].join('') + ['alpha','
 // A kebab-case run of 200 characters of [a-j-], longer than any length floor.
 const kebabRun = (length: number): string => 'abcdefghij-'.repeat(Math.ceil(length / 11)).slice(0, length);
 
+// The five rules whose body after the prefix takes `_` and `-`, with the
+// prefix and a real-shaped body length for each: Heroku `HRKU-AA` plus 58,
+// Fly.io `fo1_` plus 43, GitLab `glpat-` plus 20, GitLab Runner `GR1348941`
+// plus 20, Docker Hub `dckr_pat_` plus 27. Prefixes are assembled from parts.
+const WORD_RUN_RULES: Array<{ id: string; prefix: string; token: string }> = [
+  { id: 'heroku', prefix: ['HR', 'KU-'].join(''), token: ['HR', 'KU-', 'AA', base64urlFill(58, 5)].join('') },
+  { id: 'fly-io', prefix: ['fo', '1_'].join(''), token: ['fo', '1_', base64urlFill(43, 11)].join('') },
+  { id: 'gitlab', prefix: ['gl', 'pat-'].join(''), token: ['gl', 'pat-', base64urlFill(20, 17)].join('') },
+  { id: 'gitlab-runner', prefix: ['GR13', '48941'].join(''), token: ['GR13', '48941', base64urlFill(20, 23)].join('') },
+  { id: 'dockerhub', prefix: ['dckr', '_pat_'].join(''), token: ['dckr', '_pat_', base64urlFill(27, 29)].join('') },
+];
+// Kebab-case and snake-case runs of dictionary words, each longer than every
+// length floor of the five rules.
+const KEBAB_WORDS = ['rotation', 'runbook', 'for', 'the', 'platform', 'team'].join('-');
+const SNAKE_WORDS = ['migration', 'plan', 'for', 'the', 'staging', 'cluster'].join('_');
+const wordRunLines = (prefix: string): string[] => [
+  'see docs/' + prefix + KEBAB_WORDS + '.md for the steps',
+  'const plan = "' + prefix + SNAKE_WORDS + '";',
+  prefix + KEBAB_WORDS,
+  prefix + kebabRun(200),
+];
+const wordRunCases = (id: string): { valid: string[]; invalid: string[] } => {
+  const rule = WORD_RUN_RULES.find(r => r.id === id)!;
+  return { valid: [rule.token], invalid: wordRunLines(rule.prefix) };
+};
+
 const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }> = {
   // AI/ML
   'anthropic': {
@@ -113,12 +139,12 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     invalid: ['dop_v1_short', 'dop_v2_' + 'a'.repeat(64)],
   },
   'heroku': {
-    valid: ['HRKU-' + 'a'.repeat(30)],
-    invalid: ['HRKU-short', 'HRKU-' + 'a'.repeat(5)],
+    valid: ['HRKU-' + 'a'.repeat(30), ...wordRunCases('heroku').valid],
+    invalid: ['HRKU-short', 'HRKU-' + 'a'.repeat(5), ...wordRunCases('heroku').invalid],
   },
   'fly-io': {
-    valid: ['fo1_' + 'a'.repeat(20)],
-    invalid: ['fo1_short', 'fo1_'],
+    valid: ['fo1_' + 'a'.repeat(20), ...wordRunCases('fly-io').valid],
+    invalid: ['fo1_short', 'fo1_', ...wordRunCases('fly-io').invalid],
   },
   'netlify': {
     valid: ['nfp_' + 'a'.repeat(40)],
@@ -201,16 +227,16 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     invalid: ['ghr_short', 'ghr_'],
   },
   'gitlab': {
-    valid: ['glpat-' + 'a'.repeat(20)],
-    invalid: ['glpat-short', 'glpat-'],
+    valid: ['glpat-' + 'a'.repeat(20), ...wordRunCases('gitlab').valid],
+    invalid: ['glpat-short', 'glpat-', ...wordRunCases('gitlab').invalid],
   },
   'gitlab-pipeline': {
     valid: ['glptt-' + 'a'.repeat(40)],
     invalid: ['glptt-short', 'glptt-'],
   },
   'gitlab-runner': {
-    valid: ['GR1348941' + 'a'.repeat(20)],
-    invalid: ['GR1348941short', 'GR1348941'],
+    valid: ['GR1348941' + 'a'.repeat(20), ...wordRunCases('gitlab-runner').valid],
+    invalid: ['GR1348941short', 'GR1348941', ...wordRunCases('gitlab-runner').invalid],
   },
   'npm': {
     valid: ['npm_' + 'a'.repeat(36)],
@@ -229,8 +255,8 @@ const PATTERN_TEST_CASES: Record<string, { valid: string[]; invalid: string[] }>
     ],
   },
   'dockerhub': {
-    valid: ['dckr_pat_' + 'a'.repeat(20)],
-    invalid: ['dckr_pat_short', 'dckr_pat_'],
+    valid: ['dckr_pat_' + 'a'.repeat(20), ...wordRunCases('dockerhub').valid],
+    invalid: ['dckr_pat_short', 'dckr_pat_', ...wordRunCases('dockerhub').invalid],
   },
   'bitbucket': {
     valid: ['ATBB' + 'a'.repeat(32)],
@@ -414,6 +440,45 @@ describe('CREDENTIAL_PATTERNS', () => {
     expect(findRealMatch(`PYPI_API_TOKEN=${testPypiTestToken}`, pypi!)?.[0]).toBe(testPypiTestToken);
   });
 
+  describe('a kebab-case or snake-case run of words after HRKU-, fo1_, glpat-, GR1348941 or dckr_pat_', () => {
+    for (const { id, prefix, token } of WORD_RUN_RULES) {
+      const p = () => {
+        const found = CREDENTIAL_PATTERNS.find(c => c.id === id);
+        expect(found, `catalog pattern ${id}`).toBeDefined();
+        return found!;
+      };
+
+      it(`${id}: findRealMatch reports no file-name-like run of words`, () => {
+        for (const line of wordRunLines(prefix)) {
+          expect(findRealMatch(line, p()), `${id} reported ${line}`).toBeNull();
+        }
+      });
+
+      it(`${id}: findRealMatch still reports a real-shaped token, whole, beside a file name`, () => {
+        const line = `TOKEN=${token} # see ${prefix}${KEBAB_WORDS}.md`;
+        expect(findRealMatch(line, p())?.[0]).toBe(token);
+        expect(findRealMatch(`"${token}"`, p())?.[0]).toBe(token);
+      });
+
+      it(`${id}: a token that holds a separator, or one lowercase run with no separator, still matches`, () => {
+        // A capital letter or a digit anywhere in a separated body keeps it a token shape.
+        expect(p().regex.test(prefix + 'rotation-Runbook-for-the-platform-team')).toBe(true);
+        expect(p().regex.test(prefix + 'rotation2_runbook_for_the_platform_team')).toBe(true);
+        expect(p().regex.test(prefix + 'abcdefghijklmnopqrstuvwxyzabcd')).toBe(true);
+      });
+
+      it(`${id}: a lowercase run longer than 255 characters is matched as before`, () => {
+        expect(p().regex.test(prefix + kebabRun(256))).toBe(true);
+        expect(p().regex.test(prefix + kebabRun(255))).toBe(false);
+      });
+
+      it(`${id}: the quick-check pre-filter still extracts the literal prefix`, () => {
+        expect(CREDENTIAL_PREFIX_QUICK_CHECK.source.split('|')).toContain(prefix);
+        expect(CREDENTIAL_PREFIX_QUICK_CHECK.test(token)).toBe(true);
+      });
+    }
+  });
+
   it('has test cases for every pattern', () => {
     const missing = CREDENTIAL_PATTERNS.filter(p => !PATTERN_TEST_CASES[p.id]).map(p => p.id);
     expect(missing).toEqual([]);
@@ -495,6 +560,11 @@ describe('CREDENTIAL_PATTERNS', () => {
     { name: '10k after AccountKey=', value: 'AccountKey=' + 'a'.repeat(10000) },
     { name: '10k after EAAA', value: 'EAAA' + 'a'.repeat(10000) },
     { name: 'xoxp- with 1k numeric groups', value: 'xoxp-' + '1234567890-'.repeat(1000) },
+    // A prefix repeated along a line of words: each occurrence reads the
+    // run after it, which the 255-character cap keeps linear.
+    { name: '18k repeated glpat-', value: ['gl', 'pat-'].join('').repeat(3000) },
+    { name: 'fo1_ with 10k word separators', value: ['fo', '1_'].join('') + 'a-'.repeat(5000) },
+    { name: 'dckr_pat_ word runs, repeated', value: (['dckr', '_pat_'].join('') + 'ab-'.repeat(100)).repeat(60) },
   ];
 
   for (const input of REDOS_INPUTS) {
