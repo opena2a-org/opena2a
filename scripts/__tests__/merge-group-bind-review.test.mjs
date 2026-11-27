@@ -103,6 +103,17 @@ test('the bind block reads only its inputs and calls no API', () => {
   assert.doesNotMatch(block, /\$\{\{/, 'no workflow expression inside the bind');
 });
 
+test('the review relay header says a cancelled run on the head blocks the merge group', () => {
+  const lines = readFileSync(RELAY_WORKFLOW, 'utf8').split('\n');
+  const header = lines
+    .slice(0, lines.findIndex((l) => !l.startsWith('#')))
+    .map((l) => l.replace(/^#\s?/, ''))
+    .join(' ');
+  assert.match(header, /A cancelled attempt is not success either/);
+  assert.match(header, /no re-run and no later run on H can pass the merge group/);
+  assert.match(header, /Only a new commit pushed to the pull request/);
+});
+
 // --- The stub gh -------------------------------------------------------------
 
 // `gh api [-X METHOD] [-f key=value]... [--paginate] [--jq expr] PATH`.
@@ -513,6 +524,9 @@ for (const c of BIND_CASES) {
 const PASSED = (runs) =>
   `The review of pull request #${PR} at ${H} passed: ${runs} run(s), every attempt concluded with success.`;
 
+const CANCELLED_HINT =
+  'A cancelled run stays listed for this head, so no re-run and no later run on it can pass; push a new commit to the pull request to review a new head.';
+
 const RELAY_CASES = [
   // Passing.
   { name: 'one run, one attempt, success', passes: 1 },
@@ -528,8 +542,23 @@ const RELAY_CASES = [
     attempts: 4,
   },
 
-  // Each verdict an attempt can carry other than success.
-  ...['failure', 'cancelled', 'timed_out', 'skipped', 'neutral', 'action_required', 'stale', 'startup_failure'].map(
+  // Each verdict an attempt can carry other than success. A cancelled
+  // attempt fails too, and says that only a new head is reviewed afresh.
+  {
+    name: 'an attempt concluded cancelled',
+    fixtures: { [attemptKey(7, 1)]: { conclusion: 'cancelled' } },
+    reason: `Review run 7 at ${H}, attempt 1 of 1, concluded 'cancelled', not success. ${CANCELLED_HINT} https://example.test/runs/7`,
+  },
+  {
+    name: 'a cancelled run followed by a run that succeeded on the same head',
+    fixtures: {
+      [RUNS_KEY]: { total_count: 2, workflow_runs: [reviewRun(8), reviewRun(7)] },
+      [attemptKey(7, 1)]: { conclusion: 'cancelled' },
+      [attemptKey(8, 1)]: { conclusion: 'success' },
+    },
+    reason: `Review run 7 at ${H}, attempt 1 of 1, concluded 'cancelled', not success. ${CANCELLED_HINT} https://example.test/runs/7`,
+  },
+  ...['failure', 'timed_out', 'skipped', 'neutral', 'action_required', 'stale', 'startup_failure'].map(
     (verdict) => ({
       name: `an attempt concluded ${verdict}`,
       fixtures: { [attemptKey(7, 1)]: { conclusion: verdict } },
