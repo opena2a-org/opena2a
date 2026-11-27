@@ -19,22 +19,22 @@ Before users install your MCP server, they may run an audit to check its securit
 npx opena2a-cli mcp audit
 ```
 
-Captured from opena2a-cli v0.10.13 on 2026-09-04; the config file path is replaced with a fixed placeholder:
+Captured from opena2a-cli v0.10.13 on 2026-11-27 ([capture](../captures/mcp-server-author-mcp-audit.txt)), with registry access, after `opena2a mcp sign my-server` from Step 2 had been run once, so the my-server row reads `signed`; run before Step 2, every row reads `not signed` and the Signed and Verified counts are zero:
 ```
 MCP Server Audit
 ==================================================
 
-Source: /home/dev/mcp-server-tools/.mcp.json (project-local)
-  my-server            stdio    node ./dist/index.js                           not signed  no trust score
-  filesystem           stdio    npx @modelcontextprotocol/server-filesystem .  not signed  no trust score
-  postgres             stdio    npx @modelcontextprotocol/server-postgres      not signed  no trust score
-  github               stdio    npx @modelcontextprotocol/server-github        not signed  no trust score
+Source: ~/mcp-server-tools/.mcp.json (project-local)
+  my-server            stdio    node ./dist/index.js                           signed  no package to look up
+  filesystem           stdio    npx @modelcontextprotocol/server-filesystem .  not signed  trust: 79
+  postgres             stdio    npx @modelcontextprotocol/server-postgres      not signed  listed, not scanned
+  github               stdio    npx @modelcontextprotocol/server-github        not signed  listed, not scanned
 
 Summary
   Servers found:     4
-  Signed:            0 / 4
-  Verified:          0 / 4
-  Trust scores:      0 / 4
+  Signed:            1 / 4
+  Verified:          1 / 4
+  Trust scores:      1 / 3 looked up; 2 listed, not scanned; 1 server has no package name
 
 Next Steps
   Sign an MCP server with AIM identity:
@@ -43,7 +43,7 @@ Next Steps
     opena2a mcp verify "${MCP_SERVER:?set MCP_SERVER to a server name listed above}"
 ```
 
-Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists in the user store for the project (`~/.opena2a/projects/<key>/mcp-identities/`, or under `$OPENA2A_HOME`), and its registry trust score. `no trust score` means the registry held no record of that server when the audit ran -- which is what every unregistered server looks like, yours included, until Step 5. `Verified` in the summary counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
+Each row is one configured server: the transport it speaks, the command that launches it, whether a signature for it exists in the user store for the project (`~/.opena2a/projects/<key>/mcp-identities/`, or under `$OPENA2A_HOME`), and what the registry said about the npm package the server runs. The server is looked up under that package, never under its name in `.mcp.json`, and the row ends in one of: `trust: <score>`, the registry's trust score out of 100; `listed, not scanned`, the registry holds a record of the package but no scan of it, so there is no score; `not in registry`, the registry answered and holds no record of the package, which is what an unpublished or unregistered package looks like, yours included, until Step 5; `no package to look up`, the server is not started from an npm package (`node ./dist/index.js` here), so there is no name to ask about; `lookup failed`, the registry gave no answer, as on a machine with no network access; and `not looked up (--ci)`, `mcp audit --ci` sends no lookups at all. The trust endings are the registry's answers on the day of the capture, and yours will be whatever it holds when you run the audit. In the summary, `Trust scores` counts the servers that came back with a score out of the ones it looked up, which leaves out the servers with no package, then names the listed-but-unscanned servers, the failed lookups and the servers with no package name, each only when there are any; under `--ci` it reads `not looked up (--ci)`. `Verified` counts something stricter than `Signed`: a signature whose recorded config hash still matches the command line in the config file today.
 
 ---
 
@@ -282,7 +282,7 @@ jobs:
           npx ai-trust check @myorg/mcp-server-tools --no-scan --json > trust.json
           score=$(jq -r '.trustScore // empty' trust.json)
           if [ -z "$score" ]; then
-            echo "The registry returned no trust score for @myorg/mcp-server-tools"
+            echo "The registry holds no score for @myorg/mcp-server-tools"
             exit 1
           fi
           if ! jq -e '.trustScore >= 0.70' trust.json > /dev/null; then

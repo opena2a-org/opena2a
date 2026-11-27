@@ -299,6 +299,7 @@ const FILE_CAPTURES: ReadonlyArray<{ doc: string; name: string }> = [
   { doc: DEV, name: 'developer-scan-soul' },
   { doc: DEV, name: 'developer-secretless-ai-init' },
   { doc: DEV, name: 'developer-hackmyagent-secure' },
+  { doc: MCP, name: 'mcp-server-author-mcp-audit' },
   { doc: MCP, name: 'mcp-server-author-identity-create' },
   { doc: MCP, name: 'mcp-server-author-mcp-sign' },
   { doc: MCP, name: 'mcp-server-author-hackmyagent-secure' },
