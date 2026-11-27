@@ -95,7 +95,7 @@ Full command reference, Shield subcommands, scope drift detection, behavioral go
 
 ## Telemetry
 
-opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify` and `detect`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, and the number of shared scans counted for it in the last 90 days, which the Registry does not verify.
+opena2a looks things up in the OpenA2A Registry on `init`, `review`, `verify`, `trust`, `claim`, `mcp audit` and `mcp verify`, and on `detect` only when you pass `--registry`: back come the trust level and score the Registry holds for a package, the advisories the Registry publishes, and the number of shared scans counted for it in the last 90 days, which the Registry does not verify.
 
 `opena2a` sends tier-1 usage data to the OpenA2A Registry: tool name, version, command name (`check`, `scan`, `protect`, etc.), success, duration, platform, Node major version, and a persistent `install_id`. Each event carries an install ID that identifies the machine, so the data is personal data; https://opena2a.org/privacy explains how the ID is made. **No content is collected** — no scanned packages, no findings, no file paths, no env-var values, no IPs.
 
