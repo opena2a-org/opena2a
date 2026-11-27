@@ -40,7 +40,7 @@ function shownUrl(parsed: URL): string | null {
 
 /**
  * Validates that a registry URL uses HTTPS.
- * Allows http://localhost and http://127.0.0.1 for local development.
+ * Allows http://localhost, http://127.0.0.1 and http://[::1] for local development.
  *
  * @param url  The registry URL to validate
  * @throws RegistryUrlRefusal if the URL does not parse or uses plain HTTP (non-localhost)
@@ -60,9 +60,12 @@ export function validateRegistryUrl(url: string): void {
     throw new RegistryUrlRefusal(message, 'not-a-url', url);
   }
 
+  // WHATWG URL keeps the brackets on an IPv6 hostname: http://[::1]:8080 has
+  // hostname '[::1]', never '::1'.
   const isLocalhost =
     parsed.hostname === 'localhost' ||
     parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '[::1]' ||
     parsed.hostname === '::1';
 
   if (parsed.protocol === 'http:' && !isLocalhost) {
