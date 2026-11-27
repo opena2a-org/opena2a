@@ -23,6 +23,16 @@ describe('validateRegistryUrl', () => {
     expect(() => validateRegistryUrl('')).not.toThrow();
   });
 
+  it('accepts the IPv6 loopback over plain HTTP like 127.0.0.1', () => {
+    expect(() => validateRegistryUrl('http://[::1]:8080')).not.toThrow();
+    expect(() => validateRegistryUrl('http://[::1]')).not.toThrow();
+  });
+
+  it('refuses a plain HTTP IPv6 address that is not the loopback', () => {
+    const err = refusalOf('http://[2001:db8::1]:8080');
+    expect(err.kind).toBe('plain-http');
+  });
+
   it('names a plain HTTP URL in its refusal with the user name and password cleared', () => {
     const err = refusalOf('http://FAKE-user:FAKE-pw@registry.internal.example/base');
     expect(err.kind).toBe('plain-http');
