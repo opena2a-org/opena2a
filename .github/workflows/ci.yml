@@ -34,7 +34,17 @@ concurrency:
   # event_name is part of the key so that a manual re-check does not cancel the
   # in-flight push run for the same commit -- github.ref is refs/heads/main for
   # both, so ref alone is not enough to separate them.
-  group: ci-${{ github.event.pull_request.number || format('{0}-{1}', github.event_name, github.ref) }}
+  #
+  # event_name and ref alone still put every push to main in one group
+  # (`ci-push-refs/heads/main`), so each merge cancelled the run on the previous
+  # tip, and the slowest job (build on Node 18) ended "The operation was
+  # canceled", leaving that commit red on main. The commit is therefore part of
+  # the key for every event but a pull request: a run on a main commit answers
+  # for that commit and must finish. Making cancel-in-progress false instead
+  # would not do it, because a group holds one pending run and a third merge
+  # would still cancel the second's before it started. A pull request keeps its
+  # number as the key, so a new push still cancels the run on the old head.
+  group: ci-${{ github.event.pull_request.number || format('{0}-{1}-{2}', github.event_name, github.ref, github.sha) }}
   cancel-in-progress: true
 
 jobs:
