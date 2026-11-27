@@ -10,7 +10,7 @@
 
 [Website](https://opena2a.org/cli) · [Docs](https://opena2a.org/docs) · [Demos](https://opena2a.org/demos) · [Discord](https://discord.gg/uRZa3KXgEn)
 
-`opena2a` is the command-line front door to the OpenA2A security tools. It assesses an AI agent project for hardcoded credentials and unsafe configuration, applies the fixes, and hands scanning, credential storage and package trust lookups to HackMyAgent, Secretless and ai-trust.
+`opena2a` is the command-line front door to the OpenA2A security tools. It assesses an AI agent project for hardcoded credentials and unsafe configuration, applies the fixes, and hands scanning and credential storage to HackMyAgent and Secretless. Package trust lookups query the OpenA2A Registry API directly.
 
 ## Quick start
 `my-agent` is the path to your project; run the command from the directory that contains it.
@@ -98,7 +98,7 @@ In this repository:
 Elsewhere:
 
 - [opena2a.org/docs](https://opena2a.org/docs), [demos](https://opena2a.org/demos), [research](https://research.opena2a.org) and [Discord](https://discord.gg/uRZa3KXgEn).
-- Related tools: [HackMyAgent](https://github.com/opena2a-org/hackmyagent), [Secretless](https://github.com/opena2a-org/secretless-ai), [ai-trust](https://github.com/opena2a-org/ai-trust), [AIM](https://github.com/opena2a-org/agent-identity-management), [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) and [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent).
+- Related tools: [HackMyAgent](https://github.com/opena2a-org/hackmyagent), [Secretless](https://github.com/opena2a-org/secretless-ai), [AIM](https://github.com/opena2a-org/agent-identity-management), [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) and [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent).
 
 ## License
 
