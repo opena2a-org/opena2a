@@ -319,13 +319,13 @@ async function guardVerify(targetDir: string, options: GuardOptions): Promise<nu
   const enforce = options.enforce ?? false;
   const store = loadStore(targetDir);
 
-  // Hash pins live in the files they cover, so `--skills` / `--heartbeats` need no store. Where none
-  // of the files `guard sign` signs by default (GUARD_FILES; a git-ignored one does not count) is
-  // present, a fresh `skill create` directory for one, advising a sign was a loop that never checked
-  // the pin (#378): check the pins alone. Where one of those files is present a missing store still
-  // fails. Only GUARD_FILES is consulted, so where none is present these flags do not detect a
-  // deleted store as missing, even one that covered files named with `--files`: they check the
-  // pins alone and can exit 0 without reading the files that store covered.
+  // Hash pins live in the files they cover, so `--skills` / `--heartbeats` need no store. Where none of
+  // GUARD_FILES (the default signing set; a git-ignored one does not count) is present, e.g. a fresh
+  // `skill create` directory, advising a sign never checked the pin (#378): verify with no store. A
+  // guard policy (.opena2a/guard/policy.json) still applies there: with no store every required file
+  // is unsigned, so blockOnUnsigned exits 1 even when every pin passes. Where a GUARD_FILES file is
+  // present a missing store still fails; where none is, a deleted store is not detected as missing,
+  // even one that covered `--files` paths, and verify can exit 0 without reading the files it covered.
   const pinsOnly = !store && !!(options.skills || options.heartbeats)
     && !fs.existsSync(path.join(targetDir, STORE_DIR, STORE_FILE))
     && resolveDefaultFiles(targetDir).files.length === 0;

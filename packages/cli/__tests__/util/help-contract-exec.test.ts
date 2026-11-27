@@ -669,9 +669,9 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
           expect((await cli(['guard', 'sign'])).status).toBe(0);
         },
       },
-      // No store and none of the default files: the pins alone decide (#378).
+      // No store, none of the default files and no guard policy: the pins decide (#378).
       {
-        when: 'verify checks only the hash pins and exits 0 when every pin passes',
+        when: 'verify checks the hash pins without a store and exits 0 when every pin passes',
         args: ['guard', 'verify', '--skills'],
         setup: async (s, cli) => {
           put(s, 'SKILL.md', '# Demo skill\n');
@@ -681,7 +681,7 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
         output: /checked the hash pins only/,
       },
       {
-        when: 'verify checks only the hash pins and exits 0 when every pin passes',
+        when: 'verify checks the hash pins without a store and exits 0 when every pin passes',
         args: ['guard', 'verify', '--heartbeats'],
         setup: async (s, cli) => {
           put(s, 'HEARTBEAT.md', '# Demo heartbeat\n');
@@ -728,6 +728,20 @@ const CASES: Record<string, Record<string, ExitCase[]>> = {
           expect((await cli(['guard', 'sign', '--skills'])).status).toBe(0);
           put(s, 'SKILL.md', readFileSync(join(s.project, 'SKILL.md'), 'utf-8').replace('# Demo skill', '# Edited skill'));
         },
+      },
+      // With no store a guard policy's required file is unsigned, so blockOnUnsigned fails a
+      // verify whose every pin passes.
+      {
+        when: 'tampered, missing or policy-violating files (verify)',
+        args: ['guard', 'verify', '--skills'],
+        setup: async (s, cli) => {
+          put(s, 'SKILL.md', '# Demo skill\n');
+          expect((await cli(['guard', 'sign', '--skills'])).status).toBe(0);
+          put(s, '.opena2a/guard/policy.json', JSON.stringify({
+            version: 1, requiredFiles: ['SKILL.md'], blockOnUnsigned: true, disableHeartbeatOnTamper: false, autoRemediate: false,
+          }) + '\n');
+        },
+        output: /SKILL\.md\s+PASS/,
       },
       { when: 'no signature store', args: ['guard', 'verify'], setup: (s) => { put(s, 'package.json', '{"name":"demo"}\n'); } },
       { when: 'no signature store', args: ['guard', 'verify', '--enforce'], setup: (s) => { put(s, 'package.json', '{"name":"demo"}\n'); } },

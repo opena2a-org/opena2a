@@ -153,7 +153,7 @@ export const HELP_CONTRACTS: Readonly<Record<string, HelpContract>> = {
   },
   guard: {
     exit: [
-      ['0', 'the files verify clean, also with unsigned files the guard policy does not require, or the subcommand succeeded; with --skills or --heartbeats, no signature store and none of the files guard signs by default present, verify checks only the hash pins and exits 0 when every pin passes'],
+      ['0', 'the files verify clean, also with unsigned files the guard policy does not require, or the subcommand succeeded; with --skills or --heartbeats, no signature store and none of the files guard signs by default present, verify checks the hash pins without a store and exits 0 when every pin passes and no guard policy (.opena2a/guard/policy.json) with blockOnUnsigned requires a file, since with no store every required file is unsigned and fails verify'],
       ['1', 'tampered, missing or policy-violating files (verify), tampered or missing signed files (status), changes found by diff, a changed, unpinned or expired hash pin, no signature store (unless --skills or --heartbeats check only the pins), no SKILL.md or HEARTBEAT.md to check with no store, no signed file left for watch to watch, findings harden left unresolved, a declined resign, a re-sign by sign or resign that cannot be confirmed (no terminal, or --json, without --ci), the directory does not exist, an unknown subcommand or action, or an error'],
       ['3', 'verify --enforce found tampered or missing files, unsigned files the guard policy requires, or a failed pin (quarantine mode); with no signature store only where --skills or --heartbeats check the pins alone, since a missing or unreadable signature store still exits 1'],
     ],
