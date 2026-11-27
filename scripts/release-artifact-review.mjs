@@ -107,6 +107,13 @@ const ROSTER_SCOPE = '@opena2a/';
  */
 const KNOWN_DEPRECATED = { name: 'hackmyagent', version: '0.1.0' };
 
+/**
+ * Opens the consumer-closure detail line printed when the GitHub API quota is
+ * the sole cause of its precondition. The verdict stays `precondition` (an
+ * unread feed is not a clean one); the line only names the cause.
+ */
+const QUOTA_ONLY_PREFIX = 'precondition cause: GitHub API quota only —';
+
 const isRosterName = (name) => ROSTER_NAMES.includes(name) || name.startsWith(ROSTER_SCOPE);
 
 // ---------------------------------------------------------------------------
@@ -831,6 +838,30 @@ function readAdvisoriesFile(file) {
   return { byRepo: parsed };
 }
 
+/**
+ * The GitHub REST API base: `GITHUB_API_URL` as GitHub Actions sets it (and
+ * as a test points it at a local stand-in), else api.github.com.
+ */
+function githubApiBase() {
+  return (process.env.GITHUB_API_URL || 'https://api.github.com').replace(/\/+$/, '');
+}
+
+/** The token the advisory reads authenticate with, when one is set. */
+function githubToken() {
+  return process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
+}
+
+/**
+ * True when a non-ok answer is GitHub's rate limit rather than a refusal: 429,
+ * or 403 with the quota header at zero or a body that says so. GitHub answers
+ * an exhausted quota with 403 as often as 429.
+ */
+function isRateLimited(res, body) {
+  if (res.status === 429) return true;
+  if (res.status !== 403) return false;
+  return res.headers.get('x-ratelimit-remaining') === '0' || /rate limit/i.test(body);
+}
+
 const advisoryCache = new Map();
 async function fetchAdvisories(repo, states, advisoriesFile) {
   if (advisoriesFile) {
@@ -842,20 +873,30 @@ async function fetchAdvisories(repo, states, advisoriesFile) {
   const key = `${repo} ${states}`;
   if (advisoryCache.has(key)) return advisoryCache.get(key);
   const stateParam = states === 'published' ? '&state=published' : '';
-  const url = `https://api.github.com/repos/${repo}/security-advisories?per_page=100${stateParam}`;
+  const url = `${githubApiBase()}/repos/${repo}/security-advisories?per_page=100${stateParam}`;
   const headers = {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'opena2a-release-artifact-review',
   };
-  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  const token = githubToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   let result;
   try {
     const res = await fetch(url, { headers });
     if (!res.ok) {
-      const body = short(await res.text().catch(() => ''), 200);
-      result = { error: `advisories endpoint for ${repo} returned ${res.status}: ${body}` };
+      const raw = await res.text().catch(() => '');
+      const body = short(raw, 200);
+      if (isRateLimited(res, raw)) {
+        result = {
+          rateLimited: true,
+          error: token
+            ? `advisories endpoint for ${repo} is rate-limited (${res.status}): the token's quota is used up, so its advisories were not read`
+            : `advisories endpoint for ${repo} is rate-limited (${res.status}): the unauthenticated quota is used up, so its advisories were not read — set GH_TOKEN or GITHUB_TOKEN to read with a token's quota`,
+        };
+      } else {
+        result = { error: `advisories endpoint for ${repo} returned ${res.status}: ${body}` };
+      }
     } else {
       const list = await res.json();
       result = Array.isArray(list) ? { advisories: list } : { error: `advisories endpoint for ${repo} returned a non-list` };
@@ -884,6 +925,8 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates, adv
   const advisoriesFile = advisoriesFilePath ? readAdvisoriesFile(advisoriesFilePath) : null;
   if (advisoriesFilePath) {
     detail.push(`advisories source: ${advisoriesFilePath} (--advisories-file; api.github.com NOT read, advisory-states not applied)`);
+  } else {
+    detail.push(`advisories source: ${githubApiBase()} (${githubToken() ? 'with a token from GH_TOKEN/GITHUB_TOKEN' : 'unauthenticated: no GH_TOKEN or GITHUB_TOKEN set'})`);
   }
 
   // Alias-aware roster rows out of the lockfile: an entry's real name is its
@@ -948,13 +991,23 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates, adv
 
   let advisoriesRead = 0;
   const advisoriesByRepo = new Map();
+  // Preconditions the GitHub API quota caused and nothing else did: a
+  // rate-limited read, and the empty-feed canary when a rate limit is why the
+  // feed read empty. Counted so the verdict can say when the quota is the
+  // whole story, which a test may treat as "not measured here" and a release
+  // job (which reads with a token) never sees.
+  let quotaPreconditions = 0;
+  let rateLimitedRepos = 0;
   for (const repo of canaryRepos) {
     const res = await fetchAdvisories(repo, advisoryStates, advisoriesFile);
     if (res.error) {
+      if (res.rateLimited) rateLimitedRepos += 1;
       // Only load-bearing when a closure row needs this repo; recorded either
       // way so a half-dead feed is visible in the log.
-      if ([...repoOf.values()].includes(repo)) preconditions.push(res.error);
-      else detail.push(`note: ${res.error} (canary-only repository)`);
+      if ([...repoOf.values()].includes(repo)) {
+        preconditions.push(res.error);
+        if (res.rateLimited) quotaPreconditions += 1;
+      } else detail.push(`note: ${res.error} (canary-only repository)`);
       continue;
     }
     advisoriesByRepo.set(repo, res.advisories);
@@ -964,6 +1017,7 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates, adv
     preconditions.push(
       "the advisories feed returned zero advisories across the roster's repositories — a silently empty feed is indistinguishable from a broken one, and this roster is measured to carry published advisories"
     );
+    if (rateLimitedRepos > 0) quotaPreconditions += 1;
   }
 
   // The rows themselves.
@@ -1027,7 +1081,13 @@ async function checkConsumerClosure(closure, packedManifest, advisoryStates, adv
   detail.push(`rows: ${examined} own cop${examined === 1 ? 'y' : 'ies'} examined, ${fails.length} fail, ${preconditions.length} precondition`);
 
   if (fails.length > 0) return { status: 'fail', detail: [...detail, ...fails.map((f) => `FAIL ${f}`), ...preconditions.map((p) => `precondition alongside: ${p}`)] };
-  if (preconditions.length > 0) return { status: 'precondition', detail: [...detail, ...preconditions] };
+  if (preconditions.length > 0) {
+    const quotaOnly =
+      quotaPreconditions === preconditions.length
+        ? [`${QUOTA_ONLY_PREFIX} every precondition above is a rate-limited advisories read; with a token's quota (GH_TOKEN or GITHUB_TOKEN) this check would have run`]
+        : [];
+    return { status: 'precondition', detail: [...detail, ...preconditions, ...quotaOnly] };
+  }
   return { status: 'pass', detail };
 }
 

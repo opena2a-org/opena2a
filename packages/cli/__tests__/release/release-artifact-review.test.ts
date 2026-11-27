@@ -35,10 +35,16 @@
  * its review is given `--advisories-file` with a fixture advisory list, so its
  * `consumer-closure` verdict holds with no token and an exhausted rate limit
  * (an unauthenticated address gets 60 requests an hour), and any precondition
- * fails it.
+ * fails it. The live advisories path is exercised against a local stand-in
+ * for the API (`GITHUB_API_URL`), rate-limited and serving, never against
+ * api.github.com. The two own-tarball cases do read api.github.com (with
+ * GH_TOKEN or GITHUB_TOKEN when set); a consumer-closure precondition there
+ * that the review attributes to the API quota ALONE is a named skip, or
+ * tolerated beside the network-free checks, because it says nothing about the
+ * tarball. Any other precondition, and every fail, still fails them.
  */
 import { describe, expect, it, type TestContext } from 'vitest';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -173,7 +179,7 @@ function cleanResultOrSkip(ctx: TestContext): ReviewResult {
   return r;
 }
 
-function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
+function runReview(tarball: string, extraArgs: string[] = [], env: NodeJS.ProcessEnv = process.env): ReviewResult {
   // Every review this file runs against the live feed reads published
   // advisories only. The output is quoted into delivery reports, and a
   // developer token can read draft (embargoed) advisories, so no call site
@@ -187,7 +193,7 @@ function runReview(tarball: string, extraArgs: string[] = []): ReviewResult {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     timeout: REVIEW_TIMEOUT_MS,
-    env: { ...process.env },
+    env: { ...env },
   });
   const out = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
   const censusLine = out.split('\n').find((l) => l.startsWith('census: '));
@@ -287,19 +293,99 @@ function writeCleanAdvisories(): string {
   return file;
 }
 
+/** The clean fixture: a well-behaved opena2a-cli with nothing a check objects to. */
+function buildCleanTarball(): string {
+  return buildTarball(scratch, {
+    name: 'opena2a-cli',
+    version: '0.0.0-qgf-clean',
+    manifestExtra: { bin: { opena2a: 'dist/index.js' } },
+    files: { 'dist/index.js': WELL_BEHAVED_BIN, 'README.md': '# clean fixture\n' },
+  });
+}
+
 /** Memoised heavy runs, so several tests can assert on one invocation. */
 let cleanResult: ReviewResult | undefined;
 function getCleanResult(): ReviewResult {
-  cleanResult ??= runReview(
-    buildTarball(scratch, {
-      name: 'opena2a-cli',
-      version: '0.0.0-qgf-clean',
-      manifestExtra: { bin: { opena2a: 'dist/index.js' } },
-      files: { 'dist/index.js': WELL_BEHAVED_BIN, 'README.md': '# clean fixture\n' },
-    }),
-    ['--advisory-states', 'published', '--advisories-file', writeCleanAdvisories()]
-  );
+  cleanResult ??= runReview(buildCleanTarball(), [
+    '--advisory-states',
+    'published',
+    '--advisories-file',
+    writeCleanAdvisories(),
+  ]);
   return cleanResult;
+}
+
+/**
+ * A local stand-in for the GitHub REST API, in a child process so it answers
+ * while the review runs under spawnSync. Every request is answered the same
+ * way: `rate-limited` with GitHub's exhausted-quota 403, `advisories` with the
+ * clean fixture's advisory list. Each request's Authorization header (or
+ * `none`) is appended to `seenFile`, so a test can tell whether the review
+ * read with a token.
+ */
+interface StubGithubApi {
+  url: string;
+  seenAuth: () => string[];
+  stop: () => void;
+}
+async function startStubGithubApi(mode: 'rate-limited' | 'advisories'): Promise<StubGithubApi> {
+  const dir = mkdtempSync(path.join(scratch, 'stub-github-api-'));
+  const seenFile = path.join(dir, 'seen-auth.txt');
+  writeFileSync(seenFile, '');
+  const advisories = JSON.parse(readFileSync(writeCleanAdvisories(), 'utf8'))[cliRepo()];
+  const server = [
+    "const http = require('node:http');",
+    "const fs = require('node:fs');",
+    'const [seenFile, mode, advisories] = process.argv.slice(1);',
+    'const srv = http.createServer((req, res) => {',
+    "  fs.appendFileSync(seenFile, (req.headers.authorization ?? 'none') + '\\n');",
+    "  if (mode === 'rate-limited') {",
+    "    res.writeHead(403, { 'content-type': 'application/json', 'x-ratelimit-limit': '60', 'x-ratelimit-remaining': '0' });",
+    "    res.end(JSON.stringify({ message: 'API rate limit exceeded for 127.0.0.1.' }));",
+    '  } else {',
+    "    res.writeHead(200, { 'content-type': 'application/json' });",
+    '    res.end(advisories);',
+    '  }',
+    '});',
+    "srv.listen(0, '127.0.0.1', () => console.log(srv.address().port));",
+  ].join('\n');
+  const child = spawn(process.execPath, ['-e', server, seenFile, mode, JSON.stringify(advisories)], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  const port = await new Promise<string>((resolve, reject) => {
+    let buf = '';
+    child.stdout.on('data', (d: Buffer) => {
+      buf += d.toString();
+      if (buf.includes('\n')) resolve(buf.trim());
+    });
+    child.on('exit', (code) => reject(new Error(`stub GitHub API exited ${code} before listening`)));
+  });
+  return {
+    url: `http://127.0.0.1:${port}`,
+    seenAuth: () => readFileSync(seenFile, 'utf8').split('\n').filter(Boolean),
+    stop: () => child.kill(),
+  };
+}
+
+/**
+ * The environment for a review whose advisories come from `apiUrl`: no token
+ * unless one is given, and no proxy between the review and the stand-in.
+ */
+function stubApiEnv(apiUrl: string, token?: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, GITHUB_API_URL: apiUrl };
+  delete env.GH_TOKEN;
+  delete env.GITHUB_TOKEN;
+  if (token) env.GH_TOKEN = token;
+  env.NO_PROXY = env.no_proxy = ['127.0.0.1', env.NO_PROXY ?? env.no_proxy].filter(Boolean).join(',');
+  return env;
+}
+
+/** The text a consumer-closure precondition carries when the quota is its whole cause. */
+const QUOTA_ONLY_LINE = 'precondition cause: GitHub API quota only';
+
+/** The consumer-closure section of a review's output. */
+function closureSection(out: string): string {
+  return out.split('check consumer-closure:')[1]?.split('\ncensus: ')[0] ?? '';
 }
 
 let ownTarball: string | undefined;
@@ -737,8 +823,15 @@ describe('release-artifact-review: clean subjects go green', () => {
       // is quoted below for the delivery report) — but never a precondition:
       // unread feeds are not clean feeds. version-reuse likewise: it fails
       // honestly while the tree's version is already published with other
-      // dependencies, which only a version bump clears.
+      // dependencies, which only a version bump clears. The one exception is
+      // a consumer-closure precondition the review itself attributes to the
+      // GitHub API quota alone: that names this machine's quota, not the
+      // tarball, and the release job reads with a token.
       for (const check of ['npm-audit', 'consumer-closure', 'version-reuse']) {
+        if (check === 'consumer-closure' && r.census[check] === 'precondition' && closureSection(r.out).includes(QUOTA_ONLY_LINE)) {
+          console.warn(`quota-dependent: consumer-closure on our own tarball was not measured here; ${QUOTA_ONLY_LINE}`);
+          continue;
+        }
         if (r.census[check] === 'precondition') {
           expect.fail(preconditionFailure(check, r.out));
         }
@@ -759,18 +852,99 @@ describe('release-artifact-review: clean subjects go green', () => {
 
   it(
     'the release job\'s consumer-closure on our own tarball fails only on rows this repository cannot clear',
-    () => {
+    (ctx) => {
       const r = getOwnPublishedResult();
+      const section = closureSection(r.out);
+      if (r.census['consumer-closure'] === 'precondition' && section.includes(QUOTA_ONLY_LINE)) {
+        // This case reads api.github.com live; the release job reads it with a
+        // token. An exhausted quota here is no verdict on the tarball.
+        const note = `quota-dependent: consumer-closure read api.github.com and was rate-limited on every repository it needed (set GH_TOKEN or GITHUB_TOKEN to run this case)`;
+        console.warn(note);
+        ctx.skip(note);
+      }
       if (r.census['consumer-closure'] === 'precondition') {
         expect.fail(preconditionFailure('consumer-closure', r.out));
       }
-      const section = r.out.split('check consumer-closure:')[1]?.split('\ncensus: ')[0] ?? '';
       const unretained = section
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l.startsWith('FAIL '))
         .filter((l) => !UNCLEARABLE_CLOSURE_ROWS.some((re) => re.test(l)));
       expect(unretained, `consumer-closure rows not listed as unclearable\n${r.out}`).toEqual([]);
+    },
+    TEST_TIMEOUT_MS
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The live advisories read, against a local stand-in for the GitHub API, so
+// no case here spends or depends on api.github.com's unauthenticated quota.
+// ---------------------------------------------------------------------------
+
+describe('release-artifact-review: advisory reads and the GitHub API quota', () => {
+  it(
+    'an exhausted unauthenticated quota is a named precondition that asks for a token, never a pass',
+    async (ctx) => {
+      const down = networkUnreachable();
+      if (down) ctx.skip(`network-dependent: the review reads registry.npmjs.org, and cannot reach: ${down}`);
+      const api = await startStubGithubApi('rate-limited');
+      try {
+        const r = runReview(buildCleanTarball(), ['--advisory-states', 'published'], stubApiEnv(api.url));
+        const section = closureSection(r.out);
+        expect(api.seenAuth().length, `the review never read the stand-in at ${api.url}\n${r.out}`).toBeGreaterThan(0);
+        expect(api.seenAuth(), 'no token was set, so no read may carry one').toEqual(api.seenAuth().map(() => 'none'));
+        expect(section, r.out).toContain(`advisories source: ${api.url} (unauthenticated: no GH_TOKEN or GITHUB_TOKEN set)`);
+        expect(section, r.out).toContain('is rate-limited (403): the unauthenticated quota is used up');
+        expect(section, r.out).toContain('set GH_TOKEN or GITHUB_TOKEN');
+        expect(section, r.out).toContain(QUOTA_ONLY_LINE);
+        // Named, but still not a pass: an unread feed is not a clean one.
+        expect(r.census['consumer-closure'], r.out).toBe('precondition');
+        expect(r.status, r.out).not.toBe(0);
+      } finally {
+        api.stop();
+      }
+    },
+    TEST_TIMEOUT_MS
+  );
+
+  it(
+    'a token in GH_TOKEN authenticates every advisories read',
+    async (ctx) => {
+      const down = networkUnreachable();
+      if (down) ctx.skip(`network-dependent: the review reads registry.npmjs.org, and cannot reach: ${down}`);
+      const api = await startStubGithubApi('rate-limited');
+      const token = 'stub-token-for-a-local-stand-in';
+      try {
+        const r = runReview(buildCleanTarball(), ['--advisory-states', 'published'], stubApiEnv(api.url, token));
+        const section = closureSection(r.out);
+        const seen = api.seenAuth();
+        expect(seen.length, `the review never read the stand-in at ${api.url}\n${r.out}`).toBeGreaterThan(0);
+        expect(seen, r.out).toEqual(seen.map(() => `Bearer ${token}`));
+        expect(section, r.out).toContain(`advisories source: ${api.url} (with a token from GH_TOKEN/GITHUB_TOKEN)`);
+        expect(section, r.out).toContain("is rate-limited (403): the token's quota is used up");
+        expect(r.out, 'the token itself is never printed').not.toContain(token);
+      } finally {
+        api.stop();
+      }
+    },
+    TEST_TIMEOUT_MS
+  );
+
+  it(
+    'the clean fixture passes consumer-closure on advisories read from the API without api.github.com',
+    async (ctx) => {
+      const down = networkUnreachable();
+      if (down) ctx.skip(`network-dependent: the review reads registry.npmjs.org, and cannot reach: ${down}`);
+      const api = await startStubGithubApi('advisories');
+      try {
+        const r = runReview(buildCleanTarball(), ['--advisory-states', 'published'], stubApiEnv(api.url));
+        expect(api.seenAuth().length, `the review never read the stand-in at ${api.url}\n${r.out}`).toBeGreaterThan(0);
+        expect(closureSection(r.out), r.out).toContain(`advisories source: ${api.url}`);
+        expect(r.out, r.out).not.toContain(QUOTA_ONLY_LINE);
+        expect(r.census['consumer-closure'], r.out).toBe('pass');
+      } finally {
+        api.stop();
+      }
     },
     TEST_TIMEOUT_MS
   );
