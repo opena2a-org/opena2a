@@ -267,7 +267,7 @@ const CODE_SPAN_NPX_NOTE = {
 /** Two of the five code-span occurrences: the npx-hangs troubleshooting row. */
 const CODE_SPAN_ROW = {
   file: 'docs/use-cases/ci-cd.md',
-  line: 513,
+  line: 514,
   text: '| `npx opena2a-cli` hangs | npm prompting for install confirmation | Use `npx -y opena2a-cli` |',
 } as const;
 
@@ -393,9 +393,15 @@ const DISCRIMINATION: ReadonlyArray<{
  * CLI prints, a label line over an indented command, in place of two command-and-description
  * rows: the block grew two lines, every mcp-server-author.md occurrence after it moved down two
  * lines with its text unchanged, and no other file changed. Fence lines per file did not change.
+ *
+ * Recomputed again when the CI guide's trust-badge-action example dropped `output-path`, an
+ * input the action does not declare, for the `package-name` and `package-source` it does: the
+ * step grew one line, every ci-cd.md occurrence after it moved down one line with its text
+ * unchanged, the troubleshooting row from line 513 to 514, and no other file changed. Fence
+ * lines per file did not change.
  */
 const OCCURRENCE_LINES_SHA256 =
-  '068b9d39fc2155927be8331364feac448f25a99199c6577d865eeb232d6aee9c';
+  '9089ecea79d19466461cbfb80c2e5cbf6b495fb46b5e1db2a47c40fa481a99c6';
 
 function occurrenceLinesDigest(sources: readonly Source[]): string {
   const rows: string[] = [];
@@ -532,7 +538,7 @@ describe('every documented `npx opena2a-cli` invocation sits in a fence or a cod
     expect(perFile).toEqual(OCCURRENCES_PER_FILE);
   });
 
-  it('the code-span occurrences are the README capture label and npx note, the ci-cd.md:513 npx-hangs row (twice) and the developer.md:243 sign step', () => {
+  it('the code-span occurrences are the README capture label and npx note, the ci-cd.md:514 npx-hangs row (twice) and the developer.md:243 sign step', () => {
     const { codeSpan } = classify(readWalkedSet());
     expect(codeSpan).toEqual([
       { file: CODE_SPAN_CAPTURE_LABEL.file, line: CODE_SPAN_CAPTURE_LABEL.line, text: CODE_SPAN_CAPTURE_LABEL.text },
