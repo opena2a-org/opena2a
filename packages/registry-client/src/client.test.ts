@@ -501,4 +501,221 @@ describe("RegistryClient", () => {
       ).rejects.toMatchObject({ code: "rate_limited", statusCode: 429 });
     });
   });
+
+  // A body stream that sends `head` and then never ends: headers arrived, the
+  // body stalls (a half-open link or an overloaded server).
+  function stallingResponse(head: string, status = 200): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(head));
+        },
+      }),
+      { status },
+    );
+  }
+
+  async function errorOf(p: Promise<unknown>): Promise<RegistryApiError> {
+    try {
+      await p;
+    } catch (err) {
+      expect(err).toBeInstanceOf(RegistryApiError);
+      return err as RegistryApiError;
+    }
+    throw new Error("expected the call to reject");
+  }
+
+  describe("whole-call timeout", () => {
+    const TIMEOUT = 200;
+    let timed: RegistryClient;
+
+    beforeEach(() => {
+      timed = new RegistryClient({
+        baseUrl: "https://api.example.com",
+        userAgent: UA,
+        timeoutMs: TIMEOUT,
+        fetch: fetchMock as unknown as typeof fetch,
+      });
+    });
+
+    it("rejects with timeout within timeoutMs + 100 ms when the body never ends", async () => {
+      fetchMock.mockResolvedValue(stallingResponse('{"name":"p","trust'));
+      const started = Date.now();
+      const err = await errorOf(timed.checkTrust("p"));
+      expect(err.code).toBe("timeout");
+      expect(Date.now() - started).toBeLessThan(TIMEOUT + 100);
+    });
+
+    it("rejects with timeout when a fetch double's json() never settles", async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => new Promise(() => undefined),
+        text: () => new Promise(() => undefined),
+      } as Response);
+      const started = Date.now();
+      const err = await errorOf(timed.batchQuery([{ name: "p" }]));
+      expect(err.code).toBe("timeout");
+      expect(Date.now() - started).toBeLessThan(TIMEOUT + 100);
+    });
+
+    it("cancels the stalled body when the time runs out", async () => {
+      let cancelled = false;
+      fetchMock.mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(new TextEncoder().encode("{"));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+      );
+      await errorOf(timed.checkTrust("p"));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(cancelled).toBe(true);
+    });
+
+    it("still reads a body that arrives in time", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ packageId: "x", name: "p", trustLevel: 3, trustScore: 0.8, verdict: "safe" })),
+      );
+      const r = await timed.checkTrust("p");
+      expect(r.found).toBe(true);
+      expect(r.trustLevel).toBe(3);
+    });
+
+    it("an error body that stalls past 2 KB still ends with the HTTP error, not a hang", async () => {
+      fetchMock.mockResolvedValue(stallingResponse("e".repeat(3000), 500));
+      const err = await errorOf(timed.checkTrust("p"));
+      expect(err.code).toBe("server_error");
+      expect(err.body).toBe("e".repeat(2048) + "... [truncated]");
+    });
+  });
+
+  describe("answer shape and size", () => {
+    const valid = { packageId: "x", name: "p", trustLevel: 3, trustScore: 0.8, verdict: "safe" };
+
+    it("rejects a JSON null trust answer with invalid_response", async () => {
+      fetchMock.mockResolvedValue(new Response("null"));
+      expect((await errorOf(client.checkTrust("p"))).code).toBe("invalid_response");
+    });
+
+    it("rejects a JSON null batch answer with invalid_response", async () => {
+      fetchMock.mockResolvedValue(new Response("null"));
+      expect((await errorOf(client.batchQuery([{ name: "p" }]))).code).toBe("invalid_response");
+    });
+
+    it("rejects an empty-object batch answer with invalid_response", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}));
+      expect((await errorOf(client.batchQuery([{ name: "p" }]))).code).toBe("invalid_response");
+    });
+
+    it('rejects a batch answer of {"results":5} with invalid_response', async () => {
+      fetchMock.mockResolvedValue(new Response('{"results":5}'));
+      expect((await errorOf(client.batchQuery([{ name: "p" }]))).code).toBe("invalid_response");
+    });
+
+    it("rejects a batch answer without total instead of reporting notFound: NaN", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ results: [valid] }));
+      expect((await errorOf(client.batchQuery([{ name: "p" }]))).code).toBe("invalid_response");
+    });
+
+    it("rejects a string trustLevel with invalid_response", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ ...valid, trustLevel: "4" }));
+      expect((await errorOf(client.checkTrust("p"))).code).toBe("invalid_response");
+    });
+
+    it("rejects a string trustLevel inside a batch result with invalid_response", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ results: [{ ...valid, trustLevel: "4" }], total: 1, queriedAt: "2026-01-01T00:00:00Z" }),
+      );
+      expect((await errorOf(client.batchQuery([{ name: "p" }]))).code).toBe("invalid_response");
+    });
+
+    it("rejects an out-of-range trustLevel or trustScore with invalid_response", async () => {
+      for (const bad of [{ trustLevel: 7 }, { trustLevel: -1 }, { trustLevel: 2.5 }, { trustScore: 85 }, { trustScore: "0.9" }]) {
+        client.clearCache();
+        fetchMock.mockResolvedValue(jsonResponse({ ...valid, ...bad }));
+        expect((await errorOf(client.checkTrust("p"))).code).toBe("invalid_response");
+      }
+    });
+
+    it("accepts an answer without trustLevel or trustScore (not yet assessed)", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ name: "p", verdict: "listed" }));
+      const r = await client.checkTrust("p");
+      expect(r.found).toBe(false);
+      expect(r.trustLevel).toBeUndefined();
+    });
+
+    it("rejects a trust answer body over the 1 MB cap with invalid_response", async () => {
+      const big = JSON.stringify({ ...valid, recommendation: "x".repeat(1024 * 1024) });
+      fetchMock.mockResolvedValue(new Response(big));
+      const err = await errorOf(client.checkTrust("p"));
+      expect(err.code).toBe("invalid_response");
+      expect(err.message).toMatch(/exceeds/);
+    });
+
+    it("rejects a batch body over the 10 MB cap with invalid_response", async () => {
+      const big = JSON.stringify({
+        results: [{ ...valid, recommendation: "x".repeat(10 * 1024 * 1024) }],
+        total: 1,
+        queriedAt: "2026-01-01T00:00:00Z",
+      });
+      fetchMock.mockResolvedValue(new Response(big));
+      const err = await errorOf(client.batchQuery([{ name: "p" }]));
+      expect(err.code).toBe("invalid_response");
+      expect(err.message).toMatch(/exceeds/);
+    });
+
+    it("stops reading an oversized body at the cap", async () => {
+      let pulled = 0;
+      let cancelled = false;
+      const chunk = new Uint8Array(64 * 1024).fill(0x20);
+      fetchMock.mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(c) {
+              // Ends at 4 MB so the old, uncapped reader fails fast, not out of memory.
+              if (pulled >= 4 * 1024 * 1024) return c.close();
+              pulled += chunk.byteLength;
+              c.enqueue(chunk);
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+        ),
+      );
+      const err = await errorOf(client.checkTrust("p"));
+      expect(err.code).toBe("invalid_response");
+      expect(cancelled).toBe(true);
+      expect(pulled).toBeLessThan(2 * 1024 * 1024);
+    });
+
+    it("rejects a declared Content-Length over the cap before reading", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify(valid), { headers: { "content-length": String(2 * 1024 * 1024) } }),
+      );
+      expect((await errorOf(client.checkTrust("p"))).code).toBe("invalid_response");
+    });
+
+    it("rejects a non-object publish answer with invalid_response", async () => {
+      fetchMock.mockResolvedValue(new Response("null"));
+      const err = await errorOf(
+        client.publishScan({
+          name: "p",
+          score: 0,
+          maxScore: 100,
+          findings: [],
+          tool: "x",
+          toolVersion: "0.0.0",
+          scanTimestamp: "2026-01-01T00:00:00Z",
+        }),
+      );
+      expect(err.code).toBe("invalid_response");
+    });
+  });
 });
