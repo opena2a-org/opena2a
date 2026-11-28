@@ -657,6 +657,83 @@ export function collectCatalogMatches(
   }
 }
 
+// --- PEM private key blocks ---
+
+/** Finding ID for a PEM private key block embedded in a text file. */
+export const PEM_PRIVATE_KEY_FINDING_ID = 'CRED-PEM';
+
+/**
+ * Key and certificate files are reported whole by the key-file scanner
+ * (crypto-key-files.ts, CRED-KEYFILE / CRED-CERTFILE); a PEM block inside one
+ * is the file itself, not a key embedded in source.
+ */
+const KEY_FILE_EXTENSIONS = new Set(['.key', '.pem', '.p12', '.pfx', '.crt', '.cer']);
+
+/**
+ * A PEM private key block, header to matching footer. The body may span real
+ * lines (a template literal, a heredoc) or sit on one line with `\n` escapes
+ * (a JSON or quoted string). Bounded so an unterminated header cannot scan the
+ * rest of a large file.
+ */
+const PEM_PRIVATE_KEY_BLOCK =
+  /-----BEGIN ((?:RSA |EC |OPENSSH |PGP |DSA |ENCRYPTED )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----([\s\S]{0,16384}?)-----END \1-----/g;
+
+/** Bodies that stand in for a key rather than being one (`MIIE...`, `<your key>`). */
+const PEM_PLACEHOLDER_BODY = /\.\.\.|…|<[^>\n]*>|REDACTED|PLACEHOLDER|YOUR[_ -]?(?:PRIVATE[_ -]?)?KEY/i;
+
+/**
+ * True when the text between a PEM header and footer is real key material: at
+ * least 64 base64 characters once string escapes and whitespace are removed,
+ * not a low-entropy filler, and no placeholder marker.
+ */
+function isPemKeyMaterial(body: string): boolean {
+  if (PEM_PLACEHOLDER_BODY.test(body)) return false;
+  const material = (body.replace(/\\[nrt]/g, ' ').match(/[A-Za-z0-9+/=]/g) ?? []).join('');
+  if (material.length < 64) return false;
+  return new Set(material).size > 20;
+}
+
+/**
+ * Find PEM private key blocks (`-----BEGIN RSA PRIVATE KEY-----` and the EC,
+ * OPENSSH, PGP, DSA, ENCRYPTED and bare PKCS#8 forms, plus
+ * `-----BEGIN PGP PRIVATE KEY BLOCK-----`) in a file's content.
+ *
+ * The line-by-line patterns cannot see these: the header carries no secret and
+ * the key material is spread over the lines after it. The whole block is the
+ * credential, so `value` is the block from header to footer and `line` is the
+ * header's line. Deduped against `seen` (`value:filePath`) like the other
+ * passes. Mutates `matches` and `seen` in place.
+ */
+export function collectPemPrivateKeyMatches(
+  content: string,
+  filePath: string,
+  seen: Set<string>,
+  matches: CredentialMatch[],
+): void {
+  if (KEY_FILE_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return;
+  if (!content.includes('-----BEGIN ')) return;
+  for (const m of content.matchAll(PEM_PRIVATE_KEY_BLOCK)) {
+    if (!isPemKeyMaterial(m[2])) continue;
+    const value = m[0];
+    const dedupKey = `${value}:${filePath}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    const label = m[1];
+    const line = content.slice(0, m.index ?? 0).split('\n').length;
+    matches.push({
+      value,
+      filePath,
+      line,
+      findingId: PEM_PRIVATE_KEY_FINDING_ID,
+      envVar: deriveEnvVarName('PRIVATE_KEY', matches),
+      severity: 'critical',
+      title: `PEM ${label}`,
+      explanation: `A PEM ${label} block is embedded in source. Anyone who can read this file holds the private key and can sign, decrypt or authenticate as its owner.`,
+      businessImpact: 'Full use of the key. Move it to a file outside the repository, load it by path, and rotate it: the key has been in source and must be treated as exposed.',
+    });
+  }
+}
+
 const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
 
 /**

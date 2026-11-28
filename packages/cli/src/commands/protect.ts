@@ -34,7 +34,21 @@ interface MigrationResult {
   policyCreated: boolean;
   /** Error message if migration failed */
   error?: string;
+  /** Set when protect left the credential for the user to move by hand, and why */
+  manual?: string;
 }
+
+/**
+ * Why a PEM private key block is reported but not moved into the vault. The
+ * vault backends store a value behind an env-var name; none of them hands back
+ * a file path the source could load the key from, and swapping a multi-line
+ * block (often a template literal) for `process.env.X` would leave a string
+ * that reads as the variable's name, not its value.
+ */
+const PEM_MANUAL_REASON =
+  'PEM private key blocks are not moved automatically. Write the key to a file outside the repository ' +
+  '(chmod 600), load it from a path held in an environment variable such as PRIVATE_KEY_FILE, ' +
+  'remove the block from source, and rotate the key: it has been in source and must be treated as exposed.';
 
 interface KeyFileFinding {
   /** Absolute path to the key/cert file */
@@ -148,6 +162,7 @@ import {
   loadCanonicalPatterns,
   loadCanonicalAllowlist,
   collectCatalogMatches, credentialTypeCount, describeMigrationOutcome,
+  collectPemPrivateKeyMatches, PEM_PRIVATE_KEY_FINDING_ID,
   type CredentialMatch,
 } from '../util/credential-patterns.js';
 import {
@@ -581,11 +596,12 @@ export async function protect(options: ProtectOptions): Promise<number> {
   // Phase 7: After security score (before score was captured pre-migration)
   let scoreAfter: number | undefined;
   try {
-    // After: credentials migrated (count = failed only), re-check hygiene
-    const afterCredCount = failed;
+    // After: credentials migrated (count = failed, plus those left for the
+    // user to move -- they are still in source), re-check hygiene
+    const afterCredCount = results.filter(r => r.error || r.manual).length;
     const afterCredsBySeverity: Record<string, number> = {};
     for (const r of results) {
-      if (r.error) {
+      if (r.error || r.manual) {
         const sev = r.credential.severity;
         afterCredsBySeverity[sev] = (afterCredsBySeverity[sev] || 0) + 1;
       }
@@ -835,6 +851,10 @@ async function scanForCredentials(targetDir: string): Promise<CredentialMatch[]>
     // (Slack, Stripe, Groq, GitLab, …), deduped against the local matches above
     // so overlapping providers keep their richer local label (#130).
     collectCatalogMatches(lines, filePath, catalog, isKnownExample, seen, matches);
+
+    // PEM private key blocks span several lines, so the per-line patterns
+    // above cannot see them.
+    collectPemPrivateKeyMatches(content, filePath, seen, matches);
   });
 
   return matches;
@@ -870,6 +890,21 @@ async function migrateCredentials(
   const results: MigrationResult[] = [];
 
   for (const credential of matches) {
+    if (credential.findingId === PEM_PRIVATE_KEY_FINDING_ID) {
+      results.push({
+        credential,
+        stored: false,
+        storageLocation: 'none',
+        replaced: false,
+        policyCreated: false,
+        manual: PEM_MANUAL_REASON,
+      });
+      if (options.verbose) {
+        process.stdout.write(`${yellow('[MANUAL]')} ${credential.title} <- ${path.relative(targetDir, credential.filePath)}:${credential.line}\n`);
+      }
+      continue;
+    }
+
     try {
       // Step 1: Store in Secretless vault
       const vaultResult = await storeInVault(credential);
@@ -1335,6 +1370,8 @@ function printReport(report: ProtectReport): void {
     let status: string;
     if (result.error) {
       status = red('FAILED');
+    } else if (result.manual) {
+      status = yellow('MANUAL');
     } else if (result.stored && result.replaced && result.storageLocation === 'vault') {
       status = green('VAULT');
     } else if (result.stored && result.replaced && result.storageLocation === 'shell-profile') {
@@ -1358,6 +1395,18 @@ function printReport(report: ProtectReport): void {
   }
 
   process.stdout.write(table(rows, ['Stored In', 'Finding', 'Env Var', 'Source']) + '\n\n');
+
+  const manualResults = report.results.filter(r => r.manual);
+  if (manualResults.length > 0) {
+    process.stdout.write(yellow(`${manualResults.length} credential(s) left for you to move:\n`));
+    for (const r of manualResults) {
+      process.stdout.write(`  ${r.credential.title}  ${path.relative(report.targetDir, r.credential.filePath)}:${r.credential.line}\n`);
+    }
+    for (const reason of new Set(manualResults.map(r => r.manual))) {
+      process.stdout.write(dim(`  ${reason}\n`));
+    }
+    process.stdout.write('\n');
+  }
 
   // Warn if any credentials ended up in shell profile instead of vault
   const shellProfileResults = report.results.filter(r => r.storageLocation === 'shell-profile');
