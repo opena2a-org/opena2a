@@ -968,6 +968,11 @@ whether that hash matches its record. "no data" means the registry returned
 neither a match nor a mismatch; it is not a pass. The trust score line names
 the version the registry scored; when that is not the installed version, or
 the registry does not say, the line says the score may not apply to it.
+The trust level line shows the level's word beside its number (Blocked,
+Warning, Listed, Scanned, Verified; level 0 to 4). A listed package the
+registry never scanned shows "not scanned" and no score. A Blocked or Warning
+answer is followed by its next step:
+  opena2a check <package>   the Registry's full answer, or a local scan
 
 Without --package it checks hackmyagent, secretless-ai and ai-trust; each is
 installed with opena2a-cli. opena2a-cli is not in that list; check it with
@@ -1132,7 +1137,12 @@ Auth: set OPENA2A_INTERNAL_API_KEY or INTERNAL_API_KEY (the key is never printed
 Output formats:
   --format text   Audit summary (default)
   --format json   Result on stdout
-  Any other --format value, sarif included, exits 2.`)
+  Any other --format value, sarif included, exits 2.
+
+With --registry, each MCP server's trust answer is shown as its level's word
+beside its number (Blocked, Warning, Listed, Scanned, Verified; level 0 to 4).
+A Blocked or Warning answer is followed by its next step:
+  opena2a check <package>   the Registry's full answer, or a local scan`)
     .action(async (directory: string | undefined, opts) => {
       const { detect } = await import('./commands/detect.js');
       const globalOpts = program.opts();

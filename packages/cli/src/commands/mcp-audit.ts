@@ -6,6 +6,14 @@ import { bold, dim, green, yellow, red, cyan, gray } from '../util/colors.js';
 import { getVersion } from '../util/version.js';
 import { registryNameFor } from '../util/mcp-registry-name.js';
 import {
+  describeTrustAnswer,
+  loadTrustUi,
+  paintTrustAnswer,
+  trustNextStepLine,
+  type TrustAnswerView,
+  type TrustUi,
+} from '../util/trust-answer.js';
+import {
   findMcpIdentityFile,
   legacyMcpIdentityPath,
   mcpIdentityStoreDir,
@@ -192,10 +200,13 @@ interface TrustResult {
   registryName: string | null;
   trustLookup: TrustLookup;
   trustScore: number | null;
+  /** The Registry's 0-4 level and verdict, carried when it answered with a record. */
+  trustLevel?: number;
+  verdict?: string;
 }
 
 interface TrustClient {
-  checkTrust(name: string, type?: string): Promise<{ found: boolean; trustScore: number; verdict: string }>;
+  checkTrust(name: string, type?: string): Promise<{ found: boolean; trustScore: number; trustLevel?: number; verdict: string }>;
 }
 
 /** One registry client per command run, created by the first lookup and shared by the rest. */
@@ -228,10 +239,14 @@ async function lookupTrust(
     const client = await getClient();
     const data = await client.checkTrust(registryName, 'mcp_server');
     if (!data.found) return { registryName, trustLookup: 'notInRegistry', trustScore: null };
-    if (data.verdict === 'listed') return { registryName, trustLookup: 'notScanned', trustScore: null };
+    const answer = {
+      ...(typeof data.trustLevel === 'number' ? { trustLevel: data.trustLevel } : {}),
+      ...(typeof data.verdict === 'string' ? { verdict: data.verdict } : {}),
+    };
+    if (data.verdict === 'listed') return { registryName, trustLookup: 'notScanned', trustScore: null, ...answer };
     // trustScore is 0-1 from the registry, convert to 0-100
     if (typeof data.trustScore !== 'number') return { registryName, trustLookup: 'failed', trustScore: null };
-    return { registryName, trustLookup: 'scored', trustScore: Math.round(data.trustScore * 100) };
+    return { registryName, trustLookup: 'scored', trustScore: Math.round(data.trustScore * 100), ...answer };
   } catch (err) {
     // A 404 is an answer: the registry holds no record of the package.
     const notFound = (err as { code?: unknown } | null)?.code === 'not_found';
@@ -239,10 +254,24 @@ async function lookupTrust(
   }
 }
 
-function trustLabel(result: TrustResult | undefined): string {
+/** How a looked-up answer is shown; null when there is no answer or it names no level. */
+function trustView(ui: TrustUi, result: TrustResult | undefined): TrustAnswerView | null {
+  if (!result || (result.trustLookup !== 'scored' && result.trustLookup !== 'notScanned')) return null;
+  return describeTrustAnswer(ui, { trustLevel: result.trustLevel, verdict: result.verdict }, result.registryName);
+}
+
+/**
+ * A scored answer is shown by its level's word beside its number, then the
+ * score: `Scanned (level 3 of 4), trust: 79`. One that names no level keeps
+ * the score alone; a Listed one is not scanned and shows no score.
+ */
+function trustLabel(result: TrustResult | undefined, view: TrustAnswerView | null = null): string {
   switch (result?.trustLookup) {
-    case 'scored': return cyan(`trust: ${result.trustScore}`);
-    case 'notScanned': return dim('listed, not scanned');
+    case 'scored':
+      return view
+        ? `${paintTrustAnswer(view)}${dim(`, trust: ${result.trustScore}`)}`
+        : cyan(`trust: ${result.trustScore}`);
+    case 'notScanned': return view ? paintTrustAnswer(view) : dim('listed, not scanned');
     case 'notInRegistry': return dim('not in registry');
     case 'noPackage': return dim('no package to look up');
     case 'skipped': return dim('not looked up (--ci)');
@@ -292,6 +321,12 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
     trustResults.set(s, await lookupTrust(s, getClient));
   }));
 
+  // Each answer's word, tone and next step, in the wording `check` uses
+  const trustUi = await loadTrustUi();
+  const trustViews: Map<McpServerEntry, TrustAnswerView | null> = new Map(
+    allServers.map(s => [s, trustView(trustUi, trustResults.get(s))]),
+  );
+
   // Count summary
   const total = allServers.length;
   const signedCount = [...identityStatus.values()].filter(s => s.signed).length;
@@ -319,6 +354,9 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
         registryName: trustResults.get(s)?.registryName ?? null,
         trustLookup: trustResults.get(s)?.trustLookup ?? 'failed',
         trustScore: trustResults.get(s)?.trustScore ?? null,
+        trustLevel: trustViews.get(s)?.level ?? null,
+        trustLevelWord: trustViews.get(s)?.word ?? null,
+        nextStep: trustViews.get(s)?.nextStep ?? null,
       })),
       summary: {
         total,
@@ -370,7 +408,10 @@ async function handleAudit(options: McpCommandOptions): Promise<number> {
       const nameCol = server.name.padEnd(20);
       const transportCol = server.transport.padEnd(8);
 
-      process.stdout.write(`  ${nameCol} ${dim(transportCol)} ${dim(commandStr.substring(0, 45).padEnd(45))}  ${signLabel}  ${trustLabel(trustResults.get(server))}\n`);
+      const view = trustViews.get(server) ?? null;
+      process.stdout.write(`  ${nameCol} ${dim(transportCol)} ${dim(commandStr.substring(0, 45).padEnd(45))}  ${signLabel}  ${trustLabel(trustResults.get(server), view)}\n`);
+      const next = trustNextStepLine(view);
+      if (next) process.stdout.write(`                     ${next}\n`);
 
       if (options.verbose) {
         if (server.pinnedVersion) {
@@ -596,6 +637,7 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
 
   // Look up the trust score of the package the server runs
   const trust = await lookupTrust(server, trustClientOnce());
+  const view = trustView(await loadTrustUi(), trust);
 
   // Compute fingerprint
   let fingerprint = '';
@@ -619,6 +661,9 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
       trustScore: trust.trustScore,
       registryName: trust.registryName,
       trustLookup: trust.trustLookup,
+      trustLevel: view?.level ?? null,
+      trustLevelWord: view?.word ?? null,
+      nextStep: view?.nextStep ?? null,
       createdAt: identity.createdAt,
     }, null, 2) + '\n');
     return passed ? 0 : 1;
@@ -635,8 +680,10 @@ async function handleVerify(options: McpCommandOptions): Promise<number> {
   process.stdout.write(`  Config match:    ${configMatch ? green('current config matches signed config') : (server ? red('config has changed since signing') : yellow('server not found in current configs'))}\n`);
 
   const lookedUpAs = trust.registryName ? dim(` (${trust.registryName})`) : '';
-  const trustText = trust.trustLookup === 'scored' ? cyan(String(trust.trustScore)) : trustLabel(trust);
+  const trustText = trust.trustLookup === 'scored' && !view ? cyan(String(trust.trustScore)) : trustLabel(trust, view);
   process.stdout.write(`  Trust score:     ${trustText}${lookedUpAs}\n`);
+  const next = trustNextStepLine(view);
+  if (next) process.stdout.write(`                   ${next}\n`);
 
   process.stdout.write('\n');
 

@@ -1076,7 +1076,7 @@ describe('mcp-audit', () => {
       );
 
       expect(rowFor(output, 'shell-executor')).toContain('not in registry');
-      expect(rowFor(output, 'database-admin')).toContain('listed, not scanned');
+      expect(rowFor(output, 'database-admin')).toContain('Listed (level 2 of 4), not scanned');
       expect(rowFor(output, 'database-admin')).not.toContain('trust:');
       expect(rowFor(output, 'network-fetch')).toContain('lookup failed');
       expect(rowFor(output, 'external-analytics')).toContain('no package to look up');
@@ -1134,6 +1134,92 @@ describe('mcp-audit', () => {
       const byName = Object.fromEntries(JSON.parse(json.output).servers.map((s: any) => [s.name, s]));
       expect(byName['filesystem-root']).toMatchObject({ registryName: '@modelcontextprotocol/server-filesystem', trustLookup: 'skipped' });
       expect(byName['external-analytics']).toMatchObject({ registryName: null, trustLookup: 'noPackage' });
+    });
+
+    // A Blocked or Warning answer was a cyan number: no word, no tone, and
+    // nothing to do about it.
+    function answerBlockedAndWarning(): void {
+      registryStub.checkTrust.mockImplementation(async (name: string) => {
+        if (name === '@modelcontextprotocol/server-filesystem') {
+          return { packageId: '7b70f85f-d988-4fbf-8d5e-993ce58ed10c', name, trustScore: 0.12, trustLevel: 0, verdict: 'blocked', scanStatus: 'completed', found: true };
+        }
+        if (name === '@modelcontextprotocol/server-shell') {
+          return { packageId: '16b7fe58-7e28-41d0-a88c-e2bef2a2c7d9', name, trustScore: 0.55, trustLevel: 1, verdict: 'warning', scanStatus: 'warnings', found: true };
+        }
+        throw new PackageNotFoundError(name);
+      });
+    }
+
+    /** The line printed directly under a server's row. */
+    function lineAfter(output: string, serverName: string): string {
+      const lines = output.split('\n');
+      const i = lines.findIndex(line => line.trimStart().startsWith(`${serverName} `));
+      return i === -1 ? '' : (lines[i + 1] ?? '');
+    }
+
+    it('audit shows a Blocked or Warning answer by its word and number, then the next step', async () => {
+      answerBlockedAndWarning();
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, format: 'text' }),
+      );
+
+      expect(rowFor(output, 'filesystem-root')).toContain('Blocked (level 0 of 4), do not use, trust: 12');
+      expect(lineAfter(output, 'filesystem-root').trim()).toBe('Next: opena2a check @modelcontextprotocol/server-filesystem');
+      expect(rowFor(output, 'shell-executor')).toContain('Warning (level 1 of 4), review before use, trust: 55');
+      expect(lineAfter(output, 'shell-executor').trim()).toBe('Next: opena2a check @modelcontextprotocol/server-shell');
+      expect(lineAfter(output, 'database-admin')).not.toContain('Next:');
+    });
+
+    it('audit JSON adds the level, its word and the next step beside the existing fields', async () => {
+      answerBlockedAndWarning();
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'audit', targetDir: tempDir, format: 'json' }),
+      );
+
+      const byName = Object.fromEntries(JSON.parse(output).servers.map((s: any) => [s.name, s]));
+      expect(byName['filesystem-root']).toMatchObject({
+        trustLookup: 'scored',
+        trustScore: 12,
+        trustLevel: 0,
+        trustLevelWord: 'Blocked',
+        nextStep: 'opena2a check @modelcontextprotocol/server-filesystem',
+      });
+      expect(byName['shell-executor']).toMatchObject({ trustLevel: 1, trustLevelWord: 'Warning' });
+      expect(byName['external-analytics']).toMatchObject({ trustLevel: null, trustLevelWord: null, nextStep: null });
+    });
+
+    it('mcp verify shows a Blocked answer by its word, then the next step', async () => {
+      answerBlockedAndWarning();
+      await captureStdout(() =>
+        mcpCommand({ subcommand: 'sign', server: 'filesystem-root', targetDir: tempDir, format: 'json' }),
+      );
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'verify', server: 'filesystem-root', targetDir: tempDir, format: 'text' }),
+      );
+
+      const lines = output.split('\n');
+      const i = lines.findIndex(line => line.trimStart().startsWith('Trust score:'));
+      expect(lines[i]).toContain('Blocked (level 0 of 4), do not use, trust: 12');
+      expect(lines[i + 1].trim()).toBe('Next: opena2a check @modelcontextprotocol/server-filesystem');
+    });
+
+    it('mcp verify shows a listed, never-scanned record as not scanned, with no score', async () => {
+      answerLikeTheRegistry();
+      await captureStdout(() =>
+        mcpCommand({ subcommand: 'sign', server: 'database-admin', targetDir: tempDir, format: 'json' }),
+      );
+
+      const { output } = await captureStdout(() =>
+        mcpCommand({ subcommand: 'verify', server: 'database-admin', targetDir: tempDir, format: 'text' }),
+      );
+
+      const line = output.split('\n').find(l => l.trimStart().startsWith('Trust score:')) ?? '';
+      expect(line).toContain('Listed (level 2 of 4), not scanned');
+      expect(line).not.toMatch(/\d+\s*\/\s*100|trust: \d/);
+      expect(output).not.toContain('Next:');
     });
 
     it('mcp verify looks up the package the server runs', async () => {

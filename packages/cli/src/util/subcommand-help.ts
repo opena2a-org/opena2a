@@ -650,7 +650,7 @@ export const SKILL_HELP: SubcommandHelpRegistry = {
 export const MCP_HELP: SubcommandHelpRegistry = {
   audit: {
     summary:
-      'List the MCP servers configured in your home directory and in the project, with their signature status and Registry trust score.',
+      'List the MCP servers configured in your home directory and in the project, with their signature status and Registry trust answer: the level\'s word beside its number (Blocked, Warning, Listed, Scanned, Verified; level 0 to 4). A Blocked or Warning answer is followed by its next step, opena2a check <package>, which shows the Registry\'s full answer or scans the package locally.',
     options: [
       { flag: '--dir <path>', description: 'Project directory (default: current directory)' },
     ],
@@ -667,7 +667,7 @@ export const MCP_HELP: SubcommandHelpRegistry = {
   },
   verify: {
     summary:
-      "Check that a signed MCP server's configuration still matches its identity, and show its Registry trust score.",
+      "Check that a signed MCP server's configuration still matches its identity, and show its Registry trust answer: the level's word beside its number (Blocked, Warning, Listed, Scanned, Verified; level 0 to 4). A Blocked or Warning answer is followed by its next step, opena2a check <package>, which shows the Registry's full answer or scans the package locally.",
     usage: '[server]',
     options: [
       { flag: '--server <name>', description: 'Server name (same as the positional)' },

@@ -55,6 +55,13 @@ export const CHILD_PROCESS_AUDIT: Record<string, ChildProcessAuditEntry> = {
       'live at once (each running the CLI in its own node child, so 8 processes ' +
       'worst case); was an unbounded N=8 Promise.all fan-out before the bound',
   },
+  'commands/trust-next-step-help.test.ts': {
+    shape: 'sync',
+    maxSimultaneousChildren: 1,
+    spawns:
+      'spawnSync(node dist/index.js [detect | mcp audit | mcp verify | verify] --help) ' +
+      'with a scratch HOME and XDG_CONFIG_HOME, one at a time',
+  },
   'version-stream-split.test.ts': {
     shape: 'sync',
     maxSimultaneousChildren: 1,
